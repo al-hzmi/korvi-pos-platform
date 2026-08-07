@@ -1,0 +1,71 @@
+// Korvi POS — Phase 0 schema.
+//
+// Deliberately small. The strategy document mentions 36 tables; that is the
+// shape of the finished product, not of a foundation. Every table here exists
+// because Phase 0 needs it to prove the tenancy boundary works.
+//
+// Tenancy rule (ADR-0004): every tenant-owned model carries tenantId and
+// indexes it first. GlobalCatalogItem is the documented exception — the
+// national barcode catalogue is shared infrastructure, and copying it per
+// merchant would mean hundreds of thousands of duplicate rows each.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id        String   @id @db.Uuid
+  name      String
+  vatNumber String?  @db.VarChar(15)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@map("tenants")
+}
+
+model Product {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+
+  sku     String
+  nameAr  String
+  nameEn  String?
+  barcode String?
+
+  /// Minor units (halalas) as a 64-bit integer. Never a float — ADR-0002.
+  priceMinor BigInt
+
+  /// Basis points. 1500 = 15%. Never a float — ADR-0002.
+  vatBasisPoints Int @default(1500)
+
+  /// Reversed barcode powering suffix search. See ports/search.ts.
+  codeReverse String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, barcode])
+  @@index([tenantId, codeReverse])
+  @@map("products")
+}
+
+/// Shared across all tenants by design. No tenantId — see ADR-0004.
+model GlobalCatalogItem {
+  barcode        String   @id
+  nameAr         String
+  nameEn         String?
+  vatBasisPoints Int      @default(1500)
+  updatedAt      DateTime @updatedAt
+
+  @@map("global_catalog_items")
+}

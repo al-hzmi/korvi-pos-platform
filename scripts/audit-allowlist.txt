@@ -1,0 +1,15 @@
+# Reviewed advisory exceptions.
+#
+# Format:  GHSA-id   justification | owner | expires YYYY-MM-DD
+#
+# Every field is mandatory. An entry without an expiry is rejected by the gate,
+# and an entry past its expiry fails the build. An advisory that is not listed
+# here fails the build immediately -- unknown means blocked, never allowed.
+#
+# An entry is a decision, not a mute button: it records that someone read the
+# advisory and established the vulnerable path is unreachable from this
+# codebase.
+#
+# EMPTY IS THE CORRECT STATE, and it is currently empty: next 16.3.0 carries no
+# advisories, so the postcss and sharp exceptions carried in revision 2 were
+# deleted rather than renewed. Upgrading beat excusing.

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="Korvi POS">
+  <title>Korvi POS</title>
+  <rect width="64" height="64" rx="14" ry="14" fill="#047857"/>
+  <g transform="translate(12.463 49.920) scale(0.051347 -0.051347)">
+    <path fill="#FFFFFF" d="M320.00 304.00 229.00 194.00V0.00H77.00V698.00H229.00V366.00H235.00L334.00 501.00L491.00 698.00H663.00L428.00 411.00L684.00 0.00H505.00Z"/>
+  </g>
+</svg>

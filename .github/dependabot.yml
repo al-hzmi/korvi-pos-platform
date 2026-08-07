@@ -1,0 +1,32 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    # Patches arrive grouped so the weekly review is one PR rather than
+    # fifteen; majors stay separate because each needs a real decision.
+    groups:
+      patch-and-minor:
+        update-types: ['patch', 'minor']
+    ignore:
+      # Pinned by ADR-0007. Dependabot cannot know why, and an automated bump
+      # here would break lint (typescript) or the design system (tailwind).
+      # Revisit by editing the ADR, not by merging a bot PR.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      - dependency-name: tailwindcss
+        update-types: ['version-update:semver-major']
+    commit-message:
+      prefix: 'chore(deps)'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'chore(ci)'

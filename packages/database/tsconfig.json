@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // rootDir is the package root, not src: the Prisma-generated client is
+    // TypeScript source under generated/, and tsc requires rootDir to contain
+    // every input. Output therefore lands in dist/src.
+    "rootDir": ".",
+    "outDir": "dist",
+    "lib": ["ES2023", "DOM"],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src/**/*.ts", "generated/**/*.ts"],
+  "exclude": ["src/**/__tests__/**", "src/**/*.test.ts"]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@korvi/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tailwind-preset": "./tailwind-preset.cjs"
+  },
+  "files": [
+    "tailwind-preset.cjs"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

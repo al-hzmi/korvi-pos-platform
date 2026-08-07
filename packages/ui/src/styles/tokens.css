@@ -1,0 +1,201 @@
+/*
+ * Korvi Design System — token roots.
+ *
+ * Transcribed from KORVI-DESIGN-SYSTEM.md §10. Values are HSL channel triplets
+ * with no hsl() wrapper: Tailwind consumes them as
+ * `hsl(var(--token) / <alpha-value>)`, and wrapping them here would break every
+ * opacity modifier in the system.
+ *
+ * No component may define a colour. If a value is missing, it is added here.
+ */
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 25% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 25% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 25% 12%;
+
+  /* A deep teal-green: institutional and financial without being the default
+     corporate blue every other ERP already uses. */
+  --primary: 172 62% 26%;
+  --primary-foreground: 160 40% 98%;
+
+  --secondary: 210 20% 96%;
+  --secondary-foreground: 222 25% 20%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 215 16% 45%;
+  --accent: 172 45% 94%;
+  --accent-foreground: 172 62% 20%;
+
+  --destructive: 0 72% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 55% 34%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 45%;
+  --warning-foreground: 30 40% 12%;
+
+  --border: 214 20% 89%;
+  --input: 214 20% 89%;
+  --ring: 172 62% 32%;
+
+  --radius: 0.625rem;
+
+  /* Brand — constant across themes and across print. See §2.4.
+     One decimal place, because these round-trip exactly to #047857 and
+     #34D399; rounding to integers lands on #027855, which is a different
+     colour from the one the print rule emits literally. Do not round. */
+  --brand: 162.9 93.5% 24.3%;
+  --brand-on-dark: 158.1 64.4% 51.6%;
+
+  --font-sans:
+    var(--font-plex-arabic), 'Segoe UI', 'Tahoma', 'Geeza Pro', 'Noto Sans Arabic', system-ui,
+    sans-serif;
+  --font-mono:
+    var(--font-plex-mono), ui-monospace, 'SF Mono', 'Cascadia Mono', 'Consolas', monospace;
+}
+
+:root[data-theme='dark'],
+.dark {
+  --background: 222 30% 8%;
+  --foreground: 210 20% 96%;
+  /* Lighter than the background: in dark mode elevation is expressed by
+     lightness, because a black shadow on a near-black surface is invisible. */
+  --card: 222 26% 11%;
+  --card-foreground: 210 20% 96%;
+  --popover: 222 26% 11%;
+  --popover-foreground: 210 20% 96%;
+
+  /* Not the light value lightened — a separately tuned pair. */
+  --primary: 172 55% 45%;
+  --primary-foreground: 222 30% 8%;
+
+  --secondary: 222 20% 17%;
+  --secondary-foreground: 210 20% 96%;
+  --muted: 222 20% 17%;
+  --muted-foreground: 215 16% 62%;
+  --accent: 172 40% 18%;
+  --accent-foreground: 172 55% 80%;
+
+  --destructive: 0 62% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 45% 45%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 85% 55%;
+  --warning-foreground: 30 40% 10%;
+
+  --border: 222 18% 22%;
+  --input: 222 18% 22%;
+  --ring: 172 55% 45%;
+}
+
+/* --- Typography rules that are not optional (§4.3) ---------------------- */
+
+body {
+  font-feature-settings:
+    'kern' 1,
+    'liga' 1,
+    'calt' 1;
+}
+
+/*
+ * Every financial figure. In a proportional face the digit 1 is narrower than
+ * 8, so a column of amounts shivers as it updates and the decimal points stop
+ * lining up. On a cart that re-totals with every scan, that reads as a fault.
+ */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  direction: ltr;
+  text-align: end;
+}
+
+/*
+ * Latin runs inside Arabic text. Without isolation the bidi algorithm reorders
+ * INV-2026-00001 into 00001-2026-INV — not a cosmetic problem, a wrong document
+ * number on screen.
+ */
+.bidi-isolate {
+  unicode-bidi: isolate;
+  direction: ltr;
+  display: inline-block;
+}
+
+[dir='rtl'] .flip-in-rtl {
+  transform: scaleX(-1);
+}
+
+[dir='rtl'] .numeric {
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- Print (§9) --------------------------------------------------------- */
+
+@media print {
+  .no-print,
+  aside,
+  header.sticky {
+    display: none !important;
+  }
+
+  .sticky {
+    position: static !important;
+  }
+
+  .backdrop-blur {
+    backdrop-filter: none !important;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+
+  tr,
+  figure,
+  svg,
+  dl {
+    break-inside: avoid;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Browsers drop non-essential colour when printing. The brand mark is
+     essential: it must be the same green on paper as on screen. */
+  .text-brand {
+    color: #047857 !important;
+    print-color-adjust: exact;
+  }
+
+  /* A QR that inverts under a dark theme is a QR no scanner will read. */
+  svg[role='img'] rect {
+    fill: #fff !important;
+  }
+
+  svg[role='img'] path {
+    fill: #000 !important;
+    print-color-adjust: exact;
+  }
+}

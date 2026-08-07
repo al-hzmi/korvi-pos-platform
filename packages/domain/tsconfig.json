@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // DOM supplies the web-standard surface the core relies on -- TextEncoder,
+    // crypto.getRandomValues -- and is not a licence to touch the DOM. ESLint
+    // blocks window and document (ADR-0001).
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/__tests__/**", "src/**/*.test.ts"]
+}

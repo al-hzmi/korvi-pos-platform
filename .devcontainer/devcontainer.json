@@ -1,0 +1,29 @@
+{
+  "name": "korvi-pos-platform",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-24-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "if [ -f package-lock.json ]; then npm ci --registry=https://registry.npmjs.org/; else npm install --registry=https://registry.npmjs.org/; fi",
+  "forwardPorts": [3000, 3001],
+  "portsAttributes": {
+    "3000": { "label": "pos-web", "onAutoForward": "notify" },
+    "3001": { "label": "api", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "prisma.prisma",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" }
+      }
+    }
+  }
+}

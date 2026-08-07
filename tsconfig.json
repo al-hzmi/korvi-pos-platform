@@ -1,0 +1,7 @@
+{
+  // Editor convenience only. The real build order lives in the root
+  // package.json build script; TypeScript project references were dropped
+  // because the Prisma-generated client sits outside any single rootDir.
+  "files": [],
+  "include": []
+}
