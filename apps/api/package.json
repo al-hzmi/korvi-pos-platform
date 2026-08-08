@@ -13,7 +13,7 @@
   "dependencies": {
     "@korvi/database": "*",
     "@korvi/domain": "*",
-    "fastify": "5.11.2",
+    "fastify": "5.11.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
