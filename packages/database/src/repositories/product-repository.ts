@@ -1,10 +1,12 @@
 import { withTenant, withoutTenant } from '../tenant-context.js';
+import { codeReverse } from '@korvi/domain';
 import { oneOf, rate, scoped, tenantParam } from './mapping.js';
 import type {
   GlobalCatalogItem,
   GlobalCatalogRepository,
   Product,
   ProductRepository,
+  ProductSearchQuery,
   ProductType,
   TenantScope,
 } from '@korvi/domain';
@@ -107,6 +109,57 @@ export function createProductRepository(prisma: PrismaClient): ProductRepository
           include: WITH_BARCODES,
         });
         return row === null ? null : toDomain(scope, row);
+      });
+    },
+
+    async search(scope: TenantScope, query: ProductSearchQuery): Promise<readonly Product[]> {
+      const term = query.term.normalize('NFKC').trim();
+      const limit = Math.min(Math.max(query.limit, 1), 50);
+      if (term === '') return [];
+
+      return withTenant(prisma, scope.tenantId, async (tx) => {
+        const tenant = tenantParam(scope);
+
+        // A scanner produces 8 to 14 digits and nothing else. Trying that as an
+        // exact key first turns the commonest query in a shop into one index
+        // probe, and skips the prefix work entirely when it hits.
+        if (/^[0-9]{6,14}$/.test(term)) {
+          const scanned = await tx.product.findFirst({
+            where: {
+              tenantId: tenant,
+              isActive: true,
+              OR: [{ barcodes: { some: { tenantId: tenant, barcode: term } } }, { sku: term }],
+            },
+            include: WITH_BARCODES,
+          });
+          if (scanned !== null) return [toDomain(scope, scanned)];
+        }
+
+        // Everything else is anchored. `startsWith` uses the (tenantId, nameAr)
+        // and (tenantId, sku) indexes; a leading wildcard would not, and would
+        // scan the whole catalogue on every keystroke.
+        //
+        // The suffix case is served by codeReverse: a cashier reading the last
+        // digits off a label is asking a suffix question, and storing the
+        // reversed code turns it back into a prefix one (ports/search.ts).
+        const reversed = codeReverse(term);
+        const rows = await tx.product.findMany({
+          where: {
+            tenantId: tenant,
+            isActive: true,
+            OR: [
+              { nameAr: { startsWith: term } },
+              { nameEn: { startsWith: term, mode: 'insensitive' } },
+              { sku: { startsWith: term, mode: 'insensitive' } },
+              { codeReverse: { startsWith: reversed } },
+              { barcodes: { some: { tenantId: tenant, barcode: { startsWith: term } } } },
+            ],
+          },
+          orderBy: [{ nameAr: 'asc' }],
+          take: limit,
+          include: WITH_BARCODES,
+        });
+        return rows.map((row) => toDomain(scope, row));
       });
     },
 

@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": [
+    "apps/*/src/**/__tests__/**/*.ts",
+    "apps/*/src/**/*.test.ts",
+    "packages/*/src/**/__tests__/**/*.ts",
+    "packages/*/src/**/*.test.ts"
+  ]
+}

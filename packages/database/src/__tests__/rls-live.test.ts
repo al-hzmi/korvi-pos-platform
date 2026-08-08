@@ -117,7 +117,7 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
   }
 
   /** Everything one tenant needs before a sale can exist. */
-  async function seed(t: typeof A, slug: string): Promise<void> {
+  async function seed(t: Readonly<Record<keyof typeof A, string>>, slug: string): Promise<void> {
     await asTenant(t.tenant, async () => {
       await client.query(
         `INSERT INTO "tenants" ("id","name","slug","status","updatedAt")

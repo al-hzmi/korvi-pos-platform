@@ -79,7 +79,10 @@ describe.skipIf(url === '')('authentication flow, live', () => {
     });
   }
 
-  async function seed(t: typeof A, role: 'cashier' | 'manager'): Promise<void> {
+  async function seed(
+    t: Readonly<Record<keyof typeof A, string>>,
+    role: 'cashier' | 'manager',
+  ): Promise<void> {
     const scope: TenantScope = { tenantId: brandTenantId(t.tenant) };
     const passwordHash = await hashPassword(PASSWORD, FAST);
 
@@ -145,7 +148,7 @@ describe.skipIf(url === '')('authentication flow, live', () => {
     });
   }
 
-  async function userRow(t: typeof A): Promise<{
+  async function userRow(t: Readonly<Record<keyof typeof A, string>>): Promise<{
     failedLoginCount: number;
     lockedUntil: Date | null;
     lastLoginAt: Date | null;

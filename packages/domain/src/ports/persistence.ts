@@ -386,8 +386,17 @@ export interface InvoiceRecord {
  * together and the adapter commits them in one transaction.
  */
 export interface RecordSaleInput {
-  readonly sale: Omit<SaleRecord, 'tenantId'>;
-  readonly invoice: Omit<InvoiceRecord, 'tenantId'>;
+  /**
+   * `sequence` is absent on purpose, and so is the invoice number.
+   *
+   * A receipt number is not something a caller can know: two tills in one
+   * branch would both compute the same "next" one and the second insert would
+   * collide on (tenantId, branchId, sequence). The adapter allocates both
+   * inside the transaction that writes the sale, serialised on the branch row,
+   * so a number is issued exactly once and only to a sale that commits.
+   */
+  readonly sale: Omit<SaleRecord, 'tenantId' | 'sequence'>;
+  readonly invoice: Omit<InvoiceRecord, 'tenantId' | 'invoiceNumber'>;
   readonly inventory: readonly InventoryMovementInput[];
   readonly cashMovement: CashMovementRecord | null;
   readonly idempotency: IdempotencyReservation;
@@ -469,8 +478,27 @@ export interface TerminalRepository {
   markSeen(scope: TenantScope, id: string, at: string): Promise<void>;
 }
 
+/**
+ * What a cashier typed into the search box.
+ *
+ * `limit` is required rather than optional: an unbounded product search is a
+ * table scan across a merchant's whole catalogue, run on every keystroke.
+ */
+export interface ProductSearchQuery {
+  readonly term: string;
+  readonly limit: number;
+}
+
 export interface ProductRepository {
   findById(scope: TenantScope, id: string): Promise<Product | null>;
+  /**
+   * Prefix and code search for the till.
+   *
+   * Ordered so the common case is cheap: a barcode-shaped term is an exact
+   * lookup before anything else runs, because a scanner produces one and the
+   * cashier is already reaching for the next item.
+   */
+  search(scope: TenantScope, query: ProductSearchQuery): Promise<readonly Product[]>;
   findBySku(scope: TenantScope, sku: string): Promise<Product | null>;
   findByBarcode(scope: TenantScope, barcode: string): Promise<Product | null>;
   list(scope: TenantScope, limit: number): Promise<readonly Product[]>;

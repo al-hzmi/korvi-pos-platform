@@ -16,6 +16,7 @@
   "scripts": {
     "build": "npm run build -w @korvi/domain && npm run build -w @korvi/printing && npm run build -w @korvi/database && npm run build -w @korvi/ui && npm run build -w @korvi/testing && npm run build -w @korvi/api && npm run build -w @korvi/pos-web",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

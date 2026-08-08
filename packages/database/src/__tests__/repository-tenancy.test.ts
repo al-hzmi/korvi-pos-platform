@@ -8,6 +8,7 @@ import { createInventoryRepository } from '../repositories/inventory-repository.
 import { createProductRepository } from '../repositories/product-repository.js';
 import { createSaleRepository } from '../repositories/sale-repository.js';
 import { createShiftRepository } from '../repositories/shift-repository.js';
+import { ShiftOpenRefusedError } from '../errors.js';
 import { createTenantRepository } from '../repositories/tenant-repository.js';
 import { createTerminalRepository } from '../repositories/terminal-repository.js';
 import type { RecordSaleInput, TenantScope } from '@korvi/domain';
@@ -44,6 +45,7 @@ interface Fake {
   readonly client: PrismaClient;
   readonly calls: Call[];
   readonly contexts: unknown[];
+  readonly raw: string[];
 }
 
 /** Replies keyed by `model.method`, consumed in order, the last one repeating. */
@@ -52,6 +54,7 @@ type Replies = Record<string, readonly unknown[]>;
 function fake(replies: Replies = {}): Fake {
   const calls: Call[] = [];
   const contexts: unknown[] = [];
+  const raw: string[] = [];
   const cursor = new Map<string, number>();
 
   const reply = (model: string, method: string): unknown => {
@@ -78,6 +81,34 @@ function fake(replies: Replies = {}): Fake {
             return Promise.resolve(1);
           };
         }
+        if (model === '$queryRaw') {
+          // The receipt allocation asks for the branch row and then for the
+          // next number. Answering both keeps this a test of tenant scoping
+          // rather than a test of how the numbering happens to be written.
+          return (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]> => {
+            const sql = strings.join(' ');
+            // The bound values travel with the statement, so a test can still
+            // ask what was reserved without the fake parsing SQL.
+            raw.push(`${sql} -- ${values.map((value) => String(value)).join(',')}`);
+            if (sql.includes('"branches"')) return Promise.resolve([{ code: '01' }]);
+            if (sql.includes('"terminals"')) {
+              return Promise.resolve([{ branchId: 'b1', isActive: true }]);
+            }
+            if (sql.includes('"shifts"')) {
+              return Promise.resolve([
+                { status: 'open', terminalId: 't1', branchId: 'b1', userId: 'u1' },
+              ]);
+            }
+            if (sql.includes('"tenant_settings"')) {
+              return Promise.resolve([{ allowNegativeStock: false }]);
+            }
+            if (sql.includes('"idempotency_keys"')) return Promise.resolve([{ id: 'ik1' }]);
+            if (sql.includes('"inventory_balances"')) {
+              return Promise.resolve([{ quantityScaled: 0n }]);
+            }
+            return Promise.resolve([{ sequence: 12 }]);
+          };
+        }
         return new Proxy(
           {},
           {
@@ -98,7 +129,7 @@ function fake(replies: Replies = {}): Fake {
     $transaction: (work: (t: unknown) => Promise<unknown>) => work(tx),
   } as unknown as PrismaClient;
 
-  return { client, calls, contexts };
+  return { client, calls, contexts, raw };
 }
 
 /** JSON with bigint rendered rather than thrown on. */
@@ -358,7 +389,6 @@ describe('writes that must be atomic', () => {
         customerId: null,
         operationId: 'op-1',
         status: 'finalized',
-        sequence: 12,
         priceMode: 'tax-inclusive',
         currency: 'SAR',
         grossMinor: '1150',
@@ -397,7 +427,6 @@ describe('writes that must be atomic', () => {
       invoice: {
         id: '018f3a1c-9b2e-7c4d-8e5f-0000000000aa',
         saleId: '018f3a1c-9b2e-7c4d-8e5f-000000000001',
-        invoiceNumber: 'INV-000012',
         invoiceType: 'simplified',
         sellerName: 'متجر كورفي',
         sellerVatNumber: '300000000000003',
@@ -474,18 +503,22 @@ describe('writes that must be atomic', () => {
 
     const touched = f.calls.map((call) => `${call.model}.${call.method}`);
     for (const expected of [
-      'idempotencyKey.create',
       'sale.create',
       'saleLine.createMany',
       'tender.createMany',
       'invoice.create',
       'invoiceTaxBreakdown.createMany',
       'inventoryMovement.create',
-      'inventoryBalance.upsert',
       'cashMovement.create',
     ]) {
       expect(touched).toContain(expected);
     }
+
+    // The reservation and the balance move are raw statements: one so a
+    // concurrent duplicate loses deterministically, the other so a shelf
+    // cannot go below zero. Both are inside this same transaction.
+    expect(f.raw.some((sql) => sql.includes('"idempotency_keys"'))).toBe(true);
+    expect(f.raw.some((sql) => sql.includes('"inventory_balances"'))).toBe(true);
   });
 
   it('reserves the operation id in the same transaction as the sale', async () => {
@@ -494,20 +527,42 @@ describe('writes that must be atomic', () => {
     const f = fake({ 'sale.findFirst': [saleRow] });
     await createSaleRepository(f.client).record(scope, saleInput());
 
-    const reservation = f.calls.find((call) => call.model === 'idempotencyKey');
-    const data = show(reservation?.args['data']);
-    expect(data).toContain('op-1');
-    expect(data).toContain('checkout');
-    expect(data).toContain(TENANT);
+    const reservation = f.raw.find((sql) => sql.includes('"idempotency_keys"'));
+    expect(reservation).toBeDefined();
+    expect(reservation).toContain('op-1');
+    expect(reservation).toContain('checkout');
+    expect(reservation).toContain(TENANT);
+    // Losing the race has to be a defined outcome the service can map, not a
+    // raw unique-constraint violation on its way to the client.
+    expect(reservation).toContain('ON CONFLICT');
+    expect(reservation).toContain('DO NOTHING');
   });
 
-  it('moves stock by increment rather than by read-modify-write', async () => {
+  it('moves stock by a guarded UPDATE rather than a read-modify-write', async () => {
     // Two terminals selling the last unit would both read 1 and both write 0.
+    // The predicate is evaluated after the row lock is taken, so the loser
+    // matches nothing and its whole transaction goes back.
     const f = fake({ 'sale.findFirst': [saleRow] });
     await createSaleRepository(f.client).record(scope, saleInput());
 
-    const upsert = f.calls.find((call) => call.method === 'upsert');
-    expect(show(upsert?.args['update'])).toContain('increment');
+    const update = f.raw.find((sql) => sql.includes('"inventory_balances"'));
+    expect(update).toBeDefined();
+    expect(update).toContain('UPDATE');
+    expect(update).toContain('>= 0');
+  });
+
+  it('allocates the receipt number itself, under the branch row lock', async () => {
+    // The caller cannot supply it: two tills would compute the same "next"
+    // number and the second insert would collide.
+    const f = fake({ 'sale.findFirst': [saleRow] });
+    await createSaleRepository(f.client).record(scope, saleInput());
+
+    expect(f.raw.some((sql) => sql.includes('FOR UPDATE'))).toBe(true);
+    const created = f.calls.find((call) => `${call.model}.${call.method}` === 'sale.create');
+    expect(show(created?.args['data'])).toContain('"sequence":12');
+
+    const invoice = f.calls.find((call) => `${call.model}.${call.method}` === 'invoice.create');
+    expect(show(invoice?.args['data'])).toContain('01-000012');
   });
 
   it('reads the finalized sale back with money as strings', async () => {
@@ -531,7 +586,12 @@ describe('writes that must be atomic', () => {
         openedAt: AT,
         openingMovementId: 'cm0',
       }),
-    ).rejects.toThrow(/already has an open shift/i);
+    ).rejects.toThrow(ShiftOpenRefusedError);
+    // And it serialises on the terminal row first, because two cashiers
+    // pressing the button together would both find no open shift.
+    expect(f.raw.some((sql) => sql.includes('"terminals"') && sql.includes('FOR UPDATE'))).toBe(
+      true,
+    );
   });
 
   it('refuses to close a shift that is not open', async () => {

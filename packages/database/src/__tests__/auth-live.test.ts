@@ -53,7 +53,7 @@ describe.skipIf(url === '')('authentication tenancy, live', () => {
     }
   }
 
-  async function seed(t: typeof A): Promise<void> {
+  async function seed(t: Readonly<Record<keyof typeof A, string>>): Promise<void> {
     const scope = { tenantId: brandTenantId(t.tenant) };
     await withTenant(prisma, scope.tenantId, async (tx) => {
       await tx.tenant.create({

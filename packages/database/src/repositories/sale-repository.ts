@@ -1,5 +1,5 @@
 import { withTenant } from '../tenant-context.js';
-import { DatabaseError } from '../errors.js';
+import { DatabaseError, OperationAlreadyRecordedError, ShiftUnusableError } from '../errors.js';
 import { applyMovementWithin } from './inventory-repository.js';
 import { iso, minor, oneOf, rate, scoped, tenantParam } from './mapping.js';
 import type { TransactionClient } from '../tenant-context.js';
@@ -210,6 +210,110 @@ function invoiceToDomain(scope: TenantScope, row: InvoiceRow): InvoiceRecord {
   };
 }
 
+/**
+ * Allocate the branch's next receipt number, inside the caller's transaction.
+ *
+ * `SELECT ... FOR UPDATE` on the branch row is the serialization boundary. Two
+ * tills checking out at the same moment both want `MAX(sequence) + 1`; under
+ * READ COMMITTED they would read the same number, and the second INSERT would
+ * fail on (tenantId, branchId, sequence). Taking the branch row's lock first
+ * makes the second wait for the first to commit, so it reads the number that
+ * now exists.
+ *
+ * The lock is held for the rest of the transaction, which is what makes this
+ * correct and also what makes it a per-branch queue. A checkout is a handful of
+ * inserts; a shop that outgrows that wants a sequence object, and this is the
+ * one place that would change.
+ *
+ * A rolled-back checkout releases the lock without having inserted anything, so
+ * the number it was going to use is handed to the next transaction instead —
+ * numbering has no gap. A committed sale that is later voided keeps its number,
+ * because a tax document that vanishes from the series is worse than one marked
+ * void.
+ */
+async function allocateReceipt(
+  tx: TransactionClient,
+  tenant: string,
+  branchId: string,
+): Promise<{ sequence: number; invoiceNumber: string }> {
+  const branches = await tx.$queryRaw<{ code: string }[]>`
+    SELECT "code" FROM "branches"
+     WHERE "id" = ${branchId}::uuid AND "tenantId" = ${tenant}::uuid
+     FOR UPDATE`;
+  const branch = branches.at(0);
+  if (branch === undefined) {
+    throw new DatabaseError('No such branch in this tenant; refusing to number a sale for it.');
+  }
+
+  const next = await tx.$queryRaw<{ sequence: number }[]>`
+    SELECT COALESCE(MAX("sequence"), 0) + 1 AS "sequence" FROM "sales"
+     WHERE "tenantId" = ${tenant}::uuid AND "branchId" = ${branchId}::uuid`;
+  const sequence = Number(next.at(0)?.sequence ?? 1);
+
+  // Branch code first, so two branches of one merchant never produce the same
+  // string, and the series is readable on a printed receipt.
+  return { sequence, invoiceNumber: `${branch.code}-${String(sequence).padStart(6, '0')}` };
+}
+
+/**
+ * Prove the shift is still the one this sale claims, and still open.
+ *
+ * The pre-flight read in the checkout service happens before any of this; a
+ * shift can be closed in between, and a sale posted into a closed shift is
+ * money that reconciles against nothing. The row is locked, so a concurrent
+ * close waits for this transaction rather than racing it.
+ *
+ * Terminal, branch and cashier are checked here rather than trusted from the
+ * request, which is the same rule the rest of the pipeline follows.
+ */
+async function assertShiftUsable(
+  tx: TransactionClient,
+  tenant: string,
+  sale: { shiftId: string; terminalId: string; branchId: string; userId: string },
+): Promise<void> {
+  const rows = await tx.$queryRaw<
+    { status: string; terminalId: string; branchId: string; userId: string }[]
+  >`
+    SELECT "status", "terminalId", "branchId", "userId" FROM "shifts"
+     WHERE "id" = ${sale.shiftId}::uuid AND "tenantId" = ${tenant}::uuid
+     FOR UPDATE`;
+
+  const shift = rows.at(0);
+  if (shift === undefined) throw new ShiftUnusableError('unknown-shift');
+  if (shift.status !== 'open') throw new ShiftUnusableError('shift-closed');
+  if (shift.terminalId !== sale.terminalId) throw new ShiftUnusableError('terminal-mismatch');
+  if (shift.branchId !== sale.branchId) throw new ShiftUnusableError('branch-mismatch');
+  // One drawer, one cashier. A shared shift is a reconciliation nobody can do,
+  // and no existing Korvi rule permits it.
+  if (shift.userId !== sale.userId) throw new ShiftUnusableError('cashier-mismatch');
+}
+
+/**
+ * Reserve the operation id, or discover that somebody else already did.
+ *
+ * `ON CONFLICT DO NOTHING` blocks on an uncommitted conflicting row, so when it
+ * returns nothing the competing transaction has definitely committed — which is
+ * what makes it safe for the caller to go and read the sale it produced. The
+ * unique index stays the authority; this only turns losing the race into a
+ * defined outcome instead of a raw constraint violation.
+ */
+async function reserveOperation(
+  tx: TransactionClient,
+  tenant: string,
+  reservation: { id: string; scope: string; operationId: string; requestHash: string | null },
+  resultId: string,
+  completedAt: Date,
+): Promise<void> {
+  const inserted = await tx.$queryRaw<{ id: string }[]>`
+    INSERT INTO "idempotency_keys"
+      ("id","tenantId","scope","operationId","status","resultType","resultId","requestHash","completedAt")
+    VALUES (${reservation.id}::uuid, ${tenant}::uuid, ${reservation.scope}, ${reservation.operationId},
+            'completed', 'sale', ${resultId}::uuid, ${reservation.requestHash}, ${completedAt})
+    ON CONFLICT ("tenantId","scope","operationId") DO NOTHING
+    RETURNING "id"`;
+  if (inserted.length === 0) throw new OperationAlreadyRecordedError(reservation.operationId);
+}
+
 const WITH_CHILDREN = {
   lines: { orderBy: { lineNumber: 'asc' } },
   discounts: true,
@@ -270,19 +374,28 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
         const tenant = tenantParam(scope);
         const { sale, invoice, inventory, cashMovement, idempotency } = input;
 
-        await tx.idempotencyKey.create({
-          data: {
-            id: idempotency.id,
-            tenantId: tenant,
-            scope: idempotency.scope,
-            operationId: idempotency.operationId,
-            status: 'completed',
-            resultType: 'sale',
-            resultId: sale.id,
-            requestHash: idempotency.requestHash,
-            completedAt: new Date(sale.issuedAt),
-          },
+        // First, and inside this transaction: the number is issued to a sale
+        // that is about to exist, not to a request that might not finish.
+        const receipt = await allocateReceipt(tx, tenant, sale.branchId);
+
+        // Before anything is written: the shift this sale names must still be
+        // open, still on this terminal, still in this branch and still the
+        // cashier's own.
+        await assertShiftUsable(tx, tenant, {
+          shiftId: sale.shiftId,
+          terminalId: sale.terminalId,
+          branchId: sale.branchId,
+          userId: sale.userId,
         });
+
+        // The merchant's overselling policy, read inside the transaction that
+        // is about to move the stock.
+        const settingsRows = await tx.$queryRaw<{ allowNegativeStock: boolean }[]>`
+          SELECT "allowNegativeStock" FROM "tenant_settings"
+           WHERE "tenantId" = ${tenant}::uuid`;
+        const allowNegativeStock = settingsRows.at(0)?.allowNegativeStock ?? false;
+
+        await reserveOperation(tx, tenant, idempotency, sale.id, new Date(sale.issuedAt));
 
         await tx.sale.create({
           data: {
@@ -295,7 +408,7 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             customerId: sale.customerId,
             operationId: sale.operationId,
             status: sale.status,
-            sequence: sale.sequence,
+            sequence: receipt.sequence,
             priceMode: sale.priceMode,
             currency: sale.currency,
             grossMinor: BigInt(sale.grossMinor),
@@ -366,7 +479,7 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             id: invoice.id,
             tenantId: tenant,
             saleId: sale.id,
-            invoiceNumber: invoice.invoiceNumber,
+            invoiceNumber: receipt.invoiceNumber,
             invoiceType: invoice.invoiceType,
             sellerName: invoice.sellerName,
             sellerVatNumber: invoice.sellerVatNumber,
@@ -397,7 +510,10 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
         }
 
         for (const movement of inventory) {
-          await applyMovementWithin(tx, tenant, movement);
+          // The guard is in the UPDATE, not in a prior read: two tills selling
+          // the last unit both saw one in stock, and only this can tell them
+          // apart. A refusal aborts the whole transaction.
+          await applyMovementWithin(tx, tenant, movement, allowNegativeStock);
         }
 
         if (cashMovement !== null) {

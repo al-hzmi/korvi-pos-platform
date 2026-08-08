@@ -1,4 +1,5 @@
 import { withTenant } from '../tenant-context.js';
+import { InsufficientStockError } from '../errors.js';
 import { minor, scoped, tenantParam } from './mapping.js';
 import type { TransactionClient } from '../tenant-context.js';
 import type {
@@ -41,6 +42,7 @@ export async function applyMovementWithin(
   tx: TransactionClient,
   tenant: string,
   movement: InventoryMovementInput,
+  allowNegative = true,
 ): Promise<BalanceRow> {
   const quantity = BigInt(movement.quantityScaled);
 
@@ -60,7 +62,61 @@ export async function applyMovementWithin(
     },
   });
 
-  return tx.inventoryBalance.upsert({
+  if (allowNegative) {
+    return tx.inventoryBalance.upsert({
+      where: {
+        tenantId_branchId_productId: {
+          tenantId: tenant,
+          branchId: movement.branchId,
+          productId: movement.productId,
+        },
+      },
+      create: {
+        tenantId: tenant,
+        branchId: movement.branchId,
+        productId: movement.productId,
+        quantityScaled: quantity,
+      },
+      update: { quantityScaled: { increment: quantity } },
+    });
+  }
+
+  // The merchant has said stock may not go negative, so the *mutation* has to
+  // enforce it. A read followed by an increment cannot: two tills both see one
+  // unit left, both pass their own check, and both decrement.
+  //
+  // The predicate is evaluated after the row lock is taken, so the second
+  // transaction re-reads what the first committed and matches nothing.
+  const updated = await tx.$queryRaw<{ quantityScaled: bigint }[]>`
+    UPDATE "inventory_balances"
+       SET "quantityScaled" = "quantityScaled" + ${quantity},
+           "updatedAt" = now()
+     WHERE "tenantId" = ${tenant}::uuid
+       AND "branchId" = ${movement.branchId}::uuid
+       AND "productId" = ${movement.productId}::uuid
+       AND "quantityScaled" + ${quantity} >= 0
+    RETURNING "quantityScaled"`;
+
+  const row = updated.at(0);
+  if (row !== undefined) {
+    return {
+      tenantId: tenant,
+      branchId: movement.branchId,
+      productId: movement.productId,
+      quantityScaled: row.quantityScaled,
+    };
+  }
+
+  // Nothing matched: either the balance row does not exist yet, or applying
+  // this delta would go below zero. A shipment into a product with no row is
+  // legitimate; taking stock off a shelf that has none is not.
+  if (quantity < 0n) {
+    throw new InsufficientStockError(
+      'The branch does not hold enough of this product to satisfy the movement.',
+    );
+  }
+
+  const created = await tx.inventoryBalance.upsert({
     where: {
       tenantId_branchId_productId: {
         tenantId: tenant,
@@ -76,6 +132,7 @@ export async function applyMovementWithin(
     },
     update: { quantityScaled: { increment: quantity } },
   });
+  return created;
 }
 
 export function createInventoryRepository(prisma: PrismaClient): InventoryRepository {

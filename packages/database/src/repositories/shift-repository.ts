@@ -1,5 +1,5 @@
 import { withTenant } from '../tenant-context.js';
-import { DatabaseError } from '../errors.js';
+import { DatabaseError, ShiftOpenRefusedError } from '../errors.js';
 import { iso, isoOrNull, minor, minorOrNull, oneOf, scoped, tenantParam } from './mapping.js';
 import type { TransactionClient } from '../tenant-context.js';
 import type {
@@ -115,15 +115,31 @@ export function createShiftRepository(prisma: PrismaClient): ShiftRepository {
       return withTenant(prisma, scope.tenantId, async (tx) => {
         const tenant = tenantParam(scope);
 
-        // A till with two open shifts has no answerable cash position, so the
-        // second open is refused rather than allowed to produce one.
+        // The terminal row is the serialization boundary. Two cashiers pressing
+        // "open shift" on the same till at the same moment would both find no
+        // open shift and both create one; there is no unique index that stops
+        // that, because a terminal legitimately has many shifts over time.
+        // Taking the lock first makes the second wait and then see the first.
+        const terminals = await tx.$queryRaw<{ branchId: string; isActive: boolean }[]>`
+          SELECT "branchId", "isActive" FROM "terminals"
+           WHERE "id" = ${input.terminalId}::uuid AND "tenantId" = ${tenant}::uuid
+           FOR UPDATE`;
+        const terminal = terminals.at(0);
+        if (terminal === undefined || !terminal.isActive) {
+          throw new ShiftOpenRefusedError('unknown-terminal');
+        }
+        if (terminal.branchId !== input.branchId) {
+          // The branch comes from the terminal everywhere else; a mismatch here
+          // means the caller assembled the input from two different places.
+          throw new ShiftOpenRefusedError('unknown-terminal');
+        }
+
+        // A till with two open shifts has no answerable cash position.
         const existing = await tx.shift.findFirst({
           where: { terminalId: input.terminalId, status: 'open', tenantId: tenant },
         });
         if (existing !== null) {
-          throw new DatabaseError(
-            `Terminal ${input.terminalId} already has an open shift (${existing.id}).`,
-          );
+          throw new ShiftOpenRefusedError('already-open');
         }
 
         await tx.shift.create({

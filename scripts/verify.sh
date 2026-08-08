@@ -38,6 +38,12 @@ npm run --silent build
 step "Typecheck"
 npm run --silent typecheck
 
+# Separately, because every workspace excludes its tests from the build: a test
+# that imports a name its package does not export must fail the gate, not the
+# reviewer.
+step "Typecheck (tests)"
+npm run --silent typecheck:tests
+
 step "Tests"
 npm run --silent test
 

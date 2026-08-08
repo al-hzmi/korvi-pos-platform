@@ -4,7 +4,14 @@ export type { PrismaClient } from './client.js';
 export { withTenant, withoutTenant, withLoginSlug, normalizeTenantSlug } from './tenant-context.js';
 export type { TransactionClient } from './tenant-context.js';
 
-export { DatabaseError, TenantContextError } from './errors.js';
+export {
+  DatabaseError,
+  TenantContextError,
+  InsufficientStockError,
+  OperationAlreadyRecordedError,
+  ShiftUnusableError,
+  ShiftOpenRefusedError,
+} from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
 export { createBranchRepository } from './repositories/branch-repository.js';
