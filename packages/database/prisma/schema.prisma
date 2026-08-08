@@ -1,13 +1,26 @@
-// Korvi POS — Phase 0 schema.
+// Korvi POS — SaaS data model.
 //
-// Deliberately small. The strategy document mentions 36 tables; that is the
-// shape of the finished product, not of a foundation. Every table here exists
-// because Phase 0 needs it to prove the tenancy boundary works.
+// Rules that hold across every model here:
 //
-// Tenancy rule (ADR-0004): every tenant-owned model carries tenantId and
-// indexes it first. GlobalCatalogItem is the documented exception — the
-// national barcode catalogue is shared infrastructure, and copying it per
-// merchant would mean hundreds of thousands of duplicate rows each.
+//   Tenancy   Every tenant-owned model carries tenantId, indexes it first in
+//             every composite index, and is protected by RLS (ADR-0004). The
+//             two exceptions are named and justified at the bottom of the file.
+//
+//   Money     BIGINT halalas. Never Float, never Decimal (ADR-0002).
+//
+//   Quantity  BIGINT scaled by 1000. A grocery scale reads 0.125 kg, and a
+//             float weight multiplied by a price in halalas drifts exactly as
+//             a float price does.
+//
+//   Rates     INTEGER basis points, 0..10000, constrained in the migration.
+//
+//   History   Finalized sales and invoices snapshot the description, price and
+//             tax rate that applied at the moment of sale. Editing a product
+//             tomorrow must not rewrite what yesterday's invoice says.
+//
+//   Ids       UUID columns, populated with UUIDv7 by the application so rows
+//             sort in creation order (ADR-0003). No database default: an id
+//             minted by the terminal offline must survive replay unchanged.
 
 generator client {
   provider = "prisma-client"
@@ -18,48 +31,886 @@ datasource db {
   provider = "postgresql"
 }
 
+// ---------------------------------------------------------------------------
+// Tenancy, identity and configuration
+// ---------------------------------------------------------------------------
+
 model Tenant {
   id        String   @id @db.Uuid
   name      String
+  slug      String   @unique
   vatNumber String?  @db.VarChar(15)
+  status    String   @default("active")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  products Product[]
+  // Every tenant-owned model points back here, which is exactly the point:
+  // if a new model has no line in this list, it has no tenant, and the RLS
+  // test will refuse it.
+  branches           Branch[]
+  users              User[]
+  memberships        TenantMembership[]
+  roles              Role[]
+  rolePermissions    RolePermission[]
+  userRoles          UserRole[]
+  terminals          Terminal[]
+  settings           TenantSettings?
+  categories         Category[]
+  products           Product[]
+  productBarcodes    ProductBarcode[]
+  productPrices      ProductPrice[]
+  inventoryBalances  InventoryBalance[]
+  inventoryMovements InventoryMovement[]
+  customers          Customer[]
+  shifts             Shift[]
+  cashMovements      CashMovement[]
+  sales              Sale[]
+  saleLines          SaleLine[]
+  saleDiscounts      SaleDiscount[]
+  tenders            Tender[]
+  invoices           Invoice[]
+  taxBreakdown       InvoiceTaxBreakdown[]
+  returns            Return[]
+  returnLines        ReturnLine[]
+  refunds            Refund[]
+  idempotencyKeys    IdempotencyKey[]
+  auditEvents        AuditEvent[]
 
   @@map("tenants")
 }
 
-model Product {
+model Branch {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  code      String
+  nameAr    String
+  nameEn    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  terminals          Terminal[]
+  inventoryBalances  InventoryBalance[]
+  inventoryMovements InventoryMovement[]
+  shifts             Shift[]
+  sales              Sale[]
+  returns            Return[]
+  memberships        TenantMembership[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("branches")
+}
+
+model User {
+  id           String   @id @db.Uuid
+  tenantId     String   @db.Uuid
+  email        String
+  displayName  String
+  /// Hash only. A plaintext or reversible credential must never reach a column.
+  passwordHash String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships TenantMembership[]
+  roles       UserRole[]
+  shifts      Shift[]
+  sales       Sale[]
+  auditEvents AuditEvent[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, isActive])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("users")
+}
+
+/// The user's standing within a tenant, and the branch they default to.
+model TenantMembership {
+  id              String   @id @db.Uuid
+  tenantId        String   @db.Uuid
+  userId          String   @db.Uuid
+  defaultBranchId String?  @db.Uuid
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User    @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade)
+  defaultBranch Branch? @relation(fields: [tenantId, defaultBranchId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, status])
+  @@map("tenant_memberships")
+}
+
+/// Roles are per tenant so a merchant can define their own beyond the defaults.
+model Role {
+  id          String   @id @db.Uuid
+  tenantId    String   @db.Uuid
+  key         String
+  nameAr      String
+  nameEn      String?
+  /// Ceiling this role may discount, in basis points of the undiscounted cart.
+  maxDiscountBasisPoints Int @default(0)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([tenantId, key])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("roles")
+}
+
+model RolePermission {
+  id           String @id @db.Uuid
+  tenantId     String @db.Uuid
+  roleId       String @db.Uuid
+  permissionKey String
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Restrict)
+
+  @@unique([tenantId, roleId, permissionKey])
+  @@index([tenantId, roleId])
+  @@map("role_permissions")
+}
+
+model UserRole {
   id       String @id @db.Uuid
   tenantId String @db.Uuid
+  userId   String @db.Uuid
+  roleId   String @db.Uuid
 
-  sku     String
-  nameAr  String
-  nameEn  String?
-  barcode String?
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade)
+  role   Role   @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade)
 
-  /// Minor units (halalas) as a 64-bit integer. Never a float — ADR-0002.
-  priceMinor BigInt
+  @@unique([tenantId, userId, roleId])
+  @@index([tenantId, userId])
+  @@map("user_roles")
+}
 
-  /// Basis points. 1500 = 15%. Never a float — ADR-0002.
-  vatBasisPoints Int @default(1500)
+model Terminal {
+  id         String   @id @db.Uuid
+  tenantId   String   @db.Uuid
+  branchId   String   @db.Uuid
+  code       String
+  label      String
+  /// Stable browser/device fingerprint, so a till can be recognised on return.
+  deviceKey  String?
+  isActive   Boolean  @default(true)
+  lastSeenAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  /// Reversed barcode powering suffix search. See ports/search.ts.
-  codeReverse String?
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  shifts Shift[]
+  sales  Sale[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, branchId, isActive])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("terminals")
+}
+
+/// Vertical behaviour per tenant. One merchant's grocery settings must never
+/// become another merchant's restaurant defaults.
+model TenantSettings {
+  tenantId String @id @db.Uuid
+
+  vertical           String  @default("retail")
+  priceMode          String  @default("tax-inclusive")
+  defaultVatBasisPoints Int  @default(1500)
+  currency           String  @default("SAR")
+
+  enableProductImages Boolean @default(false)
+  requireBarcode      Boolean @default(true)
+  allowWeightedItems  Boolean @default(false)
+  trackInventory      Boolean @default(true)
+  allowNegativeStock  Boolean @default(false)
+
+  receiptHeaderAr String?
+  receiptFooterAr String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@map("tenant_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+model Category {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  nameAr    String
+  nameEn    String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, nameAr])
+  @@index([tenantId, isActive, sortOrder])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("categories")
+}
+
+model Product {
+  id         String  @id @db.Uuid
+  tenantId   String  @db.Uuid
+  categoryId String? @db.Uuid
+
+  sku    String
+  nameAr String
+  nameEn String?
+
+  /// 'unit' sells whole items; 'weighted' sells by scale reading.
+  productType String @default("unit")
+  unitLabel   String @default("each")
+
+  /// Halalas per unit, in the tenant's price mode. Never Float.
+  priceMinor     BigInt
+  vatBasisPoints Int    @default(1500)
+
+  /// The Phase 0 single-barcode column. Superseded by ProductBarcode, kept
+  /// because dropping it would destroy data that has not been migrated yet.
+  /// Nothing reads it: the repository resolves barcodes through the child
+  /// table. It goes when a migration has moved every row.
+  barcode String?
+
+  /// Reversed primary barcode, so a suffix query becomes a prefix query.
+  codeReverse String?
+  imageUrl    String?
+
+  trackInventory Boolean @default(true)
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category           Category?           @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: NoAction)
+  barcodes           ProductBarcode[]
+  prices             ProductPrice[]
+  inventoryBalances  InventoryBalance[]
+  inventoryMovements InventoryMovement[]
+  saleLines          SaleLine[]
+
   @@unique([tenantId, sku])
+  @@index([tenantId, isActive])
   @@index([tenantId, barcode])
+  @@index([tenantId, categoryId])
   @@index([tenantId, codeReverse])
+  @@index([tenantId, nameAr])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
   @@map("products")
 }
 
-/// Shared across all tenants by design. No tenantId — see ADR-0004.
+model ProductBarcode {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  productId String   @db.Uuid
+  barcode   String
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+
+  /// Unique within a tenant, not globally: two merchants may legitimately
+  /// carry the same EAN, and a global constraint would make the second one
+  /// fail to onboard.
+  @@unique([tenantId, barcode])
+  @@index([tenantId, productId])
+  @@map("product_barcodes")
+}
+
+/// Price history. A finalized sale never reads this table -- it snapshots the
+/// figure it charged -- but a price change must leave a trail.
+model ProductPrice {
+  id             String    @id @db.Uuid
+  tenantId       String    @db.Uuid
+  productId      String    @db.Uuid
+  priceMinor     BigInt
+  vatBasisPoints Int
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  createdAt      DateTime  @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, productId, effectiveFrom])
+  @@map("product_prices")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory
+// ---------------------------------------------------------------------------
+
+/// The natural key is the primary key. A surrogate id would let a second
+/// balance row for the same product exist without violating anything, and two
+/// disagreeing stock figures is worse than none.
+model InventoryBalance {
+  tenantId  String @db.Uuid
+  branchId  String @db.Uuid
+  productId String @db.Uuid
+  /// Scaled by 1000, signed: a negative balance is oversell, which the tenant
+  /// may or may not permit.
+  quantityScaled BigInt @default(0)
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, branchId, productId])
+  @@index([tenantId, branchId])
+  @@map("inventory_balances")
+}
+
+model InventoryMovement {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  branchId  String   @db.Uuid
+  productId String   @db.Uuid
+
+  /// 'sale' | 'return' | 'adjustment' | 'receipt' | 'transfer'
+  kind           String
+  quantityScaled BigInt
+  reason         String?
+
+  /// The sale or return that caused it, when there was one.
+  sourceType String?
+  sourceId   String? @db.Uuid
+
+  actorUserId String?  @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@index([tenantId, branchId, productId, occurredAt])
+  @@index([tenantId, sourceType, sourceId])
+  @@map("inventory_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Customers
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  nameAr    String
+  nameEn    String?
+  phone     String?
+  email     String?
+  vatNumber String?  @db.VarChar(15)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sales  Sale[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, isActive])
+  @@index([tenantId, nameAr])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Shifts
+// ---------------------------------------------------------------------------
+
+model Shift {
+  id         String   @id @db.Uuid
+  tenantId   String   @db.Uuid
+  branchId   String   @db.Uuid
+  terminalId String   @db.Uuid
+  userId     String   @db.Uuid
+
+  status            String    @default("open")
+  openingFloatMinor BigInt
+  declaredCashMinor BigInt?
+  expectedCashMinor BigInt?
+  varianceMinor     BigInt?
+
+  openedAt DateTime
+  closedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  terminal      Terminal       @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  user          User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  cashMovements CashMovement[]
+  sales         Sale[]
+
+  @@index([tenantId, branchId, status])
+  @@index([tenantId, terminalId, status])
+  @@index([tenantId, openedAt])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("shifts")
+}
+
+model CashMovement {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  shiftId  String @db.Uuid
+
+  /// 'sale' | 'refund' | 'pay-in' | 'pay-out' | 'opening-float'
+  kind String
+  /// Signed halalas: a pay-out and a refund are negative, matching the domain.
+  amountMinor BigInt
+  reason      String?
+
+  actorUserId String?  @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shift  Shift  @relation(fields: [tenantId, shiftId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, shiftId, occurredAt])
+  @@map("cash_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — immutable once finalized
+// ---------------------------------------------------------------------------
+
+model Sale {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+  terminalId String @db.Uuid
+  shiftId    String @db.Uuid
+  userId     String @db.Uuid
+  customerId String? @db.Uuid
+
+  /// The client-supplied operation id. Unique per tenant, which is what makes
+  /// a double-click, a network retry and an offline replay converge on one
+  /// sale rather than three.
+  operationId String
+
+  status   String @default("finalized")
+  sequence Int
+
+  /// Every figure the receipt states, snapshotted. Recomputing from products
+  /// later would produce a different answer after any price change.
+  priceMode        String
+  currency         String @default("SAR")
+  grossMinor       BigInt
+  lineDiscountMinor  BigInt
+  basketDiscountMinor BigInt
+  netMinor         BigInt
+  vatMinor         BigInt
+  totalMinor       BigInt
+  tenderedMinor    BigInt
+  changeMinor      BigInt
+
+  issuedAt  DateTime
+  createdAt DateTime @default(now())
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  terminal  Terminal       @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  shift     Shift          @relation(fields: [tenantId, shiftId], references: [tenantId, id], onDelete: NoAction)
+  user      User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  customer  Customer?      @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
+  lines     SaleLine[]
+  discounts SaleDiscount[]
+  tenders   Tender[]
+  invoice   Invoice?
+  returns   Return[]
+
+  @@unique([tenantId, operationId])
+  @@unique([tenantId, branchId, sequence])
+  @@index([tenantId, branchId, issuedAt])
+  @@index([tenantId, shiftId])
+  @@index([tenantId, status, issuedAt])
+  @@index([tenantId, customerId])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("sales")
+}
+
+model SaleLine {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  saleId   String @db.Uuid
+
+  /// Kept for reporting, but nothing on this row is read back from it.
+  productId String? @db.Uuid
+  lineNumber Int
+
+  /// Snapshot: what this product was called and cost at the moment of sale.
+  sku            String
+  nameAr         String
+  nameEn         String?
+  unitPriceMinor BigInt
+  vatBasisPoints Int
+  quantityScaled BigInt
+
+  grossMinor          BigInt
+  lineDiscountMinor   BigInt
+  basketDiscountMinor BigInt
+  netMinor            BigInt
+  vatMinor            BigInt
+  totalMinor          BigInt
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale       Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+  product    Product?     @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  returnLines ReturnLine[]
+
+  @@unique([tenantId, saleId, lineNumber])
+  @@index([tenantId, saleId])
+  @@index([tenantId, productId])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("sale_lines")
+}
+
+model SaleDiscount {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  saleId   String @db.Uuid
+
+  /// 'line' | 'basket'
+  scope      String
+  lineNumber Int?
+  /// 'fixed' | 'percentage'
+  kind        String
+  /// Halalas for fixed, basis points for percentage -- as entered.
+  inputValue  BigInt
+  /// Halalas actually granted after allocation.
+  amountMinor BigInt
+  reason      String?
+  grantedByUserId String? @db.Uuid
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale   Sale   @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, saleId])
+  @@map("sale_discounts")
+}
+
+model Tender {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  saleId   String @db.Uuid
+
+  /// 'cash' | 'card' | 'mada' | 'transfer'
+  kind        String
+  amountMinor BigInt
+  /// Only cash can carry this above zero (ADR-0002).
+  changeMinor BigInt @default(0)
+  reference   String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale   Sale   @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, saleId])
+  @@index([tenantId, kind])
+  @@map("tenders")
+}
+
+// ---------------------------------------------------------------------------
+// Invoices — the tax document, never rewritten
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  saleId   String @db.Uuid @unique
+
+  invoiceNumber String
+  /// 'simplified' | 'standard'
+  invoiceType   String @default("simplified")
+
+  /// Seller identity as it stood when the invoice was issued. A merchant who
+  /// changes their registered name next year must not alter last year's tax
+  /// documents.
+  sellerName      String
+  sellerVatNumber String  @db.VarChar(15)
+  buyerName       String?
+  buyerVatNumber  String? @db.VarChar(15)
+
+  netMinor   BigInt
+  vatMinor   BigInt
+  totalMinor BigInt
+  currency   String @default("SAR")
+
+  issuedAt  DateTime
+  createdAt DateTime @default(now())
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale          Sale                   @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
+  taxBreakdown  InvoiceTaxBreakdown[]
+  refunds       Refund[]
+
+  @@unique([tenantId, invoiceNumber])
+  /// The relation key for the one-to-one back to the sale. `saleId` is already
+  /// globally unique, so this adds no constraint the data did not have — it
+  /// states the pair the composite foreign key references.
+  @@unique([tenantId, saleId])
+  @@index([tenantId, issuedAt])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("invoices")
+}
+
+/// One row per distinct VAT rate on the invoice. The Authority wants the split,
+/// not just the sum.
+model InvoiceTaxBreakdown {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  invoiceId String @db.Uuid
+
+  vatBasisPoints Int
+  netMinor       BigInt
+  vatMinor       BigInt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, invoiceId, vatBasisPoints])
+  @@index([tenantId, invoiceId])
+  @@map("invoice_tax_breakdown")
+}
+
+// ---------------------------------------------------------------------------
+// Returns — new records, never edits to the original
+// ---------------------------------------------------------------------------
+
+model Return {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  saleId   String @db.Uuid
+  branchId String @db.Uuid
+
+  operationId String
+  status      String @default("finalized")
+  reason      String?
+
+  netMinor   BigInt
+  vatMinor   BigInt
+  totalMinor BigInt
+
+  actorUserId String   @db.Uuid
+  issuedAt    DateTime
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale    Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
+  branch  Branch       @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  lines   ReturnLine[]
+  refunds Refund[]
+
+  @@unique([tenantId, operationId])
+  @@index([tenantId, saleId])
+  @@index([tenantId, issuedAt])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
+  @@map("returns")
+}
+
+model ReturnLine {
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  returnId   String @db.Uuid
+  saleLineId String @db.Uuid
+
+  quantityScaled BigInt
+  netMinor       BigInt
+  vatMinor       BigInt
+  totalMinor     BigInt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  return   Return   @relation(fields: [tenantId, returnId], references: [tenantId, id], onDelete: Cascade)
+  saleLine SaleLine @relation(fields: [tenantId, saleLineId], references: [tenantId, id], onDelete: NoAction)
+
+  @@index([tenantId, returnId])
+  @@index([tenantId, saleLineId])
+  @@map("return_lines")
+}
+
+model Refund {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  returnId String @db.Uuid
+  invoiceId String? @db.Uuid
+
+  /// 'cash' | 'card' | 'mada' | 'transfer'
+  method      String
+  amountMinor BigInt
+  reference   String?
+
+  issuedAt  DateTime
+  createdAt DateTime @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  return  Return   @relation(fields: [tenantId, returnId], references: [tenantId, id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: NoAction)
+
+  @@index([tenantId, returnId])
+  @@map("refunds")
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency and audit
+// ---------------------------------------------------------------------------
+
+/// Reservation record for a replayable operation.
+///
+/// The unique key is (tenantId, scope, operationId): the same checkout retried
+/// after a dropped connection reserves the same row, finds it already
+/// completed, and returns the recorded result instead of ringing up a second
+/// sale.
+model IdempotencyKey {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+
+  /// 'checkout' | 'return' | 'shift-close' ...
+  scope       String
+  operationId String
+
+  /// 'reserved' | 'completed' | 'failed'
+  status String @default("reserved")
+
+  /// What the operation produced, so a retry can be answered without redoing
+  /// the work. Never contains credentials.
+  resultType String?
+  resultId   String? @db.Uuid
+
+  /// Fingerprint of the request body, so a replay carrying different content
+  /// under the same operation id is detected rather than silently accepted.
+  requestHash String?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  expiresAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, scope, operationId])
+  @@index([tenantId, status])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+/// Append-only. Nothing updates or deletes an audit row.
+model AuditEvent {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+
+  actorUserId String? @db.Uuid
+  branchId    String? @db.Uuid
+  terminalId  String? @db.Uuid
+
+  eventType  String
+  entityType String
+  entityId   String?
+
+  /// Structured context. Never credentials, tokens or password material.
+  metadata Json?
+
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?  @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, eventType, occurredAt])
+  @@map("audit_events")
+}
+
+// ---------------------------------------------------------------------------
+// Global reference data — the only tables without tenantId
+// ---------------------------------------------------------------------------
+
+/// The permission catalogue.
+///
+/// Global because it is the application's own vocabulary, identical for every
+/// tenant and not derived from anyone's data. Tenants bind these keys to their
+/// own roles through RolePermission, which is tenant-owned.
+model Permission {
+  key         String   @id
+  descriptionAr String
+  descriptionEn String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+/// The national barcode catalogue.
+///
+/// Shared infrastructure: hundreds of thousands of rows identical for every
+/// merchant, none of it anyone's private data. Copying it per tenant would
+/// multiply the table by the customer count for no isolation benefit
+/// (ADR-0004).
 model GlobalCatalogItem {
   barcode        String   @id
   nameAr         String
