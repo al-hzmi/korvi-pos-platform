@@ -1,7 +1,7 @@
 export { createPrismaClient } from './client.js';
 export type { PrismaClient } from './client.js';
 
-export { withTenant, withoutTenant } from './tenant-context.js';
+export { withTenant, withoutTenant, withLoginSlug, normalizeTenantSlug } from './tenant-context.js';
 export type { TransactionClient } from './tenant-context.js';
 
 export { DatabaseError, TenantContextError } from './errors.js';
@@ -23,3 +23,12 @@ export { createShiftRepository } from './repositories/shift-repository.js';
 export { createSaleRepository } from './repositories/sale-repository.js';
 export { createIdempotencyRepository } from './repositories/idempotency-repository.js';
 export { createAuditRepository } from './repositories/audit-repository.js';
+export { createAuthRepository } from './repositories/auth-repository.js';
+export {
+  PERMISSION_CATALOGUE,
+  DEFAULT_ROLES,
+  provisionPermissionCatalogue,
+  provisionTenantRbac,
+  assignRole,
+} from './provisioning/rbac.js';
+export type { ProvisionedRole } from './provisioning/rbac.js';

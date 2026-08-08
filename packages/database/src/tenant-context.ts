@@ -79,3 +79,53 @@ export async function withoutTenant<T>(
     return work(tx);
   });
 }
+
+/**
+ * Deterministic slug normalisation.
+ *
+ * The same rule has to run in the resolver and in whatever writes the slug, or
+ * a tenant that registered "Korvi" becomes unreachable by "korvi". NFKC first,
+ * because a compatibility-composed character is the same slug to a human and a
+ * different byte string to Postgres.
+ *
+ * Returns the empty string for anything that is not a plausible slug, and the
+ * caller refuses to query on that rather than probing with rubbish.
+ */
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+export function normalizeTenantSlug(input: string): string {
+  const candidate = input.normalize('NFKC').trim().toLowerCase();
+  return SLUG_PATTERN.test(candidate) ? candidate : '';
+}
+
+/**
+ * Run `work` with the login-resolution setting established, and no tenant.
+ *
+ * This is the one read that happens before a scope exists: authentication has
+ * to turn a submitted slug into the tenant that will become the scope. The
+ * migration backs it with a SELECT-only policy keyed on `app.login_tenant_slug`
+ * (ADR-0012), so inside this transaction exactly one tenant row is visible —
+ * the one whose slug was submitted — and nothing at all is writable.
+ *
+ * `app.tenant_id` is left empty on purpose. Every other table keys its policy
+ * on that, so users, products and sales are invisible here, which is what makes
+ * this narrow enough to be safe.
+ */
+export async function withLoginSlug<T>(
+  prisma: PrismaClient,
+  slug: string,
+  work: (tx: TransactionClient) => Promise<T>,
+): Promise<T> {
+  const normalized = normalizeTenantSlug(slug);
+  if (normalized === '') {
+    throw new TenantContextError('Not a tenant slug.');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', '', TRUE)`;
+    // Parameterised: set_config is a function call, so the submitted value is
+    // bound rather than concatenated into the statement.
+    await tx.$executeRaw`SELECT set_config('app.login_tenant_slug', ${normalized}, TRUE)`;
+    return work(tx);
+  });
+}

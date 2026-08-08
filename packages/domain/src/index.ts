@@ -11,5 +11,6 @@ export * from './ids/uuidv7.js';
 export * from './zatca/tlv.js';
 export * from './zatca/base64.js';
 export * from './ports/persistence.js';
+export * from './ports/auth.js';
 export * from './ports/search.js';
 export * from './ports/offline.js';

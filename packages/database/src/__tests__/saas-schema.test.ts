@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -21,10 +21,33 @@ import { describe, expect, it } from 'vitest';
 const here = dirname(fileURLToPath(import.meta.url));
 const prismaDir = join(here, '../../prisma');
 const schema = readFileSync(join(prismaDir, 'schema.prisma'), 'utf8');
-const migration = readFileSync(
-  join(prismaDir, 'migrations/20260808120000_saas_foundation/migration.sql'),
-  'utf8',
-);
+/**
+ * Every migration, in order, as one text.
+ *
+ * Pinned to a single file this suite would have stopped covering the schema the
+ * moment a later migration added a table — which is exactly when it matters.
+ */
+const migrationsDir = join(prismaDir, 'migrations');
+const migration = readdirSync(migrationsDir)
+  .filter((entry) => /^[0-9]{14}_/.test(entry))
+  .sort()
+  .map((entry) => readFileSync(join(migrationsDir, entry, 'migration.sql'), 'utf8'))
+  .join('\n');
+
+/** Everything except the Phase 0 migration, which had nothing to replace. */
+const afterBaseline = readdirSync(migrationsDir)
+  .filter((entry) => /^[0-9]{14}_/.test(entry) && !entry.startsWith('00000000000000'))
+  .sort()
+  .map((entry) => readFileSync(join(migrationsDir, entry, 'migration.sql'), 'utf8'))
+  .join('\n');
+
+/** Each CREATE POLICY statement, truncated at its own semicolon. */
+function policyBodies(): readonly string[] {
+  return migration
+    .split(/\nCREATE POLICY "/)
+    .slice(1)
+    .map((chunk) => chunk.split(';')[0] ?? '');
+}
 
 interface ParsedModel {
   readonly name: string;
@@ -142,18 +165,34 @@ describe('row-level security', () => {
     expect(migration).toMatch(new RegExp(`CREATE POLICY "\\w+" ON "${table}"`));
   });
 
-  it('gives every policy both USING and WITH CHECK, and no table is missed', () => {
+  it('gives every isolation policy both USING and WITH CHECK', () => {
     // USING alone governs reads. Without WITH CHECK a caller could UPDATE a
     // visible row and reassign it to another tenant.
-    // Split on the statement, not the phrase: the file's own commentary
-    // mentions CREATE POLICY, and counting that would inflate the total.
-    const policies = migration.split(/\nCREATE POLICY "/).slice(1);
-    expect(policies.length).toBe(tenantOwnedTables.length);
-    for (const policy of policies) {
-      const body = policy.split(';')[0] ?? '';
+    //
+    // The statement body ends at the first semicolon. Reading past it would
+    // pick up the next migration's commentary, which discusses policies and
+    // would make this assertion answer a question about prose.
+    const isolation = policyBodies().filter((body) => !body.includes('FOR SELECT'));
+    // At least one per table: Phase 0 wrote the first policy for tenants and
+    // products, and Strike 2A restated both.
+    expect(isolation.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
+    for (const body of isolation) {
       expect(body).toContain('USING');
       expect(body).toContain('WITH CHECK');
       expect(body).toContain('current_tenant_id()');
+    }
+  });
+
+  it('keeps every read-only policy read-only, and keyed on its own setting', () => {
+    // The login-resolution door. FOR SELECT means PostgreSQL will not consider
+    // it for INSERT, UPDATE or DELETE at all, so there is no version of this
+    // policy that writes. It carries no WITH CHECK because it cannot.
+    const readOnly = policyBodies().filter((body) => body.includes('FOR SELECT'));
+    expect(readOnly.length).toBe(1);
+    for (const body of readOnly) {
+      expect(body).toContain('USING');
+      expect(body).not.toContain('WITH CHECK');
+      expect(body).toContain('login_tenant_slug()');
     }
   });
 
@@ -161,12 +200,16 @@ describe('row-level security', () => {
     // Phase 0 already created policies on tenants and products, and
     // PostgreSQL has no CREATE POLICY ... IF NOT EXISTS, so a bare CREATE
     // would abort this migration on any database that has run Phase 0.
+    // Phase 0 wrote the first policies onto an empty database and had
+    // nothing to drop. Every migration after it does.
+    const created = [...afterBaseline.matchAll(/\nCREATE POLICY "(\w+)" ON "(\w+)"/g)];
     const pairs = [
-      ...migration.matchAll(
+      ...afterBaseline.matchAll(
         /DROP POLICY IF EXISTS "(\w+)" ON "(\w+)";\nCREATE POLICY "\1" ON "\2"/g,
       ),
     ];
-    expect(pairs.length).toBe(tenantOwnedTables.length);
+    expect(created.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
+    expect(pairs.length).toBe(created.length);
   });
 
   it('keys the tenants policy on its own id, not on a tenantId column', () => {

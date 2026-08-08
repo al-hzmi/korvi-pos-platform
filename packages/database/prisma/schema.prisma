@@ -75,6 +75,7 @@ model Tenant {
   refunds            Refund[]
   idempotencyKeys    IdempotencyKey[]
   auditEvents        AuditEvent[]
+  sessions           Session[]
 
   @@map("tenants")
 }
@@ -113,14 +114,28 @@ model User {
   email        String
   displayName  String
   /// Hash only. A plaintext or reversible credential must never reach a column.
+  /// The encoding carries its own KDF parameters, so the cost can be raised
+  /// later without invalidating hashes written under the old ones (ADR-0012).
   passwordHash String?
   isActive     Boolean  @default(true)
+
+  /// Consecutive failed attempts since the last success. Reset on success.
+  failedLoginCount Int @default(0)
+  /// Set when the count crosses the threshold. A null value is not a lock.
+  lockedUntil      DateTime?
+  /// Bumped to invalidate every existing session for this user at once — a
+  /// password change or a suspected compromise, without a session sweep.
+  /// A session carries the version it was minted under and stops matching.
+  authVersion      Int @default(1)
+  lastLoginAt      DateTime?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships TenantMembership[]
   roles       UserRole[]
+  sessions    Session[]
   shifts      Shift[]
   sales       Sale[]
   auditEvents AuditEvent[]
@@ -883,6 +898,46 @@ model AuditEvent {
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, eventType, occurredAt])
   @@map("audit_events")
+}
+
+// ---------------------------------------------------------------------------
+// Sessions — the only thing a browser cookie may refer to
+// ---------------------------------------------------------------------------
+
+/// A server-created session.
+///
+/// The browser holds a token; this table holds its hash. A stolen database
+/// backup therefore yields no usable credential, exactly as it yields no usable
+/// password (ADR-0012).
+model Session {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  userId   String @db.Uuid
+
+  /// SHA-256 of the whole token, including its tenant segment. Unique across
+  /// the installation rather than per tenant: two sessions sharing a hash would
+  /// mean a CSPRNG collision, and that is worth refusing globally.
+  tokenHash String @unique
+
+  /// The user's authVersion when this session was minted. A mismatch means the
+  /// account was reset since, and the session no longer authenticates.
+  authVersion Int
+
+  /// Diagnostic only. Never used to decide anything: a header is attacker-
+  /// controlled, so treating it as a factor would be theatre.
+  userAgent String?
+
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  lastSeenAt DateTime
+  revokedAt  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, expiresAt])
+  @@map("sessions")
 }
 
 // ---------------------------------------------------------------------------

@@ -241,7 +241,7 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
     );
 
     const tenantOwned = result.rows.filter((row) => !NOT_TENANT_OWNED.includes(row.relname));
-    expect(tenantOwned.length).toBeGreaterThanOrEqual(29);
+    expect(tenantOwned.length).toBeGreaterThanOrEqual(30);
 
     for (const row of tenantOwned) {
       expect(row.relrowsecurity, `${row.relname} has RLS disabled`).toBe(true);
@@ -254,15 +254,19 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
   it('gives every tenant-owned table a policy with both USING and WITH CHECK', async () => {
     const result = await client.query<{
       tablename: string;
+      cmd: string;
       qual: string | null;
       with_check: string | null;
-    }>(`SELECT tablename, qual, with_check FROM pg_policies WHERE schemaname = 'public'`);
+    }>(`SELECT tablename, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'public'`);
 
     const covered = new Set(result.rows.map((row) => row.tablename));
-    expect(covered.size).toBeGreaterThanOrEqual(29);
+    expect(covered.size).toBeGreaterThanOrEqual(30);
 
     for (const row of result.rows) {
       expect(row.qual, `${row.tablename} policy has no USING`).not.toBeNull();
+      // A FOR SELECT policy cannot carry WITH CHECK, and does not need one:
+      // PostgreSQL never consults it for a write. Everything else must.
+      if (row.cmd === 'SELECT') continue;
       expect(row.with_check, `${row.tablename} policy has no WITH CHECK`).not.toBeNull();
     }
 
