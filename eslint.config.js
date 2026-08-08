@@ -90,7 +90,7 @@ export default tseslint.config(
   // timestamp in the id generator is correct, and a rule that flags it would
   // train people to disable the rule.
   {
-    files: ['packages/domain/src/{money,tax,tender}/**/*.ts'],
+    files: ['packages/domain/src/{money,tax,tender,quantity,pricing,sale}/**/*.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',
