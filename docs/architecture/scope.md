@@ -1,4 +1,9 @@
-# Phase 0 scope
+# Historical Phase 0 scope snapshot
+
+> **Historical document:** This records the original Phase 0 boundary. It is
+> not the current product roadmap, and items listed as **Out** may now exist.
+> For current implementation truth, inspect the repository and accepted ADRs;
+> the active bounded task or strike defines the scope of current work.
 
 ## In
 
