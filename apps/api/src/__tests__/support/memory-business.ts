@@ -59,6 +59,8 @@ export class MemoryBusinessStore {
   public movements: (InventoryMovementInput & { tenantId: string })[] = [];
   public keys: IdempotencyRecord[] = [];
   public audit: AuditEventInput[] = [];
+  /** Opening-float movement ids, so a test can prove none was written. */
+  public openingMovements: string[] = [];
   /** Set to make the persisting transaction fail after it has begun. */
   public recordFails = false;
 }
@@ -187,6 +189,7 @@ export function memoryShiftRepository(store: MemoryBusinessStore): ShiftReposito
         movements: [],
       };
       store.shifts.push(shift);
+      store.openingMovements.push(input.openingMovementId);
       return Promise.resolve(shift);
     },
     recordCashMovement: () => Promise.resolve(),

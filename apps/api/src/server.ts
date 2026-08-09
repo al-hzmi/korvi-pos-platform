@@ -89,12 +89,14 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const products = createProductRepository(prisma);
     const shifts = createShiftRepository(prisma);
     const terminals = createTerminalRepository(prisma);
+    const tenants = createTenantRepository(prisma);
     built = {
+      tenants,
       products,
       shifts,
       terminals,
       checkout: createCheckoutService({
-        tenants: createTenantRepository(prisma),
+        tenants,
         products,
         inventory: createInventoryRepository(prisma),
         shifts,
@@ -107,6 +109,10 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
   };
 
   return {
+    tenants: {
+      current: (scope) => resolve().tenants.current(scope),
+      settings: (scope) => resolve().tenants.settings(scope),
+    },
     products: {
       findById: (scope, id) => resolve().products.findById(scope, id),
       findBySku: (scope, sku) => resolve().products.findBySku(scope, sku),

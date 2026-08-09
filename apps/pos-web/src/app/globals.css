@@ -14,3 +14,41 @@
     color: hsl(var(--foreground));
   }
 }
+
+@layer base {
+  /*
+   * A visible focus ring on everything, once, rather than per component
+   * (KORVI-DESIGN-SYSTEM.md §7.3). A cashier working by keyboard has to be
+   * able to see where they are.
+   */
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px hsl(var(--background)),
+      0 0 0 4px hsl(var(--ring));
+  }
+
+  /*
+   * The till fills the window and never scrolls sideways. A horizontal
+   * scrollbar on a checkout screen hides the total.
+   */
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  /* Labels that exist for screen readers and for nothing else. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}

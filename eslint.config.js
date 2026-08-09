@@ -109,7 +109,7 @@ export default tseslint.config(
 
   // --- UI layer ------------------------------------------------------------
   {
-    files: ['packages/ui/**/*.tsx', 'apps/pos-web/**/*.tsx'],
+    files: ['packages/ui/**/*.tsx', 'apps/pos-web/**/*.tsx', 'apps/pos-web/**/*.ts'],
     languageOptions: { globals: { ...globals.browser } },
   },
 

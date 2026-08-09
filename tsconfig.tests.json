@@ -15,5 +15,6 @@
     "apps/*/src/**/*.test.ts",
     "packages/*/src/**/__tests__/**/*.ts",
     "packages/*/src/**/*.test.ts"
-  ]
+  ],
+  "exclude": ["apps/pos-web/**"]
 }

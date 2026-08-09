@@ -30,6 +30,8 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: 'Korvi POS',
   description: 'نظام نقاط البيع للتجزئة والمطاعم',
+  // A till is not a page anybody should find in a search engine.
+  robots: { index: false, follow: false },
   icons: { icon: '/brand/korvi-pos-icon.svg' },
 };
 

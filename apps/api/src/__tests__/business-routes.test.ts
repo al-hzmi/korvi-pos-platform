@@ -84,6 +84,7 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
       scrypt: FAST,
     }),
     business: {
+      tenants: memoryTenantRepository(business),
       products: memoryProductRepository(business),
       shifts: memoryShiftRepository(business),
       terminals: memoryTerminalRepository(business),
@@ -121,6 +122,356 @@ async function cookieFor(server: FastifyInstance): Promise<string> {
 
 afterEach(async () => {
   await app.close();
+});
+
+describe('branch authorisation', () => {
+  /*
+   * A second branch of the SAME tenant, with its own till.
+   *
+   * RLS keeps one merchant out of another merchant's rows; it has nothing to
+   * say about one branch of a merchant reaching into another, because both
+   * are inside the same tenant scope. A cashier pinned to branch A who is
+   * handed a terminal id from branch B is already past every check the scope
+   * performs, so the routes have to make that check themselves.
+   *
+   * GET /v1/terminals listing only branch A's tills shapes the interface. It
+   * is not an authorisation boundary and is not treated as one here.
+   */
+  const OTHER_BRANCH = '018f2000-0000-7000-8000-0000000000d1';
+  const OTHER_TERMINAL = '018f2000-0000-7000-8000-0000000000d2';
+
+  function addForeignTerminal(): void {
+    business.terminals.push({
+      id: OTHER_TERMINAL,
+      tenantId: business.terminals[0]!.tenantId,
+      branchId: OTHER_BRANCH,
+      code: '90',
+      // Open, staffed and real. It simply is not this cashier's branch.
+      label: '\u0635\u0646\u062f\u0648\u0642 \u0641\u0631\u0639 \u0622\u062e\u0631',
+      isActive: true,
+      lastSeenAt: null,
+    });
+    business.shifts.push({
+      id: '018f2000-0000-7000-8000-0000000000d3',
+      tenantId: business.terminals[0]!.tenantId,
+      branchId: OTHER_BRANCH,
+      terminalId: OTHER_TERMINAL,
+      userId: '018f2000-0000-7000-8000-0000000000d4',
+      status: 'open',
+      openingFloatMinor: '75000',
+      declaredCashMinor: null,
+      expectedCashMinor: null,
+      varianceMinor: null,
+      openedAt: '2026-08-12T05:00:00.000Z',
+      closedAt: null,
+      movements: [],
+    });
+  }
+
+  it('answers for the cashier\u2019s own till', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/v1/shifts/current?terminalId=${A.terminal}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ shift: { terminalId: string } }>().shift.terminalId).toBe(A.terminal);
+  });
+
+  it('will not read a shift on another branch\u2019s till, and leaks nothing about it', async () => {
+    app = await build('cashier');
+    addForeignTerminal();
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/v1/shifts/current?terminalId=${OTHER_TERMINAL}`,
+      headers: { cookie },
+    });
+
+    // Exactly what an id that does not exist would produce. A 403 would
+    // confirm the till is real, which is the thing being withheld.
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: 'unknown_terminal' });
+
+    const body = response.payload;
+    expect(body).not.toContain('75000');
+    expect(body).not.toContain(OTHER_BRANCH);
+    expect(body).not.toContain('018f2000-0000-7000-8000-0000000000d3');
+    expect(body).not.toContain('018f2000-0000-7000-8000-0000000000d4');
+    expect(body).not.toContain('2026-08-12T05:00:00.000Z');
+    expect(body).not.toContain('shift');
+  });
+
+  it('gives the same answer for a till that never existed', async () => {
+    app = await build('cashier');
+    addForeignTerminal();
+    const cookie = await cookieFor(app);
+    const missing = await app.inject({
+      method: 'GET',
+      url: '/v1/shifts/current?terminalId=018f2000-0000-7000-8000-00000000dead',
+      headers: { cookie },
+    });
+    const foreign = await app.inject({
+      method: 'GET',
+      url: `/v1/shifts/current?terminalId=${OTHER_TERMINAL}`,
+      headers: { cookie },
+    });
+
+    expect(missing.statusCode).toBe(foreign.statusCode);
+    expect(missing.payload).toBe(foreign.payload);
+  });
+
+  it('will not open a shift on another branch\u2019s till', async () => {
+    app = await build('cashier', false);
+    addForeignTerminal();
+    const before = business.shifts.length;
+    const cookie = await cookieFor(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/shifts/open',
+      headers: { cookie, origin: ORIGIN },
+      payload: { terminalId: OTHER_TERMINAL, openingFloatMinor: '20000' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: 'unknown_terminal' });
+    // Nothing was written: not a shift, and not the opening-float movement
+    // that would have gone with it.
+    expect(business.shifts).toHaveLength(before);
+    expect(
+      business.shifts.some(
+        (shift) => shift.terminalId === OTHER_TERMINAL && shift.branchId === A.branch,
+      ),
+    ).toBe(false);
+    expect(business.openingMovements).toHaveLength(0);
+  });
+
+  it('still opens a shift on the cashier\u2019s own till', async () => {
+    app = await build('cashier', false);
+    addForeignTerminal();
+    const cookie = await cookieFor(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/shifts/open',
+      headers: { cookie, origin: ORIGIN },
+      payload: { terminalId: A.terminal, openingFloatMinor: '20000' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json<{ shift: { branchId: string } }>().shift.branchId).toBe(A.branch);
+    expect(business.openingMovements).toHaveLength(1);
+  });
+
+  it('refuses a deactivated till in the cashier\u2019s own branch', async () => {
+    app = await build('cashier', false);
+    business.terminals[0] = { ...business.terminals[0]!, isActive: false };
+    const cookie = await cookieFor(app);
+
+    const current = await app.inject({
+      method: 'GET',
+      url: `/v1/shifts/current?terminalId=${A.terminal}`,
+      headers: { cookie },
+    });
+    expect(current.statusCode).toBe(404);
+  });
+
+  describe('a principal with no branch', () => {
+    async function branchless(): Promise<string> {
+      app = await build('cashier');
+      auth.memberships[0] = { ...auth.memberships[0]!, defaultBranchId: null };
+      return cookieFor(app);
+    }
+
+    it('cannot read a shift', async () => {
+      const cookie = await branchless();
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/shifts/current?terminalId=${A.terminal}`,
+        headers: { cookie },
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: 'branch_required' });
+    });
+
+    it('cannot open a shift', async () => {
+      const cookie = await branchless();
+      const before = business.shifts.length;
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/shifts/open',
+        headers: { cookie, origin: ORIGIN },
+        payload: { terminalId: A.terminal, openingFloatMinor: '20000' },
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: 'branch_required' });
+      expect(business.shifts).toHaveLength(before);
+    });
+
+    it('cannot list tills', async () => {
+      const cookie = await branchless();
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/terminals',
+        headers: { cookie },
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: 'branch_required' });
+    });
+  });
+
+  it('never lets a branch arrive from the client', async () => {
+    app = await build('cashier', false);
+    addForeignTerminal();
+    const cookie = await cookieFor(app);
+
+    // In the body: rejected outright by the forbidden-field guard.
+    const named = await app.inject({
+      method: 'POST',
+      url: '/v1/shifts/open',
+      headers: { cookie, origin: ORIGIN },
+      payload: { terminalId: A.terminal, openingFloatMinor: '20000', branchId: OTHER_BRANCH },
+    });
+    expect(named.statusCode).toBe(400);
+    expect(named.json()).toMatchObject({ error: 'forbidden_field', field: 'branchId' });
+
+    // In the query: ignored, and the foreign till stays invisible.
+    const smuggled = await app.inject({
+      method: 'GET',
+      url: `/v1/shifts/current?terminalId=${OTHER_TERMINAL}&branchId=${OTHER_BRANCH}`,
+      headers: { cookie },
+    });
+    expect(smuggled.statusCode).toBe(404);
+  });
+});
+
+describe('GET /v1/terminals', () => {
+  it('refuses without a session', async () => {
+    app = await build('cashier');
+    const response = await app.inject({ method: 'GET', url: '/v1/terminals' });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns the active tills of the session\u2019s own branch', async () => {
+    app = await build('cashier');
+    business.terminals.push({
+      id: '018f2000-0000-7000-8000-0000000000b1',
+      tenantId: business.terminals[0]!.tenantId,
+      branchId: A.branch,
+      code: '02',
+      label: '\u0635\u0646\u062f\u0648\u0642 \u0662',
+      isActive: true,
+      lastSeenAt: null,
+    });
+    const cookie = await cookieFor(app);
+    const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ branchId: string; terminals: { code: string }[] }>();
+    expect(body.branchId).toBe(A.branch);
+    expect(body.terminals.map((terminal) => terminal.code).sort()).toEqual(['01', '02']);
+    // Only what a till needs to identify itself.
+    expect(Object.keys(body.terminals[0] ?? {}).sort()).toEqual([
+      'branchId',
+      'code',
+      'id',
+      'label',
+    ]);
+  });
+
+  it('never offers a deactivated till', async () => {
+    app = await build('cashier');
+    business.terminals[0] = { ...business.terminals[0]!, isActive: false };
+    const cookie = await cookieFor(app);
+    const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
+    expect(response.json<{ terminals: unknown[] }>().terminals).toHaveLength(0);
+  });
+
+  it('ignores a branch the client tries to name', async () => {
+    // The one thing this endpoint must never do. A client that could choose a
+    // branch could enumerate every till in the tenant.
+    app = await build('cashier');
+    business.terminals.push({
+      id: '018f2000-0000-7000-8000-0000000000b2',
+      tenantId: business.terminals[0]!.tenantId,
+      branchId: '018f2000-0000-7000-8000-0000000000c9',
+      code: '99',
+      label: '\u0641\u0631\u0639 \u0622\u062e\u0631',
+      isActive: true,
+      lastSeenAt: null,
+    });
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/terminals?branchId=018f2000-0000-7000-8000-0000000000c9',
+      headers: { cookie },
+    });
+    const body = response.json<{ branchId: string; terminals: { code: string }[] }>();
+    expect(body.branchId).toBe(A.branch);
+    expect(body.terminals.map((terminal) => terminal.code)).toEqual(['01']);
+  });
+
+  it('says branch context is required when the principal has no branch', async () => {
+    app = await build('cashier');
+    auth.memberships[0] = { ...auth.memberships[0]!, defaultBranchId: null };
+    const cookie = await cookieFor(app);
+    const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: 'branch_required' });
+  });
+
+  it('carries the tenant’s price mode so the till never guesses it', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
+
+    const body = response.json<{ settings: { priceMode: string; currency: string } }>();
+    expect(body.settings).toEqual({ priceMode: 'tax-inclusive', currency: 'SAR' });
+  });
+
+  it('reports a tenant with no settings rather than inventing a price mode', async () => {
+    app = await build('cashier');
+    business.settings.length = 0;
+    const cookie = await cookieFor(app);
+    const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: 'tenant-misconfigured' });
+  });
+
+  it('ignores a price mode the client tries to send', async () => {
+    // The one thing that would let a browser decide how much VAT a sale
+    // carries.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/terminals?priceMode=tax-exclusive&currency=USD',
+      headers: { cookie },
+    });
+    expect(response.json<{ settings: { priceMode: string; currency: string } }>().settings).toEqual(
+      {
+        priceMode: 'tax-inclusive',
+        currency: 'SAR',
+      },
+    );
+  });
+
+  it('refuses a caller without shift.open', async () => {
+    app = await build('cashier');
+    auth.grants[0] = {
+      tenantId: A.tenant,
+      userId: A.user,
+      roles: ['cashier'],
+      permissions: ['sale.create'],
+    };
+    const cookie = await cookieFor(app);
+    const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
+    expect(response.statusCode).toBe(403);
+  });
 });
 
 describe('GET /v1/products', () => {

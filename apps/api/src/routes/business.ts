@@ -13,13 +13,15 @@ import type {
   AuthenticatedPrincipal,
   ProductRepository,
   ShiftRepository,
+  TenantRepository,
   TenantScope,
+  Terminal,
   TerminalRepository,
 } from '@korvi/domain';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 /**
- * The cashier's server surface. Four routes, and nothing a till does not need.
+ * The cashier's server surface. Five routes, and nothing a till does not need.
  *
  * Every one of them derives the tenant from `request.auth`, which the session
  * guard filled in from the database. There is no route on which a tenant id,
@@ -27,6 +29,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
  */
 
 export interface BusinessDeps {
+  /** Read-only, and only for the settings the till has to render correctly. */
+  readonly tenants: TenantRepository;
   readonly products: ProductRepository;
   readonly shifts: ShiftRepository;
   readonly terminals: TerminalRepository;
@@ -83,6 +87,47 @@ function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
   return { tenantId: brandTenantId(principal.tenantId) };
 }
 
+/**
+ * The two answers a till-addressed route may give before it does any work.
+ *
+ * `branch_required` is a configuration problem the merchant can fix.
+ * `unknown_terminal` is deliberately the same answer for a till that does not
+ * exist, a till that has been deactivated, and a till in another branch — a
+ * principal pinned to branch A learns nothing about branch B from either the
+ * status code or the body.
+ */
+const BRANCH_REQUIRED = {
+  error: 'branch_required',
+  message: 'لا يوجد فرع مرتبط بهذا المستخدم. راجع إعدادات المنشأة.',
+} as const;
+
+const UNKNOWN_TERMINAL = { error: 'unknown_terminal', message: 'الصندوق غير معروف.' } as const;
+
+/**
+ * Prove a terminal id is one this principal may name at all.
+ *
+ * The tenant scope is not enough. RLS keeps one merchant out of another
+ * merchant's rows, but every branch of one merchant shares a tenant, so a
+ * cashier pinned to branch A who guesses or is given a terminal id from
+ * branch B is inside the scope already. Listing only their own branch's tills
+ * in GET /v1/terminals shapes the interface; it does not authorise anything,
+ * and an interface is not where authorisation lives.
+ *
+ * So every route that takes a `terminalId` proves three things here first:
+ * the till exists in this tenant, it is active, and it belongs to the branch
+ * the session is pinned to. A failure of any of them is indistinguishable
+ * from the others.
+ */
+async function ownBranchTerminal(
+  terminals: TerminalRepository,
+  principal: AuthenticatedPrincipal,
+  terminalId: string,
+): Promise<Terminal | null> {
+  const terminal = await terminals.findById(scopeOf(principal), terminalId);
+  if (terminal === null || !terminal.isActive) return null;
+  return terminal.branchId === principal.branchId ? terminal : null;
+}
+
 export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRouteOptions): void {
   const { deps, guards, newId } = options;
 
@@ -124,6 +169,68 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
     },
   );
 
+  /**
+   * The tills of the branch this session belongs to.
+   *
+   * Strike 3A-1 requires a terminal id on every shift and sale route, and was
+   * right to: a sale has to be attributable to a physical till. But that left
+   * the browser with no lawful way to learn one, and the alternatives are all
+   * worse than an endpoint — a hardcoded UUID, a constant in the frontend, or
+   * a cashier typing one in.
+   *
+   * The branch is read from `request.auth`, never from the query. A client
+   * that could name a branch could enumerate every till in the tenant, and the
+   * whole point of pinning a principal to a branch is that it cannot.
+   *
+   * `shift.open` rather than a new permission: discovering the till is the
+   * first half of opening a shift on it, and the vocabulary in
+   * packages/domain/src/rbac is not something a UI strike gets to extend.
+   */
+  app.get(
+    '/v1/terminals',
+    { preHandler: [guards.requireSession, guards.requirePermission('shift.open')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      // A principal with no branch has no till to be at. Deterministic and
+      // named, so the browser can render an operational message rather than
+      // guessing from an empty list.
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
+      const scope = scopeOf(principal);
+
+      // The price mode travels with the till, and only from here. A browser
+      // that guessed it would show a total the server disagrees with on every
+      // tax-exclusive tenant; a browser that could *send* it would be deciding
+      // how much VAT a sale carries. Read under the scope, like everything
+      // else, and never accepted from a request.
+      const settings = await deps.tenants.settings(scope);
+      if (settings === null) {
+        return reply.code(409).send({
+          error: 'tenant-misconfigured',
+          message: 'إعدادات المنشأة غير مكتملة.',
+        });
+      }
+
+      const terminals = await deps.terminals.listForBranch(scope, principal.branchId);
+      // A deactivated till is not offered. Selecting one would only produce a
+      // 404 from the shift route a moment later.
+      return reply.code(200).send({
+        branchId: principal.branchId,
+        settings: { priceMode: settings.priceMode, currency: settings.currency },
+        terminals: terminals
+          .filter((terminal) => terminal.isActive)
+          .map((terminal) => ({
+            id: terminal.id,
+            code: terminal.code,
+            label: terminal.label,
+            branchId: terminal.branchId,
+          })),
+      });
+    },
+  );
+
   app.get(
     '/v1/shifts/current',
     { preHandler: [guards.requireSession, guards.requirePermission('shift.open')] },
@@ -131,13 +238,21 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const principal = principalOf(request);
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
 
+      // Branch context is mandatory for the cashier vertical. Without it there
+      // is no set of tills this principal may ask about, and answering for an
+      // arbitrary one is the defect this refuses.
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
       const parsed = currentShiftQuery.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
 
-      const shift = await deps.shifts.findOpenForTerminal(
-        scopeOf(principal),
-        parsed.data.terminalId,
-      );
+      // Before any shift is read. A shift row carries the branch, the cashier,
+      // the opening float and the time it started — none of which a cashier in
+      // another branch should be able to see.
+      const terminal = await ownBranchTerminal(deps.terminals, principal, parsed.data.terminalId);
+      if (terminal === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
+      const shift = await deps.shifts.findOpenForTerminal(scopeOf(principal), terminal.id);
       if (shift === null) return reply.code(200).send({ shift: null });
 
       return reply.code(200).send({
@@ -161,6 +276,8 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const principal = principalOf(request);
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
 
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
       const forbidden = namesForbiddenField(request.body);
       if (forbidden !== null) {
         return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
@@ -171,10 +288,10 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const scope = scopeOf(principal);
       // The branch comes from the terminal, not from the request: a till is
       // physically in one branch and the client has no standing to say which.
-      const terminal = await deps.terminals.findById(scope, parsed.data.terminalId);
-      if (terminal === null || !terminal.isActive) {
-        return reply.code(404).send({ error: 'unknown_terminal', message: 'الصندوق غير معروف.' });
-      }
+      // But which tills this principal may name is a separate question, and
+      // opening a real shift on another branch's till is a write, not a peek.
+      const terminal = await ownBranchTerminal(deps.terminals, principal, parsed.data.terminalId);
+      if (terminal === null) return reply.code(404).send(UNKNOWN_TERMINAL);
 
       const openedAt = new Date().toISOString();
       let shift;
