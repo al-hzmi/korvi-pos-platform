@@ -421,7 +421,15 @@ describe('writes that must be atomic', () => {
         ],
         discounts: [],
         tenders: [
-          { id: 'te1', kind: 'cash', amountMinor: '2000', changeMinor: '850', reference: null },
+          // Cash carries no scheme, and the record type now says so.
+          {
+            id: 'te1',
+            kind: 'cash',
+            scheme: null,
+            amountMinor: '2000',
+            changeMinor: '850',
+            reference: null,
+          },
         ],
       },
       invoice: {

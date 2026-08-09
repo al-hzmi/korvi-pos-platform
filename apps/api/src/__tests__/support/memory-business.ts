@@ -58,6 +58,8 @@ export class MemoryBusinessStore {
   public invoices: InvoiceRecord[] = [];
   public movements: (InventoryMovementInput & { tenantId: string })[] = [];
   public keys: IdempotencyRecord[] = [];
+  /** Drawer effects, so a test can prove what a split payment did to the till. */
+  public cashMovements: { kind: string; amountMinor: string; shiftId: string }[] = [];
   public audit: AuditEventInput[] = [];
   /** Opening-float movement ids, so a test can prove none was written. */
   public openingMovements: string[] = [];
@@ -283,6 +285,13 @@ export function memorySaleRepository(store: MemoryBusinessStore): SaleRepository
       };
 
       store.sales.push(sale);
+      if (input.cashMovement !== null) {
+        store.cashMovements.push({
+          kind: input.cashMovement.kind,
+          amountMinor: input.cashMovement.amountMinor,
+          shiftId: input.cashMovement.shiftId,
+        });
+      }
       store.invoices.push(invoice);
       for (const movement of input.inventory) {
         store.movements.push({ ...movement, tenantId: tenant });

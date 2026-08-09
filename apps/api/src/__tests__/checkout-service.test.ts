@@ -338,28 +338,70 @@ describe('the intent fingerprint', () => {
   const base = {
     branchId: A.branch,
     terminalId: A.terminal,
-    lines: [{ productId: A.milk, quantityScaled: '2000' }],
-    cashReceivedMinor: '5000',
+    lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
+    tenders: [{ kind: 'cash', amountMinor: '5000', scheme: '', reference: '' }],
+    basketDiscount: '',
   };
 
   it('is stable across line order', () => {
-    const two = { ...base, lines: [...base.lines, { productId: A.rice, quantityScaled: '1000' }] };
+    const two = {
+      ...base,
+      lines: [...base.lines, { productId: A.rice, quantityScaled: '1000', discount: '' }],
+    };
     const reversed = { ...two, lines: [...two.lines].reverse() };
     expect(fingerprintIntent(two)).toBe(fingerprintIntent(reversed));
   });
 
+  it('is stable across tender order', () => {
+    // A cashier who keys the card first and a cashier who keys the cash first
+    // are describing the same payment.
+    const split = {
+      ...base,
+      tenders: [
+        { kind: 'cash', amountMinor: '2000', scheme: '', reference: '' },
+        { kind: 'electronic', amountMinor: '1000', scheme: 'mada', reference: 'AUTH-1' },
+      ],
+    };
+    const swapped = { ...split, tenders: [...split.tenders].reverse() };
+    expect(fingerprintIntent(split)).toBe(fingerprintIntent(swapped));
+  });
+
   it.each([
-    ['quantity', { ...base, lines: [{ productId: A.milk, quantityScaled: '2001' }] }],
-    ['product', { ...base, lines: [{ productId: A.rice, quantityScaled: '2000' }] }],
-    ['cash', { ...base, cashReceivedMinor: '5001' }],
+    ['quantity', { ...base, lines: [{ productId: A.milk, quantityScaled: '2001', discount: '' }] }],
+    ['product', { ...base, lines: [{ productId: A.rice, quantityScaled: '2000', discount: '' }] }],
     ['terminal', { ...base, terminalId: A.shift }],
+    [
+      'cash figure',
+      { ...base, tenders: [{ kind: 'cash', amountMinor: '5001', scheme: '', reference: '' }] },
+    ],
+    [
+      'payment mix',
+      {
+        ...base,
+        tenders: [{ kind: 'electronic', amountMinor: '2300', scheme: 'mada', reference: 'AUTH-1' }],
+      },
+    ],
+    [
+      'approval reference',
+      {
+        ...base,
+        tenders: [{ kind: 'electronic', amountMinor: '2300', scheme: 'mada', reference: 'AUTH-2' }],
+      },
+    ],
+    ['basket discount', { ...base, basketDiscount: 'bp:1000' }],
+    [
+      'line discount',
+      { ...base, lines: [{ productId: A.milk, quantityScaled: '2000', discount: 'fx:150' }] },
+    ],
   ])('changes with the %s', (_label, changed) => {
+    // Each of these is a different commercial event. Replaying one as another
+    // would be wrong in a way nobody could reconstruct from the sale row.
     expect(fingerprintIntent(changed)).not.toBe(fingerprintIntent(base));
   });
 
   it('carries nothing secret', () => {
-    // It is a digest of ids, quantities and a cash figure — the same things
-    // the sale row holds in the clear.
+    // A digest of ids, quantities, amounts, a scheme name and somebody else's
+    // approval reference — the same things the sale row holds in the clear.
     expect(fingerprintIntent(base)).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 });
@@ -400,5 +442,169 @@ describe('what a client may not decide', () => {
     expect(store.sales[0]?.userId).toBe(A.user);
     expect(store.sales[0]?.shiftId).toBe(A.shift);
     expect(store.sales[0]?.branchId).toBe(A.branch);
+  });
+});
+
+describe('the two payment shapes', () => {
+  it('refuses a request that names both, and one that names neither', async () => {
+    // Guessing which the client meant is how a sale gets settled twice over.
+    const both = await service.checkout({
+      principal: principal(),
+      operationId: '018f1000-0000-7000-8000-0000000000d1',
+      terminalId: A.terminal,
+      cashReceivedMinor: '5000',
+      tenders: [{ kind: 'cash', amountMinor: '5000' }],
+      lines: [{ productId: A.milk, quantityScaled: '2000' }],
+    });
+    expect(both.outcome === 'failure' && both.reason).toBe('ambiguous-payment');
+
+    const neither = await service.checkout({
+      principal: principal(),
+      operationId: '018f1000-0000-7000-8000-0000000000d2',
+      terminalId: A.terminal,
+      lines: [{ productId: A.milk, quantityScaled: '2000' }],
+    });
+    expect(neither.outcome === 'failure' && neither.reason).toBe('ambiguous-payment');
+    expect(store.sales).toHaveLength(0);
+  });
+
+  it('normalises the legacy cash figure into one cash tender', async () => {
+    const result = await service.checkout({
+      principal: principal(),
+      operationId: '018f1000-0000-7000-8000-0000000000d3',
+      terminalId: A.terminal,
+      cashReceivedMinor: '5000',
+      lines: [{ productId: A.milk, quantityScaled: '2000' }],
+    });
+    if (result.outcome !== 'success') throw new Error(result.reason);
+
+    const tenders = store.sales[0]?.tenders ?? [];
+    expect(tenders).toHaveLength(1);
+    expect(tenders[0]).toMatchObject({ kind: 'cash', scheme: null, amountMinor: '5000' });
+    expect(tenders[0]?.changeMinor).toBe('2700');
+  });
+
+  it('still reports an empty legacy cash amount as underpaid', async () => {
+    // The refusal the till already understands. Reporting it as a malformed
+    // tender would change a contract this strike promised not to break.
+    const result = await service.checkout({
+      principal: principal(),
+      operationId: '018f1000-0000-7000-8000-0000000000d4',
+      terminalId: A.terminal,
+      cashReceivedMinor: '0',
+      lines: [{ productId: A.milk, quantityScaled: '2000' }],
+    });
+    expect(result.outcome === 'failure' && result.reason).toBe('insufficient-cash');
+  });
+});
+
+describe('the canonical form cannot be forged', () => {
+  const base = {
+    branchId: A.branch,
+    terminalId: A.terminal,
+    lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
+    basketDiscount: '',
+  };
+
+  it('cannot be made to collide with a delimiter-bearing reference', () => {
+    /*
+     * The concrete attack on a hand-joined canonical form. Joining fields with
+     * ':' and records with ',' means a reference containing both can spell out
+     * a second record. One tender whose reference is
+     * "R,electronic:visa:100:X" would produce the same joined string as two
+     * tenders with references "R" and "X" — two materially different sales,
+     * one fingerprint, and a replay that returns the wrong one.
+     *
+     * JSON gives the separators structure rather than meaning, so the two
+     * cannot meet.
+     */
+    const one = {
+      ...base,
+      tenders: [
+        {
+          kind: 'electronic',
+          amountMinor: '100',
+          scheme: 'mada',
+          reference: 'R,electronic:visa:100:X',
+        },
+      ],
+    };
+    const two = {
+      ...base,
+      tenders: [
+        { kind: 'electronic', amountMinor: '100', scheme: 'mada', reference: 'R' },
+        { kind: 'electronic', amountMinor: '100', scheme: 'visa', reference: 'X' },
+      ],
+    };
+
+    expect(fingerprintIntent(one)).not.toBe(fingerprintIntent(two));
+  });
+
+  it('cannot be made to collide across the field boundary', () => {
+    const spilled = {
+      ...base,
+      tenders: [{ kind: 'electronic', amountMinor: '100', scheme: 'mada', reference: '"],["x' }],
+    };
+    const plain = {
+      ...base,
+      tenders: [{ kind: 'electronic', amountMinor: '100', scheme: 'mada', reference: 'x' }],
+    };
+    expect(fingerprintIntent(spilled)).not.toBe(fingerprintIntent(plain));
+  });
+
+  it('cannot be made to collide across the line boundary', () => {
+    const spilled = {
+      ...base,
+      tenders: [{ kind: 'cash', amountMinor: '100', scheme: '', reference: '' }],
+      lines: [{ productId: A.milk, quantityScaled: '2000', discount: 'fx:1,p:2' }],
+    };
+    const plain = {
+      ...base,
+      tenders: [{ kind: 'cash', amountMinor: '100', scheme: '', reference: '' }],
+      lines: [
+        { productId: A.milk, quantityScaled: '2000', discount: 'fx:1' },
+        { productId: A.rice, quantityScaled: 'p:2', discount: '' },
+      ],
+    };
+    expect(fingerprintIntent(spilled)).not.toBe(fingerprintIntent(plain));
+  });
+});
+
+describe('what the audit says', () => {
+  it('emits sale.completed for every sale, discounted or not', async () => {
+    const result = await service.checkout({
+      principal: principal(),
+      operationId: '018f1000-0000-7000-8000-0000000000d5',
+      terminalId: A.terminal,
+      cashReceivedMinor: '5000',
+      lines: [{ productId: A.milk, quantityScaled: '2000' }],
+    });
+    if (result.outcome !== 'success') throw new Error(result.reason);
+    expect(store.audit.map((event) => event.eventType)).toEqual(['sale.completed']);
+  });
+
+  it('adds sale.discounted alongside it, never instead of it', async () => {
+    // Replacing the canonical event would break the invariant that every
+    // completed sale emits one, and every report built on that invariant.
+    const result = await service.checkout({
+      principal: principal({
+        roles: ['manager'],
+        permissions: [...ROLE_PERMISSIONS.manager],
+        maxDiscountBasisPoints: 2_000n,
+      }),
+      operationId: '018f1000-0000-7000-8000-0000000000d6',
+      terminalId: A.terminal,
+      cashReceivedMinor: '5000',
+      lines: [{ productId: A.milk, quantityScaled: '2000' }],
+      basketDiscount: { mode: 'basis-points', value: 1_000 },
+    });
+    if (result.outcome !== 'success') throw new Error(result.reason);
+
+    expect(store.audit.map((event) => event.eventType)).toEqual([
+      'sale.completed',
+      'sale.discounted',
+    ]);
+    // Nothing that belongs to somebody else's system.
+    expect(JSON.stringify(store.audit)).not.toContain('AUTH-');
   });
 });

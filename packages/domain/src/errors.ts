@@ -53,3 +53,28 @@ export class IdGenerationError extends DomainError {
 export class InvalidRateError extends DomainError {
   public override readonly name = 'InvalidRateError';
 }
+
+/**
+ * A tender the settlement engine will not accept as stated.
+ *
+ * Distinct from UnderpaidError and NonCashChangeError, which are about the
+ * arithmetic of a well-formed payment. This one is about the payment being
+ * ill-formed before any arithmetic runs: a zero tender, two cash tenders, an
+ * electronic tender with nothing to reconcile it against.
+ */
+export class InvalidTenderError extends DomainError {
+  public override readonly name = 'InvalidTenderError';
+}
+
+/**
+ * A discount that is not economically possible.
+ *
+ * Distinct from DiscountNotPermittedError, which is about authority. This one
+ * is about the request itself: more off a line than the line is worth.
+ * `applyDiscount` caps such a value to its base, which is right for pricing
+ * and wrong for authorisation — capping answers a request nobody made, at a
+ * price the cashier never quoted.
+ */
+export class InvalidDiscountError extends DomainError {
+  public override readonly name = 'InvalidDiscountError';
+}

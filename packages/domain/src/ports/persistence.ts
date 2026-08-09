@@ -4,7 +4,7 @@ import type { BasisPoints } from '../tax/basis-points.js';
 // would be free to disagree tomorrow, and the two would sit on either side of
 // the persistence boundary.
 import type { PriceMode } from '../pricing/line.js';
-import type { TenderKind } from '../tender/tender.js';
+import type { TenderKind, TenderScheme } from '../tender/tender.js';
 
 /**
  * Repository ports.
@@ -318,8 +318,16 @@ export interface SaleDiscountRecord {
 export interface TenderRecord {
   readonly id: string;
   readonly kind: TenderKind;
+  /** Present on an electronic tender and null on cash. */
+  readonly scheme: TenderScheme | null;
   readonly amountMinor: string;
   readonly changeMinor: string;
+  /**
+   * The external approval reference.
+   *
+   * Korvi records that a payment was approved elsewhere; it does not perform
+   * one. This is the pointer back to whatever did — never a card number.
+   */
   readonly reference: string | null;
 }
 

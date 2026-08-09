@@ -598,6 +598,516 @@ describe('shifts', () => {
   });
 });
 
+describe('POST /v1/sales — the drawer', () => {
+  function checkout(
+    server: FastifyInstance,
+    cookie: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return server.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000000e5',
+        terminalId: A.terminal,
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+        ...overrides,
+      },
+    });
+  }
+
+  it('moves the drawer by the cash that stayed in it, not by the sale total', async () => {
+    // 23.00 sale, 10.00 on a card, 20.00 cash, 7.00 back. The drawer gained
+    // 13.00. Recording 23.00 would leave every shift short by the card
+    // portion, every day, with nothing to point at.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    await checkout(app, cookie, {
+      tenders: [
+        { kind: 'electronic', scheme: 'mada', reference: 'AUTH-3', amountMinor: '1000' },
+        { kind: 'cash', amountMinor: '2000' },
+      ],
+    });
+
+    expect(business.cashMovements).toHaveLength(1);
+    expect(business.cashMovements[0]).toMatchObject({ kind: 'sale', amountMinor: '1300' });
+  });
+
+  it('records no drawer movement at all for an electronic-only sale', async () => {
+    // Nothing was taken in cash. A zero row is a movement that did not happen.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, {
+      tenders: [{ kind: 'electronic', scheme: 'visa', reference: 'AUTH-4', amountMinor: '2300' }],
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(business.cashMovements).toHaveLength(0);
+  });
+
+  it('leaves the cash-only drawer effect exactly as it was', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    await checkout(app, cookie, { cashReceivedMinor: '5000' });
+
+    // 50.00 given, 27.00 back, 23.00 retained — which for a cash-only sale is
+    // the total, as it always was.
+    expect(business.cashMovements[0]).toMatchObject({ kind: 'sale', amountMinor: '2300' });
+  });
+});
+
+describe('POST /v1/sales — discount permission', () => {
+  it('refuses a discount from a principal whose grants omit sale.discount', async () => {
+    // The ceiling says how much; the permission says whether at all. A role
+    // may confer a ceiling while the persisted grant does not confer the
+    // capability, and permissions are what the server checks.
+    app = await build('manager');
+    auth.grants[0] = {
+      tenantId: A.tenant,
+      userId: A.user,
+      roles: ['manager'],
+      permissions: ['product.read', 'sale.create', 'shift.open'],
+    };
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000000e6',
+        terminalId: A.terminal,
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+        basketDiscount: { mode: 'basis-points', value: 500 },
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: 'discount-not-authorized' });
+    expect(business.sales).toHaveLength(0);
+  });
+
+  it('still lets that principal sell without a discount', async () => {
+    app = await build('manager');
+    auth.grants[0] = {
+      tenantId: A.tenant,
+      userId: A.user,
+      roles: ['manager'],
+      permissions: ['product.read', 'sale.create', 'shift.open'],
+    };
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000000e7',
+        terminalId: A.terminal,
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+  });
+});
+
+describe('POST /v1/sales — a card number by any name', () => {
+  it('refuses an approval reference that is really a card number', async () => {
+    // A synthetic test PAN. Rejecting fields called `pan` does not stop an
+    // integration putting one in `reference`.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000000e8',
+        terminalId: A.terminal,
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+        tenders: [
+          {
+            kind: 'electronic',
+            scheme: 'visa',
+            reference: '4111 1111 1111 1111',
+            amountMinor: '2300',
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: 'card_data_refused' });
+    // The refusal must not become the place the number gets written down.
+    expect(response.payload).not.toContain('4111');
+    expect(business.sales).toHaveLength(0);
+  });
+
+  it('leaves ordinary approval codes alone', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000000e9',
+        terminalId: A.terminal,
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+        tenders: [{ kind: 'electronic', scheme: 'mada', reference: '004512', amountMinor: '2300' }],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+  });
+});
+
+describe('POST /v1/sales — settlement', () => {
+  const operation = '018f2000-0000-7000-8000-0000000000e1';
+
+  /** Milk is 11.50 tax-inclusive; two of them is 23.00 exactly. */
+  function checkout(
+    server: FastifyInstance,
+    cookie: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return server.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: operation,
+        terminalId: A.terminal,
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+        ...overrides,
+      },
+    });
+  }
+
+  it('still accepts the cash-only shape the till sends today', async () => {
+    // The production browser is not being changed by this strike. If this
+    // test ever needs editing, something has gone wrong.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, { cashReceivedMinor: '5000' });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json<{ sale: Record<string, string> }>();
+    expect(body.sale['totalMinor']).toBe('2300');
+    expect(body.sale['changeMinor']).toBe('2700');
+  });
+
+  it('settles a card and cash together, with the change out of the cash', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, {
+      tenders: [
+        { kind: 'electronic', scheme: 'mada', reference: 'AUTH-77', amountMinor: '1000' },
+        { kind: 'cash', amountMinor: '2000' },
+      ],
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json<{
+      sale: Record<string, string> & {
+        tenders: { kind: string; scheme: string | null; amountMinor: string }[];
+      };
+    }>();
+    expect(body.sale['totalMinor']).toBe('2300');
+    // Three concepts, three numbers. Calling the tendered total "cash
+    // received" was a statement about the drawer that was simply false.
+    expect(body.sale['tenderedMinor']).toBe('3000');
+    expect(body.sale['cashReceivedMinor']).toBe('2000');
+    expect(body.sale['changeMinor']).toBe('700');
+    expect(
+      body.sale.tenders.map((tender) => [tender.kind, tender.scheme, tender.amountMinor]),
+    ).toEqual([
+      ['electronic', 'mada', '1000'],
+      ['cash', null, '2000'],
+    ]);
+
+    // 13.00 of the 20.00 cash stays in the drawer; the card settled 10.00.
+    const recorded = business.sales[0];
+    const tenders = recorded?.tenders ?? [];
+    expect(tenders).toHaveLength(2);
+    const cash = tenders.find((tender) => tender.kind === 'cash');
+    const card = tenders.find((tender) => tender.kind === 'electronic');
+    expect(cash?.changeMinor).toBe('700');
+    expect(cash?.scheme).toBeNull();
+    expect(card?.scheme).toBe('mada');
+    expect(card?.reference).toBe('AUTH-77');
+    expect(card?.changeMinor).toBe('0');
+  });
+
+  it('refuses a card charged more than the sale', async () => {
+    // No mechanism exists to hand the difference back.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, {
+      tenders: [{ kind: 'electronic', scheme: 'visa', reference: 'AUTH-1', amountMinor: '2400' }],
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: 'electronic-overpay' });
+    expect(business.sales).toHaveLength(0);
+  });
+
+  it.each([
+    ['both', { cashReceivedMinor: '5000', tenders: [{ kind: 'cash', amountMinor: '5000' }] }],
+    ['neither', {}],
+  ])('refuses a request naming %s payment shape', async (_label, overrides) => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, overrides);
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: 'invalid_body' });
+    expect(business.sales).toHaveLength(0);
+  });
+
+  it.each([
+    ['pan', { pan: '4111111111111111' }],
+    ['cvv', { cvv: '123' }],
+    ['track2', { track2: ';4111111111111111=2512?' }],
+  ])('refuses cardholder data sent as %s', async (field, extra) => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, {
+      cashReceivedMinor: '5000',
+      ...extra,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: 'card_data_refused', field });
+  });
+
+  it('finds cardholder data nested inside a tender', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, {
+      tenders: [
+        {
+          kind: 'electronic',
+          scheme: 'mada',
+          reference: 'AUTH-1',
+          amountMinor: '2300',
+          cardNumber: '4111111111111111',
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: 'card_data_refused', field: 'cardNumber' });
+  });
+
+  it.each([
+    ['zero', [{ kind: 'cash', amountMinor: '0' }]],
+    [
+      'two cash lines',
+      [
+        { kind: 'cash', amountMinor: '1200' },
+        { kind: 'cash', amountMinor: '1200' },
+      ],
+    ],
+    [
+      'a repeated approval',
+      [
+        { kind: 'electronic', scheme: 'mada', reference: 'AUTH-1', amountMinor: '1150' },
+        { kind: 'electronic', scheme: 'mada', reference: 'AUTH-1', amountMinor: '1150' },
+      ],
+    ],
+  ])('refuses %s as a tender list', async (_label, tenders) => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, { tenders });
+    // Either the schema catches it or the domain does; both refuse, and
+    // neither creates a sale.
+    expect([400, 422]).toContain(response.statusCode);
+    expect(business.sales).toHaveLength(0);
+  });
+
+  it('refuses an unknown scheme', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, {
+      tenders: [
+        { kind: 'electronic', scheme: 'bitcoin', reference: 'AUTH-1', amountMinor: '2300' },
+      ],
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('refuses an oversized approval reference', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await checkout(app, cookie, {
+      tenders: [
+        {
+          kind: 'electronic',
+          scheme: 'mada',
+          reference: 'A'.repeat(65),
+          amountMinor: '2300',
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('answers 409 when the same key is reused with a different payment mix', async () => {
+    // The same basket paid a different way is a different commercial event.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const first = await checkout(app, cookie, { cashReceivedMinor: '5000' });
+    expect(first.statusCode).toBe(201);
+
+    const second = await checkout(app, cookie, {
+      tenders: [{ kind: 'electronic', scheme: 'mada', reference: 'AUTH-2', amountMinor: '2300' }],
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({ error: 'idempotency-conflict' });
+    expect(business.sales).toHaveLength(1);
+  });
+
+  it('replays a legacy cash request sent again as its tender equivalent', async () => {
+    // The two shapes normalise to the same intent, so this is a retry and not
+    // a conflict.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    await checkout(app, cookie, { cashReceivedMinor: '5000' });
+    const again = await checkout(app, cookie, {
+      tenders: [{ kind: 'cash', amountMinor: '5000' }],
+    });
+
+    expect(again.statusCode).toBe(200);
+    expect(again.json<{ replayed: boolean }>().replayed).toBe(true);
+    expect(business.sales).toHaveLength(1);
+  });
+});
+
+describe('POST /v1/sales — discounts', () => {
+  const operation = '018f2000-0000-7000-8000-0000000000e2';
+
+  function discounted(server: FastifyInstance, cookie: string, overrides: Record<string, unknown>) {
+    return server.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: operation,
+        terminalId: A.terminal,
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+        ...overrides,
+      },
+    });
+  }
+
+  it('refuses any discount from a cashier, who is authorised for none', async () => {
+    // ROLE_MAX_DISCOUNT_BP.cashier is 0 bp. One halala off is still a discount.
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await discounted(app, cookie, {
+      basketDiscount: { mode: 'fixed', amountMinor: '1' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: 'discount-not-authorized' });
+    expect(business.sales).toHaveLength(0);
+  });
+
+  it('lets a manager grant a discount inside their ceiling, and records it', async () => {
+    app = await build('manager');
+    const cookie = await cookieFor(app);
+    const response = await discounted(app, cookie, {
+      basketDiscount: { mode: 'basis-points', value: 1_000, reason: 'عرض الافتتاح' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json<{ sale: Record<string, string> }>();
+    // 23.00 less 10% is 20.70.
+    expect(body.sale['totalMinor']).toBe('2070');
+
+    const recorded = business.sales[0];
+    expect(recorded?.discounts).toHaveLength(1);
+    expect(recorded?.discounts[0]).toMatchObject({
+      scope: 'basket',
+      kind: 'percentage',
+      inputValue: '1000',
+      amountMinor: '230',
+      reason: 'عرض الافتتاح',
+      grantedByUserId: A.user,
+    });
+  });
+
+  it('refuses a manager a discount beyond their ceiling', async () => {
+    // ROLE_MAX_DISCOUNT_BP.manager is 2000 bp.
+    app = await build('manager');
+    const cookie = await cookieFor(app);
+    const response = await discounted(app, cookie, {
+      basketDiscount: { mode: 'basis-points', value: 2_001 },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(business.sales).toHaveLength(0);
+  });
+
+  it('refuses a fixed discount that is over the ceiling by less than a basis point', async () => {
+    /*
+     * The rounding case, end to end. 23.00 at 2000 bp permits 4.60 exactly;
+     * 4.61 is 2004 bp once the rate is computed honestly, and truncation used
+     * to report it as 2004 too — but on a base that does not divide evenly the
+     * old arithmetic let a discount just over the line through.
+     */
+    app = await build('manager');
+    const cookie = await cookieFor(app);
+
+    const allowed = await discounted(app, cookie, {
+      basketDiscount: { mode: 'fixed', amountMinor: '460' },
+    });
+    expect(allowed.statusCode).toBe(201);
+
+    app = await build('manager');
+    const cookie2 = await cookieFor(app);
+    const refused = await discounted(app, cookie2, {
+      basketDiscount: { mode: 'fixed', amountMinor: '461' },
+    });
+    expect(refused.statusCode).toBe(403);
+  });
+
+  it('records a line discount against the line that got it', async () => {
+    app = await build('manager');
+    const cookie = await cookieFor(app);
+    const response = await discounted(app, cookie, {
+      lines: [
+        {
+          productId: A.milk,
+          quantityScaled: '2000',
+          discount: { mode: 'fixed', amountMinor: '150' },
+        },
+      ],
+    });
+
+    expect(response.statusCode).toBe(201);
+    const recorded = business.sales[0];
+    expect(recorded?.discounts[0]).toMatchObject({
+      scope: 'line',
+      lineNumber: 1,
+      kind: 'fixed',
+      inputValue: '150',
+      amountMinor: '150',
+    });
+    expect(recorded?.totalMinor).toBe('2150');
+  });
+
+  it('never lets a client name the discount it was granted', async () => {
+    app = await build('manager');
+    const cookie = await cookieFor(app);
+    const response = await discounted(app, cookie, {
+      basketDiscount: { mode: 'basis-points', value: 1_000 },
+      discount: { mode: 'fixed', amountMinor: '2300' },
+    });
+    // `discount` is on the forbidden-field list and is refused by name.
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: 'forbidden_field', field: 'discount' });
+  });
+});
+
 describe('POST /v1/sales', () => {
   const operation = '018f2000-0000-7000-8000-0000000000f1';
 

@@ -90,7 +90,7 @@ model Branch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   terminals          Terminal[]
   inventoryBalances  InventoryBalance[]
   inventoryMovements InventoryMovement[]
@@ -100,52 +100,53 @@ model Branch {
   memberships        TenantMembership[]
 
   @@unique([tenantId, code])
-  @@index([tenantId, isActive])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, isActive])
   @@map("branches")
 }
 
 model User {
-  id           String   @id @db.Uuid
-  tenantId     String   @db.Uuid
+  id           String  @id @db.Uuid
+  tenantId     String  @db.Uuid
   email        String
   displayName  String
   /// Hash only. A plaintext or reversible credential must never reach a column.
   /// The encoding carries its own KDF parameters, so the cost can be raised
   /// later without invalidating hashes written under the old ones (ADR-0012).
   passwordHash String?
-  isActive     Boolean  @default(true)
+  isActive     Boolean @default(true)
 
   /// Consecutive failed attempts since the last success. Reset on success.
-  failedLoginCount Int @default(0)
+  failedLoginCount Int       @default(0)
   /// Set when the count crosses the threshold. A null value is not a lock.
   lockedUntil      DateTime?
   /// Bumped to invalidate every existing session for this user at once — a
   /// password change or a suspected compromise, without a session sweep.
   /// A session carries the version it was minted under and stops matching.
-  authVersion      Int @default(1)
+  authVersion      Int       @default(1)
   lastLoginAt      DateTime?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  memberships TenantMembership[]
-  roles       UserRole[]
-  sessions    Session[]
-  shifts      Shift[]
-  sales       Sale[]
-  auditEvents AuditEvent[]
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships   TenantMembership[]
+  roles         UserRole[]
+  sessions      Session[]
+  shifts        Shift[]
+  sales         Sale[]
+  auditEvents   AuditEvent[]
+  saleDiscounts SaleDiscount[]
 
   @@unique([tenantId, email])
-  @@index([tenantId, isActive])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, isActive])
   @@map("users")
 }
 
@@ -170,16 +171,16 @@ model TenantMembership {
 
 /// Roles are per tenant so a merchant can define their own beyond the defaults.
 model Role {
-  id          String   @id @db.Uuid
-  tenantId    String   @db.Uuid
-  key         String
-  nameAr      String
-  nameEn      String?
+  id                     String   @id @db.Uuid
+  tenantId               String   @db.Uuid
+  key                    String
+  nameAr                 String
+  nameEn                 String?
   /// Ceiling this role may discount, in basis points of the undiscounted cart.
-  maxDiscountBasisPoints Int @default(0)
-  isSystem    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  maxDiscountBasisPoints Int      @default(0)
+  isSystem               Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   permissions RolePermission[]
@@ -194,9 +195,9 @@ model Role {
 }
 
 model RolePermission {
-  id           String @id @db.Uuid
-  tenantId     String @db.Uuid
-  roleId       String @db.Uuid
+  id            String @id @db.Uuid
+  tenantId      String @db.Uuid
+  roleId        String @db.Uuid
   permissionKey String
 
   tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -224,17 +225,17 @@ model UserRole {
 }
 
 model Terminal {
-  id         String   @id @db.Uuid
-  tenantId   String   @db.Uuid
-  branchId   String   @db.Uuid
+  id         String    @id @db.Uuid
+  tenantId   String    @db.Uuid
+  branchId   String    @db.Uuid
   code       String
   label      String
   /// Stable browser/device fingerprint, so a till can be recognised on return.
   deviceKey  String?
-  isActive   Boolean  @default(true)
+  isActive   Boolean   @default(true)
   lastSeenAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
@@ -242,11 +243,11 @@ model Terminal {
   sales  Sale[]
 
   @@unique([tenantId, code])
-  @@index([tenantId, branchId, isActive])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, branchId, isActive])
   @@map("terminals")
 }
 
@@ -255,10 +256,10 @@ model Terminal {
 model TenantSettings {
   tenantId String @id @db.Uuid
 
-  vertical           String  @default("retail")
-  priceMode          String  @default("tax-inclusive")
-  defaultVatBasisPoints Int  @default(1500)
-  currency           String  @default("SAR")
+  vertical              String @default("retail")
+  priceMode             String @default("tax-inclusive")
+  defaultVatBasisPoints Int    @default(1500)
+  currency              String @default("SAR")
 
   enableProductImages Boolean @default(false)
   requireBarcode      Boolean @default(true)
@@ -295,11 +296,11 @@ model Category {
   products Product[]
 
   @@unique([tenantId, nameAr])
-  @@index([tenantId, isActive, sortOrder])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, isActive, sortOrder])
   @@map("categories")
 }
 
@@ -345,15 +346,15 @@ model Product {
   saleLines          SaleLine[]
 
   @@unique([tenantId, sku])
+  /// The tenant-consistency key. A child row references this table by
+  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
+  /// reference that crosses tenants (ADR-0004).
+  @@unique([tenantId, id])
   @@index([tenantId, isActive])
   @@index([tenantId, barcode])
   @@index([tenantId, categoryId])
   @@index([tenantId, codeReverse])
   @@index([tenantId, nameAr])
-  /// The tenant-consistency key. A child row references this table by
-  /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
-  /// reference that crosses tenants (ADR-0004).
-  @@unique([tenantId, id])
   @@map("products")
 }
 
@@ -403,13 +404,13 @@ model ProductPrice {
 /// balance row for the same product exist without violating anything, and two
 /// disagreeing stock figures is worse than none.
 model InventoryBalance {
-  tenantId  String @db.Uuid
-  branchId  String @db.Uuid
-  productId String @db.Uuid
+  tenantId       String   @db.Uuid
+  branchId       String   @db.Uuid
+  productId      String   @db.Uuid
   /// Scaled by 1000, signed: a negative balance is oversell, which the tenant
   /// may or may not permit.
-  quantityScaled BigInt @default(0)
-  updatedAt DateTime @updatedAt
+  quantityScaled BigInt   @default(0)
+  updatedAt      DateTime @updatedAt
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
@@ -421,10 +422,10 @@ model InventoryBalance {
 }
 
 model InventoryMovement {
-  id        String   @id @db.Uuid
-  tenantId  String   @db.Uuid
-  branchId  String   @db.Uuid
-  productId String   @db.Uuid
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  branchId  String @db.Uuid
+  productId String @db.Uuid
 
   /// 'sale' | 'return' | 'adjustment' | 'receipt' | 'transfer'
   kind           String
@@ -468,12 +469,12 @@ model Customer {
   sales  Sale[]
 
   @@unique([tenantId, phone])
-  @@index([tenantId, isActive])
-  @@index([tenantId, nameAr])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, isActive])
+  @@index([tenantId, nameAr])
   @@map("customers")
 }
 
@@ -482,13 +483,13 @@ model Customer {
 // ---------------------------------------------------------------------------
 
 model Shift {
-  id         String   @id @db.Uuid
-  tenantId   String   @db.Uuid
-  branchId   String   @db.Uuid
-  terminalId String   @db.Uuid
-  userId     String   @db.Uuid
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  branchId   String @db.Uuid
+  terminalId String @db.Uuid
+  userId     String @db.Uuid
 
-  status            String    @default("open")
+  status            String  @default("open")
   openingFloatMinor BigInt
   declaredCashMinor BigInt?
   expectedCashMinor BigInt?
@@ -507,13 +508,13 @@ model Shift {
   cashMovements CashMovement[]
   sales         Sale[]
 
-  @@index([tenantId, branchId, status])
-  @@index([tenantId, terminalId, status])
-  @@index([tenantId, openedAt])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, branchId, status])
+  @@index([tenantId, terminalId, status])
+  @@index([tenantId, openedAt])
   @@map("shifts")
 }
 
@@ -523,7 +524,7 @@ model CashMovement {
   shiftId  String @db.Uuid
 
   /// 'sale' | 'refund' | 'pay-in' | 'pay-out' | 'opening-float'
-  kind String
+  kind        String
   /// Signed halalas: a pay-out and a refund are negative, matching the domain.
   amountMinor BigInt
   reason      String?
@@ -544,12 +545,12 @@ model CashMovement {
 // ---------------------------------------------------------------------------
 
 model Sale {
-  id       String @id @db.Uuid
-  tenantId String @db.Uuid
-  branchId String @db.Uuid
-  terminalId String @db.Uuid
-  shiftId    String @db.Uuid
-  userId     String @db.Uuid
+  id         String  @id @db.Uuid
+  tenantId   String  @db.Uuid
+  branchId   String  @db.Uuid
+  terminalId String  @db.Uuid
+  shiftId    String  @db.Uuid
+  userId     String  @db.Uuid
   customerId String? @db.Uuid
 
   /// The client-supplied operation id. Unique per tenant, which is what makes
@@ -562,16 +563,16 @@ model Sale {
 
   /// Every figure the receipt states, snapshotted. Recomputing from products
   /// later would produce a different answer after any price change.
-  priceMode        String
-  currency         String @default("SAR")
-  grossMinor       BigInt
-  lineDiscountMinor  BigInt
+  priceMode           String
+  currency            String @default("SAR")
+  grossMinor          BigInt
+  lineDiscountMinor   BigInt
   basketDiscountMinor BigInt
-  netMinor         BigInt
-  vatMinor         BigInt
-  totalMinor       BigInt
-  tenderedMinor    BigInt
-  changeMinor      BigInt
+  netMinor            BigInt
+  vatMinor            BigInt
+  totalMinor          BigInt
+  tenderedMinor       BigInt
+  changeMinor         BigInt
 
   issuedAt  DateTime
   createdAt DateTime @default(now())
@@ -590,14 +591,14 @@ model Sale {
 
   @@unique([tenantId, operationId])
   @@unique([tenantId, branchId, sequence])
-  @@index([tenantId, branchId, issuedAt])
-  @@index([tenantId, shiftId])
-  @@index([tenantId, status, issuedAt])
-  @@index([tenantId, customerId])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, branchId, issuedAt])
+  @@index([tenantId, shiftId])
+  @@index([tenantId, status, issuedAt])
+  @@index([tenantId, customerId])
   @@map("sales")
 }
 
@@ -607,7 +608,7 @@ model SaleLine {
   saleId   String @db.Uuid
 
   /// Kept for reporting, but nothing on this row is read back from it.
-  productId String? @db.Uuid
+  productId  String? @db.Uuid
   lineNumber Int
 
   /// Snapshot: what this product was called and cost at the moment of sale.
@@ -625,18 +626,18 @@ model SaleLine {
   vatMinor            BigInt
   totalMinor          BigInt
 
-  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sale       Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
-  product    Product?     @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale        Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+  product     Product?     @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
   returnLines ReturnLine[]
 
   @@unique([tenantId, saleId, lineNumber])
-  @@index([tenantId, saleId])
-  @@index([tenantId, productId])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, saleId])
+  @@index([tenantId, productId])
   @@map("sale_lines")
 }
 
@@ -646,21 +647,27 @@ model SaleDiscount {
   saleId   String @db.Uuid
 
   /// 'line' | 'basket'
-  scope      String
-  lineNumber Int?
+  scope           String
+  lineNumber      Int?
   /// 'fixed' | 'percentage'
-  kind        String
+  kind            String
   /// Halalas for fixed, basis points for percentage -- as entered.
-  inputValue  BigInt
+  inputValue      BigInt
   /// Halalas actually granted after allocation.
-  amountMinor BigInt
-  reason      String?
+  amountMinor     BigInt
+  reason          String?
   grantedByUserId String? @db.Uuid
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sale   Sale   @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale      Sale   @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+  /// Tenant-consistent: a discount cannot be attributed to a user in another
+  /// tenant, whatever the application believes (ADR-0004).
+  grantedBy User?  @relation(fields: [tenantId, grantedByUserId], references: [tenantId, id], onDelete: NoAction)
 
   @@index([tenantId, saleId])
+  @@index([tenantId, grantedByUserId])
   @@map("sale_discounts")
 }
 
@@ -669,11 +676,17 @@ model Tender {
   tenantId String @db.Uuid
   saleId   String @db.Uuid
 
-  /// 'cash' | 'card' | 'mada' | 'transfer'
+  /// 'cash' | 'electronic'. 'card' | 'mada' | 'transfer' are legacy and
+  /// readable, but no route writes them any more.
   kind        String
+  /// 'mada' | 'visa' | 'mastercard' | 'amex' | 'apple-pay' | 'other'.
+  /// Present on an electronic tender and on nothing else.
+  scheme      String?
   amountMinor BigInt
   /// Only cash can carry this above zero (ADR-0002).
-  changeMinor BigInt @default(0)
+  changeMinor BigInt  @default(0)
+  /// The external approval this settlement record points at. Never a card
+  /// number, never a PAN, never track data — see ADR-0015.
   reference   String?
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -681,6 +694,7 @@ model Tender {
 
   @@index([tenantId, saleId])
   @@index([tenantId, kind])
+  @@index([tenantId, scheme])
   @@map("tenders")
 }
 
@@ -691,7 +705,7 @@ model Tender {
 model Invoice {
   id       String @id @db.Uuid
   tenantId String @db.Uuid
-  saleId   String @db.Uuid @unique
+  saleId   String @unique @db.Uuid
 
   invoiceNumber String
   /// 'simplified' | 'standard'
@@ -713,21 +727,21 @@ model Invoice {
   issuedAt  DateTime
   createdAt DateTime @default(now())
 
-  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sale          Sale                   @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
-  taxBreakdown  InvoiceTaxBreakdown[]
-  refunds       Refund[]
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale         Sale                  @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
+  taxBreakdown InvoiceTaxBreakdown[]
+  refunds      Refund[]
 
   @@unique([tenantId, invoiceNumber])
   /// The relation key for the one-to-one back to the sale. `saleId` is already
   /// globally unique, so this adds no constraint the data did not have — it
   /// states the pair the composite foreign key references.
   @@unique([tenantId, saleId])
-  @@index([tenantId, issuedAt])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, issuedAt])
   @@map("invoices")
 }
 
@@ -761,7 +775,7 @@ model Return {
   branchId String @db.Uuid
 
   operationId String
-  status      String @default("finalized")
+  status      String  @default("finalized")
   reason      String?
 
   netMinor   BigInt
@@ -779,12 +793,12 @@ model Return {
   refunds Refund[]
 
   @@unique([tenantId, operationId])
-  @@index([tenantId, saleId])
-  @@index([tenantId, issuedAt])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, saleId])
+  @@index([tenantId, issuedAt])
   @@map("returns")
 }
 
@@ -809,9 +823,9 @@ model ReturnLine {
 }
 
 model Refund {
-  id       String @id @db.Uuid
-  tenantId String @db.Uuid
-  returnId String @db.Uuid
+  id        String  @id @db.Uuid
+  tenantId  String  @db.Uuid
+  returnId  String  @db.Uuid
   invoiceId String? @db.Uuid
 
   /// 'cash' | 'card' | 'mada' | 'transfer'
@@ -950,10 +964,10 @@ model Session {
 /// tenant and not derived from anyone's data. Tenants bind these keys to their
 /// own roles through RolePermission, which is tenant-owned.
 model Permission {
-  key         String   @id
+  key           String   @id
   descriptionAr String
   descriptionEn String?
-  createdAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
 
   roles RolePermission[]
 

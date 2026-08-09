@@ -3,6 +3,8 @@ import { ShiftOpenRefusedError } from '@korvi/database';
 import {
   checkoutBody,
   currentShiftQuery,
+  carriesCardNumber,
+  namesCardField,
   namesForbiddenField,
   openShiftBody,
   productQuery,
@@ -58,6 +60,11 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'invalid-quantity': 'الكمية غير صالحة لهذا الصنف.',
   'insufficient-stock': 'الكمية المطلوبة غير متوفرة في المخزون.',
   'insufficient-cash': 'المبلغ المستلم أقل من المطلوب.',
+  'invalid-tender': 'بيانات الدفع غير صالحة. راجع طريقة الدفع والمبلغ.',
+  'electronic-overpay': 'مبلغ الدفع الإلكتروني يتجاوز المطلوب، والباقي لا يُعاد إلا نقداً.',
+  'ambiguous-payment': 'أرسل نقداً أو قائمة دفعات، لا الاثنين معاً.',
+  'invalid-discount': 'الخصم غير صالح لهذه السلة.',
+  'discount-not-authorized': 'الخصم المطلوب يتجاوز الحد المسموح لهذا المستخدم.',
   'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
   'duplicate-line': 'الصنف مكرر في السلة. ادمج الكمية في سطر واحد.',
   'shift-invalid': 'الوردية لم تعد صالحة لهذا الصندوق. تحقّق من الوردية.',
@@ -73,6 +80,13 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'invalid-quantity': 422,
   'insufficient-stock': 409,
   'insufficient-cash': 422,
+  'invalid-tender': 422,
+  'electronic-overpay': 422,
+  'ambiguous-payment': 400,
+  'invalid-discount': 422,
+  // 403: the request is well-formed and the server understood it. This user
+  // may not grant that much.
+  'discount-not-authorized': 403,
   'idempotency-conflict': 409,
   'duplicate-line': 422,
   'shift-invalid': 409,
@@ -349,6 +363,20 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       if (forbidden !== null) {
         return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
       }
+      // Cardholder data is refused by name, at any depth. Korvi records that a
+      // payment was approved elsewhere; it is not in the business of holding
+      // the instrument that approved it (ADR-0015).
+      const cardField = namesCardField(request.body);
+      if (cardField !== null) {
+        return reply.code(400).send({ error: 'card_data_refused', field: cardField });
+      }
+      // And by value, not only by field name: a card number arrives in a field
+      // called `reference` far more plausibly than in one called `pan`. The
+      // response names no field and echoes nothing — a refusal that quotes the
+      // number is a refusal that writes it down.
+      if (carriesCardNumber(request.body)) {
+        return reply.code(400).send({ error: 'card_data_refused' });
+      }
       const parsed = checkoutBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
@@ -356,8 +384,14 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         principal,
         operationId: parsed.data.operationId,
         terminalId: parsed.data.terminalId,
-        cashReceivedMinor: parsed.data.cashReceivedMinor,
         lines: parsed.data.lines,
+        ...(parsed.data.cashReceivedMinor === undefined
+          ? {}
+          : { cashReceivedMinor: parsed.data.cashReceivedMinor }),
+        ...(parsed.data.tenders === undefined ? {} : { tenders: parsed.data.tenders }),
+        ...(parsed.data.basketDiscount === undefined
+          ? {}
+          : { basketDiscount: parsed.data.basketDiscount }),
       });
 
       if (result.outcome === 'failure') {

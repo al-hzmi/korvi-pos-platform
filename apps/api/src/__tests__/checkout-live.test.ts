@@ -505,7 +505,14 @@ describe.skipIf(url === '')('checkout races, live', () => {
         ],
         discounts: [],
         tenders: [
-          { id: newId(), kind: 'cash', amountMinor: '1150', changeMinor: '0', reference: null },
+          {
+            id: newId(),
+            kind: 'cash',
+            scheme: null,
+            amountMinor: '1150',
+            changeMinor: '0',
+            reference: null,
+          },
         ],
       },
       invoice: {

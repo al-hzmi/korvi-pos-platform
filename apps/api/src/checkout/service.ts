@@ -1,5 +1,8 @@
 import {
+  DiscountNotPermittedError,
   InvalidAmountError,
+  InvalidDiscountError,
+  InvalidTenderError,
   NonCashChangeError,
   UnderpaidError,
   basisPoints,
@@ -22,6 +25,7 @@ import type {
   AuditRepository,
   AuthenticatedPrincipal,
   CartLineInput,
+  Discount,
   Currency,
   IdempotencyRepository,
   InventoryMovementInput,
@@ -29,8 +33,12 @@ import type {
   PriceMode,
   Product,
   ProductRepository,
+  SaleDiscountRecord,
   SaleRecord,
   SaleRepository,
+  TenderLine,
+  TenderRecord,
+  TenderScheme,
   ShiftRepository,
   TenantRepository,
   TenantScope,
@@ -55,6 +63,11 @@ export type CheckoutFailureReason =
   | 'invalid-quantity'
   | 'insufficient-stock'
   | 'insufficient-cash'
+  | 'invalid-tender'
+  | 'electronic-overpay'
+  | 'ambiguous-payment'
+  | 'invalid-discount'
+  | 'discount-not-authorized'
   | 'idempotency-conflict'
   | 'duplicate-line'
   | 'shift-invalid'
@@ -79,6 +92,14 @@ export interface SaleSummaryLine {
   readonly totalMinor: string;
 }
 
+export interface SaleSummaryTender {
+  readonly kind: string;
+  readonly scheme: string | null;
+  readonly amountMinor: string;
+  readonly changeMinor: string;
+  readonly reference: string | null;
+}
+
 export interface SaleSummary {
   readonly saleId: string;
   readonly operationId: string;
@@ -94,8 +115,19 @@ export interface SaleSummary {
   readonly netMinor: string;
   readonly vatMinor: string;
   readonly totalMinor: string;
+  /**
+   * Every tender added up, before change.
+   *
+   * Distinct from `cashReceivedMinor` on purpose. On a split payment they are
+   * different numbers, and calling the total "cash received" is a statement
+   * about the drawer that is simply false.
+   */
+  readonly tenderedMinor: string;
+  /** Cash, and only cash. Equal to `tenderedMinor` on a cash-only sale. */
   readonly cashReceivedMinor: string;
   readonly changeMinor: string;
+  /** What was actually presented, for the receipt and for reconciliation. */
+  readonly tenders: readonly SaleSummaryTender[];
 }
 
 export interface CheckoutSuccess {
@@ -107,10 +139,41 @@ export interface CheckoutSuccess {
 
 export type CheckoutResult = CheckoutSuccess | CheckoutFailure;
 
+/**
+ * A discount as asked for, before anything has agreed to it.
+ *
+ * `basis-points` is a rate; `fixed` is halalas off. What is actually granted
+ * is decided by the domain against the principal's own ceiling.
+ */
+export type CheckoutDiscountInput =
+  | { readonly mode: 'basis-points'; readonly value: number; readonly reason?: string | undefined }
+  | { readonly mode: 'fixed'; readonly amountMinor: string; readonly reason?: string | undefined };
+
+/**
+ * A payment that has already happened.
+ *
+ * `electronic` records a settlement approved elsewhere — a terminal, a wallet,
+ * an acquirer. Korvi contacts none of them and this type does not pretend
+ * otherwise: there is a scheme, somebody else's reference, and nothing that
+ * could move money.
+ */
+export type CheckoutTenderInput =
+  | { readonly kind: 'cash'; readonly amountMinor: string }
+  | {
+      readonly kind: 'electronic';
+      readonly amountMinor: string;
+      readonly scheme: TenderScheme;
+      readonly reference: string;
+    };
+
 export interface CheckoutLineInput {
   readonly productId: string;
   /** Scaled by 1000, as a string. Never a float (ADR-0002). */
   readonly quantityScaled: string;
+  // `| undefined` rather than a bare optional: these arrive straight from a
+  // parsed request body, where an absent key really is `undefined`, and
+  // exactOptionalPropertyTypes treats the two as different things.
+  readonly discount?: CheckoutDiscountInput | undefined;
 }
 
 export interface CheckoutInput {
@@ -118,7 +181,16 @@ export interface CheckoutInput {
   readonly operationId: string;
   readonly terminalId: string;
   readonly lines: readonly CheckoutLineInput[];
-  readonly cashReceivedMinor: string;
+  /**
+   * The cash-only shape the production till sends today.
+   *
+   * Exactly one of this and `tenders` may be present. Both, or neither, is a
+   * client that does not know what it is asking for, and guessing on its
+   * behalf is how a sale gets settled twice over.
+   */
+  readonly cashReceivedMinor?: string | undefined;
+  readonly tenders?: readonly CheckoutTenderInput[] | undefined;
+  readonly basketDiscount?: CheckoutDiscountInput | undefined;
 }
 
 export interface CheckoutDeps {
@@ -132,6 +204,58 @@ export interface CheckoutDeps {
   readonly now?: () => Date;
   readonly newId?: () => string;
   readonly onAuditError?: (error: unknown) => void;
+}
+
+/**
+ * The one place the two request shapes become one thing.
+ *
+ * A second checkout engine for "advanced" payments would be two implementations
+ * of the arithmetic that decides what a customer is charged, and they would
+ * diverge — quietly, on the path nobody exercises. So the legacy cash figure is
+ * turned into a one-line tender list here, at the edge, and everything after
+ * this point sees only a tender list.
+ */
+function normalizePayment(
+  input: CheckoutInput,
+): readonly CheckoutTenderInput[] | CheckoutFailureReason {
+  const hasCash = input.cashReceivedMinor !== undefined;
+  const hasTenders = input.tenders !== undefined;
+
+  if (hasCash === hasTenders) return 'ambiguous-payment';
+  if (input.tenders !== undefined) return input.tenders;
+
+  const cash = input.cashReceivedMinor ?? '0';
+  // A legacy request that handed over nothing is underpaid, which is what it
+  // was before this strike. Reporting it as a malformed tender would change a
+  // refusal the till already understands.
+  if (BigInt(cash) <= 0n) return 'insufficient-cash';
+  return [{ kind: 'cash', amountMinor: cash }];
+}
+
+/** A requested discount, in the vocabulary the domain prices with. */
+function toDomainDiscount(requested: CheckoutDiscountInput): Discount {
+  return requested.mode === 'basis-points'
+    ? { kind: 'percentage', value: BigInt(requested.value) }
+    : { kind: 'fixed', value: BigInt(requested.amountMinor) };
+}
+
+/** What the client asked for, canonically, for the intent fingerprint. */
+function describeDiscount(requested: CheckoutDiscountInput | undefined): string {
+  if (requested === undefined) return '';
+  return requested.mode === 'basis-points'
+    ? `bp:${String(requested.value)}`
+    : `fx:${requested.amountMinor}`;
+}
+
+function toTenderLine(tender: CheckoutTenderInput, currency: Currency): TenderLine {
+  return tender.kind === 'cash'
+    ? { kind: 'cash', amount: money(BigInt(tender.amountMinor), currency) }
+    : {
+        kind: 'electronic',
+        amount: money(BigInt(tender.amountMinor), currency),
+        scheme: tender.scheme,
+        reference: tender.reference,
+      };
 }
 
 const IDEMPOTENCY_SCOPE = 'checkout';
@@ -168,8 +292,22 @@ function summarise(sale: SaleRecord, invoiceNumber: string, cashierName: string)
     netMinor: sale.netMinor,
     vatMinor: sale.vatMinor,
     totalMinor: sale.totalMinor,
-    cashReceivedMinor: sale.tenderedMinor,
+    tenderedMinor: sale.tenderedMinor,
+    // From the persisted tender rows, on a fresh sale and on a replay alike.
+    // Deriving it from the total would be right only while every sale was
+    // cash, which stopped being true with this strike.
+    cashReceivedMinor: sale.tenders
+      .filter((tender) => tender.kind === 'cash')
+      .reduce((total, tender) => total + BigInt(tender.amountMinor), 0n)
+      .toString(),
     changeMinor: sale.changeMinor,
+    tenders: sale.tenders.map((tender) => ({
+      kind: tender.kind,
+      scheme: tender.scheme,
+      amountMinor: tender.amountMinor,
+      changeMinor: tender.changeMinor,
+      reference: tender.reference,
+    })),
   };
 }
 
@@ -239,14 +377,24 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         return fail('shift-invalid');
       }
 
+      const payment = normalizePayment(input);
+      if (typeof payment === 'string') return fail(payment);
+
       const intentHash = fingerprintIntent({
         branchId: shift.branchId,
         terminalId: input.terminalId,
         lines: input.lines.map((line) => ({
           productId: line.productId,
           quantityScaled: line.quantityScaled,
+          discount: describeDiscount(line.discount),
         })),
-        cashReceivedMinor: input.cashReceivedMinor,
+        tenders: payment.map((tender) => ({
+          kind: tender.kind,
+          amountMinor: tender.amountMinor,
+          scheme: tender.kind === 'electronic' ? tender.scheme : '',
+          reference: tender.kind === 'electronic' ? tender.reference : '',
+        })),
+        basketDiscount: describeDiscount(input.basketDiscount),
       });
 
       // Replay, before anything is computed or written.
@@ -310,21 +458,45 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       const cart = {
         priceMode: settings.priceMode as PriceMode,
         currency,
-        lines: loaded.map((entry, index): CartLineInput => ({
-          lineId: String(index + 1),
-          productId: entry.product.id,
-          sku: entry.product.sku,
-          nameAr: entry.product.nameAr,
-          nameEn: entry.product.nameEn,
-          unitPrice: money(BigInt(entry.product.priceMinor), currency),
-          quantity: quantity(entry.scaled),
-          vatRate: basisPoints(entry.product.vatBasisPoints),
-          isWeighted: entry.product.productType === 'weighted',
-        })),
+        lines: loaded.map((entry, index): CartLineInput => {
+          const requested = input.lines[index]?.discount;
+          return {
+            lineId: String(index + 1),
+            productId: entry.product.id,
+            sku: entry.product.sku,
+            nameAr: entry.product.nameAr,
+            nameEn: entry.product.nameEn,
+            unitPrice: money(BigInt(entry.product.priceMinor), currency),
+            quantity: quantity(entry.scaled),
+            vatRate: basisPoints(entry.product.vatBasisPoints),
+            isWeighted: entry.product.productType === 'weighted',
+            // Omitted rather than set to undefined: exactOptionalPropertyTypes
+            // is on, and an absent key is what "no discount" means there.
+            ...(requested === undefined ? {} : { discount: toDomainDiscount(requested) }),
+          };
+        }),
+        ...(input.basketDiscount === undefined
+          ? {}
+          : { basketDiscount: toDomainDiscount(input.basketDiscount) }),
       };
+
+      // A ceiling says how much; the permission says whether at all. A
+      // principal can hold a role-derived ceiling while their persisted
+      // permission set omits sale.discount, and permissions are what the
+      // server checks (CLAUDE.md, RBAC).
+      if (
+        (input.basketDiscount !== undefined ||
+          input.lines.some((line) => line.discount !== undefined)) &&
+        !input.principal.permissions.includes('sale.discount')
+      ) {
+        return fail('discount-not-authorized');
+      }
 
       const saleId = newId();
       const issuedAt = now().toISOString();
+      const discounted =
+        input.basketDiscount !== undefined ||
+        input.lines.some((line) => line.discount !== undefined);
       let finalized;
       try {
         finalized = finalizeSale({
@@ -337,7 +509,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           cashierId: input.principal.userId,
           customerId: null,
           cart,
-          tenders: [{ kind: 'cash', amount: money(BigInt(input.cashReceivedMinor), currency) }],
+          tenders: payment.map((tender) => toTenderLine(tender, currency)),
           issuedAt,
           // The ceiling comes from the roles the database granted, never from
           // the request. No discount is offered in this strike; passing the
@@ -345,9 +517,22 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           maxDiscountBasisPoints: maxDiscountForRoles(input.principal.roles),
         });
       } catch (error) {
+        // The ceiling is the merchant's policy, and refusing loudly is the
+        // point: silently clamping a discount to what was permitted would give
+        // the customer a different price from the one the cashier promised.
+        if (error instanceof InvalidDiscountError) return fail('invalid-discount');
+        if (error instanceof DiscountNotPermittedError) return fail('discount-not-authorized');
+        if (error instanceof InvalidTenderError) return fail('invalid-tender');
+        // Told apart on purpose. Underpaid is "give me more money"; an
+        // electronic overpay is "that card was charged too much", which no
+        // amount of cash fixes because only cash can give change back.
+        if (error instanceof NonCashChangeError) return fail('electronic-overpay');
         if (error instanceof UnderpaidError) return fail('insufficient-cash');
-        if (error instanceof NonCashChangeError) return fail('insufficient-cash');
-        if (error instanceof InvalidAmountError) return fail('invalid-quantity');
+        if (error instanceof InvalidAmountError) {
+          // A cart that priced to nothing is a discount problem, not a
+          // quantity one, and the cashier fixes it in a different place.
+          return fail(discounted ? 'invalid-discount' : 'invalid-quantity');
+        }
         throw error;
       }
 
@@ -359,6 +544,69 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       }
 
       const priced = finalized.priced;
+
+      /*
+       * Change is drawn from cash and from nowhere else, so it is attributed
+       * to the cash tender rather than spread across the list. An electronic
+       * row with change on it would describe a card terminal handing money
+       * back, which is not a thing that happens — and the database refuses it
+       * anyway (tenders_change_cash_only).
+       */
+      const recordedTenders: TenderRecord[] = payment.map((tender) => ({
+        id: newId(),
+        kind: tender.kind,
+        scheme: tender.kind === 'electronic' ? tender.scheme : null,
+        amountMinor: tender.amountMinor,
+        changeMinor: tender.kind === 'cash' ? finalized.settlement.change.minor.toString() : '0',
+        reference: tender.kind === 'electronic' ? tender.reference : null,
+      }));
+
+      /*
+       * Cash tendered, less the change handed back. The only part of a sale
+       * that reaches the drawer.
+       */
+      const cashRetainedMinor =
+        payment
+          .filter((tender) => tender.kind === 'cash')
+          .reduce((total, tender) => total + BigInt(tender.amountMinor), 0n) -
+        finalized.settlement.change.minor;
+
+      const recordedDiscounts: SaleDiscountRecord[] = [];
+      input.lines.forEach((line, index) => {
+        const requested = line.discount;
+        if (requested === undefined) return;
+        const pricedLine = priced.lines[index];
+        if (pricedLine === undefined) return;
+        recordedDiscounts.push({
+          id: newId(),
+          scope: 'line',
+          lineNumber: index + 1,
+          kind: requested.mode === 'basis-points' ? 'percentage' : 'fixed',
+          inputValue:
+            requested.mode === 'basis-points' ? String(requested.value) : requested.amountMinor,
+          amountMinor: pricedLine.lineDiscount.minor.toString(),
+          reason: requested.reason ?? null,
+          // From the session. A browser that could name the grantor could
+          // attribute its own discount to somebody else.
+          grantedByUserId: input.principal.userId,
+        });
+      });
+
+      if (input.basketDiscount !== undefined) {
+        const requested = input.basketDiscount;
+        recordedDiscounts.push({
+          id: newId(),
+          scope: 'basket',
+          lineNumber: null,
+          kind: requested.mode === 'basis-points' ? 'percentage' : 'fixed',
+          inputValue:
+            requested.mode === 'basis-points' ? String(requested.value) : requested.amountMinor,
+          amountMinor: priced.basketDiscountTotal.minor.toString(),
+          reason: requested.reason ?? null,
+          grantedByUserId: input.principal.userId,
+        });
+      }
+
       let recorded;
       try {
         recorded = await deps.sales.record(scope, {
@@ -399,16 +647,11 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               vatMinor: line.vat.minor.toString(),
               totalMinor: line.total.minor.toString(),
             })),
-            discounts: [],
-            tenders: [
-              {
-                id: newId(),
-                kind: 'cash',
-                amountMinor: finalized.settlement.tendered.minor.toString(),
-                changeMinor: finalized.settlement.change.minor.toString(),
-                reference: null,
-              },
-            ],
+            // Enough to explain the receipt years later without replaying
+            // today's pricing rules against a catalogue that has moved on:
+            // what was asked for, what was granted, and by whom.
+            discounts: recordedDiscounts,
+            tenders: recordedTenders,
           },
           invoice: {
             id: newId(),
@@ -444,16 +687,28 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               actorUserId: input.principal.userId,
               occurredAt: issuedAt,
             })),
-          cashMovement: {
-            id: newId(),
-            shiftId: shift.id,
-            kind: 'sale',
-            // What the drawer gained: the sale total, not what was handed over.
-            amountMinor: priced.total.minor.toString(),
-            reason: null,
-            actorUserId: input.principal.userId,
-            occurredAt: issuedAt,
-          },
+          // What the drawer actually gained.
+          //
+          // The sale total was right only while every sale was cash. On a
+          // split payment the card settles part of it and never touches the
+          // drawer, so recording the total would overstate the till by exactly
+          // the electronic portion — and a shift would reconcile short by that
+          // amount, every day, with nothing to point at.
+          //
+          // Null rather than a zero row when nothing was taken in cash: a
+          // movement of nothing is a movement that did not happen.
+          cashMovement:
+            cashRetainedMinor > 0n
+              ? {
+                  id: newId(),
+                  shiftId: shift.id,
+                  kind: 'sale',
+                  amountMinor: cashRetainedMinor.toString(),
+                  reason: null,
+                  actorUserId: input.principal.userId,
+                  occurredAt: issuedAt,
+                }
+              : null,
           idempotency: {
             id: newId(),
             scope: IDEMPOTENCY_SCOPE,
@@ -494,9 +749,49 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             sequence: recorded.sequence,
             total: moneyToMajorString(priced.total),
             lines: recorded.lines.length,
+            // Money given away and money taken by something other than cash
+            // are the two things a merchant reviews. Amounts and schemes only —
+            // never a reference, which belongs to somebody else's system.
+            discountMinor: (
+              priced.lineDiscountTotal.minor + priced.basketDiscountTotal.minor
+            ).toString(),
+            tenderKinds: recordedTenders
+              .map((tender) => (tender.scheme === null ? tender.kind : tender.scheme))
+              .sort()
+              .join(','),
           },
           occurredAt: issuedAt,
         });
+
+        // discountAudit: a discount is a second fact about the same sale, not a different
+        // sale. Emitting it instead of sale.completed would break the
+        // invariant that every completed sale emits one, and every report
+        // built on that invariant with it.
+        if (recordedDiscounts.length > 0) {
+          await deps.audit.append(scope, {
+            id: newId(),
+            actorUserId: input.principal.userId,
+            branchId: shift.branchId,
+            terminalId: input.terminalId,
+            eventType: 'sale.discounted',
+            entityType: 'sale',
+            entityId: recorded.id,
+            metadata: {
+              sequence: recorded.sequence,
+              discountMinor: (
+                priced.lineDiscountTotal.minor + priced.basketDiscountTotal.minor
+              ).toString(),
+              // Scope and kind, so a manager reviewing give-aways can see the
+              // shape of them. No reference, no scheme, no card data.
+              scopes: recordedDiscounts
+                .map((discount) => discount.scope)
+                .sort()
+                .join(','),
+              grantedByUserId: input.principal.userId,
+            },
+            occurredAt: issuedAt,
+          });
+        }
       } catch (error) {
         onAuditError(error);
       }

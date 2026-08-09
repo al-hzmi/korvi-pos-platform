@@ -116,13 +116,25 @@ describe('tenders', () => {
   });
 
   it('settles exactly on Mada with no change', () => {
-    const sale = finalizeSale(input({ tenders: [{ kind: 'mada', amount: money(11_500n) }] }));
+    const sale = finalizeSale(
+      input({
+        tenders: [
+          { kind: 'electronic', scheme: 'mada', reference: 'AUTH-11500', amount: money(11_500n) },
+        ],
+      }),
+    );
     expect(sale.settlement.change.minor).toBe(0n);
     expect(sale.settlement.changeFrom).toBeNull();
   });
 
   it('settles exactly on card with no change', () => {
-    const sale = finalizeSale(input({ tenders: [{ kind: 'card', amount: money(11_500n) }] }));
+    const sale = finalizeSale(
+      input({
+        tenders: [
+          { kind: 'electronic', scheme: 'visa', reference: 'AUTH-11500', amount: money(11_500n) },
+        ],
+      }),
+    );
     expect(sale.settlement.change.minor).toBe(0n);
   });
 
@@ -130,7 +142,7 @@ describe('tenders', () => {
     const sale = finalizeSale(
       input({
         tenders: [
-          { kind: 'mada', amount: money(6_000n) },
+          { kind: 'electronic', scheme: 'mada', reference: 'AUTH-6000', amount: money(6_000n) },
           { kind: 'cash', amount: money(6_000n) },
         ],
       }),
@@ -142,10 +154,22 @@ describe('tenders', () => {
   it('refuses a non-cash overpayment', () => {
     // A card terminal cannot hand money back.
     expect(() =>
-      finalizeSale(input({ tenders: [{ kind: 'card', amount: money(12_000n) }] })),
+      finalizeSale(
+        input({
+          tenders: [
+            { kind: 'electronic', scheme: 'visa', reference: 'AUTH-12000', amount: money(12_000n) },
+          ],
+        }),
+      ),
     ).toThrow(NonCashChangeError);
     expect(() =>
-      finalizeSale(input({ tenders: [{ kind: 'mada', amount: money(11_501n) }] })),
+      finalizeSale(
+        input({
+          tenders: [
+            { kind: 'electronic', scheme: 'mada', reference: 'AUTH-11501', amount: money(11_501n) },
+          ],
+        }),
+      ),
     ).toThrow(NonCashChangeError);
   });
 
@@ -154,8 +178,8 @@ describe('tenders', () => {
       finalizeSale(
         input({
           tenders: [
-            { kind: 'card', amount: money(6_000n) },
-            { kind: 'mada', amount: money(6_000n) },
+            { kind: 'electronic', scheme: 'visa', reference: 'AUTH-6000', amount: money(6_000n) },
+            { kind: 'electronic', scheme: 'mada', reference: 'AUTH-6000', amount: money(6_000n) },
           ],
         }),
       ),

@@ -1,3 +1,4 @@
+import { ELECTRONIC_SCHEMES } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import { DatabaseError, OperationAlreadyRecordedError, ShiftUnusableError } from '../errors.js';
 import { applyMovementWithin } from './inventory-repository.js';
@@ -15,13 +16,15 @@ import type {
   SaleStatus,
   TenantScope,
   TenderKind,
+  TenderScheme,
   TenderRecord,
 } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 
 const STATUSES: readonly SaleStatus[] = ['finalized', 'voided'];
 const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
-const TENDER_KINDS: readonly TenderKind[] = ['cash', 'card', 'mada', 'transfer'];
+const TENDER_KINDS: readonly TenderKind[] = ['cash', 'card', 'mada', 'transfer', 'electronic'];
+const TENDER_SCHEMES: readonly TenderScheme[] = [...ELECTRONIC_SCHEMES];
 const INVOICE_TYPES: readonly InvoiceType[] = ['simplified', 'standard'];
 const DISCOUNT_SCOPES = ['line', 'basket'] as const;
 const DISCOUNT_KINDS = ['fixed', 'percentage'] as const;
@@ -58,6 +61,7 @@ interface DiscountRow {
 interface TenderRow {
   id: string;
   kind: string;
+  scheme: string | null;
   amountMinor: bigint;
   changeMinor: bigint;
   reference: string | null;
@@ -151,6 +155,7 @@ function tenderToDomain(row: TenderRow): TenderRecord {
   return {
     id: row.id,
     kind: oneOf(TENDER_KINDS, row.kind, 'tenders.kind'),
+    scheme: row.scheme === null ? null : oneOf(TENDER_SCHEMES, row.scheme, 'tenders.scheme'),
     amountMinor: minor(row.amountMinor),
     changeMinor: minor(row.changeMinor),
     reference: row.reference,
@@ -468,6 +473,7 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             tenantId: tenant,
             saleId: sale.id,
             kind: tender.kind,
+            scheme: tender.scheme,
             amountMinor: BigInt(tender.amountMinor),
             changeMinor: BigInt(tender.changeMinor),
             reference: tender.reference,
