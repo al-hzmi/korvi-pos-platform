@@ -8,6 +8,7 @@ import type {
   InvoiceRecord,
   InvoiceType,
   PriceMode,
+  ProductType,
   RecordSaleInput,
   SaleDiscountRecord,
   SaleLineRecord,
@@ -26,6 +27,7 @@ const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
 const TENDER_KINDS: readonly TenderKind[] = ['cash', 'card', 'mada', 'transfer', 'electronic'];
 const TENDER_SCHEMES: readonly TenderScheme[] = [...ELECTRONIC_SCHEMES];
 const INVOICE_TYPES: readonly InvoiceType[] = ['simplified', 'standard'];
+const PRODUCT_TYPES: readonly ProductType[] = ['unit', 'weighted'];
 const DISCOUNT_SCOPES = ['line', 'basket'] as const;
 const DISCOUNT_KINDS = ['fixed', 'percentage'] as const;
 
@@ -36,6 +38,7 @@ interface LineRow {
   sku: string;
   nameAr: string;
   nameEn: string | null;
+  productType: string | null;
   unitPriceMinor: bigint;
   vatBasisPoints: number;
   quantityScaled: bigint;
@@ -126,6 +129,13 @@ function lineToDomain(row: LineRow): SaleLineRecord {
     sku: row.sku,
     nameAr: row.nameAr,
     nameEn: row.nameEn,
+    // Snapshotted at the moment of sale, never read back from `products`: a
+    // return engine that consulted the live catalogue would let an edit change
+    // what a historical sale means (ADR-0016).
+    productType:
+      row.productType === null
+        ? null
+        : oneOf(PRODUCT_TYPES, row.productType, 'sale_lines.productType'),
     unitPriceMinor: minor(row.unitPriceMinor),
     vatBasisPoints: rate(row.vatBasisPoints),
     quantityScaled: minor(row.quantityScaled),
@@ -438,6 +448,7 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             sku: line.sku,
             nameAr: line.nameAr,
             nameEn: line.nameEn,
+            productType: line.productType,
             unitPriceMinor: BigInt(line.unitPriceMinor),
             vatBasisPoints: Number(line.vatBasisPoints),
             quantityScaled: BigInt(line.quantityScaled),

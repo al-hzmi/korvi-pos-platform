@@ -2,6 +2,7 @@ import { basisPoints, tenantId as brandTenantId } from '@korvi/domain';
 import {
   InsufficientStockError,
   OperationAlreadyRecordedError,
+  ReturnNotAllowedError,
   ShiftOpenRefusedError,
   ShiftUnusableError,
 } from '@korvi/database';
@@ -18,7 +19,14 @@ import type {
   Product,
   ProductRepository,
   ProductSearchQuery,
+  RecordReturnInput,
   RecordSaleInput,
+  ReturnRecord,
+  ReturnRepository,
+  ReturnableSale,
+  ReturnableSaleLine,
+  SaleLookupQuery,
+  SaleLookupRow,
   SaleRecord,
   SaleRepository,
   ShiftRecord,
@@ -57,6 +65,7 @@ export class MemoryBusinessStore {
   public products: MemoryProduct[] = [];
   public sales: SaleRecord[] = [];
   public invoices: InvoiceRecord[] = [];
+  public returns: ReturnRecord[] = [];
   public movements: (InventoryMovementInput & { tenantId: string })[] = [];
   public keys: IdempotencyRecord[] = [];
   /** Drawer effects, so a test can prove what a split payment did to the till. */
@@ -395,6 +404,274 @@ export function memoryAuditRepository(store: MemoryBusinessStore): AuditReposito
       return Promise.resolve();
     },
     list: () => Promise.resolve(store.audit),
+  };
+}
+
+/**
+ * Returns, over the same store.
+ *
+ * The two properties the route tests depend on are the ones a looser fake
+ * would hide: the plan is computed from the state this store actually holds
+ * (so a second partial return sees what the first one took), and `record` is
+ * all-or-nothing. Concurrency is not modelled here and cannot be — that is
+ * what the live PostgreSQL suite is for.
+ */
+export function memoryReturnRepository(store: MemoryBusinessStore): ReturnRepository {
+  const stateFor = (
+    scope: TenantScope,
+    branchId: string | null,
+    saleId: string,
+  ): ReturnableSale | null => {
+    const sale = store.sales.find(
+      (row) =>
+        row.id === saleId &&
+        (row.tenantId as string) === scopeId(scope) &&
+        (branchId === null || row.branchId === branchId),
+    );
+    if (sale === undefined) return null;
+
+    const mine = store.returns.filter(
+      (row) =>
+        row.saleId === saleId &&
+        (row.tenantId as string) === scopeId(scope) &&
+        row.status === 'finalized',
+    );
+    const invoice = store.invoices.find(
+      (row) => row.saleId === saleId && (row.tenantId as string) === scopeId(scope),
+    );
+
+    let refundedTotal = 0n;
+    const lines: ReturnableSaleLine[] = sale.lines.map((line) => {
+      const prior = mine.flatMap((row) => row.lines).filter((row) => row.saleLineId === line.id);
+      const sum = (pick: (row: (typeof prior)[number]) => string): bigint =>
+        prior.reduce((total, row) => total + BigInt(pick(row)), 0n);
+      const returned = sum((row) => row.quantityScaled);
+      refundedTotal += sum((row) => row.totalMinor);
+      const remaining = BigInt(line.quantityScaled) - returned;
+      return {
+        saleLineId: line.id,
+        lineNumber: line.lineNumber,
+        productId: line.productId,
+        sku: line.sku,
+        nameAr: line.nameAr,
+        nameEn: line.nameEn,
+        productType: line.productType,
+        vatBasisPoints: line.vatBasisPoints,
+        unitPriceMinor: line.unitPriceMinor,
+        soldQuantityScaled: line.quantityScaled,
+        returnedQuantityScaled: returned.toString(),
+        remainingQuantityScaled: (remaining > 0n ? remaining : 0n).toString(),
+        grossMinor: line.grossMinor,
+        lineDiscountMinor: line.lineDiscountMinor,
+        basketDiscountMinor: line.basketDiscountMinor,
+        netMinor: line.netMinor,
+        vatMinor: line.vatMinor,
+        totalMinor: line.totalMinor,
+        refundedGrossMinor: sum((row) => row.grossMinor).toString(),
+        refundedNetMinor: sum((row) => row.netMinor).toString(),
+        refundedLineDiscountMinor: sum((row) => row.lineDiscountMinor).toString(),
+        refundedBasketDiscountMinor: sum((row) => row.basketDiscountMinor).toString(),
+        refundedVatMinor: sum((row) => row.vatMinor).toString(),
+      };
+    });
+
+    return {
+      saleId: sale.id,
+      branchId: sale.branchId,
+      status: sale.status,
+      invoiceNumber: invoice?.invoiceNumber ?? null,
+      currency: sale.currency,
+      issuedAt: sale.issuedAt,
+      netMinor: sale.netMinor,
+      vatMinor: sale.vatMinor,
+      totalMinor: sale.totalMinor,
+      refundedTotalMinor: refundedTotal.toString(),
+      lines,
+    };
+  };
+
+  return {
+    findById: (scope, id) =>
+      Promise.resolve(
+        store.returns.find((row) => row.id === id && (row.tenantId as string) === scopeId(scope)) ??
+          null,
+      ),
+
+    findByOperationId: (scope, operationId) =>
+      Promise.resolve(
+        store.returns.find(
+          (row) => row.operationId === operationId && (row.tenantId as string) === scopeId(scope),
+        ) ?? null,
+      ),
+
+    returnableForSale: (scope, branchId, saleId) =>
+      Promise.resolve(stateFor(scope, branchId, saleId)),
+
+    lookupSales: (scope, query: SaleLookupQuery) => {
+      const term = query.term.trim();
+      const rows: SaleLookupRow[] = store.sales
+        .filter(
+          (sale) =>
+            (sale.tenantId as string) === scopeId(scope) &&
+            sale.branchId === query.branchId &&
+            sale.status === 'finalized',
+        )
+        .filter((sale) => {
+          const invoice = store.invoices.find((row) => row.saleId === sale.id);
+          return (
+            invoice?.invoiceNumber === term || String(sale.sequence) === term || sale.id === term
+          );
+        })
+        .slice(0, Math.min(query.limit, 25))
+        .map((sale) => {
+          const refunded = store.returns
+            .filter((row) => row.saleId === sale.id && row.status === 'finalized')
+            .reduce((total, row) => total + BigInt(row.totalMinor), 0n);
+          const invoice = store.invoices.find((row) => row.saleId === sale.id);
+          return {
+            saleId: sale.id,
+            invoiceNumber: invoice?.invoiceNumber ?? null,
+            sequence: sale.sequence,
+            issuedAt: sale.issuedAt,
+            currency: sale.currency,
+            totalMinor: sale.totalMinor,
+            refundedTotalMinor: refunded.toString(),
+            fullyReturned: refunded >= BigInt(sale.totalMinor),
+          };
+        });
+      return Promise.resolve(rows);
+    },
+
+    record: (scope: TenantScope, input: RecordReturnInput) => {
+      const state = stateFor(scope, input.branchId, input.saleId);
+      if (state === null) throw new ReturnNotAllowedError('unknown-sale');
+      if (state.status !== 'finalized') throw new ReturnNotAllowedError('sale-not-finalized');
+
+      const shift = store.shifts.find(
+        (row) => row.id === input.shiftId && (row.tenantId as string) === scopeId(scope),
+      );
+      if (shift === undefined || shift.status !== 'open') {
+        throw new ShiftUnusableError('shift-closed');
+      }
+      if (shift.userId !== input.actorUserId) throw new ShiftUnusableError('cashier-mismatch');
+
+      if (
+        store.keys.some(
+          (key) =>
+            (key.tenantId as string) === scopeId(scope) &&
+            key.scope === input.idempotency.scope &&
+            key.operationId === input.operationId,
+        )
+      ) {
+        throw new OperationAlreadyRecordedError(input.operationId);
+      }
+
+      // Thrown before anything is written, exactly as the real adapter does it.
+      const plan = input.plan(state);
+
+      const sequence =
+        store.returns.filter(
+          (row) => (row.tenantId as string) === scopeId(scope) && row.branchId === input.branchId,
+        ).length + 1;
+
+      const record: ReturnRecord = {
+        id: input.returnId,
+        tenantId: brandTenantId(scopeId(scope)),
+        saleId: input.saleId,
+        branchId: input.branchId,
+        terminalId: input.terminalId,
+        shiftId: input.shiftId,
+        actorUserId: input.actorUserId,
+        operationId: input.operationId,
+        status: 'finalized',
+        sequence,
+        returnNumber: `R-01-${String(sequence).padStart(6, '0')}`,
+        reason: input.reason,
+        currency: input.currency,
+        grossMinor: plan.grossMinor,
+        lineDiscountMinor: plan.lineDiscountMinor,
+        basketDiscountMinor: plan.basketDiscountMinor,
+        netMinor: plan.netMinor,
+        vatMinor: plan.vatMinor,
+        totalMinor: plan.totalMinor,
+        issuedAt: input.issuedAt,
+        lines: plan.lines.map((line, index) => ({
+          id: input.lineIds[index] ?? `line-${String(index)}`,
+          lineNumber: line.lineNumber,
+          saleLineId: line.saleLineId,
+          productId: line.productId,
+          sku: line.sku,
+          nameAr: line.nameAr,
+          nameEn: line.nameEn,
+          productType: line.productType,
+          vatBasisPoints: line.vatBasisPoints,
+          quantityScaled: line.quantityScaled,
+          grossMinor: line.grossMinor,
+          lineDiscountMinor: line.lineDiscountMinor,
+          basketDiscountMinor: line.basketDiscountMinor,
+          netMinor: line.netMinor,
+          vatMinor: line.vatMinor,
+          totalMinor: line.totalMinor,
+        })),
+        refund: {
+          id: input.refund.id,
+          kind: input.refund.kind,
+          scheme: input.refund.scheme,
+          // Server-derived, always.
+          amountMinor: plan.totalMinor,
+          reference: input.refund.reference,
+          issuedAt: input.issuedAt,
+        },
+      };
+
+      store.returns.push(record);
+      store.keys.push({
+        id: input.idempotency.id,
+        tenantId: brandTenantId(scopeId(scope)),
+        scope: input.idempotency.scope,
+        operationId: input.operationId,
+        status: 'completed',
+        resultType: 'return',
+        resultId: input.returnId,
+        requestHash: input.idempotency.requestHash,
+        completedAt: input.issuedAt,
+      });
+
+      let movement = 0;
+      for (const line of plan.lines) {
+        const consumed = store.movements.some(
+          (row) =>
+            row.sourceType === 'sale' &&
+            row.sourceId === input.saleId &&
+            row.productId === line.productId,
+        );
+        if (line.productId === null || !consumed) continue;
+        store.movements.push({
+          id: input.inventoryIds[movement] ?? `mv-${String(movement)}`,
+          tenantId: scopeId(scope),
+          branchId: input.branchId,
+          productId: line.productId,
+          kind: 'return',
+          quantityScaled: line.quantityScaled,
+          reason: null,
+          sourceType: 'return',
+          sourceId: input.returnId,
+          actorUserId: input.actorUserId,
+          occurredAt: input.issuedAt,
+        });
+        movement += 1;
+      }
+
+      if (input.refund.kind === 'cash') {
+        store.cashMovements.push({
+          kind: 'refund',
+          amountMinor: (-BigInt(plan.totalMinor)).toString(),
+          shiftId: input.shiftId,
+        });
+      }
+
+      return Promise.resolve(record);
+    },
   };
 }
 

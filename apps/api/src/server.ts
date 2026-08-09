@@ -8,6 +8,7 @@ import {
   createPrismaClient,
   createProductRepository,
   createSaleRepository,
+  createReturnRepository,
   createShiftRepository,
   createTenantRepository,
   createTerminalRepository,
@@ -15,6 +16,7 @@ import {
 import { newId } from '@korvi/domain';
 import { createGuards } from './auth/guards.js';
 import { createCheckoutService } from './checkout/service.js';
+import { createReturnService } from './returns/service.js';
 import { registerBusinessRoutes } from './routes/business.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -92,6 +94,8 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const terminals = createTerminalRepository(prisma);
     const tenants = createTenantRepository(prisma);
     const dashboard = createDashboardRepository(prisma);
+    const idempotency = createIdempotencyRepository(prisma);
+    const audit = createAuditRepository(prisma);
     built = {
       tenants,
       dashboard,
@@ -104,8 +108,15 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         inventory: createInventoryRepository(prisma),
         shifts,
         sales: createSaleRepository(prisma),
-        idempotency: createIdempotencyRepository(prisma),
-        audit: createAuditRepository(prisma),
+        idempotency,
+        audit,
+      }),
+      returns: createReturnService({
+        returns: createReturnRepository(prisma),
+        terminals,
+        shifts,
+        idempotency,
+        audit,
       }),
     };
     return built;
@@ -139,6 +150,11 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       markSeen: (scope, id, at) => resolve().terminals.markSeen(scope, id, at),
     },
     checkout: { checkout: (input) => resolve().checkout.checkout(input) },
+    returns: {
+      create: (input) => resolve().returns.create(input),
+      lookup: (principal, term, limit) => resolve().returns.lookup(principal, term, limit),
+      returnable: (principal, saleId) => resolve().returns.returnable(principal, saleId),
+    },
   };
 }
 

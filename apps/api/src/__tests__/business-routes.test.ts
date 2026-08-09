@@ -5,6 +5,7 @@ import { loadConfig } from '../config.js';
 import { createAuthService } from '../auth/service.js';
 import { hashPassword } from '../auth/password.js';
 import { createCheckoutService } from '../checkout/service.js';
+import { createReturnService } from '../returns/service.js';
 import {
   MemoryAuthStore,
   memoryAuditRepository as memoryAuthAudit,
@@ -17,6 +18,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryReturnRepository,
   memorySaleRepository,
   memoryShiftRepository,
   memoryTenantRepository,
@@ -102,6 +104,13 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
           counter += 1;
           return `018f2000-0000-7000-8000-${String(counter).padStart(12, '0')}`;
         },
+      }),
+      returns: createReturnService({
+        returns: memoryReturnRepository(business),
+        terminals: memoryTerminalRepository(business),
+        shifts: memoryShiftRepository(business),
+        idempotency: memoryIdempotencyRepository(business),
+        audit: memoryAuditRepository(business),
       }),
     },
   });

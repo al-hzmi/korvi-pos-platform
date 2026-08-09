@@ -408,6 +408,7 @@ describe('writes that must be atomic', () => {
             sku: 'SKU-1',
             nameAr: 'حليب',
             nameEn: 'Milk',
+            productType: 'unit',
             unitPriceMinor: '1150',
             vatBasisPoints: basisPoints(1500),
             quantityScaled: '1000',

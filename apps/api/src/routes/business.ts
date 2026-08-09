@@ -8,8 +8,12 @@ import {
   namesForbiddenField,
   openShiftBody,
   productQuery,
+  returnBody,
+  saleIdParams,
+  saleLookupQuery,
 } from './validation.js';
 import type { CheckoutFailureReason, CheckoutService } from '../checkout/service.js';
+import type { ReturnFailureReason, ReturnService } from '../returns/service.js';
 import type { Guards } from '../auth/guards.js';
 import type {
   AuthenticatedPrincipal,
@@ -39,6 +43,7 @@ export interface BusinessDeps {
   readonly shifts: ShiftRepository;
   readonly terminals: TerminalRepository;
   readonly checkout: CheckoutService;
+  readonly returns: ReturnService;
 }
 
 export interface BusinessRouteOptions {
@@ -93,6 +98,45 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'duplicate-line': 422,
   'shift-invalid': 409,
   'tenant-misconfigured': 409,
+};
+
+/**
+ * The same discipline as a checkout's messages: what to do next, and nothing
+ * about why the server thinks so. `sale-not-found` is deliberately the answer
+ * for a sale in another branch as well as for one that does not exist — a
+ * cashier learns nothing about the rest of the merchant from a refusal.
+ */
+const RETURN_MESSAGES: Readonly<Record<ReturnFailureReason, string>> = {
+  'sale-not-found': 'لا توجد فاتورة بهذا الرقم في هذا الفرع.',
+  'return-not-allowed': 'لا يمكن إرجاع هذه الفاتورة.',
+  'nothing-returnable': 'لا يوجد ما يمكن إرجاعه من هذه الفاتورة.',
+  'over-return': 'الكمية المطلوبة أكبر من المتبقي للإرجاع.',
+  'invalid-return-quantity': 'كمية الإرجاع غير صالحة لهذا الصنف.',
+  'duplicate-return-line': 'الصنف مكرر في طلب الإرجاع. ادمج الكمية في سطر واحد.',
+  'unknown-sale-line': 'أحد الأسطر ليس ضمن هذه الفاتورة.',
+  'refund-invalid': 'بيانات الاسترداد غير صالحة. راجع طريقة الاسترداد ومرجعها.',
+  'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
+  'no-open-shift': 'لا توجد وردية مفتوحة على هذا الصندوق. افتح وردية أولاً.',
+  'shift-invalid': 'الوردية لم تعد صالحة لهذا الصندوق. تحقّق من الوردية.',
+  'unknown-terminal': 'الصندوق غير معروف.',
+  'branch-required': 'لا يوجد فرع مرتبط بهذا المستخدم. راجع إعدادات المنشأة.',
+};
+
+const RETURN_STATUS: Readonly<Record<ReturnFailureReason, number>> = {
+  'sale-not-found': 404,
+  'return-not-allowed': 409,
+  'nothing-returnable': 409,
+  'over-return': 409,
+  'invalid-return-quantity': 422,
+  'duplicate-return-line': 422,
+  'unknown-sale-line': 422,
+  'refund-invalid': 422,
+  'idempotency-conflict': 409,
+  'no-open-shift': 409,
+  'shift-invalid': 409,
+  // The same 404 a till in another branch gets from every other route.
+  'unknown-terminal': 404,
+  'branch-required': 409,
 };
 
 function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefined {
@@ -432,6 +476,161 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       return reply
         .code(result.replayed ? 200 : 201)
         .send({ sale: result.sale, replayed: result.replayed });
+    },
+  );
+  /**
+   * Find the sale a customer is standing there with.
+   *
+   * `sale.refund` rather than a new permission: looking a sale up in order to
+   * return it is the first half of returning it, and the vocabulary in
+   * packages/domain/src/rbac is not something a route gets to extend.
+   *
+   * Branch-scoped from the session, bounded, and indexed on all three of the
+   * things a cashier can read off a receipt. There is no query that lists a
+   * merchant's history.
+   */
+  app.get(
+    '/v1/sales/lookup',
+    { preHandler: [guards.requireSession, guards.requirePermission('sale.refund')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
+      const parsed = saleLookupQuery.safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
+
+      const found = await deps.returns.lookup(principal, parsed.data.q, parsed.data.limit);
+      if (!Array.isArray(found)) {
+        const failure = found as { reason: ReturnFailureReason };
+        return reply
+          .code(RETURN_STATUS[failure.reason])
+          .send({ error: failure.reason, message: RETURN_MESSAGES[failure.reason] });
+      }
+
+      return reply.code(200).send({ sales: found, limit: parsed.data.limit });
+    },
+  );
+
+  /**
+   * What is left to return on one sale.
+   *
+   * Read-only and truthful: a sale everything has already come back from is
+   * reported as such rather than hidden, because a cashier holding the receipt
+   * needs to know which of those two situations they are in. A sale in another
+   * branch is answered exactly as a sale that does not exist.
+   */
+  app.get(
+    '/v1/sales/:saleId/returnable',
+    { preHandler: [guards.requireSession, guards.requirePermission('sale.refund')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
+      const parsed = saleIdParams.safeParse(request.params);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_params' });
+
+      const state = await deps.returns.returnable(principal, parsed.data.saleId);
+      if ('outcome' in state) {
+        return reply
+          .code(RETURN_STATUS[state.reason])
+          .send({ error: state.reason, message: RETURN_MESSAGES[state.reason] });
+      }
+
+      // Shaped here rather than sent through: a repository record is not a
+      // response, and basis points cross the wire as an integer the way every
+      // other Korvi route sends them.
+      return reply.code(200).send({
+        sale: {
+          saleId: state.saleId,
+          invoiceNumber: state.invoiceNumber,
+          issuedAt: state.issuedAt,
+          currency: state.currency,
+          netMinor: state.netMinor,
+          vatMinor: state.vatMinor,
+          totalMinor: state.totalMinor,
+          refundedTotalMinor: state.refundedTotalMinor,
+          lines: state.lines.map((line) => ({
+            saleLineId: line.saleLineId,
+            lineNumber: line.lineNumber,
+            productId: line.productId,
+            sku: line.sku,
+            nameAr: line.nameAr,
+            nameEn: line.nameEn,
+            productType: line.productType,
+            vatBasisPoints: Number(line.vatBasisPoints),
+            unitPriceMinor: line.unitPriceMinor,
+            soldQuantityScaled: line.soldQuantityScaled,
+            returnedQuantityScaled: line.returnedQuantityScaled,
+            remainingQuantityScaled: line.remainingQuantityScaled,
+            grossMinor: line.grossMinor,
+            lineDiscountMinor: line.lineDiscountMinor,
+            basketDiscountMinor: line.basketDiscountMinor,
+            netMinor: line.netMinor,
+            vatMinor: line.vatMinor,
+            totalMinor: line.totalMinor,
+          })),
+        },
+      });
+    },
+  );
+
+  /**
+   * Send goods back and put the money where it came from.
+   *
+   * The request carries a till and a list of lines. It does not carry a
+   * branch, a shift, a cashier, a price, a VAT figure or a refund total —
+   * every one of those is derived from the session and the sale that was
+   * already written, and a client that tries to send one is refused by name
+   * rather than quietly ignored.
+   */
+  app.post(
+    '/v1/returns',
+    { preHandler: [guards.requireSession, guards.requirePermission('sale.refund')] },
+    async (request, reply: FastifyReply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      const forbidden = namesForbiddenField(request.body);
+      if (forbidden !== null) {
+        return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
+      }
+      // Cardholder data is refused by name and by value, at any depth, exactly
+      // as it is on a checkout. A refund reference is free text, which is
+      // precisely where a broken integration puts a card number (ADR-0015).
+      const cardField = namesCardField(request.body);
+      if (cardField !== null) {
+        return reply.code(400).send({ error: 'card_data_refused', field: cardField });
+      }
+      if (carriesCardNumber(request.body)) {
+        return reply.code(400).send({ error: 'card_data_refused' });
+      }
+
+      const parsed = returnBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      const result = await deps.returns.create({
+        principal,
+        operationId: parsed.data.operationId,
+        terminalId: parsed.data.terminalId,
+        saleId: parsed.data.saleId,
+        ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
+        lines: parsed.data.lines,
+        refund: parsed.data.refund,
+      });
+
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'return refused');
+        return reply
+          .code(RETURN_STATUS[result.reason])
+          .send({ error: result.reason, message: result.detail ?? RETURN_MESSAGES[result.reason] });
+      }
+
+      // 200 rather than 201 on a replay: nothing was created this time.
+      return reply
+        .code(result.replayed ? 200 : 201)
+        .send({ return: result.document, replayed: result.replayed });
     },
   );
 }

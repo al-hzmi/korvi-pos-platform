@@ -68,3 +68,20 @@ export class ShiftOpenRefusedError extends DatabaseError {
     this.detail = detail;
   }
 }
+
+/**
+ * A return was asked for against a sale that cannot carry one.
+ *
+ * The detail tells the caller apart from the customer: a sale in another
+ * branch and a sale that does not exist are both `unknown-sale`, so no answer
+ * reveals that another branch's sale exists (ADR-0016).
+ */
+export class ReturnNotAllowedError extends DatabaseError {
+  public override readonly name = 'ReturnNotAllowedError';
+  public readonly detail: 'unknown-sale' | 'sale-not-finalized';
+
+  public constructor(detail: 'unknown-sale' | 'sale-not-finalized') {
+    super(`Return not allowed: ${detail}`);
+    this.detail = detail;
+  }
+}

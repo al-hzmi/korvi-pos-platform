@@ -5,6 +5,7 @@ export * from './quantity/index.js';
 export * from './pricing/index.js';
 export * from './tender/tender.js';
 export * from './sale/index.js';
+export * from './returns/index.js';
 export * from './rbac/index.js';
 export * from './shift/index.js';
 export * from './ids/uuidv7.js';

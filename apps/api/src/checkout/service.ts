@@ -637,6 +637,10 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               sku: line.sku,
               nameAr: line.nameAr,
               nameEn: line.nameEn,
+              // The one immutable fact a return needs and a priced line does
+              // not carry: unit or weighted, as the catalogue said at this
+              // moment (ADR-0016). Nothing else on this path changed.
+              productType: loaded[index]?.product.productType ?? null,
               unitPriceMinor: line.unitPrice.minor.toString(),
               vatBasisPoints: line.vatRate,
               quantityScaled: line.quantity.toString(),

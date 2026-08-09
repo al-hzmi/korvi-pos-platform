@@ -140,6 +140,7 @@ model User {
   sales         Sale[]
   auditEvents   AuditEvent[]
   saleDiscounts SaleDiscount[]
+  returns       Return[]
 
   @@unique([tenantId, email])
   /// The tenant-consistency key. A child row references this table by
@@ -237,10 +238,11 @@ model Terminal {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
-  shifts Shift[]
-  sales  Sale[]
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch   @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  shifts  Shift[]
+  sales   Sale[]
+  returns Return[]
 
   @@unique([tenantId, code])
   /// The tenant-consistency key. A child row references this table by
@@ -344,6 +346,7 @@ model Product {
   inventoryBalances  InventoryBalance[]
   inventoryMovements InventoryMovement[]
   saleLines          SaleLine[]
+  returnLines        ReturnLine[]
 
   @@unique([tenantId, sku])
   /// The tenant-consistency key. A child row references this table by
@@ -507,6 +510,7 @@ model Shift {
   user          User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
   cashMovements CashMovement[]
   sales         Sale[]
+  returns       Return[]
 
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
@@ -615,6 +619,11 @@ model SaleLine {
   sku            String
   nameAr         String
   nameEn         String?
+  /// 'unit' | 'weighted', as it stood at the moment of sale. Null on lines
+  /// written before Korvi recorded it. Never read back from `products`: a
+  /// product reclassified next year must not make last year's receipt
+  /// fractional (ADR-0016).
+  productType    String?
   unitPriceMinor BigInt
   vatBasisPoints Int
   quantityScaled BigInt
@@ -769,36 +778,58 @@ model InvoiceTaxBreakdown {
 // ---------------------------------------------------------------------------
 
 model Return {
-  id       String @id @db.Uuid
-  tenantId String @db.Uuid
-  saleId   String @db.Uuid
-  branchId String @db.Uuid
+  id         String  @id @db.Uuid
+  tenantId   String  @db.Uuid
+  saleId     String  @db.Uuid
+  branchId   String  @db.Uuid
+  /// Where the goods came back over the counter. Attribution, not authority:
+  /// the server resolves it from the session's branch (ADR-0016).
+  terminalId String? @db.Uuid
+  /// The open drawer the refund is answerable to.
+  shiftId    String? @db.Uuid
 
   operationId String
   status      String  @default("finalized")
   reason      String?
 
-  netMinor   BigInt
-  vatMinor   BigInt
-  totalMinor BigInt
+  /// Per-branch, allocated under the branch row's lock like a receipt number.
+  sequence     Int?
+  returnNumber String?
+  currency     String  @default("SAR")
+
+  /// The same six figures a sale carries, so a credit note can be produced
+  /// years later without replaying today's prices or discounts.
+  grossMinor          BigInt @default(0)
+  lineDiscountMinor   BigInt @default(0)
+  basketDiscountMinor BigInt @default(0)
+  netMinor            BigInt
+  vatMinor            BigInt
+  totalMinor          BigInt
 
   actorUserId String   @db.Uuid
   issuedAt    DateTime
   createdAt   DateTime @default(now())
 
-  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sale    Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
-  branch  Branch       @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
-  lines   ReturnLine[]
-  refunds Refund[]
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale     Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
+  branch   Branch       @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  terminal Terminal?    @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  shift    Shift?       @relation(fields: [tenantId, shiftId], references: [tenantId, id], onDelete: NoAction)
+  actor    User         @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+  lines    ReturnLine[]
+  refunds  Refund[]
 
   @@unique([tenantId, operationId])
+  @@unique([tenantId, branchId, sequence])
+  @@unique([tenantId, returnNumber])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
   @@index([tenantId, saleId])
   @@index([tenantId, issuedAt])
+  @@index([tenantId, branchId, issuedAt])
+  @@index([tenantId, shiftId])
   @@map("returns")
 }
 
@@ -808,17 +839,40 @@ model ReturnLine {
   returnId   String @db.Uuid
   saleLineId String @db.Uuid
 
+  /// The sale line's own number, carried over so a credit note lists the goods
+  /// in the order the invoice did.
+  lineNumber Int?
+  productId  String? @db.Uuid
+
+  /// Snapshots of the snapshot. The sale line already froze these; copying
+  /// them again means a credit note can be produced from the return document
+  /// alone, without joining back through a sale that may be archived.
+  sku            String?
+  nameAr         String?
+  nameEn         String?
+  productType    String?
+  vatBasisPoints Int?
+
   quantityScaled BigInt
-  netMinor       BigInt
-  vatMinor       BigInt
-  totalMinor     BigInt
+
+  grossMinor          BigInt @default(0)
+  lineDiscountMinor   BigInt @default(0)
+  basketDiscountMinor BigInt @default(0)
+  netMinor            BigInt
+  vatMinor            BigInt
+  totalMinor          BigInt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   return   Return   @relation(fields: [tenantId, returnId], references: [tenantId, id], onDelete: Cascade)
   saleLine SaleLine @relation(fields: [tenantId, saleLineId], references: [tenantId, id], onDelete: NoAction)
+  product  Product? @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
 
+  /// One row per sale line per return. Two rows for one line would each pass
+  /// a remaining-quantity check their sum fails.
+  @@unique([tenantId, returnId, saleLineId])
   @@index([tenantId, returnId])
   @@index([tenantId, saleLineId])
+  @@index([tenantId, productId])
   @@map("return_lines")
 }
 
@@ -828,9 +882,15 @@ model Refund {
   returnId  String  @db.Uuid
   invoiceId String? @db.Uuid
 
-  /// 'cash' | 'card' | 'mada' | 'transfer'
-  method      String
+  /// 'cash' | 'electronic'. 'card' | 'mada' | 'transfer' are legacy and
+  /// readable; nothing writes them any more. The column was named `method`
+  /// until ADR-0016 renamed it, so the vocabulary matches a tender's.
+  kind        String
+  /// 'mada' | 'visa' | 'mastercard' | 'amex' | 'apple-pay' | 'other'.
+  /// Present on an electronic refund and on nothing else.
+  scheme      String?
   amountMinor BigInt
+  /// The external approval this refund points at. Never a card number.
   reference   String?
 
   issuedAt  DateTime
@@ -840,7 +900,9 @@ model Refund {
   return  Return   @relation(fields: [tenantId, returnId], references: [tenantId, id], onDelete: Cascade)
   invoice Invoice? @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: NoAction)
 
-  @@index([tenantId, returnId])
+  /// One refund per return document (ADR-0016). A second row would be a
+  /// second settlement against goods that only came back once.
+  @@unique([tenantId, returnId])
   @@map("refunds")
 }
 

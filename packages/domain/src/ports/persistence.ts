@@ -293,6 +293,20 @@ export interface SaleLineRecord {
   readonly sku: string;
   readonly nameAr: string;
   readonly nameEn: string | null;
+  /**
+   * Whether this line was sold by the unit or by weight, as it stood at the
+   * moment of sale.
+   *
+   * Snapshotted rather than read back from `products` for the same reason the
+   * price is: a product reclassified next year must not make last year's
+   * receipt fractional, and a return engine that consulted the live catalogue
+   * would let a catalogue edit change what a historical sale means.
+   *
+   * Null on lines written before Korvi recorded it, and on lines whose product
+   * had already been deleted when the backfill ran. Null means "no immutable
+   * fact proves the type" — never "unit". See ADR-0016.
+   */
+  readonly productType: ProductType | null;
   readonly unitPriceMinor: string;
   readonly vatBasisPoints: BasisPoints;
   readonly quantityScaled: string;
@@ -580,6 +594,224 @@ export interface SaleRepository {
   invoiceForSale(scope: TenantScope, saleId: string): Promise<InvoiceRecord | null>;
   /** Sale, lines, tenders, invoice, stock and cash — one transaction. */
   record(scope: TenantScope, input: RecordSaleInput): Promise<SaleRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// Returns and refunds
+// ---------------------------------------------------------------------------
+
+export type ReturnStatus = 'finalized' | 'voided';
+
+/**
+ * How the money went back.
+ *
+ * `cash` leaves the drawer and is recorded as a negative movement against the
+ * shift. `electronic` records that a refund was approved somewhere else — a
+ * Mada terminal, an acquirer, a wallet — and carries that system's reference.
+ * Korvi contacts no scheme and no bank, in this strike or in the settlement
+ * one before it (ADR-0015, ADR-0016).
+ */
+export type RefundKindRecord = 'cash' | 'electronic' | 'card' | 'mada' | 'transfer';
+
+export interface RefundRecord {
+  readonly id: string;
+  readonly kind: RefundKindRecord;
+  readonly scheme: TenderScheme | null;
+  readonly amountMinor: string;
+  readonly reference: string | null;
+  readonly issuedAt: string;
+}
+
+export interface ReturnLineRecord {
+  readonly id: string;
+  readonly lineNumber: number;
+  readonly saleLineId: string;
+  readonly productId: string | null;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: ProductType | null;
+  readonly vatBasisPoints: BasisPoints;
+  readonly quantityScaled: string;
+  readonly grossMinor: string;
+  readonly lineDiscountMinor: string;
+  readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+}
+
+export interface ReturnRecord {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly saleId: string;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly shiftId: string;
+  readonly actorUserId: string;
+  readonly operationId: string;
+  readonly status: ReturnStatus;
+  readonly sequence: number;
+  readonly returnNumber: string;
+  readonly reason: string | null;
+  readonly currency: string;
+  readonly grossMinor: string;
+  readonly lineDiscountMinor: string;
+  readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+  readonly issuedAt: string;
+  readonly lines: readonly ReturnLineRecord[];
+  readonly refund: RefundRecord | null;
+}
+
+/**
+ * What is left to return on a sale, as the database currently sees it.
+ *
+ * Every figure comes from persisted rows: the sale's own snapshot and the sum
+ * of the finalized returns against it. Nothing is derived from the catalogue,
+ * and nothing here is authority for a write — a second cashier can return the
+ * last unit between this read and the transaction that acts on it, which is
+ * why the same numbers are read again under lock (ADR-0016).
+ */
+export interface ReturnableSaleLine {
+  readonly saleLineId: string;
+  readonly lineNumber: number;
+  readonly productId: string | null;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: ProductType | null;
+  readonly vatBasisPoints: BasisPoints;
+  readonly unitPriceMinor: string;
+  readonly soldQuantityScaled: string;
+  readonly returnedQuantityScaled: string;
+  readonly remainingQuantityScaled: string;
+  readonly grossMinor: string;
+  readonly lineDiscountMinor: string;
+  readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+  readonly refundedGrossMinor: string;
+  readonly refundedNetMinor: string;
+  readonly refundedLineDiscountMinor: string;
+  readonly refundedBasketDiscountMinor: string;
+  readonly refundedVatMinor: string;
+}
+
+export interface ReturnableSale {
+  readonly saleId: string;
+  readonly branchId: string;
+  readonly status: SaleStatus;
+  readonly invoiceNumber: string | null;
+  readonly currency: string;
+  readonly issuedAt: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+  readonly refundedTotalMinor: string;
+  readonly lines: readonly ReturnableSaleLine[];
+}
+
+/** One row of the till's "find the sale" list. Nothing a receipt would not show. */
+export interface SaleLookupRow {
+  readonly saleId: string;
+  readonly invoiceNumber: string | null;
+  readonly sequence: number;
+  readonly issuedAt: string;
+  readonly currency: string;
+  readonly totalMinor: string;
+  readonly refundedTotalMinor: string;
+  readonly fullyReturned: boolean;
+}
+
+export interface SaleLookupQuery {
+  /** From the session, never from the client. */
+  readonly branchId: string;
+  readonly term: string;
+  readonly limit: number;
+}
+
+/**
+ * The plan a return would produce, computed from rows read under lock.
+ *
+ * The repository does not price anything: it loads the authoritative state
+ * inside the transaction, hands it to this function, and writes what comes
+ * back. Pricing stays in the domain and authority stays in the transaction,
+ * which is the only arrangement where both are true at once.
+ */
+export interface RecordReturnPlan {
+  readonly lines: readonly {
+    readonly saleLineId: string;
+    readonly lineNumber: number;
+    readonly productId: string | null;
+    readonly sku: string;
+    readonly nameAr: string;
+    readonly nameEn: string | null;
+    readonly productType: ProductType | null;
+    readonly vatBasisPoints: BasisPoints;
+    readonly quantityScaled: string;
+    readonly grossMinor: string;
+    readonly lineDiscountMinor: string;
+    readonly basketDiscountMinor: string;
+    readonly netMinor: string;
+    readonly vatMinor: string;
+    readonly totalMinor: string;
+  }[];
+  readonly grossMinor: string;
+  readonly lineDiscountMinor: string;
+  readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+}
+
+export interface RecordReturnInput {
+  readonly returnId: string;
+  readonly saleId: string;
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly shiftId: string;
+  readonly actorUserId: string;
+  readonly reason: string | null;
+  readonly currency: string;
+  readonly issuedAt: string;
+  /** What the client asked to send back. Quantities only. */
+  readonly requested: readonly { readonly saleLineId: string; readonly quantityScaled: string }[];
+  readonly refund: {
+    readonly id: string;
+    readonly kind: 'cash' | 'electronic';
+    readonly scheme: TenderScheme | null;
+    readonly reference: string | null;
+  };
+  /** Ids minted by the caller, so a replay cannot mint a second set. */
+  readonly lineIds: readonly string[];
+  readonly inventoryIds: readonly string[];
+  readonly cashMovementId: string;
+  readonly idempotency: IdempotencyReservation;
+  /**
+   * Pure, and called inside the transaction with rows read under lock. It
+   * throws the domain's own refusals, which roll the transaction back.
+   */
+  readonly plan: (state: ReturnableSale) => RecordReturnPlan;
+}
+
+export interface ReturnRepository {
+  findById(scope: TenantScope, id: string): Promise<ReturnRecord | null>;
+  /** The idempotent read: a retry finds the return its first attempt created. */
+  findByOperationId(scope: TenantScope, operationId: string): Promise<ReturnRecord | null>;
+  /** What is left to return, or null if this branch has no such sale. */
+  returnableForSale(
+    scope: TenantScope,
+    branchId: string,
+    saleId: string,
+  ): Promise<ReturnableSale | null>;
+  lookupSales(scope: TenantScope, query: SaleLookupQuery): Promise<readonly SaleLookupRow[]>;
+  /** Return, lines, refund, stock and drawer — one transaction. */
+  record(scope: TenantScope, input: RecordReturnInput): Promise<ReturnRecord>;
 }
 
 export interface IdempotencyRepository {

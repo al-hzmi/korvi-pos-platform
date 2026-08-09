@@ -492,6 +492,7 @@ describe.skipIf(url === '')('checkout races, live', () => {
             sku: 'RACE-1',
             nameAr: 'صنف',
             nameEn: null,
+            productType: 'unit',
             unitPriceMinor: '1150',
             vatBasisPoints: basisPoints(1500),
             quantityScaled: args.quantityScaled,

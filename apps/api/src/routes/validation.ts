@@ -156,6 +156,55 @@ export const checkoutBody = z
   });
 
 /**
+ * A return, as a client may state it.
+ *
+ * Quantities and identifiers, and nothing that decides money. The refund
+ * amount is absent because the client does not get a say in it: the lines it
+ * asks to send back determine what is owed, and the server prorates that from
+ * the sale it already wrote (ADR-0016).
+ */
+export const MAX_RETURN_LINES = 200;
+export const MAX_RETURN_REASON = 200;
+
+export const refundBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('cash') }),
+  z.object({
+    kind: z.literal('electronic'),
+    scheme: z.enum(['mada', 'visa', 'mastercard', 'amex', 'apple-pay', 'other']),
+    reference: z.string().trim().min(1).max(MAX_TENDER_REFERENCE),
+  }),
+]);
+
+export const returnBody = z.object({
+  operationId: UUID,
+  terminalId: UUID,
+  saleId: UUID,
+  reason: z.string().trim().max(MAX_RETURN_REASON).optional(),
+  refund: refundBody,
+  lines: z
+    .array(
+      z.object({
+        saleLineId: UUID,
+        quantityScaled: SCALED_QUANTITY,
+      }),
+    )
+    .min(1)
+    .max(MAX_RETURN_LINES)
+    // Two rows for one line would each pass a remaining-quantity check their
+    // sum fails. One row per line, with the quantity summed by the client.
+    .refine((lines) => new Set(lines.map((line) => line.saleLineId)).size === lines.length, {
+      message: 'duplicate return line',
+    }),
+});
+
+export const saleLookupQuery = z.object({
+  q: z.string().trim().min(1).max(64),
+  limit: z.coerce.number().int().min(1).max(25).default(10),
+});
+
+export const saleIdParams = z.object({ saleId: UUID });
+
+/**
  * The fields a client may never send.
  *
  * Rejected rather than ignored. Silently dropping `unitPrice` would let a
@@ -181,6 +230,22 @@ export const FORBIDDEN_FIELDS = [
   'permissions',
   'maxDiscountBasisPoints',
   'discount',
+  // A return decides none of these either. `refundTotal` and `returnTotal` are
+  // named because a client that computed one has a bug that will keep sending
+  // it, and the first person to notice should not be an auditor.
+  'shiftId',
+  'terminalCode',
+  'refundTotal',
+  'refundTotalMinor',
+  'returnTotal',
+  'returnTotalMinor',
+  'returnNumber',
+  'grossMinor',
+  'lineDiscountMinor',
+  'basketDiscountMinor',
+  'vatBasisPoints',
+  'currency',
+  'price',
 ] as const;
 
 export function namesForbiddenField(body: unknown): string | null {

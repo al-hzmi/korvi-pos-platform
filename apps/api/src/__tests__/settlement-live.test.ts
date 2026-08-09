@@ -366,6 +366,7 @@ describe.skipIf(url === '')('settlement, live', () => {
             sku: 'GHOST-1',
             nameAr: 'صنف',
             nameEn: null,
+            productType: 'unit',
             unitPriceMinor: '1150',
             vatBasisPoints: basisPoints(1500),
             quantityScaled: '1000',
