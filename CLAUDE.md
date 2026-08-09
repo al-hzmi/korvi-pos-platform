@@ -75,6 +75,15 @@ All six must pass.
 
 ## Scope discipline
 
-This repository is at **Phase 0 — Foundation**. Do not build the cashier screen,
-inventory, restaurant modifiers, the B2B hub, the owner dashboard, ZATCA Phase 2
-signing, the commission engine, KDS, or kiosk. See `docs/architecture/scope.md`.
+This document defines durable engineering invariants, not a moving phase
+roadmap. Before feature work, read `AGENTS.md` and the relevant accepted ADRs,
+and inspect the current implementation.
+
+Historical phase and scope documents are architectural history. They are not
+authority to delete or forbid capabilities that have since been delivered. The
+active task or strike prompt defines the bounded scope of current work.
+
+If a task conflicts with a non-negotiable invariant or an accepted ADR, stop
+and surface the conflict rather than silently choosing one. Never infer that an
+existing production capability should be removed merely because an older scope
+document listed it as deferred.
