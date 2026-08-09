@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api';
 import { autoAddCandidate, createProductSearch, initialSearchState } from '../search';
 import type { ProductSummary } from '../api-types';
@@ -97,15 +97,26 @@ describe('product search', () => {
     expect(states.some((state) => state.status === 'failed')).toBe(false);
   });
 
-  it('publishes nothing for an empty term and asks the server nothing', async () => {
-    const products = vi.fn(() => Promise.resolve([] as readonly ProductSummary[]));
+  it('browses the catalogue for an empty term instead of asking nothing', async () => {
+    // Changed deliberately in Strike 3B-2A. An empty till used to be an empty
+    // grid, which is a worse first screen than the shelf the shop actually
+    // has. Browsing is the same request without a `q`, so it inherits the
+    // sequence guard and the abort handling rather than adding a second path.
+    const queries: Array<{ readonly q?: string; readonly limit?: number }> = [];
+    const source: SearchSource = {
+      products: (query) => {
+        queries.push(query);
+        return Promise.resolve([MILK] as readonly ProductSummary[]);
+      },
+    };
     const states: SearchState[] = [];
-    const search = createProductSearch({ products }, (state) => states.push(state));
+    const search = createProductSearch(source, (state) => states.push(state));
 
     await search.run('   ');
 
-    expect(products).not.toHaveBeenCalled();
-    expect(states.at(-1)).toMatchObject({ status: 'idle', results: [] });
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).not.toHaveProperty('q');
+    expect(states.at(-1)).toMatchObject({ status: 'ready', results: [MILK] });
   });
 
   it('turns a failure into something the cashier can read', async () => {

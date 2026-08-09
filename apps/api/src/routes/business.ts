@@ -13,6 +13,7 @@ import type { CheckoutFailureReason, CheckoutService } from '../checkout/service
 import type { Guards } from '../auth/guards.js';
 import type {
   AuthenticatedPrincipal,
+  DashboardRepository,
   ProductRepository,
   ShiftRepository,
   TenantRepository,
@@ -33,6 +34,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 export interface BusinessDeps {
   /** Read-only, and only for the settings the till has to render correctly. */
   readonly tenants: TenantRepository;
+  readonly dashboard: DashboardRepository;
   readonly products: ProductRepository;
   readonly shifts: ShiftRepository;
   readonly terminals: TerminalRepository;
@@ -200,6 +202,31 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
    * first half of opening a shift on it, and the vocabulary in
    * packages/domain/src/rbac is not something a UI strike gets to extend.
    */
+  /**
+   * The owner's dashboard.
+   *
+   * `report.read` rather than a new permission: this is the smallest read of
+   * the numbers a report would show, and the vocabulary in
+   * packages/domain/src/rbac is not something a UI strike gets to extend. A
+   * cashier does not hold it; a manager does.
+   *
+   * The window is 24 rolling hours, decided here and not by the client. A
+   * calendar day would need a tenant timezone Korvi does not persist, and the
+   * first screen an owner sees is the wrong place to invent one.
+   */
+  app.get(
+    '/v1/dashboard/summary',
+    { preHandler: [guards.requireSession, guards.requirePermission('report.read')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const summary = await deps.dashboard.summary(scopeOf(principal), since);
+      return reply.code(200).send(summary);
+    },
+  );
+
   app.get(
     '/v1/terminals',
     { preHandler: [guards.requireSession, guards.requirePermission('shift.open')] },

@@ -24,6 +24,7 @@ import type {
   ShiftRecord,
   ShiftRepository,
   Tenant,
+  DashboardRepository,
   TenantRepository,
   TenantScope,
   TenantSettings,
@@ -79,6 +80,47 @@ export function memoryTenantRepository(store: MemoryBusinessStore): TenantReposi
       Promise.resolve(
         store.settings.find((s) => (s.tenantId as string) === scopeId(scope)) ?? null,
       ),
+  };
+}
+
+/**
+ * The dashboard, counted from the same store the rest of these fakes use.
+ *
+ * Deliberately derived rather than stubbed: a test that asserts a hardcoded
+ * total proves the assertion, not the aggregate.
+ */
+export function memoryDashboardRepository(store: MemoryBusinessStore): DashboardRepository {
+  return {
+    summary: (scope, since) => {
+      const tenant = scopeId(scope);
+      const from = Date.parse(since);
+      const sales = store.sales.filter(
+        (sale) =>
+          (sale.tenantId as string) === tenant &&
+          sale.status === 'finalized' &&
+          Date.parse(sale.issuedAt) >= from,
+      );
+      const sum = (pick: (sale: (typeof sales)[number]) => string): string =>
+        sales.reduce((total, sale) => total + BigInt(pick(sale)), 0n).toString();
+
+      return Promise.resolve({
+        activeProductCount: store.products.filter(
+          (product) => (product.tenantId as string) === tenant && product.isActive,
+        ).length,
+        terminalCount: store.terminals.filter(
+          (terminal) => (terminal.tenantId as string) === tenant && terminal.isActive,
+        ).length,
+        openShiftCount: store.shifts.filter(
+          (shift) => (shift.tenantId as string) === tenant && shift.status === 'open',
+        ).length,
+        salesLast24HoursCount: sales.length,
+        grossSalesLast24HoursMinor: sum((sale) => sale.totalMinor),
+        vatLast24HoursMinor: sum((sale) => sale.vatMinor),
+        currency:
+          store.settings.find((entry) => (entry.tenantId as string) === tenant)?.currency ?? 'SAR',
+        since,
+      });
+    },
   };
 }
 

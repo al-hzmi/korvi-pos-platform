@@ -474,6 +474,37 @@ export interface TenantRepository {
  * "temporarily" would be the one method every later caller reaches for.
  */
 
+/**
+ * What an owner sees when they open Korvi.
+ *
+ * A read model, not a report engine: every figure is one a merchant can check
+ * against the tills in front of them, and every one is derived from rows that
+ * already exist. Nothing here is estimated, projected or smoothed.
+ *
+ * "Last 24 hours" rather than "today" on purpose. A calendar day needs a
+ * tenant timezone, and Korvi does not persist one yet; inventing an answer
+ * would put a wrong number on the first screen an owner ever sees. A rolling
+ * window is exactly defined without one.
+ *
+ * Money crosses as decimal strings of halalas, like everywhere else (ADR-0002).
+ */
+export interface DashboardSummary {
+  readonly activeProductCount: number;
+  readonly terminalCount: number;
+  readonly openShiftCount: number;
+  readonly salesLast24HoursCount: number;
+  readonly grossSalesLast24HoursMinor: string;
+  readonly vatLast24HoursMinor: string;
+  readonly currency: string;
+  /** The start of the window, so the screen can say what it is showing. */
+  readonly since: string;
+}
+
+export interface DashboardRepository {
+  /** Tenant-scoped by construction; there is no parameter that could widen it. */
+  summary(scope: TenantScope, since: string): Promise<DashboardSummary>;
+}
+
 export interface BranchRepository {
   findById(scope: TenantScope, id: string): Promise<Branch | null>;
   list(scope: TenantScope): Promise<readonly Branch[]>;

@@ -13,6 +13,7 @@ import {
 import {
   MemoryBusinessStore,
   memoryAuditRepository,
+  memoryDashboardRepository,
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
@@ -85,6 +86,7 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
     }),
     business: {
       tenants: memoryTenantRepository(business),
+      dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
       shifts: memoryShiftRepository(business),
       terminals: memoryTerminalRepository(business),
@@ -122,6 +124,103 @@ async function cookieFor(server: FastifyInstance): Promise<string> {
 
 afterEach(async () => {
   await app.close();
+});
+
+describe('GET /v1/dashboard/summary', () => {
+  it('refuses without a session', async () => {
+    app = await build('cashier');
+    const response = await app.inject({ method: 'GET', url: '/v1/dashboard/summary' });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('refuses a cashier, who does not hold report.read', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/dashboard/summary',
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(403);
+    // Nothing about the tenant leaks through a refusal.
+    expect(response.payload).not.toContain('grossSales');
+  });
+
+  it('answers a manager with real, tenant-scoped figures', async () => {
+    app = await build('manager');
+    const cookie = await cookieFor(app);
+
+    const sale = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000000c1',
+        terminalId: A.terminal,
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '2000' }],
+      },
+    });
+    expect(sale.statusCode).toBe(201);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/dashboard/summary',
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const body = response.json<Record<string, unknown>>();
+    // 2 x 11.50 tax-inclusive: 23.00 with 3.00 of VAT. Counted, not guessed.
+    expect(body['salesLast24HoursCount']).toBe(1);
+    expect(body['grossSalesLast24HoursMinor']).toBe('2300');
+    expect(body['vatLast24HoursMinor']).toBe('300');
+    expect(body['openShiftCount']).toBe(1);
+    expect(body['terminalCount']).toBe(1);
+    expect(body['activeProductCount']).toBe(2);
+    expect(body['currency']).toBe('SAR');
+  });
+
+  it('keeps money as a string, never a JSON number', async () => {
+    // A JSON number loses halalas past 2^53 and rounds on the way in. The
+    // aggregate crosses as a decimal string exactly like every other amount.
+    app = await build('manager');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/dashboard/summary',
+      headers: { cookie },
+    });
+    const body = response.json<Record<string, unknown>>();
+    expect(typeof body['grossSalesLast24HoursMinor']).toBe('string');
+    expect(typeof body['vatLast24HoursMinor']).toBe('string');
+  });
+
+  it('counts nothing belonging to another tenant', async () => {
+    // The repository takes a scope and has no parameter that could widen it;
+    // this proves the route does not widen it either.
+    app = await build('manager');
+    business.sales.push({
+      ...(business.sales[0] ?? ({} as (typeof business.sales)[number])),
+      id: '018f2000-0000-7000-8000-0000000000c9',
+      tenantId:
+        '018f2000-0000-7000-8000-00000000000b' as (typeof business.sales)[number]['tenantId'],
+      status: 'finalized',
+      totalMinor: '999999',
+      vatMinor: '99999',
+      issuedAt: new Date().toISOString(),
+    });
+
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/dashboard/summary',
+      headers: { cookie },
+    });
+    const body = response.json<Record<string, unknown>>();
+    expect(body['grossSalesLast24HoursMinor']).toBe('0');
+    expect(body['salesLast24HoursCount']).toBe(0);
+  });
 });
 
 describe('branch authorisation', () => {

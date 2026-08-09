@@ -10,6 +10,7 @@ import { ShiftGate } from './shift-gate';
 import { CashierScreen } from './cashier-screen';
 import { createApiClient } from '../lib/api';
 import { FOREIGN_SHIFT } from '../lib/shift';
+import { LOGOUT_UNCONFIRMED } from '../lib/session';
 import { useSession } from '../hooks/use-session';
 import { useTerminal } from '../hooks/use-terminal';
 import { useShift } from '../hooks/use-shift';
@@ -77,12 +78,7 @@ export function PosApp({ api: injected }: PosAppProps = {}): JSX.Element {
       <BlockedScreen
         title="لم يتم تأكيد الخروج"
         tone="danger"
-        failure={{
-          code: 'logout_unconfirmed',
-          message:
-            'لم يؤكّد الخادم إنهاء الجلسة، وقد تكون ما تزال مفتوحة. لا تترك الصندوق قبل نجاح تسجيل الخروج.',
-          action: 'blocking',
-        }}
+        failure={LOGOUT_UNCONFIRMED}
         onRetry={signOut}
         retryLabel="إعادة محاولة تسجيل الخروج"
       />

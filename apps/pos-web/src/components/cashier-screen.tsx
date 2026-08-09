@@ -12,6 +12,7 @@ import { previewCart } from '../lib/cart';
 import { intentLocked, signOutBlocked } from '../lib/checkout';
 import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
+import { hasPermission } from '../lib/session';
 import { parseSarToMinor } from '../lib/money';
 import { useCart } from '../hooks/use-cart';
 import { useCheckout } from '../hooks/use-checkout';
@@ -74,6 +75,14 @@ export function CashierScreen({
     searchInput.current?.focus();
   }, []);
 
+  // The opening grid. A till that shows nothing until somebody types looks
+  // broken, and in a shop with a short catalogue the cashier should not have
+  // to type at all. Runs once, on the first render of a ready workspace.
+  const browse = search.browse;
+  useEffect(() => {
+    browse();
+  }, [browse]);
+
   const add = useCallback(
     (product: ProductSummary) => {
       if (locked) return;
@@ -111,7 +120,8 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
-    search.reset();
+    // Once, between customers — not once per item.
+    search.browse();
     focusSearch();
   }, [checkout, cart, search, focusSearch]);
 
@@ -133,6 +143,7 @@ export function CashierScreen({
     <div className="flex h-screen flex-col bg-muted/40">
       <TopBar
         cashierName={principal.user.displayName}
+        showControlCentre={hasPermission(principal, 'report.read')}
         terminal={terminal}
         busy={checkout.state.phase === 'submitting'}
         signOutBlocked={signOutBlocked(checkout.state)}

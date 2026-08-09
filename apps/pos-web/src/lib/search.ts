@@ -81,10 +81,6 @@ export function createProductSearch(
       const mine = sequence;
 
       const trimmed = term.trim();
-      if (trimmed === '') {
-        emit({ term, status: 'idle', results: [], failure: null });
-        return;
-      }
 
       emit({ term, status: 'loading', results: [], failure: null });
 
@@ -92,7 +88,18 @@ export function createProductSearch(
       inFlight = controller;
 
       try {
-        const results = await source.products({ q: trimmed, limit }, { signal: controller.signal });
+        /*
+         * An empty term is a browse, not a no-op.
+         *
+         * A till that shows nothing until somebody types looks broken, and a
+         * shop with forty lines does not want the cashier typing at all. The
+         * same server route answers both — omitting `q` lists the catalogue —
+         * so browsing inherits the sequence guard and the abort handling
+         * rather than getting a second, unguarded code path of its own.
+         */
+        const results = await source.products(trimmed === '' ? { limit } : { q: trimmed, limit }, {
+          signal: controller.signal,
+        });
         // The guard that actually prevents the stale overwrite.
         if (mine !== sequence) return;
         emit({ term, status: 'ready', results, failure: null });

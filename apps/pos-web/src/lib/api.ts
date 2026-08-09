@@ -1,5 +1,6 @@
 import type {
   CheckoutRequest,
+  DashboardSummary,
   CheckoutResponse,
   Principal,
   ProductSummary,
@@ -78,6 +79,7 @@ export interface ApiClient {
   }): Promise<Principal>;
   logout(): Promise<void>;
   terminals(options?: RequestOptions): Promise<TerminalsResponse>;
+  dashboardSummary(options?: RequestOptions): Promise<DashboardSummary>;
   products(
     query: { readonly q?: string; readonly limit?: number },
     options?: RequestOptions,
@@ -167,6 +169,10 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
 
     async terminals(options) {
       return (await call('/v1/terminals', { method: 'GET' }, options)) as TerminalsResponse;
+    },
+
+    async dashboardSummary(options) {
+      return (await call('/v1/dashboard/summary', { method: 'GET' }, options)) as DashboardSummary;
     },
 
     async products(query, options) {

@@ -64,6 +64,18 @@ export function ProductPanel({
         }}
       />
 
+      {/*
+        Available, and nothing more than that. The server orders this list by
+        SKU and computes no popularity, frequency or recency of any kind, so
+        calling these the most-used lines would be a claim the product cannot
+        support — and one a merchant would make purchasing decisions on.
+      */}
+      {state.status === 'ready' && state.results.length > 0 && term.trim() === '' ? (
+        <p className="-mt-1 text-xs text-muted-foreground">
+          الأصناف المتاحة — اضغط على الصنف لإضافته، أو امسح الباركود.
+        </p>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto" aria-busy={state.status === 'loading'}>
         {state.status === 'failed' && state.failure !== null ? (
           <StatusNote tone="warning" live>
@@ -72,9 +84,7 @@ export function ProductPanel({
         ) : null}
 
         {state.status === 'idle' ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">
-            اكتب اسم الصنف أو امسح الباركود لبدء البيع.
-          </p>
+          <p className="py-10 text-center text-sm text-muted-foreground">جارٍ تحميل الأصناف…</p>
         ) : null}
 
         {state.status === 'loading' ? (
@@ -91,7 +101,9 @@ export function ProductPanel({
 
         {state.status === 'ready' && state.results.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground" role="status">
-            لا توجد نتائج مطابقة.
+            {term.trim() === ''
+              ? 'لا توجد أصناف مفعّلة في هذه المنشأة بعد.'
+              : 'لا توجد نتائج مطابقة.'}
           </p>
         ) : null}
 
@@ -118,9 +130,16 @@ export function ProductPanel({
                     {product.nameAr}
                   </span>
                   <span className="flex items-end justify-between gap-2">
-                    <BidiIsolate className="text-xs text-muted-foreground">
-                      {product.sku}
-                    </BidiIsolate>
+                    <span className="flex flex-col items-start gap-0.5">
+                      <BidiIsolate className="text-xs text-muted-foreground">
+                        {product.sku}
+                      </BidiIsolate>
+                      {product.productType === 'weighted' ? (
+                        <span className="text-[10px] font-medium text-muted-foreground">
+                          بالوزن {product.unitLabel === null ? '' : `· ${product.unitLabel}`}
+                        </span>
+                      ) : null}
+                    </span>
                     <Numeric
                       value={formatMinor(product.priceMinor)}
                       className="text-lg font-semibold text-foreground"

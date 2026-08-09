@@ -1,75 +1,65 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createProductSearch, initialSearchState } from '../lib/search';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { initialSearchState } from '../lib/search';
+import { createSearchSession } from '../lib/search-session';
 import type { ApiClient } from '../lib/api';
 import type { SearchState } from '../lib/search';
 
 /**
- * A small debounce, and the reason it is small.
+ * React's share of the search box: two pieces of state and a cleanup.
  *
- * A person typing a product name generates a request every few keystrokes; a
- * scanner delivers a whole barcode in one burst and then an Enter. 140ms is
- * long enough to collapse the first and short enough that the second is not
- * waiting on a timer while the cashier reaches for the next item.
+ * The policy — what is debounced, what goes to the server, and what is merely
+ * cleared — lives in lib/search-session.ts, where it can be tested for the
+ * number of requests each gesture costs without a browser in the way.
  */
-const DEBOUNCE_MS = 140;
-
 export interface SearchHandle {
   readonly term: string;
   readonly state: SearchState;
   readonly setTerm: (term: string) => void;
   readonly runNow: (term: string) => void;
+  /** Clear the box. Local only — issues no request. */
   readonly reset: () => void;
+  /** Load the catalogue. One request. */
+  readonly browse: () => void;
 }
 
 export function useProductSearch(api: ApiClient): SearchHandle {
   const [term, setTermState] = useState('');
   const [state, setState] = useState<SearchState>(initialSearchState);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const search = useMemo(() => createProductSearch(api, setState), [api]);
-
-  const clearTimer = useCallback(() => {
-    if (timer.current !== null) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-  }, []);
+  const session = useMemo(
+    () => createSearchSession(api, { state: setState, term: setTermState }),
+    [api],
+  );
 
   useEffect(() => {
     return () => {
-      clearTimer();
-      search.cancel();
+      session.dispose();
     };
-  }, [clearTimer, search]);
+  }, [session]);
 
   const setTerm = useCallback(
     (next: string) => {
-      setTermState(next);
-      clearTimer();
-      timer.current = setTimeout(() => {
-        void search.run(next);
-      }, DEBOUNCE_MS);
+      session.setTerm(next);
     },
-    [clearTimer, search],
+    [session],
   );
 
   const runNow = useCallback(
     (next: string) => {
-      setTermState(next);
-      clearTimer();
-      void search.run(next);
+      session.runNow(next);
     },
-    [clearTimer, search],
+    [session],
   );
 
   const reset = useCallback(() => {
-    clearTimer();
-    search.cancel();
-    setTermState('');
-    setState(initialSearchState);
-  }, [clearTimer, search]);
+    session.reset();
+  }, [session]);
 
-  return { term, state, setTerm, runNow, reset };
+  const browse = useCallback(() => {
+    session.browse();
+  }, [session]);
+
+  return { term, state, setTerm, runNow, reset, browse };
 }

@@ -6,6 +6,8 @@ import type { TerminalSummary } from '../lib/api-types';
 
 export interface TopBarProps {
   readonly cashierName: string;
+  /** Shown only to a principal the server would let in anyway. */
+  readonly showControlCentre: boolean;
   readonly terminal: TerminalSummary;
   readonly onSignOut: () => void;
   /** True while a transaction of unknown outcome is outstanding. */
@@ -21,6 +23,7 @@ export interface TopBarProps {
  */
 export function TopBar({
   cashierName,
+  showControlCentre,
   terminal,
   onSignOut,
   signOutBlocked,
@@ -45,6 +48,14 @@ export function TopBar({
           <span aria-hidden="true" className="h-2 w-2 rounded-full bg-success" />
           وردية مفتوحة
         </span>
+        {showControlCentre ? (
+          <a
+            href="/control"
+            className="hidden h-touch items-center rounded-md border border-input px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:inline-flex"
+          >
+            لوحة التحكم
+          </a>
+        ) : null}
         <span className="hidden text-sm font-medium text-foreground md:inline">{cashierName}</span>
         <Button
           variant="ghost"

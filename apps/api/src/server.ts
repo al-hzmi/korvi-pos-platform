@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import {
   createAuditRepository,
+  createDashboardRepository,
   createAuthRepository,
   createIdempotencyRepository,
   createInventoryRepository,
@@ -90,8 +91,10 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const shifts = createShiftRepository(prisma);
     const terminals = createTerminalRepository(prisma);
     const tenants = createTenantRepository(prisma);
+    const dashboard = createDashboardRepository(prisma);
     built = {
       tenants,
+      dashboard,
       products,
       shifts,
       terminals,
@@ -113,6 +116,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       current: (scope) => resolve().tenants.current(scope),
       settings: (scope) => resolve().tenants.settings(scope),
     },
+    dashboard: { summary: (scope, since) => resolve().dashboard.summary(scope, since) },
     products: {
       findById: (scope, id) => resolve().products.findById(scope, id),
       findBySku: (scope, sku) => resolve().products.findBySku(scope, sku),

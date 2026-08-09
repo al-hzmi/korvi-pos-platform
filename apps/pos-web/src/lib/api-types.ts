@@ -108,3 +108,21 @@ export interface CheckoutRequest {
   readonly cashReceivedMinor: string;
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
 }
+
+/**
+ * The owner's dashboard, exactly as the server computed it.
+ *
+ * Money is a decimal string of halalas and stays one until it is formatted for
+ * display. Nothing here is derived in the browser: a figure an owner checks
+ * against their tills must come from the same place the tills wrote to.
+ */
+export interface DashboardSummary {
+  readonly activeProductCount: number;
+  readonly terminalCount: number;
+  readonly openShiftCount: number;
+  readonly salesLast24HoursCount: number;
+  readonly grossSalesLast24HoursMinor: string;
+  readonly vatLast24HoursMinor: string;
+  readonly currency: string;
+  readonly since: string;
+}

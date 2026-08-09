@@ -67,3 +67,22 @@ export async function requestLogout(api: ApiClient): Promise<LogoutResult> {
 export function hasPermission(principal: Principal, permission: string): boolean {
   return principal.permissions.includes(permission);
 }
+
+/**
+ * What a screen must say when the server never confirmed the logout.
+ *
+ * Stated once and shared, because there are now two apps that can reach this
+ * state and one of them is wrong the moment they disagree. The invariant is
+ * not the wording — it is that this state is blocking. The session cookie is
+ * HttpOnly: only the server can revoke it, and if the logout request never
+ * arrived the session is still live. Rendering the ordinary login form here
+ * would tell an operator they had signed out of a machine that will restore
+ * them on reload. On a shared till that is the next person's work under the
+ * last person's name.
+ */
+export const LOGOUT_UNCONFIRMED: Failure = {
+  code: 'logout_unconfirmed',
+  message:
+    'لم يؤكّد الخادم إنهاء الجلسة، وقد تكون ما تزال مفتوحة. لا تترك الصندوق قبل نجاح تسجيل الخروج.',
+  action: 'blocking',
+};

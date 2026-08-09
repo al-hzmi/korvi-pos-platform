@@ -15,6 +15,7 @@ export {
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
 export { createBranchRepository } from './repositories/branch-repository.js';
+export { createDashboardRepository } from './repositories/dashboard-repository.js';
 export { createTerminalRepository } from './repositories/terminal-repository.js';
 export {
   createProductRepository,
