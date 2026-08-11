@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ROLE_PERMISSIONS } from '@korvi/domain';
+import { ShiftReconciliationRefusedError } from '@korvi/database';
 import { buildServer } from '../server.js';
 import { loadConfig } from '../config.js';
 import { createAuthService } from '../auth/service.js';
@@ -79,6 +80,8 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
   });
 
   let counter = 0;
+  const movements = new Map<string, { fingerprint: string; result: object }>();
+  const closes = new Map<string, { fingerprint: string; result: object }>();
   const server = buildServer(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'fatal' }), {
     auth: createAuthService({
       repository: memoryAuthRepository(auth),
@@ -91,6 +94,77 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
       shifts: memoryShiftRepository(business),
+      shiftReconciliation: {
+        recordManualMovement: (_scope, input) => {
+          const fingerprint = JSON.stringify([
+            input.shiftId,
+            input.terminalId,
+            input.kind,
+            input.amountMinor,
+            input.reason,
+          ]);
+          const prior = movements.get(input.operationId);
+          if (prior !== undefined) {
+            if (prior.fingerprint !== fingerprint)
+              return Promise.reject(new ShiftReconciliationRefusedError('idempotency-conflict'));
+            return Promise.resolve(prior.result as never);
+          }
+          const shift = business.shifts.find((candidate) => candidate.id === input.shiftId);
+          if (
+            shift === undefined ||
+            shift.status !== 'open' ||
+            shift.terminalId !== input.terminalId
+          )
+            return Promise.reject(new ShiftReconciliationRefusedError('shift-invalid'));
+          const result = {
+            id: input.movementId,
+            shiftId: input.shiftId,
+            kind: input.kind,
+            amountMinor: input.kind === 'pay-in' ? input.amountMinor : `-${input.amountMinor}`,
+            reason: input.reason,
+            actorUserId: input.actorUserId,
+            occurredAt: input.occurredAt,
+          };
+          movements.set(input.operationId, { fingerprint, result });
+          return Promise.resolve(result);
+        },
+        reconcile: (_scope, input) => {
+          const fingerprint = JSON.stringify([
+            input.shiftId,
+            input.terminalId,
+            input.declaredCashMinor,
+          ]);
+          const prior = closes.get(input.operationId);
+          if (prior !== undefined) {
+            if (prior.fingerprint !== fingerprint)
+              return Promise.reject(new ShiftReconciliationRefusedError('idempotency-conflict'));
+            return Promise.resolve(prior.result as never);
+          }
+          const shift = business.shifts.find((candidate) => candidate.id === input.shiftId);
+          if (
+            shift === undefined ||
+            shift.status !== 'open' ||
+            shift.terminalId !== input.terminalId
+          )
+            return Promise.reject(new ShiftReconciliationRefusedError('shift-invalid'));
+          const expected = BigInt(shift.openingFloatMinor);
+          const result = {
+            shiftId: input.shiftId,
+            openingFloatMinor: shift.openingFloatMinor,
+            cashSalesMinor: '0',
+            cashRefundsMinor: '0',
+            paidInMinor: '0',
+            paidOutMinor: '0',
+            expectedCashMinor: expected.toString(),
+            declaredCashMinor: input.declaredCashMinor,
+            varianceMinor: (BigInt(input.declaredCashMinor) - expected).toString(),
+            closedAt: input.closedAt,
+            closedByUserId: input.actorUserId,
+          };
+          closes.set(input.operationId, { fingerprint, result });
+          return Promise.resolve(result);
+        },
+      },
       terminals: memoryTerminalRepository(business),
       checkout: createCheckoutService({
         tenants: memoryTenantRepository(business),
@@ -1343,4 +1417,135 @@ describe('POST /v1/sales', () => {
     });
     expect(response.statusCode).toBe(400);
   });
+});
+
+describe('shift reconciliation routes', () => {
+  const operationId = '018f2000-0000-7000-8000-0000000000b1';
+  const closePayload = (over: Record<string, unknown> = {}) => ({
+    operationId,
+    terminalId: A.terminal,
+    shiftId: A.shift,
+    declaredCashMinor: '10000',
+    ...over,
+  });
+  const movementPayload = (over: Record<string, unknown> = {}) => ({
+    operationId,
+    terminalId: A.terminal,
+    shiftId: A.shift,
+    kind: 'pay-in',
+    amountMinor: '100',
+    reason: '  float top-up  ',
+    ...over,
+  });
+  const post = (server: FastifyInstance, url: string, payload: object, cookie?: string) =>
+    server.inject({
+      method: 'POST',
+      url,
+      headers: { origin: ORIGIN, ...(cookie === undefined ? {} : { cookie }) },
+      payload,
+    });
+
+  it.each([
+    ['/v1/shifts/close', closePayload()],
+    ['/v1/shifts/cash-movements', movementPayload()],
+  ])('refuses unauthenticated %s', async (url, payload) => {
+    app = await build('manager');
+    expect((await post(app, url, payload)).statusCode).toBe(401);
+  });
+
+  it.each([
+    ['/v1/shifts/close', closePayload()],
+    ['/v1/shifts/cash-movements', movementPayload()],
+  ])('enforces the route permission for %s', async (url, payload) => {
+    app = await build('manager');
+    auth.grants[0] = {
+      tenantId: A.tenant,
+      userId: A.user,
+      roles: ['manager'],
+      permissions: ['product.read'],
+    };
+    expect((await post(app, url, payload, await cookieFor(app))).statusCode).toBe(403);
+  });
+
+  it('lets a valid close reach the reconciliation repository', async () => {
+    app = await build('cashier');
+    const response = await post(app, '/v1/shifts/close', closePayload(), await cookieFor(app));
+    expect(response.statusCode).toBe(200);
+    expect(response.json().reconciliation.shiftId).toBe(A.shift);
+  });
+
+  it('lets a valid movement reach the repository and canonicalizes its reason', async () => {
+    app = await build('manager');
+    const response = await post(
+      app,
+      '/v1/shifts/cash-movements',
+      movementPayload(),
+      await cookieFor(app),
+    );
+    expect(response.statusCode).toBe(201);
+    expect(response.json().movement.reason).toBe('float top-up');
+  });
+
+  it.each(['/v1/shifts/close', '/v1/shifts/cash-movements'])(
+    'hides unknown and cross-branch terminals for %s',
+    async (url) => {
+      app = await build('manager');
+      const cookie = await cookieFor(app);
+      const payload = url.endsWith('close')
+        ? closePayload({ terminalId: '018f2000-0000-7000-8000-000000000099' })
+        : movementPayload({ terminalId: '018f2000-0000-7000-8000-000000000099' });
+      expect((await post(app, url, payload, cookie)).statusCode).toBe(404);
+      business.terminals[0] = {
+        ...business.terminals[0]!,
+        branchId: '018f2000-0000-7000-8000-000000000088',
+      };
+      const ownPayload = url.endsWith('close') ? closePayload() : movementPayload();
+      expect((await post(app, url, ownPayload, cookie)).statusCode).toBe(404);
+    },
+  );
+
+  it.each(['/v1/shifts/close', '/v1/shifts/cash-movements'])(
+    'refuses wrong or stale shift for %s',
+    async (url) => {
+      app = await build('manager');
+      const cookie = await cookieFor(app);
+      const wrong = url.endsWith('close')
+        ? closePayload({ shiftId: '018f2000-0000-7000-8000-000000000077' })
+        : movementPayload({ shiftId: '018f2000-0000-7000-8000-000000000077' });
+      expect((await post(app, url, wrong, cookie)).statusCode).toBe(409);
+      business.shifts[0] = { ...business.shifts[0]!, status: 'closed' };
+      expect(
+        (await post(app, url, url.endsWith('close') ? closePayload() : movementPayload(), cookie))
+          .statusCode,
+      ).toBe(409);
+    },
+  );
+
+  it.each(['/v1/shifts/close', '/v1/shifts/cash-movements'])(
+    'rejects client authority on %s',
+    async (url) => {
+      app = await build('manager');
+      const payload = url.endsWith('close')
+        ? closePayload({ expectedCashMinor: '1' })
+        : movementPayload({ expectedCashMinor: '1' });
+      const response = await post(app, url, payload, await cookieFor(app));
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: 'forbidden_field', field: 'expectedCashMinor' });
+    },
+  );
+
+  it.each(['/v1/shifts/close', '/v1/shifts/cash-movements'])(
+    'replays identical intent and conflicts on changed intent for %s',
+    async (url) => {
+      app = await build('manager');
+      const cookie = await cookieFor(app);
+      const payload = url.endsWith('close') ? closePayload() : movementPayload();
+      expect((await post(app, url, payload, cookie)).statusCode).toBeLessThan(300);
+      expect((await post(app, url, payload, cookie)).statusCode).toBeLessThan(300);
+      const changed = url.endsWith('close')
+        ? closePayload({ declaredCashMinor: '10001' })
+        : movementPayload({ amountMinor: '101' });
+      expect((await post(app, url, changed, cookie)).json().error).toBe('idempotency-conflict');
+    },
+  );
 });

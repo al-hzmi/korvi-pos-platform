@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cashBreakdown,
   ShiftStateError,
   cashVariance,
   closeShift,
   expectedCash,
   openShift,
   recordMovement,
+  signedManualCashAmount,
 } from '../shift.js';
 import type { CashMovement, ShiftState } from '../shift.js';
 import { money } from '../../money/money.js';
@@ -20,6 +22,38 @@ const movement = (
   amount: over.amount,
   reason: over.reason ?? null,
   at: over.at ?? AT,
+});
+
+describe('drawer reconciliation breakdown', () => {
+  it('uses positive magnitudes and the authoritative sign equation', () => {
+    const result = cashBreakdown(101n, [
+      { kind: 'sale', amountMinor: 37n },
+      { kind: 'refund', amountMinor: -11n },
+      { kind: 'pay-in', amountMinor: 19n },
+      { kind: 'pay-out', amountMinor: -7n },
+    ]);
+    expect(result).toEqual({
+      openingFloatMinor: 101n,
+      cashSalesMinor: 37n,
+      cashRefundsMinor: 11n,
+      paidInMinor: 19n,
+      paidOutMinor: 7n,
+      expectedCashMinor: 139n,
+    });
+  });
+
+  it('preserves large integers and one-halala variances', () => {
+    const expected = cashBreakdown(9_007_199_254_740_993n, []).expectedCashMinor;
+    expect(9_007_199_254_740_994n - expected).toBe(1n);
+    expect(9_007_199_254_740_992n - expected).toBe(-1n);
+  });
+
+  it('signs public manual movement magnitudes and rejects zero/negative values', () => {
+    expect(signedManualCashAmount('pay-in', 5_000n)).toBe(5_000n);
+    expect(signedManualCashAmount('pay-out', 5_000n)).toBe(-5_000n);
+    expect(() => signedManualCashAmount('pay-in', 0n)).toThrow(ShiftStateError);
+    expect(() => signedManualCashAmount('pay-out', -1n)).toThrow(ShiftStateError);
+  });
 });
 
 const withCash = (openingFloat: bigint, movements: readonly CashMovement[]): ShiftState =>

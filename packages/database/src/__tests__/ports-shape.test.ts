@@ -32,6 +32,7 @@ const SCOPED_PORTS = [
   'InventoryRepository',
   'CustomerRepository',
   'ShiftRepository',
+  'ShiftReconciliationRepository',
   'SaleRepository',
   'IdempotencyRepository',
   'AuditRepository',
@@ -90,5 +91,15 @@ describe('what may cross the persistence boundary', () => {
     // Exported, it would be a way to write stock into an arbitrary tenant.
     expect(indexSource).not.toMatch(/^export \{[^}]*applyMovementWithin/m);
     expect(indexSource).toMatch(/createInventoryRepository/);
+  });
+
+  it('has one close authority and no generic drawer writer', () => {
+    expect(source).not.toContain('interface CloseShiftInput');
+    expect(methodsOf('ShiftRepository')).not.toContainEqual(
+      expect.stringMatching(/close|Movement/),
+    );
+    expect(
+      methodsOf('ShiftReconciliationRepository').map((method) => method.split('(')[0]),
+    ).toEqual(['recordManualMovement', 'reconcile']);
   });
 });

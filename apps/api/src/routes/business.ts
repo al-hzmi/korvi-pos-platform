@@ -1,12 +1,15 @@
 import { tenantId as brandTenantId } from '@korvi/domain';
-import { ShiftOpenRefusedError } from '@korvi/database';
+import { ShiftOpenRefusedError, ShiftReconciliationRefusedError } from '@korvi/database';
 import {
   checkoutBody,
+  closeShiftBody,
   currentShiftQuery,
   carriesCardNumber,
   namesCardField,
   namesForbiddenField,
+  namesShiftAuthorityField,
   openShiftBody,
+  manualCashMovementBody,
   productQuery,
   returnBody,
   saleIdParams,
@@ -20,6 +23,7 @@ import type {
   DashboardRepository,
   ProductRepository,
   ShiftRepository,
+  ShiftReconciliationRepository,
   TenantRepository,
   TenantScope,
   Terminal,
@@ -41,6 +45,7 @@ export interface BusinessDeps {
   readonly dashboard: DashboardRepository;
   readonly products: ProductRepository;
   readonly shifts: ShiftRepository;
+  readonly shiftReconciliation?: ShiftReconciliationRepository;
   readonly terminals: TerminalRepository;
   readonly checkout: CheckoutService;
   readonly returns: ReturnService;
@@ -418,6 +423,83 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
           openedAt: shift.openedAt,
         },
       });
+    },
+  );
+
+  app.post(
+    '/v1/shifts/cash-movements',
+    { preHandler: [guards.requireSession, guards.requirePermission('shift.cash-movement')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+      const forbidden = namesShiftAuthorityField(request.body);
+      if (forbidden !== null)
+        return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
+      const parsed = manualCashMovementBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+      const terminal = await ownBranchTerminal(deps.terminals, principal, parsed.data.terminalId);
+      if (terminal === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+      if (deps.shiftReconciliation === undefined)
+        return reply.code(503).send({ error: 'unavailable' });
+      try {
+        const movement = await deps.shiftReconciliation.recordManualMovement(scopeOf(principal), {
+          idempotencyId: newId(),
+          operationId: parsed.data.operationId,
+          movementId: newId(),
+          shiftId: parsed.data.shiftId,
+          terminalId: terminal.id,
+          branchId: principal.branchId,
+          actorUserId: principal.userId,
+          kind: parsed.data.kind,
+          amountMinor: parsed.data.amountMinor,
+          reason: parsed.data.reason,
+          occurredAt: new Date().toISOString(),
+        });
+        return reply.code(201).send({ movement });
+      } catch (error) {
+        if (error instanceof ShiftReconciliationRefusedError) {
+          return reply.code(409).send({ error: error.detail });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/v1/shifts/close',
+    { preHandler: [guards.requireSession, guards.requirePermission('shift.close')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+      const forbidden = namesShiftAuthorityField(request.body);
+      if (forbidden !== null)
+        return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
+      const parsed = closeShiftBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+      const terminal = await ownBranchTerminal(deps.terminals, principal, parsed.data.terminalId);
+      if (terminal === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+      if (deps.shiftReconciliation === undefined)
+        return reply.code(503).send({ error: 'unavailable' });
+      try {
+        const reconciliation = await deps.shiftReconciliation.reconcile(scopeOf(principal), {
+          idempotencyId: newId(),
+          operationId: parsed.data.operationId,
+          shiftId: parsed.data.shiftId,
+          terminalId: terminal.id,
+          branchId: principal.branchId,
+          actorUserId: principal.userId,
+          declaredCashMinor: parsed.data.declaredCashMinor,
+          closedAt: new Date().toISOString(),
+        });
+        return reply.code(200).send({ reconciliation });
+      } catch (error) {
+        if (error instanceof ShiftReconciliationRefusedError) {
+          return reply.code(409).send({ error: error.detail });
+        }
+        throw error;
+      }
     },
   );
 

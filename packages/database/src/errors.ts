@@ -69,6 +69,13 @@ export class ShiftOpenRefusedError extends DatabaseError {
   }
 }
 
+export class ShiftReconciliationRefusedError extends DatabaseError {
+  public override readonly name = 'ShiftReconciliationRefusedError';
+  public constructor(public readonly detail: 'idempotency-conflict' | 'shift-invalid') {
+    super(`Shift reconciliation refused: ${detail}`);
+  }
+}
+
 /**
  * A return was asked for against a sale that cannot carry one.
  *

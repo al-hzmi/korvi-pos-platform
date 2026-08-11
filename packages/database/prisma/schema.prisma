@@ -136,7 +136,8 @@ model User {
   memberships   TenantMembership[]
   roles         UserRole[]
   sessions      Session[]
-  shifts        Shift[]
+  shifts        Shift[] @relation("ShiftOpener")
+  closedShifts  Shift[] @relation("ShiftCloser")
   sales         Sale[]
   auditEvents   AuditEvent[]
   saleDiscounts SaleDiscount[]
@@ -497,6 +498,11 @@ model Shift {
   declaredCashMinor BigInt?
   expectedCashMinor BigInt?
   varianceMinor     BigInt?
+  cashSalesMinor    BigInt?
+  cashRefundsMinor  BigInt?
+  paidInMinor       BigInt?
+  paidOutMinor      BigInt?
+  closedByUserId    String? @db.Uuid
 
   openedAt DateTime
   closedAt DateTime?
@@ -507,7 +513,8 @@ model Shift {
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch        Branch         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
   terminal      Terminal       @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
-  user          User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  user          User           @relation("ShiftOpener", fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  closedBy      User?          @relation("ShiftCloser", fields: [tenantId, closedByUserId], references: [tenantId, id], onDelete: NoAction)
   cashMovements CashMovement[]
   sales         Sale[]
   returns       Return[]

@@ -602,32 +602,4 @@ describe('writes that must be atomic', () => {
       true,
     );
   });
-
-  it('refuses to close a shift that is not open', async () => {
-    const f = fake({ 'shift.updateMany': [{ count: 0 }] });
-    await expect(
-      createShiftRepository(f.client).close(scope, {
-        shiftId: 's1',
-        declaredCashMinor: '31150',
-        expectedCashMinor: '31000',
-        varianceMinor: '150',
-        closedAt: AT,
-      }),
-    ).rejects.toThrow(/not open/i);
-  });
-
-  it('refuses a cash movement against a closed shift', async () => {
-    const f = fake({ 'shift.findFirst': [{ id: 's1', tenantId: TENANT, status: 'closed' }] });
-    await expect(
-      createShiftRepository(f.client).recordCashMovement(scope, {
-        id: 'cm2',
-        shiftId: 's1',
-        kind: 'pay-out',
-        amountMinor: '-5000',
-        reason: 'مصروف',
-        actorUserId: 'u1',
-        occurredAt: AT,
-      }),
-    ).rejects.toThrow(/closed shift/i);
-  });
 });

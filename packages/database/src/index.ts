@@ -11,6 +11,7 @@ export {
   OperationAlreadyRecordedError,
   ShiftUnusableError,
   ShiftOpenRefusedError,
+  ShiftReconciliationRefusedError,
   ReturnNotAllowedError,
 } from './errors.js';
 
@@ -29,6 +30,7 @@ export {
 export { createInventoryRepository } from './repositories/inventory-repository.js';
 export { createCustomerRepository } from './repositories/customer-repository.js';
 export { createShiftRepository } from './repositories/shift-repository.js';
+export { createShiftReconciliationRepository } from './repositories/shift-reconciliation-repository.js';
 export { createSaleRepository } from './repositories/sale-repository.js';
 export { createReturnRepository } from './repositories/return-repository.js';
 export { createIdempotencyRepository } from './repositories/idempotency-repository.js';

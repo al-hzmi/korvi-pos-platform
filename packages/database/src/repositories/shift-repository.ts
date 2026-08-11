@@ -5,7 +5,6 @@ import type { TransactionClient } from '../tenant-context.js';
 import type {
   CashMovementKindRecord,
   CashMovementRecord,
-  CloseShiftInput,
   OpenShiftInput,
   ShiftRecord,
   ShiftRepository,
@@ -173,63 +172,6 @@ export function createShiftRepository(prisma: PrismaClient): ShiftRepository {
         const row = await loadShift(tx, tenant, input.id);
         if (row === null) {
           throw new DatabaseError('The shift just written could not be read back.');
-        }
-        return toDomain(scope, row);
-      });
-    },
-
-    async recordCashMovement(scope: TenantScope, movement: CashMovementRecord): Promise<void> {
-      await withTenant(prisma, scope.tenantId, async (tx) => {
-        const tenant = tenantParam(scope);
-        const shift = await tx.shift.findFirst({
-          where: { id: movement.shiftId, tenantId: tenant },
-        });
-        if (shift === null) {
-          throw new DatabaseError(`No shift ${movement.shiftId} in this tenant.`);
-        }
-        if (shift.status !== 'open') {
-          throw new DatabaseError('Cannot record a cash movement against a closed shift.');
-        }
-        await tx.cashMovement.create({
-          data: {
-            id: movement.id,
-            tenantId: tenant,
-            shiftId: movement.shiftId,
-            kind: movement.kind,
-            amountMinor: BigInt(movement.amountMinor),
-            reason: movement.reason,
-            actorUserId: movement.actorUserId,
-            occurredAt: new Date(movement.occurredAt),
-          },
-        });
-      });
-    },
-
-    async close(scope: TenantScope, input: CloseShiftInput): Promise<ShiftRecord> {
-      return withTenant(prisma, scope.tenantId, async (tx) => {
-        const tenant = tenantParam(scope);
-
-        // updateMany with status in the filter, so closing a shift twice
-        // affects zero rows instead of overwriting the first declaration.
-        const changed = await tx.shift.updateMany({
-          where: { id: input.shiftId, tenantId: tenant, status: 'open' },
-          data: {
-            status: 'closed',
-            declaredCashMinor: BigInt(input.declaredCashMinor),
-            expectedCashMinor: BigInt(input.expectedCashMinor),
-            varianceMinor: BigInt(input.varianceMinor),
-            closedAt: new Date(input.closedAt),
-          },
-        });
-        if (changed.count !== 1) {
-          throw new DatabaseError(
-            `Shift ${input.shiftId} is not open in this tenant; nothing was closed.`,
-          );
-        }
-
-        const row = await loadShift(tx, tenant, input.shiftId);
-        if (row === null) {
-          throw new DatabaseError('The shift just closed could not be read back.');
         }
         return toDomain(scope, row);
       });

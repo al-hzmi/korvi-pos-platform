@@ -18,6 +18,59 @@ export type ShiftStatus = 'open' | 'closed';
 
 export type CashMovementKind = 'sale' | 'refund' | 'pay-in' | 'pay-out' | 'opening-float';
 
+export type ManualCashMovementKind = 'pay-in' | 'pay-out';
+
+export interface CashBreakdown {
+  readonly openingFloatMinor: bigint;
+  readonly cashSalesMinor: bigint;
+  readonly cashRefundsMinor: bigint;
+  readonly paidInMinor: bigint;
+  readonly paidOutMinor: bigint;
+  readonly expectedCashMinor: bigint;
+}
+
+export function signedManualCashAmount(kind: ManualCashMovementKind, amountMinor: bigint): bigint {
+  if (amountMinor <= 0n) throw new ShiftStateError('Manual cash amount must be positive.');
+  return kind === 'pay-in' ? amountMinor : -amountMinor;
+}
+
+/** Derive positive category magnitudes from authoritative signed movements. */
+export function cashBreakdown(
+  openingFloatMinor: bigint,
+  movements: readonly { readonly kind: CashMovementKind; readonly amountMinor: bigint }[],
+): CashBreakdown {
+  if (openingFloatMinor < 0n) throw new ShiftStateError('Opening float must not be negative.');
+  let cashSalesMinor = 0n;
+  let cashRefundsMinor = 0n;
+  let paidInMinor = 0n;
+  let paidOutMinor = 0n;
+  for (const movement of movements) {
+    if (movement.kind === 'sale') {
+      if (movement.amountMinor < 0n) throw new ShiftStateError('Sale cash must not be negative.');
+      cashSalesMinor += movement.amountMinor;
+    } else if (movement.kind === 'refund') {
+      if (movement.amountMinor > 0n) throw new ShiftStateError('Refund cash must not be positive.');
+      cashRefundsMinor += -movement.amountMinor;
+    } else if (movement.kind === 'pay-in') {
+      if (movement.amountMinor < 0n) throw new ShiftStateError('Pay-in cash must not be negative.');
+      paidInMinor += movement.amountMinor;
+    } else if (movement.kind === 'pay-out') {
+      if (movement.amountMinor > 0n)
+        throw new ShiftStateError('Pay-out cash must not be positive.');
+      paidOutMinor += -movement.amountMinor;
+    }
+  }
+  return {
+    openingFloatMinor,
+    cashSalesMinor,
+    cashRefundsMinor,
+    paidInMinor,
+    paidOutMinor,
+    expectedCashMinor:
+      openingFloatMinor + cashSalesMinor - cashRefundsMinor + paidInMinor - paidOutMinor,
+  };
+}
+
 export interface CashMovement {
   readonly id: string;
   readonly kind: CashMovementKind;

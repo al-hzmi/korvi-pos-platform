@@ -33,6 +33,31 @@ export const BASIS_POINTS = z.number().int().min(0).max(10_000);
 export const MAX_TENDERS = 8;
 export const MAX_TENDER_REFERENCE = 64;
 export const MAX_DISCOUNT_REASON = 120;
+export const MAX_CASH_MOVEMENT_REASON = 240;
+
+const BIGINT_MINOR = z
+  .string()
+  .regex(/^(0|[1-9][0-9]{0,18})$/, 'not an integer amount')
+  .refine(
+    (value) => /^(0|[1-9][0-9]{0,18})$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n,
+    'amount exceeds BIGINT',
+  );
+
+export const closeShiftBody = z.object({
+  operationId: UUID,
+  terminalId: UUID,
+  shiftId: UUID,
+  declaredCashMinor: BIGINT_MINOR,
+});
+
+export const manualCashMovementBody = z.object({
+  operationId: UUID,
+  terminalId: UUID,
+  shiftId: UUID,
+  kind: z.enum(['pay-in', 'pay-out']),
+  amountMinor: BIGINT_MINOR.refine((value) => value !== '0', 'amount must be positive'),
+  reason: z.string().trim().min(1).max(MAX_CASH_MOVEMENT_REASON),
+});
 
 /**
  * A payment that happened.
@@ -212,6 +237,17 @@ export const saleIdParams = z.object({ saleId: UUID });
  * auditor comparing a receipt to a database row.
  */
 export const FORBIDDEN_FIELDS = [
+  'expectedCashMinor',
+  'varianceMinor',
+  'cashSalesMinor',
+  'cashRefundsMinor',
+  'paidInMinor',
+  'paidOutMinor',
+  'closedByUserId',
+  'tenantId',
+  'branchId',
+  'userId',
+  'status',
   'tenantId',
   'userId',
   'cashierId',
@@ -253,6 +289,27 @@ export function namesForbiddenField(body: unknown): string | null {
   for (const field of FORBIDDEN_FIELDS) {
     if (Object.hasOwn(body, field)) return field;
   }
+  return null;
+}
+
+const SHIFT_AUTHORITY_FIELDS = [
+  'expectedCashMinor',
+  'varianceMinor',
+  'cashSalesMinor',
+  'cashRefundsMinor',
+  'paidInMinor',
+  'paidOutMinor',
+  'closedByUserId',
+  'tenantId',
+  'branchId',
+  'userId',
+  'status',
+] as const;
+
+/** Route-specific: shiftId is a legitimate identity fact for these commands. */
+export function namesShiftAuthorityField(body: unknown): string | null {
+  if (body === null || typeof body !== 'object') return null;
+  for (const field of SHIFT_AUTHORITY_FIELDS) if (Object.hasOwn(body, field)) return field;
   return null;
 }
 

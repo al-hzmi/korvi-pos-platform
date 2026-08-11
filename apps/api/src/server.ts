@@ -10,6 +10,7 @@ import {
   createSaleRepository,
   createReturnRepository,
   createShiftRepository,
+  createShiftReconciliationRepository,
   createTenantRepository,
   createTerminalRepository,
 } from '@korvi/database';
@@ -91,6 +92,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const prisma = createPrismaClient(url);
     const products = createProductRepository(prisma);
     const shifts = createShiftRepository(prisma);
+    const shiftReconciliation = createShiftReconciliationRepository(prisma);
     const terminals = createTerminalRepository(prisma);
     const tenants = createTenantRepository(prisma);
     const dashboard = createDashboardRepository(prisma);
@@ -101,6 +103,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       dashboard,
       products,
       shifts,
+      shiftReconciliation,
       terminals,
       checkout: createCheckoutService({
         tenants,
@@ -140,8 +143,14 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       findOpenForTerminal: (scope, terminalId) =>
         resolve().shifts.findOpenForTerminal(scope, terminalId),
       open: (scope, input) => resolve().shifts.open(scope, input),
-      recordCashMovement: (scope, movement) => resolve().shifts.recordCashMovement(scope, movement),
-      close: (scope, input) => resolve().shifts.close(scope, input),
+    },
+    shiftReconciliation: {
+      recordManualMovement: (scope, input) =>
+        resolve().shiftReconciliation?.recordManualMovement(scope, input) ??
+        Promise.reject(new AuthUnavailableError('Shift reconciliation is unavailable.')),
+      reconcile: (scope, input) =>
+        resolve().shiftReconciliation?.reconcile(scope, input) ??
+        Promise.reject(new AuthUnavailableError('Shift reconciliation is unavailable.')),
     },
     terminals: {
       findById: (scope, id) => resolve().terminals.findById(scope, id),
