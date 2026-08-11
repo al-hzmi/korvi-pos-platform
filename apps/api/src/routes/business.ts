@@ -7,6 +7,7 @@ import {
   carriesCardNumber,
   namesCardField,
   namesForbiddenField,
+  namesShiftAuthorityField,
   openShiftBody,
   manualCashMovementBody,
   productQuery,
@@ -432,7 +433,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const principal = principalOf(request);
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
       if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
-      const forbidden = namesForbiddenField(request.body);
+      const forbidden = namesShiftAuthorityField(request.body);
       if (forbidden !== null)
         return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
       const parsed = manualCashMovementBody.safeParse(request.body);
@@ -472,7 +473,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const principal = principalOf(request);
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
       if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
-      const forbidden = namesForbiddenField(request.body);
+      const forbidden = namesShiftAuthorityField(request.body);
       if (forbidden !== null)
         return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
       const parsed = closeShiftBody.safeParse(request.body);

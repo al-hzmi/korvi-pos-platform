@@ -19,9 +19,23 @@ ALTER TABLE "shifts" ADD CONSTRAINT "shifts_reconciliation_magnitudes"
 
 ALTER TABLE "shifts" ADD CONSTRAINT "shifts_new_close_snapshot_consistency"
   CHECK ("status" <> 'closed' OR "closedByUserId" IS NULL OR
-    ("declaredCashMinor" IS NOT NULL AND "expectedCashMinor" IS NOT NULL
+    ("closedAt" IS NOT NULL AND "declaredCashMinor" IS NOT NULL AND "declaredCashMinor" >= 0
+     AND "expectedCashMinor" IS NOT NULL
      AND "varianceMinor" = "declaredCashMinor" - "expectedCashMinor"
      AND "cashSalesMinor" IS NOT NULL AND "cashRefundsMinor" IS NOT NULL
      AND "paidInMinor" IS NOT NULL AND "paidOutMinor" IS NOT NULL
      AND "expectedCashMinor" = "openingFloatMinor" + "cashSalesMinor"
        - "cashRefundsMinor" + "paidInMinor" - "paidOutMinor"));
+
+-- VALIDATE checks every historical row before PostgreSQL installs these as
+-- trusted constraints. Migration fails rather than blessing incompatible data.
+ALTER TABLE "cash_movements" ADD CONSTRAINT "cash_movements_financial_semantics"
+  CHECK (("kind" = 'opening-float' AND "amountMinor" = 0)
+      OR ("kind" = 'sale' AND "amountMinor" >= 0)
+      OR ("kind" = 'refund' AND "amountMinor" <= 0)
+      OR ("kind" = 'pay-in' AND "amountMinor" > 0 AND "actorUserId" IS NOT NULL
+          AND "reason" IS NOT NULL AND "reason" = btrim("reason")
+          AND char_length("reason") BETWEEN 1 AND 240)
+      OR ("kind" = 'pay-out' AND "amountMinor" < 0 AND "actorUserId" IS NOT NULL
+          AND "reason" IS NOT NULL AND "reason" = btrim("reason")
+          AND char_length("reason") BETWEEN 1 AND 240));

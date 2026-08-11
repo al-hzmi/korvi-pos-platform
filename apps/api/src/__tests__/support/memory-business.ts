@@ -245,12 +245,6 @@ export function memoryShiftRepository(store: MemoryBusinessStore): ShiftReposito
       store.openingMovements.push(input.openingMovementId);
       return Promise.resolve(shift);
     },
-    recordCashMovement: () => Promise.resolve(),
-    close: (scope, input) => {
-      const shift = mine(scope).find((s) => s.id === input.shiftId);
-      if (shift === undefined) throw new Error('no such shift');
-      return Promise.resolve({ ...shift, status: 'closed' });
-    },
   };
 }
 

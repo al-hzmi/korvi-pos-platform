@@ -143,8 +143,6 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       findOpenForTerminal: (scope, terminalId) =>
         resolve().shifts.findOpenForTerminal(scope, terminalId),
       open: (scope, input) => resolve().shifts.open(scope, input),
-      recordCashMovement: (scope, movement) => resolve().shifts.recordCashMovement(scope, movement),
-      close: (scope, input) => resolve().shifts.close(scope, input),
     },
     shiftReconciliation: {
       recordManualMovement: (scope, input) =>

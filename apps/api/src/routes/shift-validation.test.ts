@@ -3,7 +3,7 @@ import {
   closeShiftBody,
   manualCashMovementBody,
   MAX_CASH_MOVEMENT_REASON,
-  namesForbiddenField,
+  namesShiftAuthorityField,
 } from './validation.js';
 
 const OPERATION_ID = '018f0000-0000-7000-8000-000000000001';
@@ -17,6 +17,9 @@ const close = (declaredCashMinor: unknown) => ({
 });
 
 describe('shift close authority validation', () => {
+  it('allows every legitimate close identity/count fact', () => {
+    expect(namesShiftAuthorityField(close('1'))).toBeNull();
+  });
   it.each(['0', '1', '9007199254740993'])('accepts exact string amount %s', (amount) => {
     expect(closeShiftBody.safeParse(close(amount)).success).toBe(true);
   });
@@ -39,7 +42,7 @@ describe('shift close authority validation', () => {
     'userId',
     'status',
   ])('explicitly identifies forbidden authority field %s', (field) => {
-    expect(namesForbiddenField({ ...close('1'), [field]: 'assertion' })).toBe(field);
+    expect(namesShiftAuthorityField({ ...close('1'), [field]: 'assertion' })).toBe(field);
   });
 });
 
@@ -51,6 +54,9 @@ describe('manual cash movement validation', () => {
     kind,
     amountMinor,
     reason,
+  });
+  it('allows every legitimate manual movement fact', () => {
+    expect(namesShiftAuthorityField(body('pay-in', '1', 'reason'))).toBeNull();
   });
   it.each(['pay-in', 'pay-out'] as const)('accepts %s positive magnitude', (kind) => {
     expect(

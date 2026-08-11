@@ -292,6 +292,27 @@ export function namesForbiddenField(body: unknown): string | null {
   return null;
 }
 
+const SHIFT_AUTHORITY_FIELDS = [
+  'expectedCashMinor',
+  'varianceMinor',
+  'cashSalesMinor',
+  'cashRefundsMinor',
+  'paidInMinor',
+  'paidOutMinor',
+  'closedByUserId',
+  'tenantId',
+  'branchId',
+  'userId',
+  'status',
+] as const;
+
+/** Route-specific: shiftId is a legitimate identity fact for these commands. */
+export function namesShiftAuthorityField(body: unknown): string | null {
+  if (body === null || typeof body !== 'object') return null;
+  for (const field of SHIFT_AUTHORITY_FIELDS) if (Object.hasOwn(body, field)) return field;
+  return null;
+}
+
 /**
  * Look for cardholder data anywhere in the request, not just at the top.
  *

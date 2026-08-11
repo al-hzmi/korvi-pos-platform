@@ -264,14 +264,6 @@ export interface OpenShiftInput {
   readonly openingMovementId: string;
 }
 
-export interface CloseShiftInput {
-  readonly shiftId: string;
-  readonly declaredCashMinor: string;
-  readonly expectedCashMinor: string;
-  readonly varianceMinor: string;
-  readonly closedAt: string;
-}
-
 export interface ManualCashMovementInput {
   readonly idempotencyId: string;
   readonly operationId: string;
@@ -622,8 +614,6 @@ export interface ShiftRepository {
   findById(scope: TenantScope, id: string): Promise<ShiftRecord | null>;
   findOpenForTerminal(scope: TenantScope, terminalId: string): Promise<ShiftRecord | null>;
   open(scope: TenantScope, input: OpenShiftInput): Promise<ShiftRecord>;
-  recordCashMovement(scope: TenantScope, movement: CashMovementRecord): Promise<void>;
-  close(scope: TenantScope, input: CloseShiftInput): Promise<ShiftRecord>;
 }
 
 export interface ShiftReconciliationRepository {
