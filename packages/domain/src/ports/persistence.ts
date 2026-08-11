@@ -272,6 +272,45 @@ export interface CloseShiftInput {
   readonly closedAt: string;
 }
 
+export interface ManualCashMovementInput {
+  readonly idempotencyId: string;
+  readonly operationId: string;
+  readonly movementId: string;
+  readonly shiftId: string;
+  readonly terminalId: string;
+  readonly branchId: string;
+  readonly actorUserId: string;
+  readonly kind: 'pay-in' | 'pay-out';
+  readonly amountMinor: string;
+  readonly reason: string;
+  readonly occurredAt: string;
+}
+
+export interface ReconcileShiftInput {
+  readonly idempotencyId: string;
+  readonly operationId: string;
+  readonly shiftId: string;
+  readonly terminalId: string;
+  readonly branchId: string;
+  readonly actorUserId: string;
+  readonly declaredCashMinor: string;
+  readonly closedAt: string;
+}
+
+export interface ShiftReconciliationRecord {
+  readonly shiftId: string;
+  readonly openingFloatMinor: string;
+  readonly cashSalesMinor: string;
+  readonly cashRefundsMinor: string;
+  readonly paidInMinor: string;
+  readonly paidOutMinor: string;
+  readonly expectedCashMinor: string;
+  readonly declaredCashMinor: string;
+  readonly varianceMinor: string;
+  readonly closedAt: string;
+  readonly closedByUserId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Sales and invoices
 // ---------------------------------------------------------------------------
@@ -585,6 +624,14 @@ export interface ShiftRepository {
   open(scope: TenantScope, input: OpenShiftInput): Promise<ShiftRecord>;
   recordCashMovement(scope: TenantScope, movement: CashMovementRecord): Promise<void>;
   close(scope: TenantScope, input: CloseShiftInput): Promise<ShiftRecord>;
+}
+
+export interface ShiftReconciliationRepository {
+  recordManualMovement(
+    scope: TenantScope,
+    input: ManualCashMovementInput,
+  ): Promise<CashMovementRecord>;
+  reconcile(scope: TenantScope, input: ReconcileShiftInput): Promise<ShiftReconciliationRecord>;
 }
 
 export interface SaleRepository {
