@@ -8,7 +8,7 @@ import { createInventoryRepository } from '../repositories/inventory-repository.
 import { createProductRepository } from '../repositories/product-repository.js';
 import { createSaleRepository } from '../repositories/sale-repository.js';
 import { createShiftRepository } from '../repositories/shift-repository.js';
-import { ShiftOpenRefusedError } from '../errors.js';
+import { DrawerRefusedError, ShiftOpenRefusedError } from '../errors.js';
 import { createTenantRepository } from '../repositories/tenant-repository.js';
 import { createTerminalRepository } from '../repositories/terminal-repository.js';
 import type { RecordSaleInput, TenantScope } from '@korvi/domain';
@@ -603,31 +603,40 @@ describe('writes that must be atomic', () => {
     );
   });
 
-  it('refuses to close a shift that is not open', async () => {
-    const f = fake({ 'shift.updateMany': [{ count: 0 }] });
+  it('refuses a close by somebody who does not own the shift, under its lock', async () => {
+    // The fake answers the shift lock with an open shift owned by u1.
+    const f = fake();
     await expect(
       createShiftRepository(f.client).close(scope, {
         shiftId: 's1',
+        terminalId: 't1',
+        branchId: 'b1',
+        closedByUserId: 'u2',
         declaredCashMinor: '31150',
-        expectedCashMinor: '31000',
-        varianceMinor: '150',
         closedAt: AT,
+        idempotency: { id: 'k1', scope: 'shift-close', operationId: 'op1', requestHash: 'h' },
       }),
-    ).rejects.toThrow(/not open/i);
+    ).rejects.toThrow(DrawerRefusedError);
+    // And it took the shift row first, which is the whole serialization story.
+    expect(f.raw.some((sql) => sql.includes('"shifts"') && sql.includes('FOR UPDATE'))).toBe(true);
   });
 
-  it('refuses a cash movement against a closed shift', async () => {
-    const f = fake({ 'shift.findFirst': [{ id: 's1', tenantId: TENANT, status: 'closed' }] });
+  it('refuses a manual movement against a drawer in another branch', async () => {
+    const f = fake();
     await expect(
-      createShiftRepository(f.client).recordCashMovement(scope, {
+      createShiftRepository(f.client).recordManualMovement(scope, {
         id: 'cm2',
         shiftId: 's1',
+        terminalId: 't1',
+        branchId: 'b9',
         kind: 'pay-out',
         amountMinor: '-5000',
         reason: 'مصروف',
         actorUserId: 'u1',
         occurredAt: AT,
+        idempotency: { id: 'k2', scope: 'cash-movement', operationId: 'op2', requestHash: 'h' },
       }),
-    ).rejects.toThrow(/closed shift/i);
+    ).rejects.toThrow(DrawerRefusedError);
+    expect(f.raw.some((sql) => sql.includes('"shifts"') && sql.includes('FOR UPDATE'))).toBe(true);
   });
 });

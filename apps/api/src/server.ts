@@ -17,6 +17,7 @@ import { newId } from '@korvi/domain';
 import { createGuards } from './auth/guards.js';
 import { createCheckoutService } from './checkout/service.js';
 import { createReturnService } from './returns/service.js';
+import { createDrawerService } from './shifts/service.js';
 import { registerBusinessRoutes } from './routes/business.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -111,6 +112,12 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         idempotency,
         audit,
       }),
+      drawer: createDrawerService({
+        shifts,
+        terminals,
+        idempotency,
+        audit,
+      }),
       returns: createReturnService({
         returns: createReturnRepository(prisma),
         terminals,
@@ -140,7 +147,8 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       findOpenForTerminal: (scope, terminalId) =>
         resolve().shifts.findOpenForTerminal(scope, terminalId),
       open: (scope, input) => resolve().shifts.open(scope, input),
-      recordCashMovement: (scope, movement) => resolve().shifts.recordCashMovement(scope, movement),
+      findMovementById: (scope, id) => resolve().shifts.findMovementById(scope, id),
+      recordManualMovement: (scope, input) => resolve().shifts.recordManualMovement(scope, input),
       close: (scope, input) => resolve().shifts.close(scope, input),
     },
     terminals: {
@@ -150,6 +158,10 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       markSeen: (scope, id, at) => resolve().terminals.markSeen(scope, id, at),
     },
     checkout: { checkout: (input) => resolve().checkout.checkout(input) },
+    drawer: {
+      recordMovement: (input) => resolve().drawer.recordMovement(input),
+      close: (input) => resolve().drawer.close(input),
+    },
     returns: {
       create: (input) => resolve().returns.create(input),
       lookup: (principal, term, limit) => resolve().returns.lookup(principal, term, limit),

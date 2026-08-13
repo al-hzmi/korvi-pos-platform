@@ -136,7 +136,9 @@ model User {
   memberships   TenantMembership[]
   roles         UserRole[]
   sessions      Session[]
-  shifts        Shift[]
+  shifts        Shift[]            @relation("ShiftOwner")
+  closedShifts  Shift[]            @relation("ShiftCloser")
+  cashMovements CashMovement[]
   sales         Sale[]
   auditEvents   AuditEvent[]
   saleDiscounts SaleDiscount[]
@@ -498,6 +500,18 @@ model Shift {
   expectedCashMinor BigInt?
   varianceMinor     BigInt?
 
+  /// The immutable reconciliation snapshot, written once by the close
+  /// transaction. Positive magnitudes: the equation applies the signs, and a
+  /// CHECK constraint asserts it (ADR-0017).
+  cashSalesMinor   BigInt?
+  cashRefundsMinor BigInt?
+  paidInMinor      BigInt?
+  paidOutMinor     BigInt?
+
+  /// Who closed the drawer, recorded apart from who opened it. Null on a shift
+  /// closed before Korvi recorded the closer — an absent fact, not a guess.
+  closedByUserId String? @db.Uuid
+
   openedAt DateTime
   closedAt DateTime?
 
@@ -507,7 +521,8 @@ model Shift {
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch        Branch         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
   terminal      Terminal       @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
-  user          User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  user          User           @relation("ShiftOwner", fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  closedBy      User?          @relation("ShiftCloser", fields: [tenantId, closedByUserId], references: [tenantId, id], onDelete: NoAction)
   cashMovements CashMovement[]
   sales         Sale[]
   returns       Return[]
@@ -516,6 +531,7 @@ model Shift {
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
   @@unique([tenantId, id])
+  @@index([tenantId, closedByUserId])
   @@index([tenantId, branchId, status])
   @@index([tenantId, terminalId, status])
   @@index([tenantId, openedAt])
@@ -539,8 +555,11 @@ model CashMovement {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   shift  Shift  @relation(fields: [tenantId, shiftId], references: [tenantId, id], onDelete: Cascade)
+  actor  User?  @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
 
   @@index([tenantId, shiftId, occurredAt])
+  @@index([tenantId, shiftId, kind])
+  @@index([tenantId, actorUserId])
   @@map("cash_movements")
 }
 

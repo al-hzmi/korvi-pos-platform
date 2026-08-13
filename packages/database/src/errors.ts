@@ -85,3 +85,24 @@ export class ReturnNotAllowedError extends DatabaseError {
     this.detail = detail;
   }
 }
+
+/**
+ * A drawer operation was refused while its shift row was held.
+ *
+ * Every detail here is decided under `SELECT ... FOR UPDATE`, which is what
+ * makes it an answer rather than a guess: `shift-closed` means the close
+ * committed first, not that a stale read thought so (ADR-0017).
+ */
+export class DrawerRefusedError extends DatabaseError {
+  public override readonly name = 'DrawerRefusedError';
+  public readonly detail:
+    'unknown-shift' | 'shift-closed' | 'branch-mismatch' | 'terminal-mismatch' | 'not-owner';
+
+  public constructor(
+    detail:
+      'unknown-shift' | 'shift-closed' | 'branch-mismatch' | 'terminal-mismatch' | 'not-owner',
+  ) {
+    super(`Drawer operation refused: ${detail}`);
+    this.detail = detail;
+  }
+}

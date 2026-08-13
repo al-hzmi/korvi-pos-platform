@@ -242,14 +242,23 @@ export interface ShiftRecord {
   readonly tenantId: TenantId;
   readonly branchId: string;
   readonly terminalId: string;
+  /** Who opened the drawer and owns it. */
   readonly userId: string;
   readonly status: ShiftStatusRecord;
   readonly openingFloatMinor: string;
   readonly declaredCashMinor: string | null;
   readonly expectedCashMinor: string | null;
   readonly varianceMinor: string | null;
+  /**
+   * Who closed it, recorded separately from who opened it. Null on a shift
+   * closed before Korvi recorded the closer; that fact is absent, not
+   * fabricated (ADR-0017).
+   */
+  readonly closedByUserId: string | null;
   readonly openedAt: string;
   readonly closedAt: string | null;
+  /** Present once closed under the reconciliation architecture. */
+  readonly reconciliation: ShiftReconciliationRecord | null;
   readonly movements: readonly CashMovementRecord[];
 }
 
@@ -264,12 +273,63 @@ export interface OpenShiftInput {
   readonly openingMovementId: string;
 }
 
-export interface CloseShiftInput {
-  readonly shiftId: string;
-  readonly declaredCashMinor: string;
+/**
+ * The immutable reconciliation a close leaves behind.
+ *
+ * Magnitudes, not signed sums: the equation below is the only place the signs
+ * are applied, and the database asserts it again (ADR-0017).
+ */
+export interface ShiftReconciliationRecord {
+  readonly openingFloatMinor: string;
+  readonly cashSalesMinor: string;
+  readonly cashRefundsMinor: string;
+  readonly paidInMinor: string;
+  readonly paidOutMinor: string;
+  /** opening + sales - refunds + paidIn - paidOut. Server-derived, always. */
   readonly expectedCashMinor: string;
+  readonly declaredCashMinor: string;
+  /** declared - expected. */
   readonly varianceMinor: string;
+}
+
+/**
+ * A manual drawer movement, as the server decided to write it.
+ *
+ * `amountMinor` is already signed. The public API takes a positive magnitude
+ * and the service converts it, so a client cannot record a pay-out that adds
+ * to the drawer by sending a sign.
+ */
+export interface ManualCashMovementInput {
+  readonly id: string;
+  readonly shiftId: string;
+  /** Proved against the shift row under its lock, never trusted. */
+  readonly terminalId: string;
+  readonly branchId: string;
+  readonly kind: 'pay-in' | 'pay-out';
+  readonly amountMinor: string;
+  readonly reason: string;
+  /** Whoever is actually standing there — not necessarily the shift's owner. */
+  readonly actorUserId: string;
+  readonly occurredAt: string;
+  readonly idempotency: IdempotencyReservation;
+}
+
+/**
+ * Everything a close may be told.
+ *
+ * Deliberately missing: expected cash, variance, and every category total.
+ * They are derived inside the transaction from movements read under the
+ * shift's lock. There is no second close path that accepts them.
+ */
+export interface CloseShiftRequest {
+  readonly shiftId: string;
+  readonly terminalId: string;
+  readonly branchId: string;
+  /** The session's user. Must be the shift's owner for a normal close. */
+  readonly closedByUserId: string;
+  readonly declaredCashMinor: string;
   readonly closedAt: string;
+  readonly idempotency: IdempotencyReservation;
 }
 
 // ---------------------------------------------------------------------------
@@ -579,12 +639,33 @@ export interface CustomerRepository {
   create(scope: TenantScope, input: CreateCustomerInput): Promise<Customer>;
 }
 
+/**
+ * The drawer's write surface.
+ *
+ * There is deliberately no generic `recordCashMovement`: a writer that read
+ * the shift's status without holding its row could be overtaken by a close
+ * between the read and the insert, and money would land in a reconciled
+ * drawer. Every method below that touches cash takes the shift row FOR UPDATE
+ * first, and the sale and return repositories do the same inside their own
+ * transactions (ADR-0017).
+ *
+ * There is likewise no close that accepts an expected cash or a variance.
+ * Those are consequences of persisted movements, and a caller that could
+ * supply them would be the financial authority.
+ */
 export interface ShiftRepository {
   findById(scope: TenantScope, id: string): Promise<ShiftRecord | null>;
   findOpenForTerminal(scope: TenantScope, terminalId: string): Promise<ShiftRecord | null>;
+  /** The idempotent read: a retry finds the movement its first attempt wrote. */
+  findMovementById(scope: TenantScope, id: string): Promise<CashMovementRecord | null>;
   open(scope: TenantScope, input: OpenShiftInput): Promise<ShiftRecord>;
-  recordCashMovement(scope: TenantScope, movement: CashMovementRecord): Promise<void>;
-  close(scope: TenantScope, input: CloseShiftInput): Promise<ShiftRecord>;
+  /** Pay-in or pay-out, under the shift's lock, with its idempotency key. */
+  recordManualMovement(
+    scope: TenantScope,
+    input: ManualCashMovementInput,
+  ): Promise<CashMovementRecord>;
+  /** Reconcile and close, deriving every figure inside the transaction. */
+  close(scope: TenantScope, input: CloseShiftRequest): Promise<ShiftRecord>;
 }
 
 export interface SaleRepository {

@@ -1,5 +1,7 @@
 import { basisPoints, tenantId as brandTenantId } from '@korvi/domain';
+import { reconcileDrawer } from '@korvi/domain';
 import {
+  DrawerRefusedError,
   InsufficientStockError,
   OperationAlreadyRecordedError,
   ReturnNotAllowedError,
@@ -9,6 +11,10 @@ import {
 import type {
   AuditEventInput,
   AuditRepository,
+  CashMovementRecord,
+  CloseShiftRequest,
+  DrawerMovement,
+  ManualCashMovementInput,
   IdempotencyRecord,
   IdempotencyReservation,
   IdempotencyRepository,
@@ -207,6 +213,15 @@ export function memoryInventoryRepository(store: MemoryBusinessStore): Inventory
   };
 }
 
+/** Replace a shift in place, so a caller holding the array sees the change. */
+function replaceShift(
+  store: MemoryBusinessStore,
+  shift: ShiftRecord,
+  changes: Partial<ShiftRecord>,
+): void {
+  store.shifts[store.shifts.indexOf(shift)] = { ...shift, ...changes };
+}
+
 export function memoryShiftRepository(store: MemoryBusinessStore): ShiftRepository {
   const mine = (scope: TenantScope): ShiftRecord[] =>
     store.shifts.filter((s) => (s.tenantId as string) === scopeId(scope));
@@ -237,19 +252,141 @@ export function memoryShiftRepository(store: MemoryBusinessStore): ShiftReposito
         declaredCashMinor: null,
         expectedCashMinor: null,
         varianceMinor: null,
+        closedByUserId: null,
         openedAt: input.openedAt,
         closedAt: null,
+        reconciliation: null,
         movements: [],
       };
       store.shifts.push(shift);
       store.openingMovements.push(input.openingMovementId);
       return Promise.resolve(shift);
     },
-    recordCashMovement: () => Promise.resolve(),
-    close: (scope, input) => {
+    findMovementById: (scope, id) =>
+      Promise.resolve(
+        mine(scope)
+          .flatMap((shift) => shift.movements)
+          .find((movement) => movement.id === id) ?? null,
+      ),
+
+    recordManualMovement: (scope: TenantScope, input: ManualCashMovementInput) => {
       const shift = mine(scope).find((s) => s.id === input.shiftId);
-      if (shift === undefined) throw new Error('no such shift');
-      return Promise.resolve({ ...shift, status: 'closed' });
+      if (shift === undefined) return Promise.reject(new DrawerRefusedError('unknown-shift'));
+      // Addressability before state, exactly as the adapter does it.
+      if (shift.branchId !== input.branchId) {
+        return Promise.reject(new DrawerRefusedError('branch-mismatch'));
+      }
+      if (shift.terminalId !== input.terminalId) {
+        return Promise.reject(new DrawerRefusedError('terminal-mismatch'));
+      }
+      if (shift.status !== 'open') return Promise.reject(new DrawerRefusedError('shift-closed'));
+      if (
+        store.keys.some(
+          (key) =>
+            (key.tenantId as string) === scopeId(scope) &&
+            key.scope === input.idempotency.scope &&
+            key.operationId === input.idempotency.operationId,
+        )
+      ) {
+        return Promise.reject(new OperationAlreadyRecordedError(input.idempotency.operationId));
+      }
+
+      const movement: CashMovementRecord = {
+        id: input.id,
+        shiftId: input.shiftId,
+        kind: input.kind,
+        amountMinor: input.amountMinor,
+        reason: input.reason,
+        actorUserId: input.actorUserId,
+        occurredAt: input.occurredAt,
+      };
+      replaceShift(store, shift, { movements: [...shift.movements, movement] });
+      store.keys.push({
+        id: input.idempotency.id,
+        tenantId: brandTenantId(scopeId(scope)),
+        scope: input.idempotency.scope,
+        operationId: input.idempotency.operationId,
+        status: 'completed',
+        resultType: 'cash-movement',
+        resultId: input.id,
+        requestHash: input.idempotency.requestHash,
+        completedAt: input.occurredAt,
+      });
+      store.cashMovements.push({
+        kind: input.kind,
+        amountMinor: input.amountMinor,
+        shiftId: input.shiftId,
+      });
+      return Promise.resolve(movement);
+    },
+
+    close: (scope: TenantScope, input: CloseShiftRequest) => {
+      const shift = mine(scope).find((s) => s.id === input.shiftId);
+      if (shift === undefined) return Promise.reject(new DrawerRefusedError('unknown-shift'));
+      if (shift.branchId !== input.branchId) {
+        return Promise.reject(new DrawerRefusedError('branch-mismatch'));
+      }
+      if (shift.terminalId !== input.terminalId) {
+        return Promise.reject(new DrawerRefusedError('terminal-mismatch'));
+      }
+      if (shift.status !== 'open') return Promise.reject(new DrawerRefusedError('shift-closed'));
+      if (shift.userId !== input.closedByUserId) {
+        return Promise.reject(new DrawerRefusedError('not-owner'));
+      }
+      if (
+        store.keys.some(
+          (key) =>
+            (key.tenantId as string) === scopeId(scope) &&
+            key.scope === input.idempotency.scope &&
+            key.operationId === input.idempotency.operationId,
+        )
+      ) {
+        return Promise.reject(new OperationAlreadyRecordedError(input.idempotency.operationId));
+      }
+
+      // Derived here, exactly as the adapter derives it: a fake that returned
+      // a stubbed expected figure would prove the assertion, not the equation.
+      const reconciliation = reconcileDrawer(
+        BigInt(shift.openingFloatMinor),
+        shift.movements.map((movement): DrawerMovement => ({
+          kind: movement.kind,
+          amountMinor: BigInt(movement.amountMinor),
+        })),
+        BigInt(input.declaredCashMinor),
+      );
+
+      const closed: ShiftRecord = {
+        ...shift,
+        status: 'closed',
+        declaredCashMinor: reconciliation.declaredCashMinor.toString(),
+        expectedCashMinor: reconciliation.expectedCashMinor.toString(),
+        varianceMinor: reconciliation.varianceMinor.toString(),
+        closedByUserId: input.closedByUserId,
+        closedAt: input.closedAt,
+        reconciliation: {
+          openingFloatMinor: reconciliation.openingFloatMinor.toString(),
+          cashSalesMinor: reconciliation.cashSalesMinor.toString(),
+          cashRefundsMinor: reconciliation.cashRefundsMinor.toString(),
+          paidInMinor: reconciliation.paidInMinor.toString(),
+          paidOutMinor: reconciliation.paidOutMinor.toString(),
+          expectedCashMinor: reconciliation.expectedCashMinor.toString(),
+          declaredCashMinor: reconciliation.declaredCashMinor.toString(),
+          varianceMinor: reconciliation.varianceMinor.toString(),
+        },
+      };
+      store.shifts[store.shifts.indexOf(shift)] = closed;
+      store.keys.push({
+        id: input.idempotency.id,
+        tenantId: brandTenantId(scopeId(scope)),
+        scope: input.idempotency.scope,
+        operationId: input.idempotency.operationId,
+        status: 'completed',
+        resultType: 'shift',
+        resultId: input.shiftId,
+        requestHash: input.idempotency.requestHash,
+        completedAt: input.closedAt,
+      });
+      return Promise.resolve(closed);
     },
   };
 }
@@ -728,8 +865,10 @@ export function seedStore(store: MemoryBusinessStore, f: Fixture, openShift = tr
       declaredCashMinor: null,
       expectedCashMinor: null,
       varianceMinor: null,
+      closedByUserId: null,
       openedAt: '2026-08-12T06:00:00.000Z',
       closedAt: null,
+      reconciliation: null,
       movements: [],
     });
   }

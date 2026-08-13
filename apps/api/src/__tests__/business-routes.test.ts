@@ -6,6 +6,7 @@ import { createAuthService } from '../auth/service.js';
 import { hashPassword } from '../auth/password.js';
 import { createCheckoutService } from '../checkout/service.js';
 import { createReturnService } from '../returns/service.js';
+import { createDrawerService } from '../shifts/service.js';
 import {
   MemoryAuthStore,
   memoryAuditRepository as memoryAuthAudit,
@@ -109,6 +110,12 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
         returns: memoryReturnRepository(business),
         terminals: memoryTerminalRepository(business),
         shifts: memoryShiftRepository(business),
+        idempotency: memoryIdempotencyRepository(business),
+        audit: memoryAuditRepository(business),
+      }),
+      drawer: createDrawerService({
+        shifts: memoryShiftRepository(business),
+        terminals: memoryTerminalRepository(business),
         idempotency: memoryIdempotencyRepository(business),
         audit: memoryAuditRepository(business),
       }),
@@ -270,8 +277,10 @@ describe('branch authorisation', () => {
       declaredCashMinor: null,
       expectedCashMinor: null,
       varianceMinor: null,
+      closedByUserId: null,
       openedAt: '2026-08-12T05:00:00.000Z',
       closedAt: null,
+      reconciliation: null,
       movements: [],
     });
   }

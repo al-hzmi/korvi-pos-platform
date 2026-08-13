@@ -104,6 +104,110 @@ export const discountBody = z.discriminatedUnion('mode', [
   }),
 ]);
 
+/**
+ * A cash amount that must survive being larger than a JavaScript number.
+ *
+ * `MINOR` above stops at fifteen digits, which is comfortably inside a cart
+ * total and comfortably below `Number.MAX_SAFE_INTEGER`. A declared drawer
+ * count is the one figure that can legitimately exceed it — a bureau de change
+ * in halalas gets there — so this accepts the full signed BIGINT range and
+ * refuses anything past it, rather than letting PostgreSQL raise an overflow
+ * at the end of a transaction.
+ *
+ * A JSON number is refused outright: the parser would have already lost the
+ * halalas by the time this ran (ADR-0002).
+ */
+export const BIGINT_MAX = 9_223_372_036_854_775_807n;
+
+// One predicate rather than a regex followed by a refinement: zod runs every
+// check, and `BigInt("abc")` throws rather than failing.
+const bigintString = (pattern: RegExp, message: string) =>
+  z.string().refine((value) => pattern.test(value) && BigInt(value) <= BIGINT_MAX, { message });
+
+/** Zero or more. A drawer can legitimately be counted empty. */
+export const COUNTED_MINOR = bigintString(/^(0|[1-9][0-9]{0,18})$/, 'not an integer amount');
+
+/** Strictly positive. A movement of nothing is a movement that did not happen. */
+export const MAGNITUDE_MINOR = bigintString(/^[1-9][0-9]{0,18}$/, 'not a positive amount');
+
+export const MAX_MOVEMENT_REASON = 200;
+
+/**
+ * A hand-written drawer movement.
+ *
+ * The amount is a positive magnitude and the kind decides the sign, on the
+ * server. A client that could send a sign could record a pay-out that adds to
+ * the till.
+ *
+ * The reason is trimmed before it is measured, so a client cannot pad past the
+ * bound and cannot slip an empty string through as whitespace. Nothing is
+ * silently truncated: a reason that is too long is refused, because a
+ * half-recorded explanation is worse than none.
+ */
+export const manualMovementBody = z.object({
+  operationId: UUID,
+  terminalId: UUID,
+  shiftId: UUID,
+  kind: z.enum(['pay-in', 'pay-out']),
+  amountMinor: MAGNITUDE_MINOR,
+  reason: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1).max(MAX_MOVEMENT_REASON)),
+});
+
+/**
+ * A shift close, and everything it may say.
+ *
+ * One physical count, and the three identifiers that say which drawer. The
+ * expected cash, the variance and every category total are derived by the
+ * server inside the transaction — see `shiftAuthorityField` below, which
+ * refuses a client that tries to assert one.
+ */
+export const closeShiftBody = z.object({
+  operationId: UUID,
+  terminalId: UUID,
+  shiftId: UUID,
+  declaredCashMinor: COUNTED_MINOR,
+});
+
+/**
+ * The fields a drawer request may never assert, checked per route.
+ *
+ * Deliberately not the global `FORBIDDEN_FIELDS`: that list names `shiftId`,
+ * `branchId` and `userId` because a *sale* must not carry them, and reusing it
+ * here would reject the one identifier a close is required to send. A route
+ * that needs a narrower rule gets a narrower rule rather than a shared list
+ * that is wrong for one of its callers.
+ */
+export const FORBIDDEN_DRAWER_FIELDS = [
+  'expectedCashMinor',
+  'varianceMinor',
+  'cashSalesMinor',
+  'cashRefundsMinor',
+  'paidInMinor',
+  'paidOutMinor',
+  'closedByUserId',
+  'closedAt',
+  'openingFloatMinor',
+  'tenantId',
+  'branchId',
+  'userId',
+  'cashierId',
+  'actorUserId',
+  'status',
+  'roles',
+  'permissions',
+] as const;
+
+export function namesDrawerAuthorityField(body: unknown): string | null {
+  if (body === null || typeof body !== 'object') return null;
+  for (const field of FORBIDDEN_DRAWER_FIELDS) {
+    if (Object.hasOwn(body, field)) return field;
+  }
+  return null;
+}
+
 export const productQuery = z.object({
   q: z.string().max(64).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(20),

@@ -12,6 +12,7 @@ export {
   ShiftUnusableError,
   ShiftOpenRefusedError,
   ReturnNotAllowedError,
+  DrawerRefusedError,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';

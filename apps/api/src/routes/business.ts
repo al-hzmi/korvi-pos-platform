@@ -11,9 +11,13 @@ import {
   returnBody,
   saleIdParams,
   saleLookupQuery,
+  closeShiftBody,
+  manualMovementBody,
+  namesDrawerAuthorityField,
 } from './validation.js';
 import type { CheckoutFailureReason, CheckoutService } from '../checkout/service.js';
 import type { ReturnFailureReason, ReturnService } from '../returns/service.js';
+import type { DrawerFailureReason, DrawerService } from '../shifts/service.js';
 import type { Guards } from '../auth/guards.js';
 import type {
   AuthenticatedPrincipal,
@@ -44,6 +48,7 @@ export interface BusinessDeps {
   readonly terminals: TerminalRepository;
   readonly checkout: CheckoutService;
   readonly returns: ReturnService;
+  readonly drawer: DrawerService;
 }
 
 export interface BusinessRouteOptions {
@@ -137,6 +142,31 @@ const RETURN_STATUS: Readonly<Record<ReturnFailureReason, number>> = {
   // The same 404 a till in another branch gets from every other route.
   'unknown-terminal': 404,
   'branch-required': 409,
+};
+
+/**
+ * A drawer refusal says what to do next and nothing about the rest of the
+ * merchant. A shift on another till or in another branch gets the same answer
+ * as one this request has no business naming.
+ */
+const DRAWER_MESSAGES: Readonly<Record<DrawerFailureReason, string>> = {
+  'branch-required': 'لا يوجد فرع مرتبط بهذا المستخدم. راجع إعدادات المنشأة.',
+  'unknown-terminal': 'الصندوق غير معروف.',
+  'unknown-shift': 'الوردية غير معروفة.',
+  'shift-closed': 'الوردية مغلقة بالفعل.',
+  'not-shift-owner': 'لا يمكن إغلاق وردية فتحها مستخدم آخر.',
+  'invalid-amount': 'المبلغ غير صالح.',
+  'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
+};
+
+const DRAWER_STATUS: Readonly<Record<DrawerFailureReason, number>> = {
+  'branch-required': 409,
+  'unknown-terminal': 404,
+  'unknown-shift': 404,
+  'shift-closed': 409,
+  'not-shift-owner': 403,
+  'invalid-amount': 422,
+  'idempotency-conflict': 409,
 };
 
 function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefined {
@@ -631,6 +661,108 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       return reply
         .code(result.replayed ? 200 : 201)
         .send({ return: result.document, replayed: result.replayed });
+    },
+  );
+  /**
+   * Money into or out of the drawer by hand.
+   *
+   * `shift.cash-movement`, which in the current role model is a manager's
+   * capability. The actor is therefore *not* required to be the cashier who
+   * opened the shift — requiring that would make the permission unusable by
+   * the only people who hold it. What is required is that the supervisor is
+   * authorised for the branch the drawer is in, and the person who performed
+   * the movement is recorded separately from the person who owns the shift
+   * (ADR-0017).
+   *
+   * The amount is a positive magnitude; the kind decides the sign, server-side.
+   */
+  app.post(
+    '/v1/shifts/movements',
+    { preHandler: [guards.requireSession, guards.requirePermission('shift.cash-movement')] },
+    async (request, reply: FastifyReply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
+      // Route-specific, not the global sale list: a drawer request is required
+      // to name its shift and its till, and rejecting those would be rejecting
+      // the request's own subject.
+      const forbidden = namesDrawerAuthorityField(request.body);
+      if (forbidden !== null) {
+        return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
+      }
+
+      const parsed = manualMovementBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      const result = await deps.drawer.recordMovement({
+        principal,
+        operationId: parsed.data.operationId,
+        terminalId: parsed.data.terminalId,
+        shiftId: parsed.data.shiftId,
+        kind: parsed.data.kind,
+        amountMinor: parsed.data.amountMinor,
+        reason: parsed.data.reason,
+      });
+
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'cash movement refused');
+        return reply
+          .code(DRAWER_STATUS[result.reason])
+          .send({ error: result.reason, message: DRAWER_MESSAGES[result.reason] });
+      }
+
+      return reply
+        .code(result.replayed ? 200 : 201)
+        .send({ movement: result.movement, replayed: result.replayed });
+    },
+  );
+
+  /**
+   * Count the drawer and close it.
+   *
+   * Blind: nothing before this point tells the cashier what the till should
+   * hold, and the request carries one figure — what they counted. Expected
+   * cash and variance come back only in the response, after the count is
+   * committed, because a number shown beforehand is a number to count towards.
+   *
+   * A normal close is performed by the shift's own operator. Manager
+   * force-close is a separate capability and is not built in this strike.
+   */
+  app.post(
+    '/v1/shifts/close',
+    { preHandler: [guards.requireSession, guards.requirePermission('shift.close')] },
+    async (request, reply: FastifyReply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
+      const forbidden = namesDrawerAuthorityField(request.body);
+      if (forbidden !== null) {
+        return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
+      }
+
+      const parsed = closeShiftBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      const result = await deps.drawer.close({
+        principal,
+        operationId: parsed.data.operationId,
+        terminalId: parsed.data.terminalId,
+        shiftId: parsed.data.shiftId,
+        declaredCashMinor: parsed.data.declaredCashMinor,
+      });
+
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'shift close refused');
+        return reply
+          .code(DRAWER_STATUS[result.reason])
+          .send({ error: result.reason, message: DRAWER_MESSAGES[result.reason] });
+      }
+
+      return reply
+        .code(result.replayed ? 200 : 201)
+        .send({ shift: result.shift, replayed: result.replayed });
     },
   );
 }
