@@ -24,10 +24,10 @@ import { UUID } from './validation.js';
 /**
  * A page and a place to continue from.
  *
- * The cursor is an opaque token the server minted; it is bounded so a client
- * cannot post a megabyte of base64, and it carries no tenant and no actor —
- * scope comes from the session, and the server refuses anything it did not
- * mint rather than treating it as "start again".
+ * The cursor is an opaque keyset continuation token interpreted by the server.
+ * It is bounded so a client cannot post a megabyte of base64, and it carries no
+ * tenant and no actor — scope comes from the session. Malformed or over-bounded
+ * tokens are refused rather than treated as "start again".
  */
 const CURSOR = z.string().min(1).max(512);
 

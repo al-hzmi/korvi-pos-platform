@@ -1,4 +1,9 @@
 import type {
+  AdminBranch,
+  AdminPage,
+  AdminSettingsPatch,
+  AdminTenantSettings,
+  AdminTerminal,
   CheckoutRequest,
   DashboardSummary,
   CheckoutResponse,
@@ -90,6 +95,34 @@ export interface ApiClient {
     readonly openingFloatMinor: string;
   }): Promise<ShiftSummary>;
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
+
+  adminSettings(options?: RequestOptions): Promise<AdminTenantSettings>;
+  updateAdminSettings(patch: AdminSettingsPatch): Promise<AdminTenantSettings>;
+  adminBranches(
+    query?: { readonly limit?: number; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<AdminPage<AdminBranch>>;
+  createAdminBranch(input: {
+    readonly code: string;
+    readonly nameAr: string;
+    readonly nameEn?: string | null;
+  }): Promise<AdminBranch>;
+  updateAdminBranch(
+    branchId: string,
+    patch: { readonly nameAr?: string; readonly nameEn?: string | null },
+  ): Promise<AdminBranch>;
+  setAdminBranchActive(branchId: string, isActive: boolean): Promise<AdminBranch>;
+  adminTerminals(
+    query?: { readonly limit?: number; readonly branchId?: string; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<AdminPage<AdminTerminal>>;
+  createAdminTerminal(input: {
+    readonly branchId: string;
+    readonly code: string;
+    readonly label: string;
+  }): Promise<AdminTerminal>;
+  updateAdminTerminal(terminalId: string, label: string): Promise<AdminTerminal>;
+  setAdminTerminalActive(terminalId: string, isActive: boolean): Promise<AdminTerminal>;
 }
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -102,6 +135,19 @@ function readErrorCode(body: unknown, status: number): { code: string; message: 
     return { code, message };
   }
   return { code: `http_${String(status)}`, message: null };
+}
+
+function listQuery(input: {
+  readonly limit?: number;
+  readonly cursor?: string;
+  readonly branchId?: string;
+}): string {
+  const search = new URLSearchParams();
+  if (input.limit !== undefined) search.set('limit', String(input.limit));
+  if (input.cursor !== undefined && input.cursor !== '') search.set('cursor', input.cursor);
+  if (input.branchId !== undefined && input.branchId !== '') search.set('branchId', input.branchId);
+  const encoded = search.toString();
+  return encoded === '' ? '' : `?${encoded}`;
 }
 
 export function createApiClient(fetchImpl?: Fetch): ApiClient {
@@ -143,8 +189,8 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     return body;
   };
 
-  const json = (payload: unknown): RequestInit => ({
-    method: 'POST',
+  const json = (payload: unknown, method: 'POST' | 'PATCH' | 'DELETE' = 'POST'): RequestInit => ({
+    method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   });
@@ -241,6 +287,106 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
       } finally {
         clearTimeout(timer);
       }
+    },
+
+    async adminSettings(options) {
+      return (await call('/v1/admin/settings', { method: 'GET' }, options)) as AdminTenantSettings;
+    },
+
+    async updateAdminSettings(patch) {
+      return (await call(
+        '/v1/admin/settings',
+        json(
+          {
+            ...(patch.requireBarcode === undefined ? {} : { requireBarcode: patch.requireBarcode }),
+            ...(patch.allowWeightedItems === undefined
+              ? {}
+              : { allowWeightedItems: patch.allowWeightedItems }),
+            ...(patch.trackInventory === undefined ? {} : { trackInventory: patch.trackInventory }),
+            ...(patch.allowNegativeStock === undefined
+              ? {}
+              : { allowNegativeStock: patch.allowNegativeStock }),
+            ...(patch.enableProductImages === undefined
+              ? {}
+              : { enableProductImages: patch.enableProductImages }),
+            ...(patch.receiptHeaderAr === undefined
+              ? {}
+              : { receiptHeaderAr: patch.receiptHeaderAr }),
+            ...(patch.receiptFooterAr === undefined
+              ? {}
+              : { receiptFooterAr: patch.receiptFooterAr }),
+          },
+          'PATCH',
+        ),
+      )) as AdminTenantSettings;
+    },
+
+    async adminBranches(query = {}, options) {
+      return (await call(
+        `/v1/admin/branches${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as AdminPage<AdminBranch>;
+    },
+
+    async createAdminBranch(input) {
+      return (await call(
+        '/v1/admin/branches',
+        json({
+          code: input.code,
+          nameAr: input.nameAr,
+          ...(input.nameEn === undefined ? {} : { nameEn: input.nameEn }),
+        }),
+      )) as AdminBranch;
+    },
+
+    async updateAdminBranch(branchId, patch) {
+      return (await call(
+        `/v1/admin/branches/${encodeURIComponent(branchId)}`,
+        json(
+          {
+            ...(patch.nameAr === undefined ? {} : { nameAr: patch.nameAr }),
+            ...(patch.nameEn === undefined ? {} : { nameEn: patch.nameEn }),
+          },
+          'PATCH',
+        ),
+      )) as AdminBranch;
+    },
+
+    async setAdminBranchActive(branchId, isActive) {
+      return (await call(
+        `/v1/admin/branches/${encodeURIComponent(branchId)}/activation`,
+        json({ isActive }),
+      )) as AdminBranch;
+    },
+
+    async adminTerminals(query = {}, options) {
+      return (await call(
+        `/v1/admin/terminals${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as AdminPage<AdminTerminal>;
+    },
+
+    async createAdminTerminal(input) {
+      return (await call(
+        '/v1/admin/terminals',
+        json({ branchId: input.branchId, code: input.code, label: input.label }),
+      )) as AdminTerminal;
+    },
+
+    async updateAdminTerminal(terminalId, label) {
+      return (await call(
+        `/v1/admin/terminals/${encodeURIComponent(terminalId)}`,
+        json({ label }, 'PATCH'),
+      )) as AdminTerminal;
+    },
+
+    async setAdminTerminalActive(terminalId, isActive) {
+      return (await call(
+        `/v1/admin/terminals/${encodeURIComponent(terminalId)}/activation`,
+        json({ isActive }),
+      )) as AdminTerminal;
     },
   };
 }

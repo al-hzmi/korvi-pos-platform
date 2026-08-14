@@ -126,3 +126,58 @@ export interface DashboardSummary {
   readonly currency: string;
   readonly since: string;
 }
+
+/** A bounded keyset page returned by merchant administration. */
+export interface AdminPage<T> {
+  readonly items: readonly T[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+}
+
+/**
+ * Merchant-visible tenant settings. The immutable commercial fields are shown
+ * so an administrator can understand the merchant, but only the editable
+ * fields appear in `AdminSettingsPatch`.
+ */
+export interface AdminTenantSettings {
+  readonly tenantId: string;
+  readonly vertical: string;
+  readonly priceMode: string;
+  readonly defaultVatBasisPoints: number;
+  readonly currency: string;
+  readonly requireBarcode: boolean;
+  readonly allowWeightedItems: boolean;
+  readonly trackInventory: boolean;
+  readonly allowNegativeStock: boolean;
+  readonly enableProductImages: boolean;
+  readonly receiptHeaderAr: string | null;
+  readonly receiptFooterAr: string | null;
+}
+
+export interface AdminSettingsPatch {
+  readonly requireBarcode?: boolean;
+  readonly allowWeightedItems?: boolean;
+  readonly trackInventory?: boolean;
+  readonly allowNegativeStock?: boolean;
+  readonly enableProductImages?: boolean;
+  readonly receiptHeaderAr?: string | null;
+  readonly receiptFooterAr?: string | null;
+}
+
+export interface AdminBranch {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly isActive: boolean;
+  readonly createdAt: string;
+}
+
+export interface AdminTerminal {
+  readonly id: string;
+  readonly branchId: string;
+  readonly code: string;
+  readonly label: string;
+  readonly isActive: boolean;
+  readonly lastSeenAt: string | null;
+}

@@ -2,9 +2,11 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
+import { BranchesPanel } from './branches-panel';
 import { ControlNav } from './control-nav';
 import { DashboardPanel } from './dashboard-panel';
 import { ProductsPanel } from './products-panel';
+import { SettingsPanel } from './settings-panel';
 import { LoginScreen } from '../login-screen';
 import { Screen } from '../screen';
 import { StatusNote } from '../status-note';
@@ -24,9 +26,8 @@ import type { ControlSection } from './control-nav';
  *
  * The session boundary is the same one the till uses — same hook, same cookie,
  * same server, and the same refusal to call an unconfirmed logout a logout.
- * Hiding the navigation from a cashier is a courtesy; the dashboard route
- * checks `report.read` itself, and an unauthorised request gets a 403 whatever
- * this component renders.
+ * Hiding an administration entry is a courtesy; every `/v1/admin/**` route
+ * checks its own permission again on the server.
  */
 export interface ControlAppProps {
   readonly api?: ApiClient;
@@ -42,6 +43,32 @@ function Waiting({ label }: { readonly label: string }): JSX.Element {
       </CardSurface>
     </Screen>
   );
+}
+
+function sectionTitle(section: ControlSection): string {
+  switch (section) {
+    case 'home':
+      return 'الرئيسية';
+    case 'products':
+      return 'المنتجات';
+    case 'branches':
+      return 'الفروع والصناديق';
+    case 'settings':
+      return 'إعدادات المنشأة';
+  }
+}
+
+function Section({ section, api }: { readonly section: ControlSection; readonly api: ApiClient }): JSX.Element {
+  switch (section) {
+    case 'home':
+      return <DashboardPanel api={api} />;
+    case 'products':
+      return <ProductsPanel api={api} />;
+    case 'branches':
+      return <BranchesPanel api={api} />;
+    case 'settings':
+      return <SettingsPanel api={api} />;
+  }
 }
 
 function Workspace({
@@ -97,15 +124,24 @@ function Workspace({
         <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
           <aside className="w-full shrink-0 lg:w-64" aria-label="التنقل">
             <CardSurface className="p-2">
-              <ControlNav active={section} onSelect={setSection} />
+              <ControlNav
+                active={section}
+                permissions={principal.permissions}
+                onSelect={setSection}
+              />
             </CardSurface>
           </aside>
 
           <main className="flex min-h-0 flex-1 flex-col gap-4">
-            <h1 className="text-2xl font-semibold text-foreground">
-              {section === 'home' ? 'الرئيسية' : 'المنتجات'}
-            </h1>
-            {section === 'home' ? <DashboardPanel api={api} /> : <ProductsPanel api={api} />}
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">{sectionTitle(section)}</h1>
+              {section === 'branches' || section === 'settings' ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
+                </p>
+              ) : null}
+            </div>
+            <Section section={section} api={api} />
           </main>
         </div>
       )}

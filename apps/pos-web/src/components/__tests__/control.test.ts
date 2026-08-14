@@ -2,10 +2,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ROLE_PERMISSIONS } from '@korvi/domain';
+import { BranchesPanel } from '../control/branches-panel';
 import { CONTROL_ENTRIES, ControlNav } from '../control/control-nav';
 import { ControlSurface } from '../control/control-app';
 import { DashboardPanel } from '../control/dashboard-panel';
 import { ProductsPanel } from '../control/products-panel';
+import { SettingsPanel } from '../control/settings-panel';
 import { ProductPanel } from '../product-panel';
 import { controlView } from '../../lib/control-view';
 import { LOGOUT_UNCONFIRMED, hasPermission } from '../../lib/session';
@@ -83,7 +85,11 @@ describe('control navigation', () => {
 
   it('marks unbuilt modules unavailable rather than opening an empty page', () => {
     const markup = renderToStaticMarkup(
-      createElement(ControlNav, { active: 'home', onSelect: () => undefined }),
+      createElement(ControlNav, {
+        active: 'home',
+        permissions: ['settings.manage'],
+        onSelect: () => undefined,
+      }),
     );
     const unbuilt = CONTROL_ENTRIES.filter((entry) => entry.section === null);
 
@@ -95,9 +101,20 @@ describe('control navigation', () => {
     }
   });
 
+  it('marks built administration sections unauthorized without settings.manage', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ControlNav, { active: 'home', permissions: [], onSelect: () => undefined }),
+    );
+    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(2);
+  });
+
   it('marks exactly one section as the open one', () => {
     const markup = renderToStaticMarkup(
-      createElement(ControlNav, { active: 'products', onSelect: () => undefined }),
+      createElement(ControlNav, {
+        active: 'products',
+        permissions: ['settings.manage'],
+        onSelect: () => undefined,
+      }),
     );
     expect(markup.match(/aria-current="page"/g) ?? []).toHaveLength(1);
   });
@@ -127,6 +144,19 @@ describe('control centre first paint', () => {
     expect(markup).toContain('عرض فقط');
     expect(markup).not.toContain('حفظ');
   });
+
+  it('does not claim settings are editable until their authority has loaded', () => {
+    const markup = renderToStaticMarkup(createElement(SettingsPanel, { api: idleApi }));
+    expect(markup).toContain('جارٍ تحميل إعدادات المنشأة');
+    expect(markup).not.toContain('حفظ الإعدادات');
+  });
+
+  it('does not claim the merchant has no branches before the list is loaded', () => {
+    const markup = renderToStaticMarkup(createElement(BranchesPanel, { api: idleApi }));
+    expect(markup).toContain('جارٍ تحميل الفروع والصناديق');
+    expect(markup).not.toContain('لا توجد فروع حتى الآن');
+    expect(markup).not.toContain('لا توجد صناديق حتى الآن');
+  });
 });
 
 describe('who the control centre is for', () => {
@@ -138,7 +168,14 @@ describe('who the control centre is for', () => {
     expect(hasPermission(principalWith(ROLE_PERMISSIONS.owner), 'report.read')).toBe(true);
   });
 
-  it('is the same permission the server route demands', () => {
+  it('does not confuse dashboard access with merchant administration', () => {
+    expect(ROLE_PERMISSIONS.manager).toContain('report.read');
+    expect(ROLE_PERMISSIONS.manager).not.toContain('settings.manage');
+    expect(ROLE_PERMISSIONS.admin).toContain('settings.manage');
+    expect(ROLE_PERMISSIONS.owner).toContain('settings.manage');
+  });
+
+  it('is the same permission the server dashboard route demands', () => {
     // The affordance is a courtesy; GET /v1/dashboard/summary is the authority.
     // If these two ever disagree, the courtesy is the one that is wrong.
     expect(ROLE_PERMISSIONS.cashier).not.toContain('report.read');
