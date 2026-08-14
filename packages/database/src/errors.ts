@@ -87,6 +87,59 @@ export class ReturnNotAllowedError extends DatabaseError {
 }
 
 /**
+ * A provisioning request could not create a tenant, and must not be retried
+ * unchanged.
+ *
+ * Every detail is decided after a unique index has already spoken, so none of
+ * them is a guess about a race:
+ *
+ *   slug-taken          another tenant already holds the requested slug, and a
+ *                       different operation created it.
+ *   operation-id-reused this operation id created a tenant under a different
+ *                       slug. Reusing it here would silently hand back that
+ *                       other merchant.
+ *   request-mismatch    this operation id created *this* tenant, but the
+ *                       request now says something materially different. A
+ *                       retry that changed its mind is not a retry.
+ *
+ * `invalid-slug` and `invalid-name` are decided before anything is written:
+ * the request was never well-formed enough to race with.
+ */
+export type TenantProvisioningRefusal =
+  'invalid-slug' | 'invalid-name' | 'slug-taken' | 'operation-id-reused' | 'request-mismatch';
+
+export class TenantProvisioningError extends DatabaseError {
+  public override readonly name = 'TenantProvisioningError';
+  public readonly detail: TenantProvisioningRefusal;
+
+  public constructor(detail: TenantProvisioningRefusal) {
+    super(`Tenant provisioning refused: ${detail}`);
+    this.detail = detail;
+  }
+}
+
+/**
+ * A lifecycle transition was refused while the tenant row was held.
+ *
+ * `illegal-transition` is the state machine speaking — the tenant exists, and
+ * the move it was asked to make does not start where it is. It is deliberately
+ * distinct from `unknown-tenant`, because a control-plane operator is not an
+ * untrusted caller and telling them apart costs nothing here (ADR-0018).
+ */
+export type TenantLifecycleRefusal =
+  'unknown-tenant' | 'illegal-transition' | 'idempotency-conflict';
+
+export class TenantLifecycleRefusedError extends DatabaseError {
+  public override readonly name = 'TenantLifecycleRefusedError';
+  public readonly detail: TenantLifecycleRefusal;
+
+  public constructor(detail: TenantLifecycleRefusal) {
+    super(`Tenant lifecycle refused: ${detail}`);
+    this.detail = detail;
+  }
+}
+
+/**
  * A drawer operation was refused while its shift row was held.
  *
  * Every detail here is decided under `SELECT ... FOR UPDATE`, which is what

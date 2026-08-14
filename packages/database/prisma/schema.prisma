@@ -36,11 +36,40 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Tenant {
-  id        String   @id @db.Uuid
+  id        String  @id @db.Uuid
   name      String
-  slug      String   @unique
-  vatNumber String?  @db.VarChar(15)
-  status    String   @default("active")
+  slug      String  @unique
+  vatNumber String? @db.VarChar(15)
+
+  /// 'provisioning' | 'active' | 'suspended', constrained by a CHECK in the
+  /// migration. The default is deliberately NOT 'active': a tenant that can
+  /// trade because somebody inserted a row is a tenant nobody decided to
+  /// admit (ADR-0018).
+  status String @default("provisioning")
+
+  /// The control-plane operation that created this tenant, and the canonical
+  /// fingerprint of what it asked for. Unique across the installation, which
+  /// is what makes a retried provisioning call resolve to this same row
+  /// instead of minting a second merchant.
+  provisioningOperationId String?
+  provisioningRequestHash String?
+
+  /// 'legacy' | 'recorded'. Whether this row's lifecycle history is known.
+  /// `legacy` marks a tenant that existed before Strike 4A: its status is
+  /// known, its admission time is not, and if it arrived suspended neither is
+  /// when or why. An unknown historical fact is not a guessed fact (ADR-0018).
+  lifecycleProvenance String @default("recorded")
+
+  /// When the tenant was admitted. Null while provisioning, and permanently
+  /// null on a `legacy` row, which was admitted before Korvi recorded it.
+  activatedAt DateTime?
+
+  /// Set together, cleared together, and only ever while status = 'suspended'.
+  /// The history of past suspensions lives in audit_events, which is
+  /// append-only; these two columns describe the present.
+  suspendedAt      DateTime?
+  suspensionReason String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -77,6 +106,7 @@ model Tenant {
   auditEvents        AuditEvent[]
   sessions           Session[]
 
+  @@unique([provisioningOperationId])
   @@map("tenants")
 }
 

@@ -251,6 +251,8 @@ describe.skipIf(url === '')('shift reconciliation, live', () => {
           name: 'متجر الصندوق',
           slug: S.slug,
           vatNumber: '300000000000003',
+          status: 'active',
+          activatedAt: new Date(),
           updatedAt: new Date(),
         },
       });
@@ -316,7 +318,14 @@ describe.skipIf(url === '')('shift reconciliation, live', () => {
 
     await withTenant(prisma, otherScope.tenantId, async (tx) => {
       await tx.tenant.create({
-        data: { id: OTHER.tenant, name: 'متجر آخر', slug: OTHER.slug, updatedAt: new Date() },
+        data: {
+          id: OTHER.tenant,
+          name: 'متجر آخر',
+          slug: OTHER.slug,
+          status: 'active',
+          activatedAt: new Date(),
+          updatedAt: new Date(),
+        },
       });
     });
 

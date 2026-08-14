@@ -57,7 +57,16 @@ describe.skipIf(url === '')('authentication tenancy, live', () => {
     const scope = { tenantId: brandTenantId(t.tenant) };
     await withTenant(prisma, scope.tenantId, async (tx) => {
       await tx.tenant.create({
-        data: { id: t.tenant, name: `Tenant ${t.slug}`, slug: t.slug, updatedAt: new Date() },
+        // Historical fixture: a tenant that already trades. The production
+        // default is `provisioning` (ADR-0018).
+        data: {
+          id: t.tenant,
+          name: `Tenant ${t.slug}`,
+          slug: t.slug,
+          status: 'active',
+          activatedAt: new Date(),
+          updatedAt: new Date(),
+        },
       });
       await tx.user.create({
         data: {

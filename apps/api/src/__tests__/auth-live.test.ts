@@ -88,7 +88,16 @@ describe.skipIf(url === '')('authentication flow, live', () => {
 
     await withTenant(prisma, scope.tenantId, async (tx) => {
       await tx.tenant.create({
-        data: { id: t.tenant, name: t.slug, slug: t.slug, updatedAt: new Date() },
+        // Historical fixture: a tenant that already trades. The production
+        // default is `provisioning` (ADR-0018).
+        data: {
+          id: t.tenant,
+          name: t.slug,
+          slug: t.slug,
+          status: 'active',
+          activatedAt: new Date(),
+          updatedAt: new Date(),
+        },
       });
       await tx.user.create({
         data: {
@@ -142,9 +151,26 @@ describe.skipIf(url === '')('authentication flow, live', () => {
     await prisma.$disconnect();
   });
 
+  /**
+   * Poke the status column directly, the way an operator's mistake would.
+   *
+   * The lifecycle constraints treat suspension state as all-or-nothing and tie
+   * `activatedAt` to whether the tenant was ever admitted (ADR-0018), so this
+   * fixture has to carry the columns the constraints require. It deliberately
+   * does not go through the control plane: what is under test here is that
+   * authentication reads the row, whatever put the row in that state.
+   */
   async function setTenantStatus(tenant: string, status: string): Promise<void> {
     await withTenant(prisma, brandTenantId(tenant), async (tx) => {
-      await tx.tenant.updateMany({ where: { id: tenant }, data: { status } });
+      await tx.tenant.updateMany({
+        where: { id: tenant },
+        data: {
+          status,
+          activatedAt: status === 'provisioning' ? null : new Date(),
+          suspendedAt: status === 'suspended' ? new Date() : null,
+          suspensionReason: status === 'suspended' ? 'auth-live fixture' : null,
+        },
+      });
     });
   }
 
@@ -304,9 +330,11 @@ describe.skipIf(url === '')('authentication flow, live', () => {
     const suspended = await service.authenticate(result.token);
     expect(suspended.outcome === 'failure' && suspended.reason).toBe('tenant-inactive');
 
-    await setTenantStatus(C.tenant, 'closed');
-    const closed = await service.authenticate(result.token);
-    expect(closed.outcome === 'failure' && closed.reason).toBe('tenant-inactive');
+    // Not only suspension: a tenant that has been put back into provisioning
+    // is not a tenant anybody may sell through either.
+    await setTenantStatus(C.tenant, 'provisioning');
+    const unadmitted = await service.authenticate(result.token);
+    expect(unadmitted.outcome === 'failure' && unadmitted.reason).toBe('tenant-inactive');
 
     // Reactivating restores the session it never revoked, and nothing else.
     await setTenantStatus(C.tenant, 'active');

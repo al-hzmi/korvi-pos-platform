@@ -1,3 +1,4 @@
+import { TENANT_LIFECYCLE_STATES } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import { oneOf, rate, scoped, tenantParam } from './mapping.js';
 import type {
@@ -11,7 +12,7 @@ import type {
 } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 
-const STATUSES: readonly TenantStatus[] = ['active', 'suspended', 'closed'];
+const STATUSES: readonly TenantStatus[] = [...TENANT_LIFECYCLE_STATES];
 const VERTICALS: readonly Vertical[] = ['retail', 'grocery', 'restaurant', 'pharmacy'];
 const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
 

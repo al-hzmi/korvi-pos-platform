@@ -4,6 +4,7 @@ import type { BasisPoints } from '../tax/basis-points.js';
 // would be free to disagree tomorrow, and the two would sit on either side of
 // the persistence boundary.
 import type { PriceMode } from '../pricing/line.js';
+import type { TenantLifecycleState } from '../tenancy/lifecycle.js';
 import type { TenderKind, TenderScheme } from '../tender/tender.js';
 
 /**
@@ -77,7 +78,14 @@ export function assertSameTenant(scope: TenantScope, rowTenantId: string): void 
 // Tenancy and configuration
 // ---------------------------------------------------------------------------
 
-export type TenantStatus = 'active' | 'suspended' | 'closed';
+/**
+ * The persistence name for the lifecycle state, and deliberately the same type.
+ *
+ * A second literal union that happened to agree with the state machine today
+ * would be free to disagree tomorrow, and the two would sit on either side of
+ * the boundary that decides whether a merchant may trade (ADR-0018).
+ */
+export type TenantStatus = TenantLifecycleState;
 
 /** The minimum needed to identify a tenant before any scope exists. */
 export interface TenantIdentity {

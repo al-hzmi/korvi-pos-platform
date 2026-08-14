@@ -2,6 +2,7 @@ import { PERMISSIONS, ROLE_MAX_DISCOUNT_BP, ROLE_PERMISSIONS, newId } from '@kor
 import { withTenant, withoutTenant } from '../tenant-context.js';
 import { tenantParam } from '../repositories/mapping.js';
 import type { Permission, RoleName, TenantScope } from '@korvi/domain';
+import type { TransactionClient } from '../tenant-context.js';
 import type { PrismaClient } from '../client.js';
 
 /**
@@ -73,76 +74,100 @@ export interface ProvisionedRole {
 }
 
 /**
- * Install Korvi's default roles for one tenant.
+ * Install Korvi's default roles for one tenant, inside a transaction the
+ * caller already owns and has already established tenant context for.
  *
  * The role set, the permissions each grants and the discount ceiling all come
  * from @korvi/domain — this function copies them into the database, it does not
  * decide them. Inventing a second definition here is how a POS ends up with a
  * cashier who can discount in the database and cannot in the code.
  *
+ * This is the form provisioning needs. A tenant whose roles were installed by a
+ * second, independent transaction is a tenant that can exist with no roles if
+ * that second transaction fails — a half-built merchant, which is precisely
+ * what provisioning atomicity means to prevent (ADR-0018). The `tenant`
+ * argument is a raw id rather than a scope because the only safe caller is one
+ * that has just set `app.tenant_id` to it; that is also why this is not
+ * re-exported from the package barrel.
+ *
  * Internal by design: there is no HTTP route that reaches it.
+ */
+export async function provisionTenantRbacWithin(
+  tx: TransactionClient,
+  tenant: string,
+  nextId: () => string = newId,
+): Promise<readonly ProvisionedRole[]> {
+  const provisioned: ProvisionedRole[] = [];
+
+  for (const key of Object.keys(DEFAULT_ROLES) as RoleName[]) {
+    const label = DEFAULT_ROLES[key];
+    const existing = await tx.role.findFirst({ where: { tenantId: tenant, key } });
+    const id = existing?.id ?? nextId();
+
+    if (existing === null) {
+      await tx.role.create({
+        data: {
+          id,
+          tenantId: tenant,
+          key,
+          nameAr: label.ar,
+          nameEn: label.en,
+          maxDiscountBasisPoints: Number(ROLE_MAX_DISCOUNT_BP[key]),
+          isSystem: true,
+        },
+      });
+    } else {
+      await tx.role.updateMany({
+        where: { id, tenantId: tenant },
+        data: {
+          nameAr: label.ar,
+          nameEn: label.en,
+          maxDiscountBasisPoints: Number(ROLE_MAX_DISCOUNT_BP[key]),
+          isSystem: true,
+        },
+      });
+    }
+
+    const granted = ROLE_PERMISSIONS[key];
+    for (const permissionKey of granted) {
+      const already = await tx.rolePermission.findFirst({
+        where: { tenantId: tenant, roleId: id, permissionKey },
+      });
+      if (already === null) {
+        await tx.rolePermission.create({
+          data: { id: nextId(), tenantId: tenant, roleId: id, permissionKey },
+        });
+      }
+    }
+
+    // Anything this role was granted that the default no longer includes is
+    // removed, so lowering a default actually lowers it.
+    await tx.rolePermission.deleteMany({
+      where: { tenantId: tenant, roleId: id, permissionKey: { notIn: [...granted] } },
+    });
+
+    provisioned.push({ key, id, permissions: granted });
+  }
+
+  return provisioned;
+}
+
+/**
+ * The same installation, in its own transaction.
+ *
+ * For repairing or re-running defaults against a tenant that already exists.
+ * Provisioning does not use this — it calls `provisionTenantRbacWithin` inside
+ * the transaction that creates the tenant, because the two must succeed or
+ * fail together.
  */
 export async function provisionTenantRbac(
   prisma: PrismaClient,
   scope: TenantScope,
   nextId: () => string = newId,
 ): Promise<readonly ProvisionedRole[]> {
-  return withTenant(prisma, scope.tenantId, async (tx) => {
-    const tenant = tenantParam(scope);
-    const provisioned: ProvisionedRole[] = [];
-
-    for (const key of Object.keys(DEFAULT_ROLES) as RoleName[]) {
-      const label = DEFAULT_ROLES[key];
-      const existing = await tx.role.findFirst({ where: { tenantId: tenant, key } });
-      const id = existing?.id ?? nextId();
-
-      if (existing === null) {
-        await tx.role.create({
-          data: {
-            id,
-            tenantId: tenant,
-            key,
-            nameAr: label.ar,
-            nameEn: label.en,
-            maxDiscountBasisPoints: Number(ROLE_MAX_DISCOUNT_BP[key]),
-            isSystem: true,
-          },
-        });
-      } else {
-        await tx.role.updateMany({
-          where: { id, tenantId: tenant },
-          data: {
-            nameAr: label.ar,
-            nameEn: label.en,
-            maxDiscountBasisPoints: Number(ROLE_MAX_DISCOUNT_BP[key]),
-            isSystem: true,
-          },
-        });
-      }
-
-      const granted = ROLE_PERMISSIONS[key];
-      for (const permissionKey of granted) {
-        const already = await tx.rolePermission.findFirst({
-          where: { tenantId: tenant, roleId: id, permissionKey },
-        });
-        if (already === null) {
-          await tx.rolePermission.create({
-            data: { id: nextId(), tenantId: tenant, roleId: id, permissionKey },
-          });
-        }
-      }
-
-      // Anything this role was granted that the default no longer includes is
-      // removed, so lowering a default actually lowers it.
-      await tx.rolePermission.deleteMany({
-        where: { tenantId: tenant, roleId: id, permissionKey: { notIn: [...granted] } },
-      });
-
-      provisioned.push({ key, id, permissions: granted });
-    }
-
-    return provisioned;
-  });
+  return withTenant(prisma, scope.tenantId, async (tx) =>
+    provisionTenantRbacWithin(tx, tenantParam(scope), nextId),
+  );
 }
 
 /** Bind a user to one of the tenant's roles. Idempotent. */

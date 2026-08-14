@@ -281,10 +281,15 @@ describe('session verification', () => {
     expect(result.outcome === 'failure' && result.reason).toBe('tenant-inactive');
   });
 
-  it('refuses a session whose tenant has been closed', async () => {
+  it('refuses a session whose tenant has been put back into provisioning', async () => {
     const token = await loggedIn();
     const index = store.tenants.findIndex((candidate) => candidate.id === TENANT_A);
-    store.tenants[index] = { id: TENANT_A, slug: 'korvi-a', name: 'korvi-a', status: 'closed' };
+    store.tenants[index] = {
+      id: TENANT_A,
+      slug: 'korvi-a',
+      name: 'korvi-a',
+      status: 'provisioning',
+    };
 
     const result = await service.authenticate(token);
     expect(result.outcome === 'failure' && result.reason).toBe('tenant-inactive');

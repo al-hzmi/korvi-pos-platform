@@ -23,7 +23,7 @@ Legend: `A` Accepted, `AR` Architected, `I` Implemented, `T` Tested, `PR` Produc
 | Manual pay-in/pay-out | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Security, Live DB |
 | Blind shift close/reconciliation | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Live DB |
 | Control dashboard foundation | B0 | C1 | A/AR/I/T | POS/API | Security, Performance |
-| SaaS tenant provisioning/lifecycle | B0 | C0 | A; next execution domain | Control Plane | Security, Data Integrity, Production |
+| SaaS tenant provisioning/lifecycle | B0 | C0 | A/AR/I/T; no control-plane transport or UI yet, so not PR | Control Plane | Security, Data Integrity, Production |
 | Subscription/plan entitlement foundation | B0 | C1 | A | Control Plane | Security, Commercial |
 | Onboarding/settings administration | B0 | C1 | A | Control Plane/POS | Security, UX |
 | User/membership administration UI/API | B0 | C0 | A; auth primitives exist | Control Plane/Auth | Security, Audit |

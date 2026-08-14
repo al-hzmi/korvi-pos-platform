@@ -115,6 +115,8 @@ describe.skipIf(url === '')('returns, live', () => {
           name: 'متجر المرتجعات',
           slug: R.slug,
           vatNumber: '300000000000003',
+          status: 'active',
+          activatedAt: new Date(),
           updatedAt: new Date(),
         },
       });
@@ -207,6 +209,8 @@ describe.skipIf(url === '')('returns, live', () => {
           id: OTHER.tenant,
           name: 'متجر آخر',
           slug: OTHER.slug,
+          status: 'active',
+          activatedAt: new Date(),
           updatedAt: new Date(),
         },
       });

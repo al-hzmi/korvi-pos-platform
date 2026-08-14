@@ -13,7 +13,10 @@ export {
   ShiftOpenRefusedError,
   ReturnNotAllowedError,
   DrawerRefusedError,
+  TenantProvisioningError,
+  TenantLifecycleRefusedError,
 } from './errors.js';
+export type { TenantProvisioningRefusal, TenantLifecycleRefusal } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
 export { createBranchRepository } from './repositories/branch-repository.js';
@@ -43,3 +46,24 @@ export {
   assignRole,
 } from './provisioning/rbac.js';
 export type { ProvisionedRole } from './provisioning/rbac.js';
+// `provisionTenantRbacWithin` is deliberately not re-exported. It takes a raw
+// tenant string and an open transaction, which is safe only because the tenant
+// provisioner calls it from inside withTenant. On the public surface it would
+// be a way to write roles into an arbitrary tenant — the same reason
+// `applyMovementWithin` stays internal.
+export {
+  TENANT_LIFECYCLE_SCOPE,
+  provisionTenant,
+  activateTenant,
+  suspendTenant,
+  reactivateTenant,
+} from './provisioning/tenant.js';
+export type {
+  TenantProvisioningRequest,
+  ProvisionedTenant,
+  TenantLifecycleRequest,
+  TenantSuspensionRequest,
+  TenantLifecycleResult,
+} from './provisioning/tenant.js';
+export { fingerprintProvisioning, fingerprintLifecycle } from './provisioning/fingerprint.js';
+export type { ProvisioningIntent, LifecycleIntent } from './provisioning/fingerprint.js';

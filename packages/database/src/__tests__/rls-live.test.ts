@@ -120,8 +120,8 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
   async function seed(t: Readonly<Record<keyof typeof A, string>>, slug: string): Promise<void> {
     await asTenant(t.tenant, async () => {
       await client.query(
-        `INSERT INTO "tenants" ("id","name","slug","status","updatedAt")
-         VALUES ($1,$2,$3,'active', now())`,
+        `INSERT INTO "tenants" ("id","name","slug","status","activatedAt","updatedAt")
+         VALUES ($1,$2,$3,'active', now(), now())`,
         [t.tenant, `Tenant ${slug}`, slug],
       );
       await client.query(
@@ -644,8 +644,8 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
     const scratchBranch = '018f0000-0000-7000-8000-0000000000d1';
     await asTenant(scratch, async () => {
       await client.query(
-        `INSERT INTO "tenants" ("id","name","slug","status","updatedAt")
-         VALUES ($1,'Scratch','rls-live-scratch','active', now())`,
+        `INSERT INTO "tenants" ("id","name","slug","status","activatedAt","updatedAt")
+         VALUES ($1,'Scratch','rls-live-scratch','active', now(), now())`,
         [scratch],
       );
       await client.query(

@@ -80,6 +80,8 @@ describe.skipIf(url === '')('cash checkout, live', () => {
           name: 'متجر كورفي',
           slug: T.slug,
           vatNumber: '300000000000003',
+          status: 'active',
+          activatedAt: new Date(),
           updatedAt: new Date(),
         },
       });
@@ -575,6 +577,8 @@ describe.skipIf(url === '')('checkout races, live', () => {
           name: 'متجر كورفي',
           slug: C.slug,
           vatNumber: '300000000000003',
+          status: 'active',
+          activatedAt: new Date(),
           updatedAt: new Date(),
         },
       });

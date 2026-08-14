@@ -1,4 +1,9 @@
-import { PERMISSIONS, normalizeEmail, tenantId as brandTenantId } from '@korvi/domain';
+import {
+  PERMISSIONS,
+  TENANT_LIFECYCLE_STATES,
+  normalizeEmail,
+  tenantId as brandTenantId,
+} from '@korvi/domain';
 import { withLoginSlug, withTenant } from '../tenant-context.js';
 import { iso, isoOrNull, oneOf, scoped, tenantParam } from './mapping.js';
 import type {
@@ -18,7 +23,7 @@ import type {
 } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 
-const STATUSES: readonly TenantStatus[] = ['active', 'suspended', 'closed'];
+const STATUSES: readonly TenantStatus[] = [...TENANT_LIFECYCLE_STATES];
 const ROLE_NAMES: readonly RoleName[] = ['owner', 'admin', 'manager', 'cashier'];
 
 interface UserRow {

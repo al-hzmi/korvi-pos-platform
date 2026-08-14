@@ -78,6 +78,8 @@ describe.skipIf(url === '')('settlement, live', () => {
           name: 'متجر كورفي',
           slug: S.slug,
           vatNumber: '300000000000003',
+          status: 'active',
+          activatedAt: new Date(),
           updatedAt: new Date(),
         },
       });
