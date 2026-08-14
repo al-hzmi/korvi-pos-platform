@@ -15,8 +15,13 @@ export {
   DrawerRefusedError,
   TenantProvisioningError,
   TenantLifecycleRefusedError,
+  MerchantAdminRefusedError,
 } from './errors.js';
-export type { TenantProvisioningRefusal, TenantLifecycleRefusal } from './errors.js';
+export type {
+  TenantProvisioningRefusal,
+  TenantLifecycleRefusal,
+  MerchantAdminRefusal,
+} from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
 export { createBranchRepository } from './repositories/branch-repository.js';
@@ -67,3 +72,44 @@ export type {
 } from './provisioning/tenant.js';
 export { fingerprintProvisioning, fingerprintLifecycle } from './provisioning/fingerprint.js';
 export type { ProvisioningIntent, LifecycleIntent } from './provisioning/fingerprint.js';
+
+// Merchant administration (Strike 4B-1). Tenant-scoped, session-derived, and
+// deliberately separate from the control-plane functions above: nothing here
+// can provision, activate, suspend or reactivate a tenant.
+export {
+  updateTenantSettings,
+  listBranches,
+  createBranch,
+  updateBranch,
+  setBranchActive,
+  listTerminals,
+  createTerminal,
+  updateTerminal,
+  setTerminalActive,
+  listMembers,
+  createMember,
+  updateMember,
+  setMemberUserActive,
+  setMemberMembershipActive,
+  listAssignableRoles,
+  assignRoleToMember,
+  removeRoleFromMember,
+} from './administration/merchant-admin.js';
+export type {
+  AdminActor,
+  AdminBranch,
+  AdminMember,
+  AdminPage,
+  AdminRole,
+  AdminTenantSettings,
+  AdminTerminal,
+  AccessChange,
+  BranchPatch,
+  MemberPatch,
+  NewBranch,
+  NewMember,
+  NewTerminal,
+  RoleAssignmentResult,
+  TenantSettingsPatch,
+  TerminalPatch,
+} from './administration/merchant-admin.js';

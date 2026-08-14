@@ -34,6 +34,7 @@ interface SettingsRow {
   allowWeightedItems: boolean;
   trackInventory: boolean;
   allowNegativeStock: boolean;
+  enableProductImages: boolean;
   receiptHeaderAr: string | null;
   receiptFooterAr: string | null;
 }
@@ -80,6 +81,7 @@ export function createTenantRepository(prisma: PrismaClient): TenantRepository {
           allowWeightedItems: row.allowWeightedItems,
           trackInventory: row.trackInventory,
           allowNegativeStock: row.allowNegativeStock,
+          enableProductImages: row.enableProductImages,
           receiptHeaderAr: row.receiptHeaderAr,
           receiptFooterAr: row.receiptFooterAr,
         };

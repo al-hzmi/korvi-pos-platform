@@ -432,6 +432,15 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
               message: 'توجد وردية مفتوحة على هذا الصندوق.',
             });
           }
+          if (error.detail === 'branch-inactive') {
+            // The till exists and the cashier can see it; the branch has been
+            // stood down. Saying "unknown terminal" would send them looking for
+            // something that is in front of them.
+            return reply.code(409).send({
+              error: 'branch_inactive',
+              message: 'الفرع معطّل حالياً. لا يمكن فتح وردية على صناديقه.',
+            });
+          }
           return reply.code(404).send({ error: 'unknown_terminal', message: 'الصندوق غير معروف.' });
         }
         throw error;

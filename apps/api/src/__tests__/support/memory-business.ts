@@ -841,6 +841,7 @@ export function seedStore(store: MemoryBusinessStore, f: Fixture, openShift = tr
     allowWeightedItems: true,
     trackInventory: true,
     allowNegativeStock: false,
+    enableProductImages: false,
     receiptHeaderAr: null,
     receiptFooterAr: null,
   });

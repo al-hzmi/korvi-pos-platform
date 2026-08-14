@@ -111,6 +111,14 @@ export interface TenantSettings {
   readonly allowWeightedItems: boolean;
   readonly trackInventory: boolean;
   readonly allowNegativeStock: boolean;
+  /**
+   * Whether the merchant wants product images in the till.
+   *
+   * On the port rather than only in the administration layer, because there is
+   * one tenant-settings model and a second read-side copy of it is how a
+   * PATCH ends up invisible to the next GET.
+   */
+  readonly enableProductImages: boolean;
   readonly receiptHeaderAr: string | null;
   readonly receiptFooterAr: string | null;
 }

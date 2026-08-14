@@ -237,11 +237,29 @@ export function createShiftRepository(prisma: PrismaClient): ShiftRepository {
       return withTenant(prisma, scope.tenantId, async (tx) => {
         const tenant = tenantParam(scope);
 
-        // The terminal row is the serialization boundary. Two cashiers pressing
-        // "open shift" on the same till at the same moment would both find no
-        // open shift and both create one; there is no unique index that stops
-        // that, because a terminal legitimately has many shifts over time.
-        // Taking the lock first makes the second wait and then see the first.
+        // Two rows are taken, in this order, and the order is the whole
+        // contract: **branches, then terminals**, then shifts. It is the order
+        // ADR-0017 already documents for every financial path (which takes
+        // branches before shifts and never touches terminals), so inserting
+        // terminals between them introduces no cycle and no new deadlock.
+        //
+        // The terminal row is what stops two cashiers opening two shifts on one
+        // till: neither is refused by a unique index, because a till
+        // legitimately has many shifts over time, so the second must wait and
+        // then see the first.
+        //
+        // The branch row is what stops an administrator standing a branch or a
+        // till down in the gap between "no open shift" and "shift created".
+        // Merchant administration takes the same branch row first (ADR-0019),
+        // so a deactivation and an opening serialise, and whichever commits
+        // second sees the other's work rather than a stale read.
+        const branches = await tx.$queryRaw<{ id: string; isActive: boolean }[]>`
+          SELECT "id", "isActive" FROM "branches"
+           WHERE "id" = ${input.branchId}::uuid AND "tenantId" = ${tenant}::uuid
+           FOR UPDATE`;
+        const branch = branches.at(0);
+        if (branch === undefined) throw new ShiftOpenRefusedError('unknown-terminal');
+
         const terminals = await tx.$queryRaw<{ branchId: string; isActive: boolean }[]>`
           SELECT "branchId", "isActive" FROM "terminals"
            WHERE "id" = ${input.terminalId}::uuid AND "tenantId" = ${tenant}::uuid
@@ -255,6 +273,10 @@ export function createShiftRepository(prisma: PrismaClient): ShiftRepository {
           // means the caller assembled the input from two different places.
           throw new ShiftOpenRefusedError('unknown-terminal');
         }
+        // A till in a branch that has been stood down cannot start trading. Said
+        // as its own refusal rather than folded into "unknown terminal": the
+        // till is addressable and the remedy is different.
+        if (!branch.isActive) throw new ShiftOpenRefusedError('branch-inactive');
 
         // A till with two open shifts has no answerable cash position.
         const existing = await tx.shift.findFirst({

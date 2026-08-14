@@ -65,6 +65,20 @@ drawer acquire, in this order:
     idempotency_keys INSERT
     return / refund / inventory / cash writes
 
+**Shift open** (`shift-repository.open`) — added in Strike 4B-1
+
+    branches FOR UPDATE            (is this branch trading?)
+    terminals FOR UPDATE           (one open shift per till)
+    shifts read
+    shift / opening-float writes
+
+Terminals sit between branches and shifts, which is where they have to sit:
+every financial path below already takes branch locks before shift locks and
+none of them touches a terminal, so inserting terminals there extends the order
+without creating a cycle. Merchant administration takes the same two rows in
+the same order (ADR-0019), so standing a branch or a till down serialises
+against opening a shift on it rather than racing it.
+
 **Manual movement** (`shift-repository.recordManualMovement`)
 
     shifts FOR UPDATE
@@ -80,10 +94,10 @@ drawer acquire, in this order:
 
 The property that matters is what the two drawer paths do _not_ do: neither
 takes a branch or a sale lock at all, and therefore neither takes one _after_
-holding a shift. Every other financial path acquires branch and sale locks
-strictly before the shift. The acquisition order is consistent across all four,
-so no two financial transactions can each hold what the other needs, and a
-deadlock between them is not expressible.
+holding a shift. Every other path acquires sale, branch and terminal locks
+strictly before the shift. The acquisition order is consistent across all five,
+so no two transactions can each hold what the other needs, and a deadlock
+between them is not expressible.
 
 ### The cash equation
 

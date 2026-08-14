@@ -19,10 +19,13 @@ import { createCheckoutService } from './checkout/service.js';
 import { createReturnService } from './returns/service.js';
 import { createDrawerService } from './shifts/service.js';
 import { registerBusinessRoutes } from './routes/business.js';
+import { createMerchantAdminService } from './admin/service.js';
+import { registerAdminRoutes } from './routes/admin.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
 import type { AuthService } from './auth/service.js';
+import type { MerchantAdminService } from './admin/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
 import type { FastifyInstance } from 'fastify';
@@ -42,6 +45,16 @@ export interface ServerDeps {
    * lazily, so a process that only answers /health never opens a connection.
    */
   readonly auth?: AuthService;
+  /**
+   * The merchant's own administration authority.
+   *
+   * Supplied by tests; built from DATABASE_URL on first use otherwise, for the
+   * same reason the two above are. It is a separate dependency rather than a
+   * member of `business` because the till and the back office are different
+   * surfaces with different permissions, and bundling them would make it
+   * easy to hand a cashier's route an administrator's service.
+   */
+  readonly admin?: MerchantAdminService;
 }
 
 class AuthUnavailableError extends Error {
@@ -170,6 +183,75 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
   };
 }
 
+/**
+ * Merchant administration, built once, on first use.
+ *
+ * Reading settings goes through the same tenant repository the till uses, so
+ * there is one definition of what a tenant's settings are rather than two that
+ * can drift.
+ */
+function lazyAdminService(config: ApiConfig): MerchantAdminService {
+  let built: MerchantAdminService | null = null;
+
+  const resolve = (): MerchantAdminService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    const prisma = createPrismaClient(url);
+    const tenants = createTenantRepository(prisma);
+    built = createMerchantAdminService({
+      prisma,
+      readSettings: async (scope) => {
+        const settings = await tenants.settings(scope);
+        if (settings === null) return null;
+        return {
+          tenantId: settings.tenantId as string,
+          vertical: settings.vertical,
+          priceMode: settings.priceMode,
+          defaultVatBasisPoints: Number(settings.defaultVatBasisPoints),
+          currency: settings.currency,
+          requireBarcode: settings.requireBarcode,
+          allowWeightedItems: settings.allowWeightedItems,
+          trackInventory: settings.trackInventory,
+          allowNegativeStock: settings.allowNegativeStock,
+          // The persisted value, from the one settings model. A constant here
+          // would mean PATCH true, GET false — a read that contradicts the row
+          // it claims to describe.
+          enableProductImages: settings.enableProductImages,
+          receiptHeaderAr: settings.receiptHeaderAr,
+          receiptFooterAr: settings.receiptFooterAr,
+        };
+      },
+    });
+    return built;
+  };
+
+  return {
+    readSettings: (principal) => resolve().readSettings(principal),
+    updateSettings: (principal, patch) => resolve().updateSettings(principal, patch),
+    listBranches: (principal, limit, cursor) => resolve().listBranches(principal, limit, cursor),
+    createBranch: (principal, input) => resolve().createBranch(principal, input),
+    updateBranch: (principal, id, patch) => resolve().updateBranch(principal, id, patch),
+    setBranchActive: (principal, id, isActive) =>
+      resolve().setBranchActive(principal, id, isActive),
+    listTerminals: (principal, limit, branchId, cursor) =>
+      resolve().listTerminals(principal, limit, branchId, cursor),
+    createTerminal: (principal, input) => resolve().createTerminal(principal, input),
+    updateTerminal: (principal, id, label) => resolve().updateTerminal(principal, id, label),
+    setTerminalActive: (principal, id, isActive) =>
+      resolve().setTerminalActive(principal, id, isActive),
+    listMembers: (principal, limit, cursor) => resolve().listMembers(principal, limit, cursor),
+    createMember: (principal, input) => resolve().createMember(principal, input),
+    updateMember: (principal, id, patch) => resolve().updateMember(principal, id, patch),
+    setUserActive: (principal, id, isActive) => resolve().setUserActive(principal, id, isActive),
+    setMembershipActive: (principal, id, isActive) =>
+      resolve().setMembershipActive(principal, id, isActive),
+    listRoles: (principal) => resolve().listRoles(principal),
+    assignRole: (principal, userId, roleId) => resolve().assignRole(principal, userId, roleId),
+    removeRole: (principal, userId, roleId) => resolve().removeRole(principal, userId, roleId),
+  };
+}
+
 export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: config.LOG_LEVEL },
@@ -204,5 +286,6 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerHealthRoutes(app);
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
+  registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
   return app;
 }

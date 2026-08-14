@@ -26,7 +26,9 @@ Adopt the five governance documents: Master Product Directive, Capability Matrix
 Sequence:
 
 1. **4A Tenant Lifecycle & Provisioning Authority** — **substantially established.** Lifecycle states, provisioning transaction, safe activation/suspension/reactivation rules, idempotency, RLS/security, audit and live DB proof are in place (ADR-0018). It is backend authority only: no control-plane transport, no operator identity model and no UI, so the capability is not yet production ready.
-2. **4B Control-Plane Administration** — **NEXT.** Owner/admin APIs and UI for tenant settings, branches, terminals, memberships/roles within current permissions.
+2. **4B Control-Plane Administration** — **IN PROGRESS.**
+   - **4B-1 Merchant administration authority — substantially established.** Server authority and authenticated API for tenant settings, branches, terminals, users/memberships and role assignment, with session-invalidation and last-administrator protection proved against live PostgreSQL (ADR-0019). No UI, and no credential/invitation flow for a created user, so the capability is not yet production ready.
+   - **4B-2 Merchant administration UI — NEXT.** Screens over the 4B-1 authority. It adds no new authority of its own.
 3. **4C Plan/Entitlement Foundation** — plan identity, entitlement evaluation, account state; no payment billing provider yet unless separately struck.
 4. **4D Onboarding** — guided merchant setup, branch/terminal/user/product readiness checks, no fake “ready” state.
 

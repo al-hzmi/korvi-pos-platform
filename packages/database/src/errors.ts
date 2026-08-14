@@ -58,12 +58,19 @@ export class ShiftUnusableError extends DatabaseError {
   }
 }
 
-/** A shift could not be opened on this terminal. */
+/**
+ * A shift could not be opened on this terminal.
+ *
+ * `branch-inactive` is distinct from `unknown-terminal` because it is a
+ * different fact and a different remedy: the till is addressable and the branch
+ * it belongs to has been stood down. Reporting it as "unknown" would send a
+ * cashier looking for a till that is right in front of them (ADR-0019).
+ */
 export class ShiftOpenRefusedError extends DatabaseError {
   public override readonly name = 'ShiftOpenRefusedError';
-  public readonly detail: 'unknown-terminal' | 'already-open';
+  public readonly detail: 'unknown-terminal' | 'already-open' | 'branch-inactive';
 
-  public constructor(detail: 'unknown-terminal' | 'already-open') {
+  public constructor(detail: 'unknown-terminal' | 'already-open' | 'branch-inactive') {
     super(`Shift open refused: ${detail}`);
     this.detail = detail;
   }
@@ -135,6 +142,56 @@ export class TenantLifecycleRefusedError extends DatabaseError {
 
   public constructor(detail: TenantLifecycleRefusal) {
     super(`Tenant lifecycle refused: ${detail}`);
+    this.detail = detail;
+  }
+}
+
+/**
+ * A merchant-administration change was refused.
+ *
+ * Every detail is decided inside the transaction that would have made the
+ * change, most of them while the tenant row is held, so none is a guess:
+ *
+ *   unknown-branch / unknown-terminal / unknown-member / unknown-role
+ *                        the thing named does not exist *in this tenant*. A row
+ *                        belonging to another merchant answers identically to
+ *                        one that does not exist, because telling them apart
+ *                        would turn a guessed id into a probe.
+ *   code-taken           another branch or till in this tenant already holds
+ *                        that code.
+ *   email-taken          another user in this tenant already holds that email.
+ *   branch-in-use        the branch or till still has an open shift, so
+ *                        deactivating it now would strand a drawer nobody has
+ *                        counted. Refused rather than silently repaired.
+ *   branch-inactive      the parent branch is stood down, so a till under it
+ *                        cannot be created or switched on. Deliberately not
+ *                        reported as `branch-in-use`: claiming an open shift
+ *                        exists when none does sends the merchant hunting for
+ *                        a drawer to close.
+ *   invalid-cursor       a malformed or over-bounded continuation token.
+ *                        Refused rather than treated as "start again", so a
+ *                        client paging with a corrupted cursor is told.
+ *   last-administrator   the change would leave this merchant with nobody able
+ *                        to administer it (ADR-0019).
+ */
+export type MerchantAdminRefusal =
+  | 'unknown-branch'
+  | 'unknown-terminal'
+  | 'unknown-member'
+  | 'unknown-role'
+  | 'code-taken'
+  | 'email-taken'
+  | 'branch-in-use'
+  | 'branch-inactive'
+  | 'invalid-cursor'
+  | 'last-administrator';
+
+export class MerchantAdminRefusedError extends DatabaseError {
+  public override readonly name = 'MerchantAdminRefusedError';
+  public readonly detail: MerchantAdminRefusal;
+
+  public constructor(detail: MerchantAdminRefusal) {
+    super(`Merchant administration refused: ${detail}`);
     this.detail = detail;
   }
 }

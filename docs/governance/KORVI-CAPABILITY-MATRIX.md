@@ -25,9 +25,9 @@ Legend: `A` Accepted, `AR` Architected, `I` Implemented, `T` Tested, `PR` Produc
 | Control dashboard foundation | B0 | C1 | A/AR/I/T | POS/API | Security, Performance |
 | SaaS tenant provisioning/lifecycle | B0 | C0 | A/AR/I/T; no control-plane transport or UI yet, so not PR | Control Plane | Security, Data Integrity, Production |
 | Subscription/plan entitlement foundation | B0 | C1 | A | Control Plane | Security, Commercial |
-| Onboarding/settings administration | B0 | C1 | A | Control Plane/POS | Security, UX |
-| User/membership administration UI/API | B0 | C0 | A; auth primitives exist | Control Plane/Auth | Security, Audit |
-| Branch/terminal administration | B0 | C1 | A; identity primitives exist | Control Plane | Security, Operations |
+| Onboarding/settings administration | B0 | C1 | A/AR; tenant-settings authority I/T in 4B-1, no UI; onboarding is 4D | Control Plane/POS | Security, UX |
+| User/membership administration UI/API | B0 | C0 | A/AR/I/T for the server authority (4B-1); no UI and no credential/invitation flow, so not PR | Control Plane/Auth | Security, Audit |
+| Branch/terminal administration | B0 | C1 | A/AR/I/T for the server authority (4B-1); no UI, so not PR | Control Plane | Security, Operations |
 | Product write/catalogue management | B0 | C1 | A; permission exists, full management deferred | Inventory/Catalogue | Audit, UX |
 | Stock ledger/adjustments | B0 | C0 | A; inventory foundation partially exists | Inventory/DB | Data Integrity, Live DB |
 | Transfers/counting | B1 | C1 | A | Inventory | Data Integrity |
