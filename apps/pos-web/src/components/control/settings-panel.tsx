@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, CardSurface } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { ApiError } from '../../lib/api';
+import { formatBasisPoints } from '../../lib/basis-points';
 import type { JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type { AdminSettingsPatch, AdminTenantSettings } from '../../lib/api-types';
@@ -30,15 +31,33 @@ function draftOf(settings: AdminTenantSettings): SettingsDraft {
   };
 }
 
+function patchOf(settings: AdminTenantSettings, draft: SettingsDraft): AdminSettingsPatch {
+  const header = draft.receiptHeaderAr.trim() === '' ? null : draft.receiptHeaderAr;
+  const footer = draft.receiptFooterAr.trim() === '' ? null : draft.receiptFooterAr;
+  return {
+    ...(draft.requireBarcode === settings.requireBarcode
+      ? {}
+      : { requireBarcode: draft.requireBarcode }),
+    ...(draft.allowWeightedItems === settings.allowWeightedItems
+      ? {}
+      : { allowWeightedItems: draft.allowWeightedItems }),
+    ...(draft.trackInventory === settings.trackInventory
+      ? {}
+      : { trackInventory: draft.trackInventory }),
+    ...(draft.allowNegativeStock === settings.allowNegativeStock
+      ? {}
+      : { allowNegativeStock: draft.allowNegativeStock }),
+    ...(draft.enableProductImages === settings.enableProductImages
+      ? {}
+      : { enableProductImages: draft.enableProductImages }),
+    ...(header === settings.receiptHeaderAr ? {} : { receiptHeaderAr: header }),
+    ...(footer === settings.receiptFooterAr ? {} : { receiptFooterAr: footer }),
+  };
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError && error.serverMessage !== null) return error.serverMessage;
   return fallback;
-}
-
-function basisPointsLabel(value: number): string {
-  const whole = Math.trunc(value / 100);
-  const fraction = Math.abs(value % 100);
-  return fraction === 0 ? `${String(whole)}%` : `${String(whole)}.${String(fraction).padStart(2, '0')}%`;
 }
 
 function BooleanSetting({
@@ -99,10 +118,11 @@ export function SettingsPanel({ api }: { readonly api: ApiClient }): JSX.Element
     // client represents a changed transport and should reload the authority.
   }, [api]);
 
-  const changed = useMemo(() => {
-    if (settings === null || draft === null) return false;
-    return JSON.stringify(draft) !== JSON.stringify(draftOf(settings));
-  }, [draft, settings]);
+  const patch = useMemo(
+    () => (settings === null || draft === null ? null : patchOf(settings, draft)),
+    [draft, settings],
+  );
+  const changed = patch !== null && Object.keys(patch).length > 0;
 
   const update = <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]): void => {
     setSaved(false);
@@ -110,20 +130,14 @@ export function SettingsPanel({ api }: { readonly api: ApiClient }): JSX.Element
   };
 
   const save = async (): Promise<void> => {
-    if (draft === null || !changed) return;
+    if (draft === null || patch === null || !changed) return;
     setSaving(true);
     setFailure(null);
     setSaved(false);
-    const patch: AdminSettingsPatch = {
-      requireBarcode: draft.requireBarcode,
-      allowWeightedItems: draft.allowWeightedItems,
-      trackInventory: draft.trackInventory,
-      allowNegativeStock: draft.allowNegativeStock,
-      enableProductImages: draft.enableProductImages,
-      receiptHeaderAr: draft.receiptHeaderAr.trim() === '' ? null : draft.receiptHeaderAr,
-      receiptFooterAr: draft.receiptFooterAr.trim() === '' ? null : draft.receiptFooterAr,
-    };
     try {
+      // Send only fields this operator actually changed. A stale screen must
+      // not overwrite an unrelated setting another administrator changed after
+      // this page loaded.
       const value = await api.updateAdminSettings(patch);
       setSettings(value);
       setDraft(draftOf(value));
@@ -183,11 +197,13 @@ export function SettingsPanel({ api }: { readonly api: ApiClient }): JSX.Element
             ['النشاط', settings.vertical],
             ['نمط السعر', settings.priceMode],
             ['العملة', settings.currency],
-            ['ضريبة القيمة المضافة', basisPointsLabel(settings.defaultVatBasisPoints)],
+            ['ضريبة القيمة المضافة', formatBasisPoints(settings.defaultVatBasisPoints)],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-border bg-muted/40 p-3">
               <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-              <dd className="mt-1 text-sm font-semibold text-foreground">{value}</dd>
+              <dd className="mt-1 text-sm font-semibold text-foreground" dir="auto">
+                {value}
+              </dd>
             </div>
           ))}
         </dl>
