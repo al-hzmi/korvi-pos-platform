@@ -10,7 +10,7 @@ import type { JSX } from 'react';
  * that are not built say so. Built sections can still be unavailable to this
  * principal; that is a UI courtesy only, while the API remains the authority.
  */
-export type ControlSection = 'home' | 'products' | 'branches' | 'settings';
+export type ControlSection = 'home' | 'products' | 'branches' | 'staff' | 'settings';
 
 export interface ControlEntry {
   readonly key: string;
@@ -26,7 +26,7 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'inventory', label: 'المخزون', section: null },
   { key: 'customers', label: 'العملاء', section: null },
   { key: 'branches', label: 'الفروع والصناديق', section: 'branches', permission: 'settings.manage' },
-  { key: 'staff', label: 'الموظفون والصلاحيات', section: null },
+  { key: 'staff', label: 'الموظفون والصلاحيات', section: 'staff', permission: 'users.manage' },
   { key: 'reports', label: 'التقارير', section: null },
   { key: 'settings', label: 'الإعدادات', section: 'settings', permission: 'settings.manage' },
   { key: 'zatca', label: 'ZATCA', section: null },
