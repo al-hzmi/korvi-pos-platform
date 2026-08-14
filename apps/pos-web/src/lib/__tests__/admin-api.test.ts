@@ -100,4 +100,70 @@ describe('merchant administration API client', () => {
     expect(call.init.method).toBe('PATCH');
     expect(bodyOf(call)).toEqual({ label: 'صندوق المدخل' });
   });
+
+  it('pages members with a keyset cursor and no tenant identity', async () => {
+    const wire = transport({ items: [], hasMore: false, nextCursor: null });
+    await createApiClient(wire.fetch).adminMembers({ limit: 20, cursor: 'person@example.test' });
+
+    const call = wire.calls[0]!;
+    expect(call.url).toBe('/v1/admin/members?limit=20&cursor=person%40example.test');
+    expect(call.url).not.toContain('tenant');
+  });
+
+  it('creates a member without inventing credentials, roles or permissions', async () => {
+    const wire = transport({ userId: 'u-1' });
+    await createApiClient(wire.fetch).createAdminMember({
+      email: 'new@example.test',
+      displayName: 'موظف جديد',
+      defaultBranchId: 'b-1',
+    });
+
+    const body = bodyOf(wire.calls[0]!);
+    expect(body).toEqual({
+      email: 'new@example.test',
+      displayName: 'موظف جديد',
+      defaultBranchId: 'b-1',
+    });
+    expect(JSON.stringify(body)).not.toMatch(/password|permission|roles|tenantId|actor/);
+  });
+
+  it('updates only member profile fields that the route accepts', async () => {
+    const wire = transport({ userId: 'u-1' });
+    await createApiClient(wire.fetch).updateAdminMember('u/1', {
+      displayName: 'اسم جديد',
+      defaultBranchId: null,
+    });
+
+    const call = wire.calls[0]!;
+    expect(call.url).toBe('/v1/admin/members/u%2F1');
+    expect(call.init.method).toBe('PATCH');
+    expect(bodyOf(call)).toEqual({ displayName: 'اسم جديد', defaultBranchId: null });
+  });
+
+  it('uses distinct account and membership activation routes', async () => {
+    const wire = transport({ member: {}, revokedSessions: 0 });
+    const api = createApiClient(wire.fetch);
+    await api.setAdminMemberUserActive('u-1', false);
+    await api.setAdminMemberMembershipActive('u-1', true);
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/members/u-1/user-activation');
+    expect(bodyOf(wire.calls[0]!)).toEqual({ isActive: false });
+    expect(wire.calls[1]!.url).toBe('/v1/admin/members/u-1/membership-activation');
+    expect(bodyOf(wire.calls[1]!)).toEqual({ isActive: true });
+  });
+
+  it('grants a role by role id only and removes it with DELETE', async () => {
+    const wire = transport({ member: {}, changed: true });
+    const api = createApiClient(wire.fetch);
+    await api.assignAdminRole('u-1', 'role/owner');
+    await api.removeAdminRole('u-1', 'role/owner');
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/members/u-1/roles');
+    expect(bodyOf(wire.calls[0]!)).toEqual({ roleId: 'role/owner' });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toContain('permissions');
+
+    expect(wire.calls[1]!.url).toBe('/v1/admin/members/u-1/roles/role%2Fowner');
+    expect(wire.calls[1]!.init.method).toBe('DELETE');
+    expect(wire.calls[1]!.init.body).toBeUndefined();
+  });
 });
