@@ -5,6 +5,7 @@ import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
 import { ControlNav } from './control-nav';
 import { DashboardPanel } from './dashboard-panel';
+import { MembersPanel } from './members-panel';
 import { ProductsPanel } from './products-panel';
 import { SettingsPanel } from './settings-panel';
 import { LoginScreen } from '../login-screen';
@@ -53,12 +54,22 @@ function sectionTitle(section: ControlSection): string {
       return 'المنتجات';
     case 'branches':
       return 'الفروع والصناديق';
+    case 'staff':
+      return 'الموظفون والصلاحيات';
     case 'settings':
       return 'إعدادات المنشأة';
   }
 }
 
-function Section({ section, api }: { readonly section: ControlSection; readonly api: ApiClient }): JSX.Element {
+function Section({
+  section,
+  api,
+  principal,
+}: {
+  readonly section: ControlSection;
+  readonly api: ApiClient;
+  readonly principal: Principal;
+}): JSX.Element {
   switch (section) {
     case 'home':
       return <DashboardPanel api={api} />;
@@ -66,6 +77,8 @@ function Section({ section, api }: { readonly section: ControlSection; readonly 
       return <ProductsPanel api={api} />;
     case 'branches':
       return <BranchesPanel api={api} />;
+    case 'staff':
+      return <MembersPanel api={api} canManageSettings={hasPermission(principal, 'settings.manage')} />;
     case 'settings':
       return <SettingsPanel api={api} />;
   }
@@ -135,13 +148,13 @@ function Workspace({
           <main className="flex min-h-0 flex-1 flex-col gap-4">
             <div>
               <h1 className="text-2xl font-semibold text-foreground">{sectionTitle(section)}</h1>
-              {section === 'branches' || section === 'settings' ? (
+              {section === 'branches' || section === 'staff' || section === 'settings' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
                   إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
                 </p>
               ) : null}
             </div>
-            <Section section={section} api={api} />
+            <Section section={section} api={api} principal={principal} />
           </main>
         </div>
       )}
@@ -172,8 +185,6 @@ export function ControlSurface({
   if (view.kind === 'waiting') return <Waiting label={view.label} />;
 
   if (view.kind === 'logout-unconfirmed') {
-    // No catalogue, no dashboard, no login form. Retrying the logout is the
-    // only way out of this screen, and that is the point of it.
     return (
       <BlockedScreen
         title="لم يتم تأكيد الخروج"
