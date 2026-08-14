@@ -6,6 +6,7 @@ import { BranchesPanel } from '../control/branches-panel';
 import { CONTROL_ENTRIES, ControlNav } from '../control/control-nav';
 import { ControlSurface } from '../control/control-app';
 import { DashboardPanel } from '../control/dashboard-panel';
+import { MembersPanel } from '../control/members-panel';
 import { ProductsPanel } from '../control/products-panel';
 import { SettingsPanel } from '../control/settings-panel';
 import { ProductPanel } from '../product-panel';
@@ -87,7 +88,7 @@ describe('control navigation', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, {
         active: 'home',
-        permissions: ['settings.manage'],
+        permissions: ['settings.manage', 'users.manage'],
         onSelect: () => undefined,
       }),
     );
@@ -101,18 +102,30 @@ describe('control navigation', () => {
     }
   });
 
-  it('marks built administration sections unauthorized without settings.manage', () => {
+  it('marks built administration sections unauthorized without their permissions', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, { active: 'home', permissions: [], onSelect: () => undefined }),
     );
-    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(2);
+    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(3);
+  });
+
+  it('keeps users.manage separate from settings.manage in navigation', () => {
+    const peopleOnly = renderToStaticMarkup(
+      createElement(ControlNav, {
+        active: 'home',
+        permissions: ['users.manage'],
+        onSelect: () => undefined,
+      }),
+    );
+    expect(peopleOnly).toContain('الموظفون والصلاحيات');
+    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(2);
   });
 
   it('marks exactly one section as the open one', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, {
         active: 'products',
-        permissions: ['settings.manage'],
+        permissions: ['settings.manage', 'users.manage'],
         onSelect: () => undefined,
       }),
     );
@@ -125,8 +138,6 @@ describe('control centre first paint', () => {
     const markup = renderToStaticMarkup(createElement(DashboardPanel, { api: idleApi }));
 
     expect(markup).toContain('جارٍ تحميل المؤشرات');
-    // No metric label can appear without a value behind it, and no value
-    // exists yet — a rendered "0" here would read as "no sales".
     expect(markup).not.toContain('مبيعات آخر');
     expect(markup).not.toContain('عدد الفواتير');
     expect(markup).not.toContain('الأصناف المفعّلة');
@@ -157,12 +168,19 @@ describe('control centre first paint', () => {
     expect(markup).not.toContain('لا توجد فروع حتى الآن');
     expect(markup).not.toContain('لا توجد صناديق حتى الآن');
   });
+
+  it('does not claim the merchant has no staff before members and roles load', () => {
+    const markup = renderToStaticMarkup(
+      createElement(MembersPanel, { api: idleApi, canManageSettings: false }),
+    );
+    expect(markup).toContain('جارٍ تحميل الموظفين والصلاحيات');
+    expect(markup).not.toContain('لا يوجد موظفون في المنشأة حتى الآن');
+    expect(markup).not.toContain('إضافة الموظف');
+  });
 });
 
 describe('who the control centre is for', () => {
   it('withholds it from a cashier and offers it to a manager', () => {
-    // Read from the persisted role vocabulary rather than restated here, so a
-    // permission moved between roles cannot leave this passing by accident.
     expect(hasPermission(principalWith(ROLE_PERMISSIONS.cashier), 'report.read')).toBe(false);
     expect(hasPermission(principalWith(ROLE_PERMISSIONS.manager), 'report.read')).toBe(true);
     expect(hasPermission(principalWith(ROLE_PERMISSIONS.owner), 'report.read')).toBe(true);
@@ -171,13 +189,14 @@ describe('who the control centre is for', () => {
   it('does not confuse dashboard access with merchant administration', () => {
     expect(ROLE_PERMISSIONS.manager).toContain('report.read');
     expect(ROLE_PERMISSIONS.manager).not.toContain('settings.manage');
+    expect(ROLE_PERMISSIONS.manager).not.toContain('users.manage');
     expect(ROLE_PERMISSIONS.admin).toContain('settings.manage');
+    expect(ROLE_PERMISSIONS.admin).toContain('users.manage');
     expect(ROLE_PERMISSIONS.owner).toContain('settings.manage');
+    expect(ROLE_PERMISSIONS.owner).toContain('users.manage');
   });
 
   it('is the same permission the server dashboard route demands', () => {
-    // The affordance is a courtesy; GET /v1/dashboard/summary is the authority.
-    // If these two ever disagree, the courtesy is the one that is wrong.
     expect(ROLE_PERMISSIONS.cashier).not.toContain('report.read');
   });
 });
@@ -190,19 +209,12 @@ describe('a logout the server never confirmed', () => {
       failure: LOGOUT_UNCONFIRMED,
     });
 
-    // The blocking state, and the only way out of it.
     expect(markup).toContain('لم يتم تأكيد الخروج');
     expect(markup).toContain(LOGOUT_UNCONFIRMED.message);
     expect(markup).toContain('إعادة محاولة تسجيل الخروج');
-
-    // Not the login form: telling an operator to sign in again would tell
-    // them the machine is theirs to hand over, and it may not be.
     expect(markup).not.toContain('<form');
     expect(markup).not.toContain('type="password"');
     expect(markup).not.toContain('كلمة المرور');
-
-    // And no tenant data behind the state either — no dashboard, no
-    // catalogue, no principal, no navigation.
     expect(markup).not.toContain('جارٍ تحميل المؤشرات');
     expect(markup).not.toContain('مبيعات آخر');
     expect(markup).not.toContain('ابحث في الأصناف');
@@ -241,8 +253,6 @@ describe('a logout the server never confirmed', () => {
 
 describe('the till catalogue never claims to be ranked', () => {
   it('says the products are available, not that they are the most used', () => {
-    // ProductRepository.list() orders by SKU and computes no popularity of
-    // any kind. Saying otherwise would be a claim a merchant could act on.
     const markup = renderToStaticMarkup(
       createElement(ProductPanel, {
         term: '',
