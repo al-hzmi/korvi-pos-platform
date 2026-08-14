@@ -1,6 +1,10 @@
 import type {
+  AdminAccessChange,
   AdminBranch,
+  AdminMember,
   AdminPage,
+  AdminRole,
+  AdminRoleAssignmentResult,
   AdminSettingsPatch,
   AdminTenantSettings,
   AdminTerminal,
@@ -123,6 +127,25 @@ export interface ApiClient {
   }): Promise<AdminTerminal>;
   updateAdminTerminal(terminalId: string, label: string): Promise<AdminTerminal>;
   setAdminTerminalActive(terminalId: string, isActive: boolean): Promise<AdminTerminal>;
+
+  adminMembers(
+    query?: { readonly limit?: number; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<AdminPage<AdminMember>>;
+  createAdminMember(input: {
+    readonly email: string;
+    readonly displayName: string;
+    readonly defaultBranchId?: string | null;
+  }): Promise<AdminMember>;
+  updateAdminMember(
+    userId: string,
+    patch: { readonly displayName?: string; readonly defaultBranchId?: string | null },
+  ): Promise<AdminMember>;
+  setAdminMemberUserActive(userId: string, isActive: boolean): Promise<AdminAccessChange>;
+  setAdminMemberMembershipActive(userId: string, isActive: boolean): Promise<AdminAccessChange>;
+  adminRoles(options?: RequestOptions): Promise<readonly AdminRole[]>;
+  assignAdminRole(userId: string, roleId: string): Promise<AdminRoleAssignmentResult>;
+  removeAdminRole(userId: string, roleId: string): Promise<AdminRoleAssignmentResult>;
 }
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -163,23 +186,17 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     try {
       response = await doFetch(path, {
         ...init,
-        // Same-origin, so the session cookie rides along without any of the
-        // cross-origin machinery that would otherwise be needed.
         credentials: 'same-origin',
         headers: { accept: 'application/json', ...(init.headers ?? {}) },
         ...(options?.signal === undefined ? {} : { signal: options.signal }),
       });
     } catch (error) {
-      // An abort is the caller changing their mind, not a failure. It is
-      // rethrown untouched so a stale search does not surface as an outage.
       if (error instanceof DOMException && error.name === 'AbortError') throw error;
       throw new ApiError(0, 'network', null);
     }
 
     if (response.status === 204) return null;
 
-    // A body that is not JSON is not a reason to lose the status code: a proxy
-    // error page still has to surface as the HTTP failure it is.
     const body: unknown = await response.json().catch(() => null);
 
     if (!response.ok) {
@@ -189,7 +206,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     return body;
   };
 
-  const json = (payload: unknown, method: 'POST' | 'PATCH' | 'DELETE' = 'POST'): RequestInit => ({
+  const json = (payload: unknown, method: 'POST' | 'PATCH' = 'POST'): RequestInit => ({
     method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -201,8 +218,6 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     },
 
     async login(input) {
-      // Field by field. A spread would send whatever the form state happens to
-      // hold, and form state grows fields.
       return (await call(
         '/v1/auth/login',
         json({ tenantSlug: input.tenantSlug, email: input.email, password: input.password }),
@@ -252,8 +267,6 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     },
 
     async checkout(request) {
-      // A hung request must not leave the till in "submitting" forever, and
-      // must not be mistaken for a cancellation: the sale may already exist.
       const controller = new AbortController();
       let timedOut = false;
       const timer = setTimeout(() => {
@@ -262,10 +275,6 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
       }, CHECKOUT_TIMEOUT_MS);
 
       try {
-        // The whitelist is the security control, not a convenience. Building
-        // the body from named fields is what makes it impossible for a price,
-        // a tenant or a role to reach the server because something upstream
-        // put it on an object.
         return (await call(
           '/v1/sales',
           json({
@@ -280,8 +289,6 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           { signal: controller.signal },
         )) as CheckoutResponse;
       } catch (error) {
-        // Our own abort, translated. Left as an AbortError it would look like
-        // a cancelled search and the basket would be cleared.
         if (timedOut) throw new ApiError(0, 'timeout', null);
         throw error;
       } finally {
@@ -387,6 +394,72 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         `/v1/admin/terminals/${encodeURIComponent(terminalId)}/activation`,
         json({ isActive }),
       )) as AdminTerminal;
+    },
+
+    async adminMembers(query = {}, options) {
+      return (await call(
+        `/v1/admin/members${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as AdminPage<AdminMember>;
+    },
+
+    async createAdminMember(input) {
+      return (await call(
+        '/v1/admin/members',
+        json({
+          email: input.email,
+          displayName: input.displayName,
+          ...(input.defaultBranchId === undefined ? {} : { defaultBranchId: input.defaultBranchId }),
+        }),
+      )) as AdminMember;
+    },
+
+    async updateAdminMember(userId, patch) {
+      return (await call(
+        `/v1/admin/members/${encodeURIComponent(userId)}`,
+        json(
+          {
+            ...(patch.displayName === undefined ? {} : { displayName: patch.displayName }),
+            ...(patch.defaultBranchId === undefined
+              ? {}
+              : { defaultBranchId: patch.defaultBranchId }),
+          },
+          'PATCH',
+        ),
+      )) as AdminMember;
+    },
+
+    async setAdminMemberUserActive(userId, isActive) {
+      return (await call(
+        `/v1/admin/members/${encodeURIComponent(userId)}/user-activation`,
+        json({ isActive }),
+      )) as AdminAccessChange;
+    },
+
+    async setAdminMemberMembershipActive(userId, isActive) {
+      return (await call(
+        `/v1/admin/members/${encodeURIComponent(userId)}/membership-activation`,
+        json({ isActive }),
+      )) as AdminAccessChange;
+    },
+
+    async adminRoles(options) {
+      return (await call('/v1/admin/roles', { method: 'GET' }, options)) as readonly AdminRole[];
+    },
+
+    async assignAdminRole(userId, roleId) {
+      return (await call(
+        `/v1/admin/members/${encodeURIComponent(userId)}/roles`,
+        json({ roleId }),
+      )) as AdminRoleAssignmentResult;
+    },
+
+    async removeAdminRole(userId, roleId) {
+      return (await call(
+        `/v1/admin/members/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleId)}`,
+        { method: 'DELETE' },
+      )) as AdminRoleAssignmentResult;
     },
   };
 }
