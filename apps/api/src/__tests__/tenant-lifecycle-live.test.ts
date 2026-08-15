@@ -1087,13 +1087,19 @@ describe.skipIf(url === '')('tenant lifecycle and provisioning, live', () => {
     await gate.blocking(2);
     await gate.release();
 
-    const winner = await one;
-    expect(winner).toMatchObject({ status: 'suspended', changed: true });
+    // Settled together rather than awaited in turn. The loser rejects while
+    // `one` is still pending, and a rejection nobody is awaiting yet is an
+    // unhandled rejection — which Vitest reports as a run-level error even
+    // though every assertion passes.
+    const settled = await Promise.allSettled([one, two]);
+    const [first, second_] = settled;
+    if (first?.status !== 'fulfilled') throw new Error('the first contender should have won');
+    expect(first.value).toMatchObject({ status: 'suspended', changed: true });
 
     // The loser was granted the lock second, saw a suspended tenant, and — its
     // operation id being its own — was told the move is not available.
-    const loser = await refusal(() => two);
-    expect((loser as TenantLifecycleRefusedError).detail).toBe('illegal-transition');
+    if (second_?.status !== 'rejected') throw new Error('the second contender should have lost');
+    expect((second_.reason as TenantLifecycleRefusedError).detail).toBe('illegal-transition');
 
     // One reason, one audit event, one reservation.
     const tenant = await row(provisioned.id);
