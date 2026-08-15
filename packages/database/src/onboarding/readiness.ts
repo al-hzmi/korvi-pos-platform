@@ -1,6 +1,8 @@
 import { TENANT_LIFECYCLE_STATES, evaluateOnboardingReadiness } from '@korvi/domain';
+import { Prisma } from '../../generated/client/client.js';
 import { withTenant } from '../tenant-context.js';
 import { oneOf, tenantParam } from '../repositories/mapping.js';
+import { viableAdministratorExists } from './viability.js';
 import type { OnboardingReadiness, TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 
@@ -54,39 +56,7 @@ export async function readTenantOnboardingReadiness(
              AND branch."isActive" = TRUE
         ) AS "activeTerminalPresent",
 
-        EXISTS (
-          SELECT 1
-            FROM "users" u
-            JOIN "tenant_memberships" membership
-              ON membership."tenantId" = u."tenantId"
-             AND membership."userId" = u."id"
-           WHERE u."tenantId" = t."id"
-             AND u."isActive" = TRUE
-             AND u."passwordHash" IS NOT NULL
-             AND membership."status" = 'active'
-
-             AND EXISTS (
-               SELECT 1
-                 FROM "user_roles" ur
-                 JOIN "role_permissions" rp
-                   ON rp."tenantId" = ur."tenantId"
-                  AND rp."roleId" = ur."roleId"
-                WHERE ur."tenantId" = u."tenantId"
-                  AND ur."userId" = u."id"
-                  AND rp."permissionKey" = 'settings.manage'
-             )
-
-             AND EXISTS (
-               SELECT 1
-                 FROM "user_roles" ur
-                 JOIN "role_permissions" rp
-                   ON rp."tenantId" = ur."tenantId"
-                  AND rp."roleId" = ur."roleId"
-                WHERE ur."tenantId" = u."tenantId"
-                  AND ur."userId" = u."id"
-                  AND rp."permissionKey" = 'users.manage'
-             )
-        ) AS "viableAdministratorPresent",
+        ${viableAdministratorExists(Prisma.sql`t."id"`)} AS "viableAdministratorPresent",
 
         EXISTS (
           SELECT 1

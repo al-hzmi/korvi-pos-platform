@@ -197,6 +197,36 @@ export class MerchantAdminRefusedError extends DatabaseError {
 }
 
 /**
+ * Establishing a merchant's first Owner was refused.
+ *
+ * `invalid-capability` is deliberately one detail covering many facts: an
+ * unknown invitation, a wrong tenant, a consumed or expired one, a forged
+ * signature, a wrong version, an address that already has a credential, and a
+ * merchant that already has an administrator. They are told apart nowhere,
+ * because the public surface must not be an oracle for which merchants exist
+ * or which invitations are outstanding (ADR-0021).
+ *
+ * The other three are control-plane answers and never reach a public caller.
+ */
+export type OwnerBootstrapRefusal =
+  | 'invalid-capability'
+  | 'unknown-tenant'
+  | 'invalid-invitee'
+  | 'already-invited'
+  | 'already-established'
+  | 'idempotency-conflict';
+
+export class OwnerBootstrapRefusedError extends DatabaseError {
+  public override readonly name = 'OwnerBootstrapRefusedError';
+  public readonly detail: OwnerBootstrapRefusal;
+
+  public constructor(detail: OwnerBootstrapRefusal) {
+    super(`Owner bootstrap refused: ${detail}`);
+    this.detail = detail;
+  }
+}
+
+/**
  * A drawer operation was refused while its shift row was held.
  *
  * Every detail here is decided under `SELECT ... FOR UPDATE`, which is what

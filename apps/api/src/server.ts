@@ -27,7 +27,10 @@ import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { createOwnerBootstrapService } from './bootstrap/service.js';
+import { registerBootstrapRoutes } from './routes/bootstrap.js';
 import type { AuthService } from './auth/service.js';
+import type { OwnerBootstrapService } from './bootstrap/service.js';
 import type { MerchantAdminService } from './admin/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { BusinessDeps } from './routes/business.js';
@@ -49,6 +52,15 @@ export interface ServerDeps {
    * lazily, so a process that only answers /health never opens a connection.
    */
   readonly auth?: AuthService;
+  /**
+   * The public owner-bootstrap surface.
+   *
+   * Explicitly nullable rather than optional-undefined: `null` means "this
+   * deployment has no signing key", which the route answers 503 to, and
+   * `undefined` means "build it from configuration". A test that wants the
+   * route off says so.
+   */
+  readonly bootstrap?: OwnerBootstrapService | null;
   /**
    * The merchant's own administration authority.
    *
@@ -292,6 +304,25 @@ function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   };
 }
 
+/**
+ * The public bootstrap surface, or nothing.
+ *
+ * Two configuration facts have to hold before this route can be served at all:
+ * a database, and a signing key. Missing either is an operator's problem and
+ * the route says 503 — a deployment that quietly served bootstrap without a
+ * key would be serving a door with no lock.
+ *
+ * Built eagerly rather than lazily, because "is this configured" is the
+ * question the route needs answered at registration time, not on the first
+ * request from somebody holding a capability.
+ */
+function bootstrapServiceFor(config: ApiConfig): OwnerBootstrapService | null {
+  const url = config.DATABASE_URL;
+  const signingKey = config.BOOTSTRAP_SIGNING_KEY;
+  if (url === undefined || signingKey === undefined) return null;
+  return createOwnerBootstrapService({ prisma: createPrismaClient(url), signingKey });
+}
+
 export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: config.LOG_LEVEL },
@@ -327,6 +358,9 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
+  registerBootstrapRoutes(app, {
+    service: deps.bootstrap === undefined ? bootstrapServiceFor(config) : deps.bootstrap,
+  });
   registerOnboardingRoutes(app, {
     service: deps.onboarding ?? lazyOnboardingService(config),
     guards,

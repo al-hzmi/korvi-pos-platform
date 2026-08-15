@@ -105,6 +105,7 @@ model Tenant {
   idempotencyKeys    IdempotencyKey[]
   auditEvents        AuditEvent[]
   sessions           Session[]
+  ownerBootstraps    TenantOwnerBootstrapInvitation[]
   commercialAccount  TenantCommercialAccount?
   planAssignments    TenantPlanAssignment[]
   planEntitlements   TenantPlanEntitlement[]
@@ -330,6 +331,44 @@ model TenantCommercialAccount {
   currentAssignment TenantPlanAssignment @relation("CurrentCommercialAssignment", fields: [tenantId, currentAssignmentId], references: [tenantId, id], onDelete: NoAction)
 
   @@map("tenant_commercial_accounts")
+}
+
+/// A control-plane invitation to establish a merchant's very first Owner.
+///
+/// Provisioning creates no merchant user (ADR-0018), so this row is the bridge
+/// between "the tenant exists" and "somebody can sign in". It holds no raw
+/// capability token and no signing key: the token is derived from this row plus
+/// configuration, so storing it would keep a live credential in a table for no
+/// gain (ADR-0021).
+model TenantOwnerBootstrapInvitation {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+
+  operationId String
+  requestHash String
+
+  /// The account this invitation may establish, bound at issue time. Public
+  /// acceptance never sends an address; it is read from here under the row's
+  /// own lock.
+  email       String
+  displayName String
+
+  controlPlaneActorRef String
+
+  expiresAt  DateTime
+  /// Set exactly once, by a successful acceptance, and by nothing else. Single
+  /// use is this column plus a FOR UPDATE lock. Expiry never writes here: an
+  /// invitation that ran out of time keeps `consumedAt` null and stays a
+  /// historical row, because it was never presented.
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "tobi_tenantId_fkey")
+
+  @@unique([tenantId, id], map: "tobi_tenantId_id_key")
+  @@unique([tenantId, operationId], map: "tobi_tenantId_operationId_key")
+  @@index([tenantId, expiresAt], map: "tobi_tenantId_expiresAt_idx")
+  @@map("tenant_owner_bootstrap_invitations")
 }
 
 /// One immutable snapshot issued by the trusted control plane.

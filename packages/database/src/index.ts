@@ -17,12 +17,14 @@ export {
   TenantLifecycleRefusedError,
   MerchantAdminRefusedError,
   PlanEntitlementRefusedError,
+  OwnerBootstrapRefusedError,
 } from './errors.js';
 export type {
   TenantProvisioningRefusal,
   TenantLifecycleRefusal,
   MerchantAdminRefusal,
   PlanEntitlementRefusal,
+  OwnerBootstrapRefusal,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
@@ -134,3 +136,21 @@ export type {
 // Read-only and evidence-derived; there is deliberately no persisted
 // "onboarding complete" flag.
 export { readTenantOnboardingReadiness } from './onboarding/readiness.js';
+
+// Initial owner bootstrap (Strike 4D-3). The issuing half is trusted control
+// plane and takes a tenant id; the accepting half takes a signed capability and
+// nothing else. `signOwnerBootstrapCapability` is not exported: minting a
+// capability is the control plane's, and a caller that could sign one could
+// bootstrap into any tenant (ADR-0021).
+export {
+  issueOwnerBootstrapInvitation,
+  acceptOwnerBootstrap,
+  fingerprintOwnerBootstrap,
+} from './bootstrap/owner-bootstrap.js';
+export type {
+  OwnerBootstrapIntent,
+  OwnerBootstrapIssueRequest,
+  IssuedOwnerBootstrap,
+  OwnerBootstrapAcceptance,
+} from './bootstrap/owner-bootstrap.js';
+export { verifyOwnerBootstrapCapability } from './bootstrap/capability.js';
