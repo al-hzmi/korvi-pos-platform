@@ -105,6 +105,9 @@ model Tenant {
   idempotencyKeys    IdempotencyKey[]
   auditEvents        AuditEvent[]
   sessions           Session[]
+  commercialAccount  TenantCommercialAccount?
+  planAssignments    TenantPlanAssignment[]
+  planEntitlements   TenantPlanEntitlement[]
 
   @@unique([provisioningOperationId])
   @@map("tenants")
@@ -310,6 +313,67 @@ model TenantSettings {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("tenant_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Commercial plan and entitlement foundation
+// ---------------------------------------------------------------------------
+
+/// The current commercial truth is only a pointer to an immutable assignment.
+/// A plan change never overwrites the assignment that was previously current.
+model TenantCommercialAccount {
+  tenantId            String   @id @db.Uuid
+  currentAssignmentId String   @db.Uuid
+  updatedAt           DateTime @updatedAt
+
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  currentAssignment TenantPlanAssignment @relation("CurrentCommercialAssignment", fields: [tenantId, currentAssignmentId], references: [tenantId, id], onDelete: NoAction)
+
+  @@map("tenant_commercial_accounts")
+}
+
+/// One immutable snapshot issued by the trusted control plane.
+/// There is intentionally no global Plan table yet: 4C establishes plan
+/// identity without inventing a commercial catalogue or billing provider.
+model TenantPlanAssignment {
+  id                   String   @id @db.Uuid
+  tenantId             String   @db.Uuid
+  operationId          String
+  requestHash          String
+  planKey              String
+  planRevision         Int
+  accountState         String
+  controlPlaneActorRef String
+  assignedAt           DateTime
+
+  tenant       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entitlements TenantPlanEntitlement[]
+  currentFor   TenantCommercialAccount[] @relation("CurrentCommercialAssignment")
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, planKey, planRevision])
+  @@map("tenant_plan_assignments")
+}
+
+/// Grants belong to one immutable assignment, not directly to the mutable
+/// account pointer. A historical assignment therefore keeps its exact grants.
+model TenantPlanEntitlement {
+  id             String   @id @db.Uuid
+  tenantId       String   @db.Uuid
+  assignmentId   String   @db.Uuid
+  entitlementKey String
+  kind           String
+  flagValue      Boolean?
+  limitValue     BigInt?
+  createdAt      DateTime @default(now())
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignment TenantPlanAssignment @relation(fields: [tenantId, assignmentId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, assignmentId, entitlementKey], map: "tenant_plan_entitlements_assignment_entitlement_key")
+  @@index([tenantId, assignmentId])
+  @@map("tenant_plan_entitlements")
 }
 
 // ---------------------------------------------------------------------------

@@ -16,11 +16,13 @@ export {
   TenantProvisioningError,
   TenantLifecycleRefusedError,
   MerchantAdminRefusedError,
+  PlanEntitlementRefusedError,
 } from './errors.js';
 export type {
   TenantProvisioningRefusal,
   TenantLifecycleRefusal,
   MerchantAdminRefusal,
+  PlanEntitlementRefusal,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
@@ -113,3 +115,17 @@ export type {
   TenantSettingsPatch,
   TerminalPatch,
 } from './administration/merchant-admin.js';
+
+// Commercial plan/entitlement control-plane foundation (Strike 4C).
+// No merchant HTTP authority and no billing-provider semantics live here.
+export {
+  PLAN_ASSIGNMENT_EVENT,
+  assignTenantPlan,
+  readCommercialAccount,
+  fingerprintCommercialPlanAssignment,
+} from './commercial/plan-entitlements.js';
+export type {
+  CommercialPlanIntent,
+  TenantPlanAssignmentRequest,
+  TenantPlanAssignmentResult,
+} from './commercial/plan-entitlements.js';

@@ -216,3 +216,21 @@ export class DrawerRefusedError extends DatabaseError {
     this.detail = detail;
   }
 }
+
+/**
+ * A control-plane plan assignment was refused while the tenant row was held.
+ *
+ * The operation id is scoped to one tenant. Reusing it with different
+ * commercial intent is never interpreted as a new request.
+ */
+export type PlanEntitlementRefusal = 'unknown-tenant' | 'idempotency-conflict';
+
+export class PlanEntitlementRefusedError extends DatabaseError {
+  public override readonly name = 'PlanEntitlementRefusedError';
+  public readonly detail: PlanEntitlementRefusal;
+
+  public constructor(detail: PlanEntitlementRefusal) {
+    super(`Plan entitlement operation refused: ${detail}`);
+    this.detail = detail;
+  }
+}

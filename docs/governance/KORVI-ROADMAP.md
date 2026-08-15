@@ -17,7 +17,7 @@ Money/quantity/tax invariants, pure domain, UUIDv7, tenant isolation, migrations
 
 Checkout, tender settlement, sale persistence, cashier experience foundation, original-sale returns/refunds, cash movements, blind close/reconciliation. Remaining work in this stage is completed only when later UI/printing/compliance dependencies for each operation are delivered.
 
-### Stage 3 — Product Constitution — **NOW**
+### Stage 3 — Product Constitution — substantially established
 
 Adopt the five governance documents: Master Product Directive, Capability Matrix, Architecture Map, Release Gates, Roadmap. They become the anti-drift control layer before expanding product breadth.
 
@@ -26,11 +26,11 @@ Adopt the five governance documents: Master Product Directive, Capability Matrix
 Sequence:
 
 1. **4A Tenant Lifecycle & Provisioning Authority** — **substantially established.** Lifecycle states, provisioning transaction, safe activation/suspension/reactivation rules, idempotency, RLS/security, audit and live DB proof are in place (ADR-0018). It is backend authority only: no control-plane transport, no operator identity model and no UI, so the capability is not yet production ready.
-2. **4B Control-Plane Administration** — **IN PROGRESS.**
-   - **4B-1 Merchant administration authority — substantially established.** Server authority and authenticated API for tenant settings, branches, terminals, users/memberships and role assignment, with session-invalidation and last-administrator protection proved against live PostgreSQL (ADR-0019). No UI, and no credential/invitation flow for a created user, so the capability is not yet production ready.
-   - **4B-2 Merchant administration UI — NEXT.** Screens over the 4B-1 authority. It adds no new authority of its own.
-3. **4C Plan/Entitlement Foundation** — plan identity, entitlement evaluation, account state; no payment billing provider yet unless separately struck.
-4. **4D Onboarding** — guided merchant setup, branch/terminal/user/product readiness checks, no fake “ready” state.
+2. **4B Control-Plane Administration — substantially established.**
+   - **4B-1 Merchant administration authority — substantially established.** Server authority and authenticated API for tenant settings, branches, terminals, users/memberships and role assignment, with session-invalidation and last-administrator protection proved against live PostgreSQL (ADR-0019).
+   - **4B-2 Merchant administration UI — substantially established.** Settings, branches, terminals, members, roles and permissions screens operate over the 4B-1 authority and add no independent authority. Credential/invitation flow remains outside this milestone, so the capability is not yet production ready.
+3. **4C Plan/Entitlement Foundation — substantially established.** Stable `(planKey, planRevision)` identity, immutable assignment snapshots, deterministic entitlement evaluation, orthogonal commercial account state, RLS, audit, idempotency, rollback and concurrency proof are established (ADR-0020). No payment/billing provider, merchant plan-write surface or universal route enforcement is claimed, so this is not production ready.
+4. **4D Onboarding — NEXT.** Guided merchant setup, branch/terminal/user/product readiness checks, no fake “ready” state.
 
 ### Stage 5 — Inventory & Purchasing Foundation
 
