@@ -129,3 +129,8 @@ export type {
   TenantPlanAssignmentRequest,
   TenantPlanAssignmentResult,
 } from './commercial/plan-entitlements.js';
+
+// Onboarding readiness (Strike 4D-1).
+// Read-only and evidence-derived; there is deliberately no persisted
+// "onboarding complete" flag.
+export { readTenantOnboardingReadiness } from './onboarding/readiness.js';

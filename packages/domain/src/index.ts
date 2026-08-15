@@ -11,6 +11,7 @@ export * from './shift/index.js';
 export * from './tenancy/index.js';
 export * from './administration/index.js';
 export * from './entitlements/index.js';
+export * from './onboarding/index.js';
 export * from './ids/uuidv7.js';
 export * from './zatca/tlv.js';
 export * from './zatca/base64.js';

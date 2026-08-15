@@ -12,6 +12,7 @@ import {
   createShiftRepository,
   createTenantRepository,
   createTerminalRepository,
+  readTenantOnboardingReadiness,
 } from '@korvi/database';
 import { newId } from '@korvi/domain';
 import { createGuards } from './auth/guards.js';
@@ -20,12 +21,15 @@ import { createReturnService } from './returns/service.js';
 import { createDrawerService } from './shifts/service.js';
 import { registerBusinessRoutes } from './routes/business.js';
 import { createMerchantAdminService } from './admin/service.js';
+import { createMerchantOnboardingService } from './onboarding/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
 import type { AuthService } from './auth/service.js';
 import type { MerchantAdminService } from './admin/service.js';
+import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
 import type { FastifyInstance } from 'fastify';
@@ -55,6 +59,14 @@ export interface ServerDeps {
    * easy to hand a cashier's route an administrator's service.
    */
   readonly admin?: MerchantAdminService;
+
+  /**
+   * Read-only onboarding readiness authority.
+   *
+   * Kept separate from merchant mutations so this surface cannot accidentally
+   * acquire write authority while it is only meant to explain readiness.
+   */
+  readonly onboarding?: MerchantOnboardingService;
 }
 
 class AuthUnavailableError extends Error {
@@ -252,6 +264,34 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
   };
 }
 
+/**
+ * Read-only onboarding authority, constructed lazily like the other database
+ * services so /health never needs a database connection.
+ */
+function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
+  let built: MerchantOnboardingService | null = null;
+
+  const resolve = (): MerchantOnboardingService => {
+    if (built !== null) return built;
+
+    const url = config.DATABASE_URL;
+    if (url === undefined) {
+      throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    }
+
+    const prisma = createPrismaClient(url);
+    built = createMerchantOnboardingService({
+      readReadiness: (scope) => readTenantOnboardingReadiness(prisma, scope),
+    });
+
+    return built;
+  };
+
+  return {
+    readReadiness: (principal) => resolve().readReadiness(principal),
+  };
+}
+
 export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: config.LOG_LEVEL },
@@ -287,5 +327,9 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
+  registerOnboardingRoutes(app, {
+    service: deps.onboarding ?? lazyOnboardingService(config),
+    guards,
+  });
   return app;
 }
