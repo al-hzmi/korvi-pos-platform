@@ -25,7 +25,12 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'products', label: 'المنتجات', section: 'products' },
   { key: 'inventory', label: 'المخزون', section: null },
   { key: 'customers', label: 'العملاء', section: null },
-  { key: 'branches', label: 'الفروع والصناديق', section: 'branches', permission: 'settings.manage' },
+  {
+    key: 'branches',
+    label: 'الفروع والصناديق',
+    section: 'branches',
+    permission: 'settings.manage',
+  },
   { key: 'staff', label: 'الموظفون والصلاحيات', section: 'staff', permission: 'users.manage' },
   { key: 'reports', label: 'التقارير', section: null },
   { key: 'settings', label: 'الإعدادات', section: 'settings', permission: 'settings.manage' },
@@ -38,11 +43,7 @@ export interface ControlNavProps {
   readonly permissions?: readonly string[];
 }
 
-export function ControlNav({
-  active,
-  onSelect,
-  permissions = [],
-}: ControlNavProps): JSX.Element {
+export function ControlNav({ active, onSelect, permissions = [] }: ControlNavProps): JSX.Element {
   return (
     <nav aria-label="أقسام لوحة التحكم" className="flex flex-col gap-1">
       {CONTROL_ENTRIES.map((entry) => {

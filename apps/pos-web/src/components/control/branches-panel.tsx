@@ -12,7 +12,12 @@ const PAGE_SIZE = 50;
 
 type PendingActivation =
   | { readonly kind: 'branch'; readonly id: string; readonly label: string; readonly next: boolean }
-  | { readonly kind: 'terminal'; readonly id: string; readonly label: string; readonly next: boolean };
+  | {
+      readonly kind: 'terminal';
+      readonly id: string;
+      readonly label: string;
+      readonly next: boolean;
+    };
 
 interface BranchEdit {
   readonly id: string;
@@ -209,7 +214,9 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
         nameAr: branchEdit.nameAr.trim(),
         nameEn: branchEdit.nameEn.trim() === '' ? null : branchEdit.nameEn.trim(),
       });
-      setBranches((current) => current.map((branch) => (branch.id === updated.id ? updated : branch)));
+      setBranches((current) =>
+        current.map((branch) => (branch.id === updated.id ? updated : branch)),
+      );
       setBranchEdit(null);
       setSuccess(`حُدّث الفرع «${updated.nameAr}».`);
     } catch (error) {
@@ -247,7 +254,9 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
     try {
       if (pending.kind === 'branch') {
         const updated = await api.setAdminBranchActive(pending.id, pending.next);
-        setBranches((current) => current.map((branch) => (branch.id === updated.id ? updated : branch)));
+        setBranches((current) =>
+          current.map((branch) => (branch.id === updated.id ? updated : branch)),
+        );
         if (!updated.isActive && terminalBranchId === updated.id) {
           const next = branches.find((branch) => branch.id !== updated.id && branch.isActive);
           setTerminalBranchId(next?.id ?? '');
@@ -315,7 +324,9 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
       <div className="grid gap-4 xl:grid-cols-2">
         <CardSurface className="p-5">
           <h2 className="text-base font-semibold text-foreground">إضافة فرع</h2>
-          <p className="mt-1 text-sm text-muted-foreground">رمز الفرع ثابت بعد الإنشاء؛ يمكن تعديل الاسم لاحقاً.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            رمز الفرع ثابت بعد الإنشاء؛ يمكن تعديل الاسم لاحقاً.
+          </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
               رمز الفرع
@@ -356,7 +367,9 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
 
         <CardSurface className="p-5">
           <h2 className="text-base font-semibold text-foreground">إضافة صندوق</h2>
-          <p className="mt-1 text-sm text-muted-foreground">لا يمكن إنشاء صندوق جديد تحت فرع معطّل.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            لا يمكن إنشاء صندوق جديد تحت فرع معطّل.
+          </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-2 text-sm font-medium text-foreground sm:col-span-2">
               الفرع
@@ -410,7 +423,9 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
         <div className="flex items-center justify-between gap-3 border-b border-border p-5">
           <div>
             <h2 className="text-base font-semibold text-foreground">الفروع</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{branches.length} فرعاً محمّلاً في هذه الجلسة.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {branches.length} فرعاً محمّلاً في هذه الجلسة.
+            </p>
           </div>
           <Button variant="ghost" size="sm" onClick={() => void load()} disabled={busy !== null}>
             تحديث
@@ -451,7 +466,10 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
                         <Button variant="ghost" onClick={() => setBranchEdit(null)}>
                           إلغاء
                         </Button>
-                        <Button loading={busy === `branch:${branch.id}`} onClick={() => void saveBranch()}>
+                        <Button
+                          loading={busy === `branch:${branch.id}`}
+                          onClick={() => void saveBranch()}
+                        >
                           حفظ
                         </Button>
                       </div>
@@ -460,12 +478,16 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-foreground">{branch.code}</span>
+                          <span className="font-mono text-sm font-semibold text-foreground">
+                            {branch.code}
+                          </span>
                           {stateBadge(branch.isActive)}
                         </div>
                         <p className="mt-1 font-semibold text-foreground">{branch.nameAr}</p>
                         {branch.nameEn === null ? null : (
-                          <p className="text-sm text-muted-foreground" dir="ltr">{branch.nameEn}</p>
+                          <p className="text-sm text-muted-foreground" dir="ltr">
+                            {branch.nameEn}
+                          </p>
                         )}
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -522,7 +544,9 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
       <CardSurface className="overflow-hidden">
         <div className="border-b border-border p-5">
           <h2 className="text-base font-semibold text-foreground">الصناديق</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{terminals.length} صندوقاً محمّلاً في هذه الجلسة.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {terminals.length} صندوقاً محمّلاً في هذه الجلسة.
+          </p>
         </div>
         {terminals.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground">لا توجد صناديق حتى الآن.</p>
@@ -560,12 +584,15 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-foreground">{terminal.code}</span>
+                          <span className="font-mono text-sm font-semibold text-foreground">
+                            {terminal.code}
+                          </span>
                           {stateBadge(terminal.isActive)}
                         </div>
                         <p className="mt-1 font-semibold text-foreground">{terminal.label}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {branchName.get(terminal.branchId) ?? 'فرع غير محمّل'} · آخر اتصال: {lastSeenLabel(terminal.lastSeenAt)}
+                          {branchName.get(terminal.branchId) ?? 'فرع غير محمّل'} · آخر اتصال:{' '}
+                          {lastSeenLabel(terminal.lastSeenAt)}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -573,7 +600,9 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
                           variant="outline"
                           size="sm"
                           disabled={busy !== null}
-                          onClick={() => setTerminalEdit({ id: terminal.id, label: terminal.label })}
+                          onClick={() =>
+                            setTerminalEdit({ id: terminal.id, label: terminal.label })
+                          }
                         >
                           تعديل الاسم
                         </Button>

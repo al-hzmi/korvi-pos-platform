@@ -44,16 +44,16 @@ describe('merchant administration API client', () => {
     expect(call.init.method).toBe('PATCH');
     expect(call.init.credentials).toBe('same-origin');
     expect(bodyOf(call)).toEqual({ requireBarcode: true, receiptFooterAr: null });
-    expect(JSON.stringify(bodyOf(call))).not.toMatch(/tenantId|permissions|role|currency|priceMode/);
+    expect(JSON.stringify(bodyOf(call))).not.toMatch(
+      /tenantId|permissions|role|currency|priceMode/,
+    );
   });
 
   it('encodes keyset paging without inventing tenant scope', async () => {
     const wire = transport({ items: [], hasMore: false, nextCursor: null });
     await createApiClient(wire.fetch).adminBranches({ limit: 25, cursor: 'فرع/2' });
 
-    expect(wire.calls[0]!.url).toBe(
-      '/v1/admin/branches?limit=25&cursor=%D9%81%D8%B1%D8%B9%2F2',
-    );
+    expect(wire.calls[0]!.url).toBe('/v1/admin/branches?limit=25&cursor=%D9%81%D8%B1%D8%B9%2F2');
     expect(wire.calls[0]!.url).not.toContain('tenant');
   });
 

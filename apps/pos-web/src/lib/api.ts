@@ -410,7 +410,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         json({
           email: input.email,
           displayName: input.displayName,
-          ...(input.defaultBranchId === undefined ? {} : { defaultBranchId: input.defaultBranchId }),
+          ...(input.defaultBranchId === undefined
+            ? {}
+            : { defaultBranchId: input.defaultBranchId }),
         }),
       )) as AdminMember;
     },

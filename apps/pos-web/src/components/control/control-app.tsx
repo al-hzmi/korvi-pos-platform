@@ -78,7 +78,9 @@ function Section({
     case 'branches':
       return <BranchesPanel api={api} />;
     case 'staff':
-      return <MembersPanel api={api} canManageSettings={hasPermission(principal, 'settings.manage')} />;
+      return (
+        <MembersPanel api={api} canManageSettings={hasPermission(principal, 'settings.manage')} />
+      );
     case 'settings':
       return <SettingsPanel api={api} />;
   }

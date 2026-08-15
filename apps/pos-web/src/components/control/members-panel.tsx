@@ -17,14 +17,12 @@ interface MemberEdit {
   readonly defaultBranchId: string;
 }
 
-type PendingAccess =
-  | {
-      readonly kind: 'user' | 'membership';
-      readonly userId: string;
-      readonly label: string;
-      readonly next: boolean;
-    }
-  | null;
+type PendingAccess = {
+  readonly kind: 'user' | 'membership';
+  readonly userId: string;
+  readonly label: string;
+  readonly next: boolean;
+} | null;
 
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError && error.serverMessage !== null) return error.serverMessage;
@@ -51,7 +49,10 @@ async function loadAllBranches(api: ApiClient): Promise<readonly AdminBranch[]> 
   let cursor: string | undefined;
 
   for (;;) {
-    const page = await api.adminBranches({ limit: PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) });
+    const page = await api.adminBranches({
+      limit: PAGE_SIZE,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
     rows.push(...page.items);
     if (!page.hasMore || page.nextCursor === null) return rows;
     if (seen.has(page.nextCursor)) throw new Error('branch pagination repeated a cursor');
@@ -217,7 +218,11 @@ export function MembersPanel({
     }
   };
 
-  const changeRole = async (member: AdminMember, role: AdminRole, assign: boolean): Promise<void> => {
+  const changeRole = async (
+    member: AdminMember,
+    role: AdminRole,
+    assign: boolean,
+  ): Promise<void> => {
     const key = `role:${member.userId}:${role.id}`;
     setBusy(key);
     setFailure(null);
@@ -326,7 +331,9 @@ export function MembersPanel({
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-semibold text-foreground">{member.displayName}</h3>
+                      <h3 className="text-base font-semibold text-foreground">
+                        {member.displayName}
+                      </h3>
                       {statusBadge(member.userActive, 'الحساب مفعّل', 'الحساب معطّل')}
                       {statusBadge(membershipActive, 'العضوية مفعّلة', 'العضوية معطّلة')}
                       {member.hasCredential ? (
@@ -346,7 +353,8 @@ export function MembersPanel({
                       الفرع الافتراضي:{' '}
                       {member.defaultBranchId === null
                         ? 'غير محدد'
-                        : (branchById.get(member.defaultBranchId)?.nameAr ?? member.defaultBranchId)}
+                        : (branchById.get(member.defaultBranchId)?.nameAr ??
+                          member.defaultBranchId)}
                     </p>
                   </div>
 
@@ -410,7 +418,9 @@ export function MembersPanel({
                         الفرع الافتراضي
                         <select
                           value={edit.defaultBranchId}
-                          onChange={(event) => setEdit({ ...edit, defaultBranchId: event.target.value })}
+                          onChange={(event) =>
+                            setEdit({ ...edit, defaultBranchId: event.target.value })
+                          }
                           className="h-touch rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <option value="">بدون فرع افتراضي</option>
@@ -423,7 +433,10 @@ export function MembersPanel({
                       </label>
                     ) : null}
                     <div className="flex items-end gap-2 md:col-span-2">
-                      <Button loading={busy === `edit:${member.userId}`} onClick={() => void saveMember()}>
+                      <Button
+                        loading={busy === `edit:${member.userId}`}
+                        onClick={() => void saveMember()}
+                      >
                         حفظ التعديل
                       </Button>
                       <Button variant="ghost" onClick={() => setEdit(null)}>
@@ -457,7 +470,8 @@ export function MembersPanel({
                   </div>
                   {member.roleIds.some((roleId) => !roleById.has(roleId)) ? (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      توجد أدوار مرتبطة بهذا الموظف لا تظهر ضمن قائمة الأدوار القابلة للإسناد الحالية.
+                      توجد أدوار مرتبطة بهذا الموظف لا تظهر ضمن قائمة الأدوار القابلة للإسناد
+                      الحالية.
                     </p>
                   ) : null}
                 </div>
