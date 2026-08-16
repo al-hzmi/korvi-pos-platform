@@ -6,9 +6,10 @@ import type { ProductType } from '../ports/persistence.js';
 /**
  * The deliberately small catalogue write used by onboarding.
  *
- * This is not the inventory or purchasing model. It establishes one sellable
+ * This is not the inventory or purchasing model. It establishes one real
  * catalogue row using the same exact-money and tax representations the sale
  * engine already consumes, so onboarding cannot invent a second pricing model.
+ * Stock availability remains separate inventory truth.
  */
 export const MAX_PRODUCT_SKU = 64;
 export const MAX_PRODUCT_NAME = 200;
