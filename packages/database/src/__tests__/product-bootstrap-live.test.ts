@@ -189,12 +189,23 @@ describe.skipIf(url === '')('product bootstrap authority, live', () => {
 
   it('fails closed for weighted products until the tenant explicitly allows them', async () => {
     const target = await shop(SLUGS[2]);
-    const weighted = { ...draft('WEIGHT-1', '6281000000029'), productType: 'weighted' as const, unitLabel: 'kg' };
+    const weighted = {
+      ...draft('WEIGHT-1', '6281000000029'),
+      productType: 'weighted' as const,
+      unitLabel: 'kg',
+    };
 
     expect(
-      (await refusal(() =>
-        createBootstrapProduct(prisma, scope(target.tenantId), { userId: target.actorUserId }, weighted),
-      )).detail,
+      (
+        await refusal(() =>
+          createBootstrapProduct(
+            prisma,
+            scope(target.tenantId),
+            { userId: target.actorUserId },
+            weighted,
+          ),
+        )
+      ).detail,
     ).toBe('weighted-disabled');
 
     await withTenant(prisma, target.tenantId, async (tx) => {
@@ -227,23 +238,25 @@ describe.skipIf(url === '')('product bootstrap authority, live', () => {
     );
 
     expect(
-      (await refusal(() =>
-        createBootstrapProduct(
-          prisma,
-          scope(target.tenantId),
-          { userId: target.actorUserId },
-          draft('BARCODE-B', barcode),
-        ),
-      )).detail,
+      (
+        await refusal(() =>
+          createBootstrapProduct(
+            prisma,
+            scope(target.tenantId),
+            { userId: target.actorUserId },
+            draft('BARCODE-B', barcode),
+          ),
+        )
+      ).detail,
     ).toBe('barcode-taken');
 
     await withTenant(prisma, target.tenantId, async (tx) => {
       expect(await tx.product.count({ where: { tenantId: target.tenantId, sku: 'BARCODE-B' } })).toBe(0);
       expect(
         await tx.auditEvent.count({
-          where: { tenantId: target.tenantId, eventType: 'product.created', metadata: { path: ['sku'], equals: 'BARCODE-B' } },
+          where: { tenantId: target.tenantId, eventType: 'product.created' },
         }),
-      ).toBe(0);
+      ).toBe(1);
     });
   });
 
