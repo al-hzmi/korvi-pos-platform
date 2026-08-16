@@ -43,15 +43,17 @@ Sale and original-sale return idempotency remain unchanged.
 
 A manual adjustment is an explicit signed delta with a bounded reason and actor. A stock count records the counted absolute quantity as evidence, but the server derives the delta under the balance row lock. The client never submits the authoritative adjustment delta for a count.
 
+`inventory_balances` carries a monotonic integer revision that increments with every committed balance mutation, including sale and return movements. Inventory reads expose that revision. A count submission must carry the revision of the balance snapshot that was physically counted. Under the balance lock the server compares the submitted expected revision with current truth before deriving the delta. A mismatch is a conflict that requires the caller to refresh/recount; Korvi never silently overwrites a sale, return, transfer or adjustment that occurred during a count. An absent balance is snapshot revision zero; finalization materializes/locks the zero row and still detects any concurrent first movement.
+
 If negative stock is disabled, the mutation itself enforces the floor under concurrency. A preflight read is not sufficient.
 
 ### 6. Transfers
 
 A completed transfer is one atomic operation with two causal legs: negative at source and positive at destination, for the same product and exact quantity. Partial one-sided transfers are forbidden.
 
-When more than one balance row is locked, rows are acquired in a deterministic canonical order so opposite-direction concurrent transfers cannot deadlock by design.
+When more than one balance row is locked, rows are acquired in a deterministic canonical order so opposite-direction concurrent transfers cannot deadlock by design. Missing balance rows are materialized as zero before canonical locking so row absence cannot bypass the lock order.
 
-A transfer cannot target the same branch, a missing/inactive branch, an unavailable product, or an untracked product. Source negative-stock policy is enforced at the locked mutation.
+A transfer cannot target the same branch, a missing/inactive branch, an unavailable product, or an untracked product. A physical transfer never drives the source below zero, regardless of checkout oversell policy; nonexistent stock cannot be moved between branches.
 
 ### 7. Purchasing and receiving
 
