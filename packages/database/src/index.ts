@@ -118,6 +118,18 @@ export type {
   TerminalPatch,
 } from './administration/merchant-admin.js';
 
+// Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
+// catalogue truth only; no stock movement and no onboarding-complete flag.
+export {
+  ProductBootstrapRefusedError,
+  createBootstrapProduct,
+} from './administration/product-bootstrap.js';
+export type {
+  ProductBootstrapRefusal,
+  ProductBootstrapActor,
+  AdminProductBootstrap,
+} from './administration/product-bootstrap.js';
+
 // Commercial plan/entitlement control-plane foundation (Strike 4C).
 // No merchant HTTP authority and no billing-provider semantics live here.
 export {
