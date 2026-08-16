@@ -10,6 +10,7 @@ import { withTenant } from '../tenant-context.js';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import type {
+  NormalizedProductBootstrap,
   ProductBootstrapDraft,
   ProductType,
   TenantScope,
@@ -130,7 +131,7 @@ export async function createBootstrapProduct(
     const settings = settingsRows.at(0);
     if (settings === undefined) throw new ProductBootstrapRefusedError('settings-missing');
 
-    let input;
+    let input: NormalizedProductBootstrap;
     try {
       input = normalizeProductBootstrap(draft, basisPoints(settings.defaultVatBasisPoints));
     } catch (error) {
