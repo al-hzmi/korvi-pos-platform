@@ -6,6 +6,7 @@ import { BranchesPanel } from './branches-panel';
 import { ControlNav } from './control-nav';
 import { DashboardPanel } from './dashboard-panel';
 import { MembersPanel } from './members-panel';
+import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
 import { SettingsPanel } from './settings-panel';
 import { LoginScreen } from '../login-screen';
@@ -74,7 +75,7 @@ function Section({
     case 'home':
       return <DashboardPanel api={api} />;
     case 'products':
-      return <ProductsPanel api={api} />;
+      return <ProductsPanel api={api} canWrite={hasPermission(principal, 'product.write')} />;
     case 'branches':
       return <BranchesPanel api={api} />;
     case 'staff':
@@ -97,6 +98,7 @@ function Workspace({
 }): JSX.Element {
   const [section, setSection] = useState<ControlSection>('home');
   const permitted = hasPermission(principal, 'report.read');
+  const canReadOnboarding = hasPermission(principal, 'settings.manage');
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
@@ -156,6 +158,15 @@ function Workspace({
                 </p>
               ) : null}
             </div>
+
+            {section === 'home' && canReadOnboarding ? (
+              <OnboardingPanel
+                api={api}
+                permissions={principal.permissions}
+                onNavigate={setSection}
+              />
+            ) : null}
+
             <Section section={section} api={api} principal={principal} />
           </main>
         </div>
