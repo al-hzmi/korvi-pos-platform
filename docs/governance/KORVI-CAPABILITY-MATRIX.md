@@ -25,10 +25,10 @@ Legend: `A` Accepted, `AR` Architected, `I` Implemented, `T` Tested, `PR` Produc
 | Control dashboard foundation | B0 | C1 | A/AR/I/T | POS/API | Security, Performance |
 | SaaS tenant provisioning/lifecycle | B0 | C0 | A/AR/I/T; no control-plane transport or UI yet, so not PR | Control Plane | Security, Data Integrity, Production |
 | Subscription/plan entitlement foundation | B0 | C1 | A/AR/I/T; stable plan identity, immutable assignments, deterministic fail-closed evaluator, account state, RLS/idempotency/rollback/concurrency live DB proof; no billing provider or universal enforcement, not PR | Control Plane | Security, Commercial |
-| Onboarding/settings administration | B0 | C1 | A/AR; settings authority and administration UI are I/T through 4B, while guided onboarding remains 4D; not PR | Control Plane/POS | Security, UX |
-| User/membership administration UI/API | B0 | C0 | A/AR/I/T for authority and administration UI through 4B; credential/invitation flow remains outstanding, so not PR | Control Plane/Auth | Security, Audit |
-| Branch/terminal administration | B0 | C1 | A/AR/I/T for authority and administration UI through 4B; not yet PR | Control Plane | Security, Operations |
-| Product write/catalogue management | B0 | C1 | A; permission exists, full management deferred | Inventory/Catalogue | Audit, UX |
+| Onboarding/settings administration | B0 | C1 | A/AR/I/T; evidence-derived readiness, authenticated readiness API and guided onboarding UI established through 4D; no fake persisted completion state; not PR | Control Plane/POS | Security, UX |
+| User/membership administration UI/API | B0 | C0 | A/AR/I/T for authority and administration UI through 4B; 4D adds signed one-time initial-owner credential bootstrap with replay/concurrency/rollback proof, but general staff invitation/recovery remains outstanding; not PR | Control Plane/Auth | Security, Audit |
+| Branch/terminal administration | B0 | C1 | A/AR/I/T for authority and administration UI through 4B; onboarding readiness consumes live active branch/terminal truth through 4D; not yet PR | Control Plane | Security, Operations |
+| Product write/catalogue management | B0 | C1 | A/AR/I/T for the minimal audited onboarding product bootstrap authority through 4D; full catalogue management remains deferred | Inventory/Catalogue | Audit, UX |
 | Stock ledger/adjustments | B0 | C0 | A; inventory foundation partially exists | Inventory/DB | Data Integrity, Live DB |
 | Transfers/counting | B1 | C1 | A | Inventory | Data Integrity |
 | Suppliers/PO/receiving | B1 | C1 | A | Purchasing | Data Integrity, Audit |
