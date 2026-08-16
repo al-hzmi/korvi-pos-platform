@@ -21,8 +21,10 @@ import { createReturnService } from './returns/service.js';
 import { createDrawerService } from './shifts/service.js';
 import { registerBusinessRoutes } from './routes/business.js';
 import { createMerchantAdminService } from './admin/service.js';
+import { createMerchantProductService } from './catalog/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -32,6 +34,7 @@ import { registerBootstrapRoutes } from './routes/bootstrap.js';
 import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
 import type { MerchantAdminService } from './admin/service.js';
+import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
@@ -71,6 +74,11 @@ export interface ServerDeps {
    * easy to hand a cashier's route an administrator's service.
    */
   readonly admin?: MerchantAdminService;
+  /**
+   * Narrow catalogue write used by onboarding and later back-office product
+   * creation. It is separate from cashier reads and requires product.write.
+   */
+  readonly catalog?: MerchantProductService;
 
   /**
    * Read-only onboarding readiness authority.
@@ -277,6 +285,27 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
 }
 
 /**
+ * Product bootstrap, built once on first use. It is intentionally not part of
+ * the cashier BusinessDeps: cashier reads and back-office writes must not share
+ * an authority object merely because both mention products.
+ */
+function lazyCatalogService(config: ApiConfig): MerchantProductService {
+  let built: MerchantProductService | null = null;
+
+  const resolve = (): MerchantProductService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantProductService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    create: (principal, input) => resolve().create(principal, input),
+  };
+}
+
+/**
  * Read-only onboarding authority, constructed lazily like the other database
  * services so /health never needs a database connection.
  */
@@ -358,6 +387,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
+  registerCatalogAdminRoutes(app, {
+    service: deps.catalog ?? lazyCatalogService(config),
+    guards,
+  });
   registerBootstrapRoutes(app, {
     service: deps.bootstrap === undefined ? bootstrapServiceFor(config) : deps.bootstrap,
   });
