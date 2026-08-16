@@ -158,8 +158,7 @@ export function OnboardingPanel({
       <div className="mt-4 grid gap-2">
         {readiness.checks.map((check) => {
           const target = check.remediation === null ? undefined : TARGETS[check.remediation];
-          const actionable =
-            !check.ready && target !== undefined && canOpen(target, permissions);
+          const actionable = !check.ready && target !== undefined && canOpen(target, permissions);
 
           return (
             <div

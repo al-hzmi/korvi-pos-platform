@@ -99,7 +99,8 @@ export function ProductsPanel({
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold text-foreground">إضافة صنف</h2>
             <p className="text-sm text-muted-foreground">
-              السعر يُكتب بالريال ويُرسل للخادم كهللات صحيحة؛ الضريبة والمخزون يُحسمان وفق إعدادات المنشأة.
+              السعر يُكتب بالريال ويُرسل للخادم كهللات صحيحة؛ الضريبة والمخزون يُحسمان وفق إعدادات
+              المنشأة.
             </p>
           </div>
 
