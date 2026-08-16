@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   'product.write',
   'inventory.read',
   'inventory.adjust',
+  'inventory.transfer',
   'sale.create',
   'sale.discount',
   'sale.refund',
@@ -58,6 +59,9 @@ const MANAGER: readonly Permission[] = [
   'sale.void',
   'shift.cash-movement',
   'inventory.adjust',
+  // Moving stock between branches is a supervisor's act, not a till's: it
+  // changes two branches' books at once and no cashier owns both (ADR-0024).
+  'inventory.transfer',
   'product.write',
   'report.read',
 ];

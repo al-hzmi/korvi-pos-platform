@@ -90,6 +90,12 @@ model Tenant {
   productPrices      ProductPrice[]
   inventoryBalances  InventoryBalance[]
   inventoryMovements InventoryMovement[]
+  inventoryAdjustments     InventoryAdjustment[]
+  inventoryAdjustmentLines InventoryAdjustmentLine[]
+  inventoryCounts          InventoryCount[]
+  inventoryCountLines      InventoryCountLine[]
+  inventoryTransfers       InventoryTransfer[]
+  inventoryTransferLines   InventoryTransferLine[]
   customers          Customer[]
   shifts             Shift[]
   cashMovements      CashMovement[]
@@ -128,6 +134,10 @@ model Branch {
   terminals          Terminal[]
   inventoryBalances  InventoryBalance[]
   inventoryMovements InventoryMovement[]
+  inventoryAdjustments InventoryAdjustment[]
+  inventoryCounts      InventoryCount[]
+  transfersOut         InventoryTransfer[] @relation("InventoryTransferSource")
+  transfersIn          InventoryTransfer[] @relation("InventoryTransferDestination")
   shifts             Shift[]
   sales              Sale[]
   returns            Return[]
@@ -177,6 +187,10 @@ model User {
   auditEvents   AuditEvent[]
   saleDiscounts SaleDiscount[]
   returns       Return[]
+
+  inventoryAdjustments InventoryAdjustment[]
+  inventoryCounts      InventoryCount[]
+  inventoryTransfers   InventoryTransfer[]
 
   @@unique([tenantId, email])
   /// The tenant-consistency key. A child row references this table by
@@ -480,6 +494,9 @@ model Product {
   prices             ProductPrice[]
   inventoryBalances  InventoryBalance[]
   inventoryMovements InventoryMovement[]
+  inventoryAdjustmentLines InventoryAdjustmentLine[]
+  inventoryCountLines      InventoryCountLine[]
+  inventoryTransferLines   InventoryTransferLine[]
   saleLines          SaleLine[]
   returnLines        ReturnLine[]
 
@@ -548,6 +565,18 @@ model InventoryBalance {
   /// Scaled by 1000, signed: a negative balance is oversell, which the tenant
   /// may or may not permit.
   quantityScaled BigInt   @default(0)
+  /// Monotonic concurrency evidence, incremented exactly once by every
+  /// committed quantity-changing movement — sale, return, adjustment, count
+  /// and transfer alike.
+  ///
+  /// A stock count submits the revision it physically counted; the server
+  /// compares it with this column under the row lock before deriving a delta,
+  /// so an absolute observation can never silently erase a sale that happened
+  /// while somebody was walking the aisle (ADR-0024 §5).
+  ///
+  /// Balances that predate Strike 5A stay at 0: their history is unknown, and
+  /// a fabricated revision is one a count could not detect.
+  revision       BigInt   @default(0)
   updatedAt      DateTime @updatedAt
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -573,18 +602,195 @@ model InventoryMovement {
   /// The sale or return that caused it, when there was one.
   sourceType String?
   sourceId   String? @db.Uuid
+  /// Which line of that document, when the document has lines.
+  ///
+  /// A transfer posts two legs for one line and both carry the same sourceId,
+  /// so without this the legs of two products are four rows told apart only by
+  /// guessing from the quantity. Null on every movement written before Strike
+  /// 5A: those have no line to point at, and inventing one would be inventing
+  /// provenance.
+  sourceLineId String? @db.Uuid
 
   actorUserId String?  @db.Uuid
   occurredAt  DateTime
   createdAt   DateTime @default(now())
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
   product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
 
   @@index([tenantId, branchId, productId, occurredAt])
   @@index([tenantId, sourceType, sourceId])
+  @@index([tenantId, sourceLineId])
   @@map("inventory_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Stock documents (Strike 5A)
+//
+// These explain *why* a merchant moved stock deliberately. They are not a
+// second stock truth: every one of them is finalized in the same transaction
+// as the movements it caused and the balances those movements moved
+// (ADR-0024 §1).
+// ---------------------------------------------------------------------------
+
+/// A merchant asserting the book is wrong, with a stated cause.
+model InventoryAdjustment {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  operationId String
+  requestHash String
+
+  /// Required. An unexplained correction is an unexplained loss.
+  reason String
+
+  actorUserId String   @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction, map: "inventory_adjustments_tenantId_branchId_fkey")
+  actor  User   @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction, map: "inventory_adjustments_tenantId_actorUserId_fkey")
+
+  lines InventoryAdjustmentLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, branchId, occurredAt])
+  @@map("inventory_adjustments")
+}
+
+model InventoryAdjustmentLine {
+  id           String @id @db.Uuid
+  tenantId     String @db.Uuid
+  adjustmentId String @db.Uuid
+  productId    String @db.Uuid
+
+  /// Signed, scaled by 1000. The one delta a client is allowed to state.
+  deltaQuantityScaled  BigInt
+  beforeQuantityScaled BigInt
+  afterQuantityScaled  BigInt
+  resultRevision       BigInt
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  adjustment InventoryAdjustment @relation(fields: [tenantId, adjustmentId], references: [tenantId, id], onDelete: Cascade, map: "inventory_adjustment_lines_tenantId_adjustmentId_fkey")
+  product    Product             @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction, map: "inventory_adjustment_lines_tenantId_productId_fkey")
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, adjustmentId, productId])
+  @@index([tenantId, productId])
+  @@map("inventory_adjustment_lines")
+}
+
+/// An absolute observation of what is physically on the shelf.
+model InventoryCount {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  operationId String
+  requestHash String
+  reason      String?
+
+  actorUserId String   @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction, map: "inventory_counts_tenantId_branchId_fkey")
+  actor  User   @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction, map: "inventory_counts_tenantId_actorUserId_fkey")
+
+  lines InventoryCountLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, branchId, occurredAt])
+  @@map("inventory_counts")
+}
+
+model InventoryCountLine {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  countId   String @db.Uuid
+  productId String @db.Uuid
+
+  /// The revision the counter was looking at — the whole concurrency contract.
+  expectedRevision BigInt
+
+  beforeQuantityScaled  BigInt
+  /// The observation. Absolute, non-negative, never an instruction.
+  countedQuantityScaled BigInt
+  /// Derived by the server under the balance lock, never supplied.
+  deltaQuantityScaled   BigInt
+  /// Equal to expectedRevision when the delta was zero: evidence recorded, no
+  /// movement written, nothing incremented.
+  resultRevision        BigInt
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  count   InventoryCount @relation(fields: [tenantId, countId], references: [tenantId, id], onDelete: Cascade, map: "inventory_count_lines_tenantId_countId_fkey")
+  product Product        @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction, map: "inventory_count_lines_tenantId_productId_fkey")
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, countId, productId])
+  @@index([tenantId, productId])
+  @@map("inventory_count_lines")
+}
+
+/// Stock moving between two branches, as one atomic document.
+model InventoryTransfer {
+  id           String @id @db.Uuid
+  tenantId     String @db.Uuid
+  fromBranchId String @db.Uuid
+  toBranchId   String @db.Uuid
+
+  operationId String
+  requestHash String
+  reason      String?
+
+  actorUserId String   @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromBranch Branch @relation("InventoryTransferSource", fields: [tenantId, fromBranchId], references: [tenantId, id], onDelete: NoAction, map: "inventory_transfers_tenantId_fromBranchId_fkey")
+  toBranch   Branch @relation("InventoryTransferDestination", fields: [tenantId, toBranchId], references: [tenantId, id], onDelete: NoAction, map: "inventory_transfers_tenantId_toBranchId_fkey")
+  actor      User   @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction, map: "inventory_transfers_tenantId_actorUserId_fkey")
+
+  lines InventoryTransferLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, fromBranchId, occurredAt])
+  @@index([tenantId, toBranchId, occurredAt])
+  @@map("inventory_transfers")
+}
+
+model InventoryTransferLine {
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  transferId String @db.Uuid
+  productId  String @db.Uuid
+
+  /// Positive. Direction is the branch pair, not a sign.
+  quantityScaled BigInt
+
+  sourceBeforeQuantityScaled      BigInt
+  sourceAfterQuantityScaled       BigInt
+  destinationBeforeQuantityScaled BigInt
+  destinationAfterQuantityScaled  BigInt
+  sourceResultRevision            BigInt
+  destinationResultRevision       BigInt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transfer InventoryTransfer @relation(fields: [tenantId, transferId], references: [tenantId, id], onDelete: Cascade, map: "inventory_transfer_lines_tenantId_transferId_fkey")
+  product  Product           @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction, map: "inventory_transfer_lines_tenantId_productId_fkey")
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, transferId, productId])
+  @@index([tenantId, productId])
+  @@map("inventory_transfer_lines")
 }
 
 // ---------------------------------------------------------------------------

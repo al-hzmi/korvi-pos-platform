@@ -21,6 +21,7 @@ export const PERMISSION_CATALOGUE: Readonly<
   'product.write': { ar: 'تعديل المنتجات', en: 'Edit products' },
   'inventory.read': { ar: 'عرض المخزون', en: 'View inventory' },
   'inventory.adjust': { ar: 'تسوية المخزون', en: 'Adjust inventory' },
+  'inventory.transfer': { ar: 'تحويل المخزون بين الفروع', en: 'Transfer inventory' },
   'sale.create': { ar: 'إتمام عملية بيع', en: 'Complete a sale' },
   'sale.discount': { ar: 'منح خصم', en: 'Grant a discount' },
   'sale.refund': { ar: 'استرجاع مبيعات', en: 'Refund a sale' },

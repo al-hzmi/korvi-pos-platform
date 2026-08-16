@@ -15,6 +15,7 @@ interface BalanceRow {
   branchId: string;
   productId: string;
   quantityScaled: bigint;
+  revision: bigint;
 }
 
 function toDomain(scope: TenantScope, row: BalanceRow): InventoryBalance {
@@ -23,6 +24,10 @@ function toDomain(scope: TenantScope, row: BalanceRow): InventoryBalance {
     branchId: row.branchId,
     productId: row.productId,
     quantityScaled: minor(row.quantityScaled),
+    // Decimal integer string, never a Number: a revision is a counter that a
+    // count submits back to us, and 2^53 is not a boundary worth discovering
+    // in a merchant's data (ADR-0024 §A).
+    revision: row.revision.toString(),
   };
 }
 
@@ -37,12 +42,25 @@ function toDomain(scope: TenantScope, row: BalanceRow): InventoryBalance {
  * selling the last unit of the same product at the same moment would both read
  * 1 and both write 0; `increment` makes the arithmetic happen in the database,
  * under its row lock, so the second sees 0 and can be refused.
+ *
+ * ## Revision
+ *
+ * Every path below moves `revision` by exactly one, in the same statement that
+ * moves the quantity — so a movement cannot commit without its revision step,
+ * and a revision cannot step without a movement to explain it. A balance
+ * created by its first movement is revision 1 (ADR-0024 §A).
+ *
+ * This is the shared primitive, so checkout and returns increment it too. That
+ * is deliberate: a stock count has to notice a sale that happened while
+ * somebody was walking the aisle, and it can only notice movements that were
+ * counted.
  */
 export async function applyMovementWithin(
   tx: TransactionClient,
   tenant: string,
   movement: InventoryMovementInput,
   allowNegative = true,
+  sourceLineId: string | null = null,
 ): Promise<BalanceRow> {
   const quantity = BigInt(movement.quantityScaled);
 
@@ -57,6 +75,7 @@ export async function applyMovementWithin(
       reason: movement.reason,
       sourceType: movement.sourceType,
       sourceId: movement.sourceId,
+      sourceLineId,
       actorUserId: movement.actorUserId,
       occurredAt: new Date(movement.occurredAt),
     },
@@ -76,8 +95,9 @@ export async function applyMovementWithin(
         branchId: movement.branchId,
         productId: movement.productId,
         quantityScaled: quantity,
+        revision: 1n,
       },
-      update: { quantityScaled: { increment: quantity } },
+      update: { quantityScaled: { increment: quantity }, revision: { increment: 1n } },
     });
   }
 
@@ -87,15 +107,16 @@ export async function applyMovementWithin(
   //
   // The predicate is evaluated after the row lock is taken, so the second
   // transaction re-reads what the first committed and matches nothing.
-  const updated = await tx.$queryRaw<{ quantityScaled: bigint }[]>`
+  const updated = await tx.$queryRaw<{ quantityScaled: bigint; revision: bigint }[]>`
     UPDATE "inventory_balances"
        SET "quantityScaled" = "quantityScaled" + ${quantity},
+           "revision" = "revision" + 1,
            "updatedAt" = now()
      WHERE "tenantId" = ${tenant}::uuid
        AND "branchId" = ${movement.branchId}::uuid
        AND "productId" = ${movement.productId}::uuid
        AND "quantityScaled" + ${quantity} >= 0
-    RETURNING "quantityScaled"`;
+    RETURNING "quantityScaled", "revision"`;
 
   const row = updated.at(0);
   if (row !== undefined) {
@@ -104,6 +125,7 @@ export async function applyMovementWithin(
       branchId: movement.branchId,
       productId: movement.productId,
       quantityScaled: row.quantityScaled,
+      revision: row.revision,
     };
   }
 
@@ -129,8 +151,9 @@ export async function applyMovementWithin(
       branchId: movement.branchId,
       productId: movement.productId,
       quantityScaled: quantity,
+      revision: 1n,
     },
-    update: { quantityScaled: { increment: quantity } },
+    update: { quantityScaled: { increment: quantity }, revision: { increment: 1n } },
   });
   return created;
 }

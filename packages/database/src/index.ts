@@ -18,6 +18,7 @@ export {
   MerchantAdminRefusedError,
   PlanEntitlementRefusedError,
   OwnerBootstrapRefusedError,
+  StockOperationRefusedError,
 } from './errors.js';
 export type {
   TenantProvisioningRefusal,
@@ -25,6 +26,7 @@ export type {
   MerchantAdminRefusal,
   PlanEntitlementRefusal,
   OwnerBootstrapRefusal,
+  StockOperationRefusal,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
@@ -166,3 +168,24 @@ export type {
   OwnerBootstrapAcceptance,
 } from './bootstrap/owner-bootstrap.js';
 export { verifyOwnerBootstrapCapability } from './bootstrap/capability.js';
+
+// Merchant stock authority (Strike 5A). Each of these takes a server-derived
+// actor and opens its own tenant-scoped transaction, so there is no variant on
+// this surface that accepts a raw tenant or an open transaction — the same
+// reason `applyMovementWithin` stays internal.
+export {
+  recordInventoryAdjustment,
+  recordInventoryCount,
+  recordInventoryTransfer,
+} from './inventory/stock-ledger.js';
+export type {
+  StockActor,
+  StockLineResult,
+  AdjustmentResult,
+  CountLineResult,
+  CountResult,
+  TransferLineResult,
+  TransferResult,
+} from './inventory/stock-ledger.js';
+export { listBalancePage, MAX_BALANCE_PAGE } from './inventory/balances.js';
+export type { BalancePage, BalancePageRow } from './inventory/balances.js';

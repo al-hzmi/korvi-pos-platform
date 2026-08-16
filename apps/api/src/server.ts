@@ -22,9 +22,11 @@ import { createDrawerService } from './shifts/service.js';
 import { registerBusinessRoutes } from './routes/business.js';
 import { createMerchantAdminService } from './admin/service.js';
 import { createMerchantProductService } from './catalog/service.js';
+import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
+import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -35,6 +37,7 @@ import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
 import type { MerchantAdminService } from './admin/service.js';
 import type { MerchantProductService } from './catalog/service.js';
+import type { MerchantInventoryService } from './inventory/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
@@ -79,6 +82,16 @@ export interface ServerDeps {
    * creation. It is separate from cashier reads and requires product.write.
    */
   readonly catalog?: MerchantProductService;
+
+  /**
+   * Merchant stock authority: adjustments, counts and branch transfers.
+   *
+   * Separate from `catalog` because they are different permissions over
+   * different truths — one edits what a product *is*, the other moves how much
+   * of it exists — and sharing an object would make it easy to hand a
+   * catalogue route the stock ledger.
+   */
+  readonly inventory?: MerchantInventoryService;
 
   /**
    * Read-only onboarding readiness authority.
@@ -306,6 +319,29 @@ function lazyCatalogService(config: ApiConfig): MerchantProductService {
 }
 
 /**
+ * Merchant stock authority, built once on first use like the others so /health
+ * never needs a database connection.
+ */
+function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
+  let built: MerchantInventoryService | null = null;
+
+  const resolve = (): MerchantInventoryService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantInventoryService({ prisma: createPrismaClient(url) });
+    return built;
+  };
+
+  return {
+    balances: (principal, query) => resolve().balances(principal, query),
+    adjust: (principal, request) => resolve().adjust(principal, request),
+    count: (principal, request) => resolve().count(principal, request),
+    transfer: (principal, request) => resolve().transfer(principal, request),
+  };
+}
+
+/**
  * Read-only onboarding authority, constructed lazily like the other database
  * services so /health never needs a database connection.
  */
@@ -389,6 +425,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
   registerCatalogAdminRoutes(app, {
     service: deps.catalog ?? lazyCatalogService(config),
+    guards,
+  });
+  registerInventoryAdminRoutes(app, {
+    service: deps.inventory ?? lazyInventoryService(config),
     guards,
   });
   registerBootstrapRoutes(app, {

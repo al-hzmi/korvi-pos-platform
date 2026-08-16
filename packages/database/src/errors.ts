@@ -264,3 +264,36 @@ export class PlanEntitlementRefusedError extends DatabaseError {
     this.detail = detail;
   }
 }
+
+/**
+ * A merchant stock operation was refused while its rows were held.
+ *
+ * Every detail here is decided *after* the balance rows have been locked in
+ * canonical order, which is what makes it an answer rather than a guess:
+ * `insufficient-stock` means the shelf was empty when the mutation ran, not
+ * that a preflight read thought so, and `stock-changed` means the balance the
+ * counter observed had genuinely moved on by the time the count was submitted
+ * (ADR-0024 §5, Strike 5A §E).
+ */
+export type StockOperationRefusal =
+  | 'unknown-branch'
+  | 'inactive-branch'
+  | 'unknown-product'
+  | 'inactive-product'
+  | 'untracked-product'
+  | 'insufficient-stock'
+  | 'stock-changed'
+  | 'idempotency-conflict';
+
+export class StockOperationRefusedError extends DatabaseError {
+  public override readonly name = 'StockOperationRefusedError';
+  public readonly detail: StockOperationRefusal;
+  /** The product the refusal is about, when one line is responsible. */
+  public readonly productId: string | null;
+
+  public constructor(detail: StockOperationRefusal, productId: string | null = null) {
+    super(`Stock operation refused: ${detail}`);
+    this.detail = detail;
+    this.productId = productId;
+  }
+}

@@ -104,7 +104,7 @@ function fake(replies: Replies = {}): Fake {
             }
             if (sql.includes('"idempotency_keys"')) return Promise.resolve([{ id: 'ik1' }]);
             if (sql.includes('"inventory_balances"')) {
-              return Promise.resolve([{ quantityScaled: 0n }]);
+              return Promise.resolve([{ quantityScaled: 0n, revision: 1n }]);
             }
             return Promise.resolve([{ sequence: 12 }]);
           };
@@ -239,7 +239,7 @@ async function exerciseEverything(f: Fake): Promise<void> {
 /** Replies rich enough that mapping code runs rather than short-circuiting. */
 const FULL_REPLIES: Replies = {
   'inventoryBalance.upsert': [
-    { tenantId: TENANT, branchId: 'b1', productId: 'p1', quantityScaled: -1000n },
+    { tenantId: TENANT, branchId: 'b1', productId: 'p1', quantityScaled: -1000n, revision: 1n },
   ],
   'customer.create': [
     {

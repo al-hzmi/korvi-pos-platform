@@ -22,9 +22,12 @@ const actorFor = (role: RoleName): Actor => ({
 });
 
 describe('permission catalogue', () => {
-  it('lists seventeen distinct permissions', () => {
-    expect(PERMISSIONS).toHaveLength(17);
-    expect(new Set(PERMISSIONS).size).toBe(17);
+  it('lists eighteen distinct permissions', () => {
+    // Eighteen since Strike 5A added `inventory.transfer`. Moving stock between
+    // branches is its own authority: it changes two branches' books at once,
+    // and a merchant may want to grant it separately from writing stock off.
+    expect(PERMISSIONS).toHaveLength(18);
+    expect(new Set(PERMISSIONS).size).toBe(18);
   });
 
   it('grants the owner every permission', () => {
