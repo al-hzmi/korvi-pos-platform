@@ -141,12 +141,18 @@ describe.skipIf(url === '')('product bootstrap authority, live', () => {
     });
 
     await withTenant(prisma, target.tenantId, async (tx) => {
-      expect(await tx.product.count({ where: { tenantId: target.tenantId, id: product.id } })).toBe(1);
+      expect(await tx.product.count({ where: { tenantId: target.tenantId, id: product.id } })).toBe(
+        1,
+      );
       expect(
-        await tx.productPrice.count({ where: { tenantId: target.tenantId, productId: product.id } }),
+        await tx.productPrice.count({
+          where: { tenantId: target.tenantId, productId: product.id },
+        }),
       ).toBe(1);
       expect(
-        await tx.productBarcode.count({ where: { tenantId: target.tenantId, productId: product.id } }),
+        await tx.productBarcode.count({
+          where: { tenantId: target.tenantId, productId: product.id },
+        }),
       ).toBe(1);
       expect(
         await tx.auditEvent.count({
@@ -163,10 +169,15 @@ describe.skipIf(url === '')('product bootstrap authority, live', () => {
     const target = await shop(SLUGS[1]);
 
     const missing = await refusal(() =>
-      createBootstrapProduct(prisma, scope(target.tenantId), { userId: target.actorUserId }, {
-        ...draft('NO-BARCODE-1', 'unused'),
-        barcode: null,
-      }),
+      createBootstrapProduct(
+        prisma,
+        scope(target.tenantId),
+        { userId: target.actorUserId },
+        {
+          ...draft('NO-BARCODE-1', 'unused'),
+          barcode: null,
+        },
+      ),
     );
     expect(missing.detail).toBe('barcode-required');
 
@@ -251,7 +262,9 @@ describe.skipIf(url === '')('product bootstrap authority, live', () => {
     ).toBe('barcode-taken');
 
     await withTenant(prisma, target.tenantId, async (tx) => {
-      expect(await tx.product.count({ where: { tenantId: target.tenantId, sku: 'BARCODE-B' } })).toBe(0);
+      expect(
+        await tx.product.count({ where: { tenantId: target.tenantId, sku: 'BARCODE-B' } }),
+      ).toBe(0);
       expect(
         await tx.auditEvent.count({
           where: { tenantId: target.tenantId, eventType: 'product.created' },

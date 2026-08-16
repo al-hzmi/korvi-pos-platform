@@ -63,9 +63,9 @@ describe('product bootstrap invariants', () => {
 
   it('refuses fractional, negative and over-range VAT rates', () => {
     for (const vat of [-1, 1.5, 10_001]) {
-      expect(() => normalizeProductBootstrap({ ...valid(), vatBasisPoints: vat }, DEFAULT_VAT)).toThrow(
-        ProductBootstrapError,
-      );
+      expect(() =>
+        normalizeProductBootstrap({ ...valid(), vatBasisPoints: vat }, DEFAULT_VAT),
+      ).toThrow(ProductBootstrapError);
     }
   });
 

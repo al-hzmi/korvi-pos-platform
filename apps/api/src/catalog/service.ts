@@ -1,18 +1,7 @@
 import { tenantId as brandTenantId } from '@korvi/domain';
-import {
-  ProductBootstrapRefusedError,
-  createBootstrapProduct,
-} from '@korvi/database';
-import type {
-  AdminProductBootstrap,
-  PrismaClient,
-  ProductBootstrapRefusal,
-} from '@korvi/database';
-import type {
-  AuthenticatedPrincipal,
-  ProductBootstrapDraft,
-  TenantScope,
-} from '@korvi/domain';
+import { ProductBootstrapRefusedError, createBootstrapProduct } from '@korvi/database';
+import type { AdminProductBootstrap, PrismaClient, ProductBootstrapRefusal } from '@korvi/database';
+import type { AuthenticatedPrincipal, ProductBootstrapDraft, TenantScope } from '@korvi/domain';
 
 /**
  * Merchant catalogue bootstrap at the API boundary.

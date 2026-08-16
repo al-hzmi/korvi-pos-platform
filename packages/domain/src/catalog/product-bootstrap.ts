@@ -17,7 +17,15 @@ export const MAX_UNIT_LABEL = 32;
 export const MAX_PRODUCT_BARCODE = 64;
 
 const MINOR_PATTERN = /^(0|[1-9][0-9]{0,14})$/;
-const CONTROL = /[\u0000-\u001f\u007f]/;
+function hasAsciiControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
+      return true;
+    }
+  }
+  return false;
+}
 const WHITESPACE = /\s/u;
 
 export class ProductBootstrapError extends DomainError {
@@ -50,7 +58,7 @@ export interface NormalizedProductBootstrap {
 
 function normalizedText(value: string, max: number, label: string): string {
   const candidate = value.normalize('NFKC').trim();
-  if (candidate === '' || candidate.length > max || CONTROL.test(candidate)) {
+  if (candidate === '' || candidate.length > max || hasAsciiControlCharacter(candidate)) {
     throw new ProductBootstrapError(`Invalid ${label}.`);
   }
   return candidate;
@@ -74,7 +82,7 @@ export function normalizeOptionalProductName(value: string | null | undefined): 
   if (value === null || value === undefined) return null;
   const candidate = value.normalize('NFKC').trim();
   if (candidate === '') return null;
-  if (candidate.length > MAX_PRODUCT_NAME || CONTROL.test(candidate)) {
+  if (candidate.length > MAX_PRODUCT_NAME || hasAsciiControlCharacter(candidate)) {
     throw new ProductBootstrapError('Invalid optional product name.');
   }
   return candidate;
@@ -90,7 +98,7 @@ export function normalizeProductBarcode(value: string | null | undefined): strin
   if (candidate === '') return null;
   if (
     candidate.length > MAX_PRODUCT_BARCODE ||
-    CONTROL.test(candidate) ||
+    hasAsciiControlCharacter(candidate) ||
     WHITESPACE.test(candidate)
   ) {
     throw new ProductBootstrapError('Invalid product barcode.');
@@ -100,7 +108,9 @@ export function normalizeProductBarcode(value: string | null | undefined): strin
 
 export function normalizeProductPriceMinor(value: string): string {
   if (!MINOR_PATTERN.test(value)) {
-    throw new ProductBootstrapError('Product price must be an exact non-negative minor-unit integer.');
+    throw new ProductBootstrapError(
+      'Product price must be an exact non-negative minor-unit integer.',
+    );
   }
   return value;
 }
