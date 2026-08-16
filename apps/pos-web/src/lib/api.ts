@@ -3,6 +3,8 @@ import type {
   AdminBranch,
   AdminMember,
   AdminPage,
+  AdminProductBootstrap,
+  AdminProductCreateInput,
   AdminRole,
   AdminRoleAssignmentResult,
   AdminSettingsPatch,
@@ -11,6 +13,7 @@ import type {
   CheckoutRequest,
   DashboardSummary,
   CheckoutResponse,
+  OnboardingReadiness,
   Principal,
   ProductSummary,
   ShiftSummary,
@@ -100,6 +103,8 @@ export interface ApiClient {
   }): Promise<ShiftSummary>;
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
 
+  onboardingReadiness(options?: RequestOptions): Promise<OnboardingReadiness>;
+  createAdminProduct(input: AdminProductCreateInput): Promise<AdminProductBootstrap>;
   adminSettings(options?: RequestOptions): Promise<AdminTenantSettings>;
   updateAdminSettings(patch: AdminSettingsPatch): Promise<AdminTenantSettings>;
   adminBranches(
@@ -294,6 +299,29 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
       } finally {
         clearTimeout(timer);
       }
+    },
+
+    async onboardingReadiness(options) {
+      return (await call(
+        '/v1/admin/onboarding/readiness',
+        { method: 'GET' },
+        options,
+      )) as OnboardingReadiness;
+    },
+
+    async createAdminProduct(input) {
+      return (await call(
+        '/v1/admin/products',
+        json({
+          sku: input.sku,
+          nameAr: input.nameAr,
+          ...(input.nameEn === undefined ? {} : { nameEn: input.nameEn }),
+          productType: input.productType,
+          unitLabel: input.unitLabel,
+          priceMinor: input.priceMinor,
+          ...(input.barcode === undefined ? {} : { barcode: input.barcode }),
+        }),
+      )) as AdminProductBootstrap;
     },
 
     async adminSettings(options) {
