@@ -5,7 +5,7 @@ Rule: roadmap can defer accepted capabilities; it cannot delete them.
 
 ## Completed foundation through current main
 
-The repository has established the platform/domain foundation, strict money and quantity rules, identifiers, tenancy/RLS, authentication/RBAC, cashier server and UI foundations, settlement, commercial dashboard foundation, original-sale returns/refunds, and shift close/cash-drawer reconciliation. These are engineering milestones, not a claim that the whole product is launch-ready or ZATCA Phase 2 compliant.
+The repository has established the platform/domain foundation, strict money and quantity rules, identifiers, tenancy/RLS, authentication/RBAC, cashier server and UI foundations, settlement, commercial dashboard foundation, original-sale returns/refunds, shift close/cash-drawer reconciliation, and the substantially established SaaS control plane through Stage 4. These are engineering milestones, not a claim that the whole product is launch-ready or ZATCA Phase 2 compliant.
 
 ## Execution order
 
@@ -32,9 +32,16 @@ Sequence:
 3. **4C Plan/Entitlement Foundation — substantially established.** Stable `(planKey, planRevision)` identity, immutable assignment snapshots, deterministic entitlement evaluation, orthogonal commercial account state, RLS, audit, idempotency, rollback and concurrency proof are established (ADR-0020). No payment/billing provider, merchant plan-write surface or universal route enforcement is claimed, so this is not production ready.
 4. **4D Onboarding — substantially established.** Evidence-derived readiness authority and authenticated readiness API, one-time signed initial-owner bootstrap, minimal audited product bootstrap authority, and guided merchant onboarding UI are implemented and tested (ADR-0021 through ADR-0023). Readiness is derived from live tenant/settings/branch/terminal/administrator/product truth; no persisted fake completion flag exists. Initial owner bootstrap is permanently closed after successful consumption and is not a recovery flow. General staff credential invitation/recovery, control-plane operator transport, billing/provider activation and Production Operations remain separate work, so 4D is not by itself a Production Ready claim.
 
-### Stage 5 — Inventory & Purchasing Foundation — **NEXT**
+### Stage 5 — Inventory & Purchasing Foundation — **IN PROGRESS**
 
-One stock ledger and causality model; adjustments/counts/transfers; supplier/PO/receiving; MOQ/multiple rules; costing foundation; branch stock. Preserve current sale/return semantics during migration.
+One stock ledger and causality model; adjustments/counts/transfers; supplier/PO/receiving; MOQ/multiple rules; costing foundation; branch stock. Preserve current sale/return semantics during migration. ADR-0024 defines the authority boundary.
+
+Sequence:
+
+1. **5A Stock Ledger Integrity — ACTIVE.** Balance revision, authoritative adjustments, concurrency-safe absolute counts, atomic branch transfers, idempotency, audit, strict RLS and sale/return regression proof. C0 data-integrity strike.
+2. **5B Purchasing & Receiving.** Suppliers, purchase orders, partial receiving and receipt-to-stock atomicity. Purchase orders do not mutate stock; accepted receipts do.
+3. **5C Costing Authority.** Exact integer valuation foundation with explicit unknown historical provenance, deterministic conservation/rounding and original-sale cost restoration on returns.
+4. **5D Inventory & Purchasing UX.** Operational merchant UI over the server authorities, including branch stock and purchasing workflows. UI never becomes stock/cost authority.
 
 ### Stage 6 — Offline & Device Continuity
 
