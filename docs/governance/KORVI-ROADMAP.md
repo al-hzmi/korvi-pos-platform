@@ -21,18 +21,18 @@ Checkout, tender settlement, sale persistence, cashier experience foundation, or
 
 Adopt the five governance documents: Master Product Directive, Capability Matrix, Architecture Map, Release Gates, Roadmap. They become the anti-drift control layer before expanding product breadth.
 
-### Stage 4 — SaaS Control Plane — **IN PROGRESS**
+### Stage 4 — SaaS Control Plane — **SUBSTANTIALLY ESTABLISHED**
 
 Sequence:
 
-1. **4A Tenant Lifecycle & Provisioning Authority** — **substantially established.** Lifecycle states, provisioning transaction, safe activation/suspension/reactivation rules, idempotency, RLS/security, audit and live DB proof are in place (ADR-0018). It is backend authority only: no control-plane transport, no operator identity model and no UI, so the capability is not yet production ready.
+1. **4A Tenant Lifecycle & Provisioning Authority** — **substantially established.** Lifecycle states, provisioning transaction, safe activation/suspension/reactivation rules, idempotency, RLS/security, audit and live DB proof are in place (ADR-0018). It is backend authority only: no control-plane transport or operator identity model, so the capability is not yet production ready.
 2. **4B Control-Plane Administration — substantially established.**
    - **4B-1 Merchant administration authority — substantially established.** Server authority and authenticated API for tenant settings, branches, terminals, users/memberships and role assignment, with session-invalidation and last-administrator protection proved against live PostgreSQL (ADR-0019).
-   - **4B-2 Merchant administration UI — substantially established.** Settings, branches, terminals, members, roles and permissions screens operate over the 4B-1 authority and add no independent authority. Credential/invitation flow remains outside this milestone, so the capability is not yet production ready.
+   - **4B-2 Merchant administration UI — substantially established.** Settings, branches, terminals, members, roles and permissions screens operate over the 4B-1 authority and add no independent authority. General staff credential/invitation lifecycle remains outside this milestone, so the capability is not yet production ready.
 3. **4C Plan/Entitlement Foundation — substantially established.** Stable `(planKey, planRevision)` identity, immutable assignment snapshots, deterministic entitlement evaluation, orthogonal commercial account state, RLS, audit, idempotency, rollback and concurrency proof are established (ADR-0020). No payment/billing provider, merchant plan-write surface or universal route enforcement is claimed, so this is not production ready.
-4. **4D Onboarding — NEXT.** Guided merchant setup, branch/terminal/user/product readiness checks, no fake “ready” state.
+4. **4D Onboarding — substantially established.** Evidence-derived readiness authority and authenticated readiness API, one-time signed initial-owner bootstrap, minimal audited product bootstrap authority, and guided merchant onboarding UI are implemented and tested (ADR-0021 through ADR-0023). Readiness is derived from live tenant/settings/branch/terminal/administrator/product truth; no persisted fake completion flag exists. Initial owner bootstrap is permanently closed after successful consumption and is not a recovery flow. General staff credential invitation/recovery, control-plane operator transport, billing/provider activation and Production Operations remain separate work, so 4D is not by itself a Production Ready claim.
 
-### Stage 5 — Inventory & Purchasing Foundation
+### Stage 5 — Inventory & Purchasing Foundation — **NEXT**
 
 One stock ledger and causality model; adjustments/counts/transfers; supplier/PO/receiving; MOQ/multiple rules; costing foundation; branch stock. Preserve current sale/return semantics during migration.
 
