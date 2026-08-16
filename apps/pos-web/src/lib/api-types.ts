@@ -55,6 +55,58 @@ export interface ProductSummary {
   readonly trackInventory: boolean;
 }
 
+/**
+ * The server-created catalogue row returned by POST /v1/admin/products.
+ *
+ * It is intentionally not a write model: isActive, trackInventory, the VAT
+ * fallback and timestamps are facts the server decided, never fields the
+ * browser is allowed to assert.
+ */
+export interface AdminProductBootstrap extends ProductSummary {
+  readonly unitLabel: string;
+  readonly isActive: true;
+  readonly createdAt: string;
+}
+
+export interface AdminProductCreateInput {
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn?: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  /** Exact halalas as an integer string. */
+  readonly priceMinor: string;
+  readonly barcode?: string | null;
+}
+
+export type OnboardingCheckKey =
+  | 'tenant-active'
+  | 'settings-present'
+  | 'active-branch'
+  | 'active-terminal'
+  | 'viable-administrator'
+  | 'active-product';
+
+export type OnboardingRemediation =
+  | 'tenant-lifecycle'
+  | 'merchant-settings'
+  | 'branch-terminal-admin'
+  | 'member-role-admin'
+  | 'product-catalogue';
+
+export interface OnboardingReadinessCheck {
+  readonly key: OnboardingCheckKey;
+  readonly ready: boolean;
+  readonly blocker: string | null;
+  readonly remediation: OnboardingRemediation | null;
+}
+
+/** Evidence-derived current truth; there is no persisted completion flag. */
+export interface OnboardingReadiness {
+  readonly ready: boolean;
+  readonly checks: readonly OnboardingReadinessCheck[];
+}
+
 export interface ShiftSummary {
   readonly id: string;
   readonly branchId: string;
