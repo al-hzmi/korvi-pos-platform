@@ -13,6 +13,9 @@ export const PERMISSIONS = [
   'inventory.read',
   'inventory.adjust',
   'inventory.transfer',
+  'purchasing.read',
+  'purchasing.manage',
+  'purchasing.receive',
   'sale.create',
   'sale.discount',
   'sale.refund',
@@ -62,6 +65,14 @@ const MANAGER: readonly Permission[] = [
   // Moving stock between branches is a supervisor's act, not a till's: it
   // changes two branches' books at once and no cashier owns both (ADR-0024).
   'inventory.transfer',
+  // Purchasing is a branch-management responsibility: a manager orders from
+  // suppliers and signs for what the van delivers. `receive` is separate from
+  // `manage` because they are separate acts — committing the shop to a
+  // purchase, and asserting that goods physically arrived — and a merchant may
+  // reasonably grant one without the other (ADR-0024 Permissions).
+  'purchasing.read',
+  'purchasing.manage',
+  'purchasing.receive',
   'product.write',
   'report.read',
 ];

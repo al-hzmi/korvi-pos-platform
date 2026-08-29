@@ -19,6 +19,7 @@ export {
   PlanEntitlementRefusedError,
   OwnerBootstrapRefusedError,
   StockOperationRefusedError,
+  PurchasingRefusedError,
 } from './errors.js';
 export type {
   TenantProvisioningRefusal,
@@ -27,6 +28,7 @@ export type {
   PlanEntitlementRefusal,
   OwnerBootstrapRefusal,
   StockOperationRefusal,
+  PurchasingRefusal,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
@@ -189,3 +191,51 @@ export type {
 } from './inventory/stock-ledger.js';
 export { listBalancePage, MAX_BALANCE_PAGE } from './inventory/balances.js';
 export type { BalancePage, BalancePageRow } from './inventory/balances.js';
+
+// Purchasing and receiving authority (Strike 5B). Same rule as above: every
+// function here derives its tenant from a server-supplied actor and opens its
+// own tenant-scoped transaction.
+//
+// `lockBranches`, `lockProducts`, `lockBalances`, `lockedOrThrow` and
+// `claimOperation` are exported from `inventory/stock-ledger.js` for these
+// modules to share, and are deliberately *not* re-exported here: each takes a
+// raw tenant string and an open transaction, which is safe only inside
+// `withTenant`.
+export {
+  createSupplier,
+  updateSupplier,
+  listSuppliers,
+  getSupplier,
+  MAX_SUPPLIER_PAGE,
+} from './purchasing/suppliers.js';
+export type {
+  SupplierActor,
+  SupplierRecord,
+  SupplierResult,
+  SupplierPage,
+} from './purchasing/suppliers.js';
+export {
+  createPurchaseOrder,
+  listPurchaseOrders,
+  getPurchaseOrder,
+  MAX_PURCHASE_ORDER_PAGE,
+} from './purchasing/purchase-orders.js';
+export type {
+  PurchasingActor,
+  PurchaseOrderLineRecord,
+  PurchaseOrderRecord,
+  PurchaseOrderResult,
+  PurchaseOrderSummary,
+  PurchaseOrderPage,
+} from './purchasing/purchase-orders.js';
+export {
+  recordPurchaseReceipt,
+  listPurchaseReceipts,
+  MAX_RECEIPT_PAGE,
+} from './purchasing/receiving.js';
+export type {
+  ReceivingActor,
+  PurchaseReceiptLineResult,
+  PurchaseReceiptResult,
+  PurchaseReceiptSummary,
+} from './purchasing/receiving.js';

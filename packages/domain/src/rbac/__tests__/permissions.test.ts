@@ -22,12 +22,19 @@ const actorFor = (role: RoleName): Actor => ({
 });
 
 describe('permission catalogue', () => {
-  it('lists eighteen distinct permissions', () => {
-    // Eighteen since Strike 5A added `inventory.transfer`. Moving stock between
-    // branches is its own authority: it changes two branches' books at once,
-    // and a merchant may want to grant it separately from writing stock off.
-    expect(PERMISSIONS).toHaveLength(18);
-    expect(new Set(PERMISSIONS).size).toBe(18);
+  it('lists twenty-one distinct permissions', () => {
+    // Eighteen after Strike 5A added `inventory.transfer` — moving stock
+    // between branches is its own authority, since it changes two branches'
+    // books at once and a merchant may want to grant it separately from
+    // writing stock off.
+    //
+    // Twenty-one after Strike 5B added `purchasing.read`, `purchasing.manage`
+    // and `purchasing.receive`. Reading suppliers, committing the shop to a
+    // purchase, and asserting that goods physically arrived are three
+    // different acts with three different consequences, and receiving is the
+    // only one of them that moves stock (ADR-0024 §7).
+    expect(PERMISSIONS).toHaveLength(21);
+    expect(new Set(PERMISSIONS).size).toBe(21);
   });
 
   it('grants the owner every permission', () => {
@@ -64,6 +71,11 @@ describe('least privilege', () => {
       'product.write',
       'report.read',
       'shift.cash-movement',
+      'inventory.transfer',
+      // A till neither orders from suppliers nor signs for a delivery.
+      'purchasing.read',
+      'purchasing.manage',
+      'purchasing.receive',
     ] as const) {
       expect(can(cashier, forbidden), forbidden).toBe(false);
       expect(() => requirePermission(cashier, forbidden)).toThrow(PermissionDeniedError);

@@ -22,6 +22,12 @@ export const PERMISSION_CATALOGUE: Readonly<
   'inventory.read': { ar: 'عرض المخزون', en: 'View inventory' },
   'inventory.adjust': { ar: 'تسوية المخزون', en: 'Adjust inventory' },
   'inventory.transfer': { ar: 'تحويل المخزون بين الفروع', en: 'Transfer inventory' },
+  'purchasing.read': { ar: 'عرض المشتريات والموردين', en: 'View purchasing and suppliers' },
+  'purchasing.manage': {
+    ar: 'إدارة الموردين وأوامر الشراء',
+    en: 'Manage suppliers and purchase orders',
+  },
+  'purchasing.receive': { ar: 'استلام بضاعة أوامر الشراء', en: 'Receive purchase order goods' },
   'sale.create': { ar: 'إتمام عملية بيع', en: 'Complete a sale' },
   'sale.discount': { ar: 'منح خصم', en: 'Grant a discount' },
   'sale.refund': { ar: 'استرجاع مبيعات', en: 'Refund a sale' },
