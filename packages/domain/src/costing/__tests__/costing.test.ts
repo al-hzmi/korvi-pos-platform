@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CostingCapacityError,
   CostingRequestError,
   allocateOriginalSaleReturnBasis,
   applyKnownInflowAgainstDeficit,
@@ -128,6 +129,17 @@ describe('known-cost inflow into negative stock', () => {
     expect(result.knownQuantityScaled).toBe(0n);
     expect(result.knownValueMinor).toBe(0n);
   });
+
+  it('refuses an aggregate value that cannot fit PostgreSQL BIGINT', () => {
+    expect(() =>
+      applyKnownInflowAgainstDeficit(
+        1000n,
+        { knownQuantityScaled: 1000n, knownValueMinor: 9_223_372_036_854_775_807n },
+        1000n,
+        1n,
+      ),
+    ).toThrow(CostingCapacityError);
+  });
 });
 
 describe('prospective bootstrap', () => {
@@ -148,6 +160,16 @@ describe('prospective bootstrap', () => {
         bootstrapUnknownCost(2000n, { knownQuantityScaled: 2000n, knownValueMinor: 80n }, 10n),
       ),
     ).toBe('nothing-to-value');
+  });
+
+  it('refuses before a bootstrap would overflow the stored aggregate value', () => {
+    expect(() =>
+      bootstrapUnknownCost(
+        2000n,
+        { knownQuantityScaled: 1000n, knownValueMinor: 9_223_372_036_854_775_807n },
+        1n,
+      ),
+    ).toThrow(CostingCapacityError);
   });
 });
 

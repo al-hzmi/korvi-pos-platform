@@ -1,4 +1,8 @@
-import { PurchasingRequestError, requirePrincipalPermission } from '@korvi/domain';
+import {
+  CostingCapacityError,
+  PurchasingRequestError,
+  requirePrincipalPermission,
+} from '@korvi/domain';
 import {
   PurchasingRefusedError,
   createPurchaseOrder,
@@ -114,13 +118,15 @@ export interface MerchantPurchasingService {
 }
 
 /**
- * Turn the two deliberate refusal vocabularies into one result value.
+ * Turn deliberate request, capacity and locked-operation refusals into one
+ * result value.
  *
  * `PurchasingRequestError` is a malformed request, decided before anything is
- * locked; `PurchasingRefusedError` is a refusal decided under the row locks.
- * Both are answers. Anything else is rethrown, because an unexpected failure
- * must not be laundered into a tidy "your request was invalid" — that is how a
- * database outage gets reported to a merchant as a typo.
+ * locked; `CostingCapacityError` and `PurchasingRefusedError` are refusals
+ * decided under the row locks. All are answers. Anything else is rethrown,
+ * because an unexpected failure must not be laundered into a tidy "your
+ * request was invalid" — that is how a database outage gets reported to a
+ * merchant as a typo.
  */
 async function attempt<T>(work: () => Promise<T>): Promise<PurchasingResult<T>> {
   try {
@@ -128,6 +134,9 @@ async function attempt<T>(work: () => Promise<T>): Promise<PurchasingResult<T>> 
   } catch (error) {
     if (error instanceof PurchasingRequestError) {
       return { outcome: 'failure', reason: error.detail, subjectId: null };
+    }
+    if (error instanceof CostingCapacityError) {
+      return { outcome: 'failure', reason: 'invalid-money', subjectId: null };
     }
     if (error instanceof PurchasingRefusedError) {
       return { outcome: 'failure', reason: error.detail, subjectId: error.subjectId };

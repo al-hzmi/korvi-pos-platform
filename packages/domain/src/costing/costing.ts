@@ -19,6 +19,20 @@ export class CostingRequestError extends DomainError {
   }
 }
 
+/**
+ * A valid individual value cannot be added to the current cost pool without
+ * exceeding the database's exact BIGINT representation. This is an expected
+ * capacity refusal, not a driver fault and not evidence that the stored pool
+ * is corrupt.
+ */
+export class CostingCapacityError extends DomainError {
+  public override readonly name = 'CostingCapacityError';
+
+  public constructor() {
+    super('The resulting inventory cost value exceeds PostgreSQL BIGINT storage.');
+  }
+}
+
 export type CostingRequestRefusal =
   | 'invalid-money'
   | 'invalid-quantity'
@@ -65,9 +79,28 @@ export interface KnownCostPool {
 export function assertKnownCostPool(pool: KnownCostPool): void {
   requireNonNegative(pool.knownQuantityScaled, 'knownQuantityScaled');
   requireNonNegative(pool.knownValueMinor, 'knownValueMinor');
+  if (
+    pool.knownQuantityScaled > POSTGRES_BIGINT_MAX ||
+    pool.knownValueMinor > POSTGRES_BIGINT_MAX
+  ) {
+    throw new Error('Costing invariant failed: stored cost pool exceeds PostgreSQL BIGINT.');
+  }
   if (pool.knownQuantityScaled === 0n && pool.knownValueMinor !== 0n) {
     throw new Error('Costing invariant failed: zero known quantity cannot retain value.');
   }
+}
+
+/** Add a non-negative value to a valid stored pool without deferring overflow to PostgreSQL. */
+export function addKnownCostValue(currentValueMinor: bigint, addedValueMinor: bigint): bigint {
+  requireNonNegative(currentValueMinor, 'currentValueMinor');
+  requireNonNegative(addedValueMinor, 'addedValueMinor');
+  if (currentValueMinor > POSTGRES_BIGINT_MAX || addedValueMinor > POSTGRES_BIGINT_MAX) {
+    throw new Error('Costing invariant failed: a cost value exceeds PostgreSQL BIGINT.');
+  }
+  if (addedValueMinor > POSTGRES_BIGINT_MAX - currentValueMinor) {
+    throw new CostingCapacityError();
+  }
+  return currentValueMinor + addedValueMinor;
 }
 
 /**
@@ -229,7 +262,7 @@ export function applyKnownInflowAgainstDeficit(
 
   const next: KnownCostPool = {
     knownQuantityScaled: pool.knownQuantityScaled + assetQuantity,
-    knownValueMinor: pool.knownValueMinor + assetValue,
+    knownValueMinor: addKnownCostValue(pool.knownValueMinor, assetValue),
   };
   assertKnownCostPool(next);
 
@@ -267,12 +300,14 @@ export function bootstrapUnknownCost(
     );
   }
 
-  return {
+  const next: CostBootstrapResult = {
     knownQuantityScaled: pool.knownQuantityScaled + unknownQuantity,
-    knownValueMinor: pool.knownValueMinor + totalValueMinor,
+    knownValueMinor: addKnownCostValue(pool.knownValueMinor, totalValueMinor),
     valuedQuantityScaled: unknownQuantity,
     addedValueMinor: totalValueMinor,
   };
+  assertKnownCostPool(next);
+  return next;
 }
 
 export interface OriginalSaleBasis {

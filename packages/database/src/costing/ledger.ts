@@ -1,4 +1,5 @@
 import {
+  addKnownCostValue,
   assertPoolFitsStock,
   consumeOutflowUnknownFirst,
   prefixAllocatedValue,
@@ -179,7 +180,7 @@ export function prepareMovementCost(
       provenance: provenance(basis.knownQuantityScaled, basis.unknownQuantityScaled),
     },
     nextKnownQuantityScaled: current.knownQuantityScaled + assetKnownQuantity,
-    nextKnownValueMinor: current.knownValueMinor + assetKnownValue,
+    nextKnownValueMinor: addKnownCostValue(current.knownValueMinor, assetKnownValue),
     nextCostRevision: current.costRevision + (hasKnownEffect ? 1n : 0n),
     deficitKnownQuantityScaled: knownDeficit,
     deficitKnownValueMinor: knownDeficitValue,

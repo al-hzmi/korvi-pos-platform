@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CostingCapacityError } from '@korvi/domain';
 import { createMerchantPurchasingService } from '../purchasing/service.js';
 import type { AuthenticatedPrincipal, Permission, PurchaseReceiptRequest } from '@korvi/domain';
 import type { PrismaClient } from '@korvi/database';
@@ -50,6 +51,14 @@ function databaseThatMustNotBeTouched(): PrismaClient {
   ) as PrismaClient;
 }
 
+function databaseThatRefusesCapacity(): PrismaClient {
+  return {
+    $transaction: async () => {
+      throw new CostingCapacityError();
+    },
+  } as unknown as PrismaClient;
+}
+
 describe('purchasing service costing authority', () => {
   it('refuses acquisition value before touching persistence without inventory.cost.manage', async () => {
     const service = createMerchantPurchasingService({ prisma: databaseThatMustNotBeTouched() });
@@ -74,5 +83,13 @@ describe('purchasing service costing authority', () => {
     await expect(
       service.receive(principal(['purchasing.receive', 'inventory.cost.manage']), request('0')),
     ).rejects.toThrow('database touched');
+  });
+
+  it('returns a deliberate refusal when receipt value would overflow the stored aggregate', async () => {
+    const service = createMerchantPurchasingService({ prisma: databaseThatRefusesCapacity() });
+
+    await expect(
+      service.receive(principal(['purchasing.receive', 'inventory.cost.manage']), request('1')),
+    ).resolves.toEqual({ outcome: 'failure', reason: 'invalid-money', subjectId: null });
   });
 });

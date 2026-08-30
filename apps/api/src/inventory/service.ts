@@ -1,4 +1,9 @@
-import { CostingRequestError, StockRequestError, requirePrincipalPermission } from '@korvi/domain';
+import {
+  CostingCapacityError,
+  CostingRequestError,
+  StockRequestError,
+  requirePrincipalPermission,
+} from '@korvi/domain';
 import {
   StockOperationRefusedError,
   listBalancePage,
@@ -78,12 +83,14 @@ export interface MerchantInventoryService {
 }
 
 /**
- * Turn the two deliberate refusal vocabularies into one result value.
+ * Turn deliberate request, capacity and locked-operation refusals into one
+ * result value.
  *
- * `StockRequestError` is a malformed request and `StockOperationRefusedError`
- * is a refusal decided under the row locks. Both are answers; anything else is
- * rethrown, because an unexpected failure must not be laundered into a tidy
- * "your request was invalid".
+ * `StockRequestError` is a malformed request, `CostingCapacityError` means an
+ * otherwise valid value cannot fit beside the locked aggregate, and
+ * `StockOperationRefusedError` is another refusal decided under row locks.
+ * All are answers; anything else is rethrown, because an unexpected failure
+ * must not be laundered into a tidy "your request was invalid".
  */
 async function attempt<T>(work: () => Promise<T>): Promise<StockResult<T>> {
   try {
@@ -91,6 +98,9 @@ async function attempt<T>(work: () => Promise<T>): Promise<StockResult<T>> {
   } catch (error) {
     if (error instanceof StockRequestError || error instanceof CostingRequestError) {
       return { outcome: 'failure', reason: error.detail, productId: null };
+    }
+    if (error instanceof CostingCapacityError) {
+      return { outcome: 'failure', reason: 'invalid-money', productId: null };
     }
     if (error instanceof StockOperationRefusedError) {
       return { outcome: 'failure', reason: error.detail, productId: error.productId };

@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { CostingRequestError, newId, tenantId as brandTenantId } from '@korvi/domain';
+import {
+  CostingCapacityError,
+  CostingRequestError,
+  newId,
+  tenantId as brandTenantId,
+} from '@korvi/domain';
 import {
   StockOperationRefusedError,
   createPrismaClient,
@@ -29,6 +34,7 @@ const T = {
   duplicate: '018f5c00-0000-7000-8000-0000000000a4',
   empty: '018f5c00-0000-7000-8000-0000000000a5',
   late: '018f5c00-0000-7000-8000-0000000000a6',
+  capacity: '018f5c00-0000-7000-8000-0000000000a7',
 } as const;
 
 const OTHER = {
@@ -171,6 +177,7 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
         [T.duplicate, 'DUPLICATE'],
         [T.empty, 'EMPTY'],
         [T.late, 'LATE'],
+        [T.capacity, 'CAPACITY'],
       ] as const) {
         await tx.product.create({
           data: {
@@ -388,6 +395,37 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
       }),
     }));
     expect(residue).toEqual({ key: 0, audit: 0 });
+  }, 60_000);
+
+  it('refuses aggregate BIGINT overflow before writing and rolls back the reservation', async () => {
+    await setBalance(T.capacity, 2000n, 5n);
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryCostBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branch,
+          productId: T.capacity,
+          knownQuantityScaled: 1000n,
+          knownValueMinor: 9_223_372_036_854_775_807n,
+          stockRevision: 5n,
+          costRevision: 3n,
+          updatedAt: new Date(),
+        },
+      });
+    });
+    const before = await state(T.capacity);
+    const operationId = 'capacity-' + newId();
+
+    const failed = await refusal(() => bootstrap(request(T.capacity, '1', operationId)));
+    expect(failed).toBeInstanceOf(CostingCapacityError);
+    expect(await state(T.capacity)).toEqual(before);
+
+    const residue = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.idempotencyKey.count({
+        where: { tenantId: T.tenant, scope: 'inventory-cost-bootstrap', operationId },
+      }),
+    );
+    expect(residue).toBe(0);
   }, 60_000);
 
   it('rolls back pool, evidence, audit and idempotency when the final write fails', async () => {

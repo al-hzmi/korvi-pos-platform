@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMerchantInventoryService } from '../inventory/service.js';
+import { CostingCapacityError } from '@korvi/domain';
 import type { AuthenticatedPrincipal, CostBootstrapRequest, Permission } from '@korvi/domain';
 import type { PrismaClient } from '@korvi/database';
 
@@ -44,6 +45,14 @@ function databaseThatMustNotBeTouched(): PrismaClient {
   ) as PrismaClient;
 }
 
+function databaseThatRefusesCapacity(): PrismaClient {
+  return {
+    $transaction: async () => {
+      throw new CostingCapacityError();
+    },
+  } as unknown as PrismaClient;
+}
+
 describe('inventory service costing authority', () => {
   it('refuses bootstrap before touching persistence without inventory.cost.manage', async () => {
     const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
@@ -75,5 +84,17 @@ describe('inventory service costing authority', () => {
         productId: null,
       });
     }
+  });
+
+  it('returns a deliberate refusal when the stored aggregate would overflow', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatRefusesCapacity() });
+
+    await expect(
+      service.bootstrapCost(principal(['inventory.cost.manage']), request('1')),
+    ).resolves.toEqual({
+      outcome: 'failure',
+      reason: 'invalid-money',
+      productId: null,
+    });
   });
 });
