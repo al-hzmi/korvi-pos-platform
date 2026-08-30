@@ -43,32 +43,19 @@ jobs:
 
           node scripts/strike-5c-bootstrap-materialize.mjs
 
-          # Keep the lazy server adapter structurally complete when the inventory
-          # authority gains the bootstrap operation. This is part of the product
-          # boundary, not a test-only cast or suppression.
+          # Extend the lazy adapter through a single, exact method anchor. Avoid
+          # replacing the whole object so formatting cannot make the patch brittle.
           python3 - <<'PY'
           from pathlib import Path
           path = Path('apps/api/src/server.ts')
           source = path.read_text()
-          before = """  return {
-            balances: (principal, query) => resolve().balances(principal, query),
-            adjust: (principal, request) => resolve().adjust(principal, request),
-            count: (principal, request) => resolve().count(principal, request),
-            transfer: (principal, request) => resolve().transfer(principal, request),
-          };
-          """
-          after = """  return {
-            balances: (principal, query) => resolve().balances(principal, query),
-            bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),
-            adjust: (principal, request) => resolve().adjust(principal, request),
-            count: (principal, request) => resolve().count(principal, request),
-            transfer: (principal, request) => resolve().transfer(principal, request),
-          };
-          """
-          if after not in source:
-              if source.count(before) != 1:
-                  raise SystemExit(f'expected one lazy inventory adapter anchor, found {source.count(before)}')
-              path.write_text(source.replace(before, after))
+          needle = '    balances: (principal, query) => resolve().balances(principal, query),\n'
+          addition = needle + '    bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),\n'
+          if addition not in source:
+              count = source.count(needle)
+              if count != 1:
+                  raise SystemExit(f'expected one lazy inventory balances anchor, found {count}')
+              path.write_text(source.replace(needle, addition))
           PY
 
           npm run format
