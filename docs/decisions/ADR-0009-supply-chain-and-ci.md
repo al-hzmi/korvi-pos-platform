@@ -35,9 +35,9 @@ accepts the patched range.
 
 Current reviewed override:
 
-| Package | Forced version | Advisory | Upstream reason | Removal condition |
-| ------- | -------------- | -------- | --------------- | ----------------- |
-| `deepmerge-ts` | 8.0.2 | GHSA-ggr8-5vv4-36mx | `@prisma/config@7.10.0` pins 7.1.5 | remove when Prisma's config dependency accepts a patched 8.x release and audit remains green without the override |
+| Package        | Forced version | Advisory            | Upstream reason                    | Removal condition                                                                                                 |
+| -------------- | -------------- | ------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `deepmerge-ts` | 8.0.2          | GHSA-ggr8-5vv4-36mx | `@prisma/config@7.10.0` pins 7.1.5 | remove when Prisma's config dependency accepts a patched 8.x release and audit remains green without the override |
 
 **`npm ci`, never a fallback.** `npm ci || npm install` looks defensive and is
 the opposite: when the lockfile is missing or stale the fallback resolves fresh

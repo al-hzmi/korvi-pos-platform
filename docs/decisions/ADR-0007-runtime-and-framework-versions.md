@@ -23,21 +23,21 @@ because a publisher moved a tag.
 
 ## Decision
 
-| Package      | Version | Note                                                   |
-| ------------ | ------- | ------------------------------------------------------ |
-| Node         | 24 LTS  | Active LTS ("Krypton")                                 |
-| npm          | 11.17.0 | declared via `packageManager`                          |
-| TypeScript   | 6.0.3   | **not 7.x** — see below                                |
-| Next.js      | 16.3.3  | newest production-stable at this revision              |
-| React        | 19.2.8  | production-stable                                      |
+| Package      | Version | Note                                                      |
+| ------------ | ------- | --------------------------------------------------------- |
+| Node         | 24 LTS  | Active LTS ("Krypton")                                    |
+| npm          | 11.17.0 | declared via `packageManager`                             |
+| TypeScript   | 6.0.3   | **not 7.x** — see below                                   |
+| Next.js      | 16.3.3  | newest production-stable at this revision                 |
+| React        | 19.2.8  | production-stable                                         |
 | Prisma       | 7.10.0  | production-stable; Prisma packages remain version-aligned |
-| Tailwind CSS | 3.4.19  | **not 4.x** — see below                                |
-| Vitest       | 4.1.11  | production-stable                                      |
-| Vite         | 8.2.2   | production-stable                                      |
-| ESLint       | 10.9.1  | production-stable; typescript-eslint 8.68.0            |
-| Fastify      | 5.12.1  | production-stable                                      |
-| Zod          | 4.5.4   | production-stable                                      |
-| Zustand      | 5.0.15  | production-stable                                      |
+| Tailwind CSS | 3.4.19  | **not 4.x** — see below                                   |
+| Vitest       | 4.1.11  | production-stable                                         |
+| Vite         | 8.2.2   | production-stable                                         |
+| ESLint       | 10.9.1  | production-stable; typescript-eslint 8.68.0               |
+| Fastify      | 5.12.1  | production-stable                                         |
+| Zod          | 4.5.4   | production-stable                                         |
+| Zustand      | 5.0.15  | production-stable                                         |
 
 Three policy exceptions remain deliberate: TypeScript, Tailwind CSS and
 `@types/node`. Every other pin must track the newest production-stable release

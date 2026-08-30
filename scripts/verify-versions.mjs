@@ -87,7 +87,9 @@ for (const file of manifests) {
     try {
       collectOverrideLeaves(json.overrides, pins);
     } catch (error) {
-      console.error(`FAIL  root overrides: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `FAIL  root overrides: ${error instanceof Error ? error.message : String(error)}`,
+      );
       manifestShapeFailures += 1;
     }
   }
