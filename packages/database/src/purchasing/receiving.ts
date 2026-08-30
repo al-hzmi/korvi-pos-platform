@@ -319,7 +319,11 @@ export async function recordPurchaseReceipt(
         if (held === undefined) {
           throw new PurchasingRefusedError('unknown-purchase-order-line', line.purchaseOrderLineId);
         }
-        return { accepted: line.acceptedQuantityScaled, line: held };
+        return {
+          accepted: line.acceptedQuantityScaled,
+          inventoryValueMinor: line.inventoryValueMinor,
+          line: held,
+        };
       });
 
       // The branch and the products come from the *locked order*, never from
@@ -414,6 +418,14 @@ export async function recordPurchaseReceipt(
         // ledger's existing `receipt` value and `sourceType` is what says a
         // *purchase* receipt caused it; `sourceLineId` is what makes a
         // multi-line receipt's movements individually attributable (§13).
+        const incomingCostBasis =
+          entry.inventoryValueMinor === null
+            ? undefined
+            : {
+                knownQuantityScaled: entry.accepted,
+                unknownQuantityScaled: 0n,
+                knownValueMinor: entry.inventoryValueMinor,
+              };
         const applied = await applyMovementWithin(
           tx,
           tenant,
@@ -433,6 +445,7 @@ export async function recordPurchaseReceipt(
           // primitive is not asked to evaluate one.
           true,
           receiptLineId,
+          incomingCostBasis,
         );
 
         await tx.purchaseReceiptLine.create({
@@ -449,6 +462,11 @@ export async function recordPurchaseReceipt(
             beforeQuantityScaled: balance.quantityScaled,
             afterQuantityScaled: applied.quantityScaled,
             resultRevision: applied.revision,
+            inventoryValueMinor: entry.inventoryValueMinor,
+            costKnownQuantityScaled: applied.cost.knownQuantityScaled,
+            costUnknownQuantityScaled: applied.cost.unknownQuantityScaled,
+            costValueMinor: applied.cost.knownValueMinor,
+            costProvenance: applied.cost.provenance,
           },
         });
 

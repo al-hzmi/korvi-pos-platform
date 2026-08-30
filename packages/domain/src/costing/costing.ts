@@ -21,7 +21,8 @@ export class CostingRequestError extends DomainError {
 export type CostingRequestRefusal =
   'invalid-money' | 'invalid-quantity' | 'non-positive-quantity' | 'nothing-to-value';
 
-const CANONICAL_UNSIGNED_INTEGER = /^(0|[1-9]\d*)$/;
+const CANONICAL_UNSIGNED_INTEGER = /^(0|[1-9]\d{0,18})$/;
+const POSTGRES_BIGINT_MAX = (1n << 63n) - 1n;
 
 export function parseNonNegativeMinor(value: string, field: string): bigint {
   if (!CANONICAL_UNSIGNED_INTEGER.test(value)) {
@@ -30,7 +31,11 @@ export function parseNonNegativeMinor(value: string, field: string): bigint {
       `${field} must be canonical non-negative integer text.`,
     );
   }
-  return BigInt(value);
+  const parsed = BigInt(value);
+  if (parsed > POSTGRES_BIGINT_MAX) {
+    throw new CostingRequestError('invalid-money', `${field} exceeds PostgreSQL BIGINT storage.`);
+  }
+  return parsed;
 }
 
 function requireNonNegative(value: bigint, label: string): void {

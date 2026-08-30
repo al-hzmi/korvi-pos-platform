@@ -398,6 +398,50 @@ describe('the purchasing authority requires a session and the exact permission',
     );
   });
 
+  it('requires inventory.cost.manage only when a receipt states acquisition value', async () => {
+    const receiver = await build(['purchasing.receive']);
+    const receiverCookie = await cookieFor(receiver);
+
+    const costed = await send('POST', '/v1/admin/purchasing/receipts', receiverCookie, {
+      ...RECEIPT_BODY,
+      lines: [
+        {
+          purchaseOrderLineId: ORDER_LINE,
+          acceptedQuantityScaled: '30000',
+          inventoryValueMinor: '4500',
+        },
+      ],
+    });
+    expect(costed.statusCode).toBe(403);
+    expect(costed.json()).toEqual({ error: 'forbidden' });
+    expect(seen).toHaveLength(0);
+
+    const unknownCost = await send('POST', '/v1/admin/purchasing/receipts', receiverCookie, {
+      ...RECEIPT_BODY,
+      operationId: 'op-receipt-unknown',
+    });
+    expect(unknownCost.statusCode).toBe(201);
+    expect(seen).toHaveLength(1);
+    await receiver.close();
+
+    const costManager = await build(['purchasing.receive', 'inventory.cost.manage']);
+    const costManagerCookie = await cookieFor(costManager);
+    const knownZero = await send('POST', '/v1/admin/purchasing/receipts', costManagerCookie, {
+      ...RECEIPT_BODY,
+      operationId: 'op-receipt-zero',
+      lines: [
+        {
+          purchaseOrderLineId: ORDER_LINE,
+          acceptedQuantityScaled: '30000',
+          inventoryValueMinor: '0',
+        },
+      ],
+    });
+    expect(knownZero.statusCode).toBe(201);
+    const request = seen.at(0)?.request as PurchaseReceiptRequest;
+    expect(request.lines[0]?.inventoryValueMinor).toBe('0');
+  });
+
   it('lets a holder of all three do all of it', async () => {
     const server = await build(['purchasing.read', 'purchasing.manage', 'purchasing.receive']);
     const cookie = await cookieFor(server);
@@ -550,6 +594,26 @@ describe('identity, quantities and refusals across the wire', () => {
       });
       expect(response.statusCode).toBe(400);
       expect(response.json()).toEqual({ error: 'invalid_body' });
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  it('refuses non-canonical or out-of-range inventory value before authority execution', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    for (const inventoryValueMinor of ['1.5', '01', '9223372036854775808']) {
+      const response = await send('POST', '/v1/admin/purchasing/receipts', cookie, {
+        ...RECEIPT_BODY,
+        lines: [
+          {
+            purchaseOrderLineId: ORDER_LINE,
+            acceptedQuantityScaled: '30000',
+            inventoryValueMinor,
+          },
+        ],
+      });
+      expect(response.statusCode, inventoryValueMinor).toBe(400);
+      expect(response.json(), inventoryValueMinor).toEqual({ error: 'invalid_body' });
     }
     expect(seen).toHaveLength(0);
   });

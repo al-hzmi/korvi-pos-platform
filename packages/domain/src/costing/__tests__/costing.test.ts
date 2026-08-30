@@ -33,6 +33,13 @@ describe('costing request boundaries', () => {
       ).toBe('invalid-money');
     }
   });
+
+  it('accepts the PostgreSQL BIGINT maximum and refuses values beyond PostgreSQL BIGINT', () => {
+    expect(parseNonNegativeMinor('9223372036854775807', 'value')).toBe(9_223_372_036_854_775_807n);
+    expect(refusalOf(() => parseNonNegativeMinor('9223372036854775808', 'value'))).toBe(
+      'invalid-money',
+    );
+  });
 });
 
 describe('integer value conservation', () => {

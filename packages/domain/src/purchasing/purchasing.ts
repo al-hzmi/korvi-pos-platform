@@ -1,3 +1,4 @@
+import { CostingRequestError, parseNonNegativeMinor } from '../costing/costing.js';
 import { DomainError } from '../errors.js';
 import {
   MAX_STOCK_LINES,
@@ -55,7 +56,8 @@ export type PurchasingRequestRefusal =
   | 'no-lines'
   | 'too-many-lines'
   | 'invalid-name'
-  | 'invalid-reference';
+  | 'invalid-reference'
+  | 'invalid-money';
 
 /** The same ceiling stock operations use: one request, one bounded row set. */
 export const MAX_PURCHASING_LINES = MAX_STOCK_LINES;
@@ -94,6 +96,9 @@ function inPurchasingVocabulary<T>(work: () => T): T {
       const detail: PurchasingRequestRefusal =
         error.detail === 'invalid-uuid' ? 'invalid-uuid' : 'invalid-quantity';
       throw new PurchasingRequestError(detail, error.message);
+    }
+    if (error instanceof CostingRequestError) {
+      throw new PurchasingRequestError('invalid-money', error.message);
     }
     throw error;
   }
@@ -399,6 +404,12 @@ export interface PurchaseReceiptLineRequest {
   readonly purchaseOrderLineId: string;
   /** Strictly positive. What physically arrived and was accepted. */
   readonly acceptedQuantityScaled: string;
+  /**
+   * Optional exact total inventory value for the accepted quantity, in minor
+   * units. This is acquisition-value evidence, never a unit price, tax amount
+   * or retail selling price. Omission means explicit unknown cost.
+   */
+  readonly inventoryValueMinor?: string | undefined;
 }
 
 export interface PurchaseReceiptRequest {
@@ -412,6 +423,7 @@ export interface PurchaseReceiptRequest {
 export interface ValidatedPurchaseReceiptLine {
   readonly purchaseOrderLineId: string;
   readonly acceptedQuantityScaled: bigint;
+  readonly inventoryValueMinor: bigint | null;
 }
 
 export interface ValidatedPurchaseReceipt {
@@ -452,6 +464,12 @@ export function validatePurchaseReceiptRequest(
       line.acceptedQuantityScaled,
       'acceptedQuantityScaled',
     ),
+    inventoryValueMinor:
+      line.inventoryValueMinor === undefined
+        ? null
+        : inPurchasingVocabulary(() =>
+            parseNonNegativeMinor(line.inventoryValueMinor ?? '', 'inventoryValueMinor'),
+          ),
   }));
 
   return { purchaseOrderId, reference, lines };
@@ -521,13 +539,31 @@ export function canonicalPurchaseOrderForm(request: PurchaseOrderRequest): reado
 
 export function canonicalPurchaseReceiptForm(request: PurchaseReceiptRequest): readonly unknown[] {
   const validated = validatePurchaseReceiptRequest(request);
+  const carriesInventoryValue = validated.lines.some((line) => line.inventoryValueMinor !== null);
+
+  // Compatibility is an idempotency invariant, not a convenience. A 5B
+  // receipt with no cost evidence must fingerprint byte-for-byte as it did
+  // before 5C, or a lawful retry after deployment would become a conflict.
+  if (!carriesInventoryValue) {
+    return [
+      'purchasing-receipt-create.v1',
+      validated.purchaseOrderId,
+      validated.reference,
+      validated.lines.map((line) => [
+        line.purchaseOrderLineId,
+        line.acceptedQuantityScaled.toString(),
+      ]),
+    ];
+  }
+
   return [
-    'purchasing-receipt-create.v1',
+    'purchasing-receipt-create.v2',
     validated.purchaseOrderId,
     validated.reference,
     validated.lines.map((line) => [
       line.purchaseOrderLineId,
       line.acceptedQuantityScaled.toString(),
+      line.inventoryValueMinor === null ? null : line.inventoryValueMinor.toString(),
     ]),
   ];
 }

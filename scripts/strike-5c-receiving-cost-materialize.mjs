@@ -142,7 +142,9 @@ transform('apps/api/src/routes/purchasing-admin.ts', (source) => {
 });
 
 transform('apps/api/src/__tests__/purchasing-admin-routes.test.ts', (source) => {
-  if (source.includes('requires inventory.cost.manage only when a receipt states acquisition value')) {
+  if (
+    source.includes('requires inventory.cost.manage only when a receipt states acquisition value')
+  ) {
     return source;
   }
   let next = replaceOnce(

@@ -277,6 +277,52 @@ describe('purchase receipt requests', () => {
     ).toBe('duplicate-order-line');
   });
 
+  it('accepts an exact total inventory value, including known zero cost', () => {
+    const valued = validatePurchaseReceiptRequest(
+      receipt({
+        lines: [
+          {
+            purchaseOrderLineId: LINE_A,
+            acceptedQuantityScaled: '30000',
+            inventoryValueMinor: '0',
+          },
+        ],
+      }),
+    );
+    expect(valued.lines[0]?.inventoryValueMinor).toBe(0n);
+
+    expect(
+      refusalOf(() =>
+        validatePurchaseReceiptRequest(
+          receipt({
+            lines: [
+              {
+                purchaseOrderLineId: LINE_A,
+                acceptedQuantityScaled: '30000',
+                inventoryValueMinor: '1.5',
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('invalid-money');
+    expect(
+      refusalOf(() =>
+        validatePurchaseReceiptRequest(
+          receipt({
+            lines: [
+              {
+                purchaseOrderLineId: LINE_A,
+                acceptedQuantityScaled: '30000',
+                inventoryValueMinor: '9223372036854775808',
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('invalid-money');
+  });
+
   it('refuses a zero or negative accepted quantity', () => {
     expect(
       refusalOf(() =>
@@ -296,6 +342,45 @@ describe('purchase receipt requests', () => {
 });
 
 describe('canonical request forms', () => {
+  it('preserves the exact legacy v1 receipt form when inventory value is omitted', () => {
+    expect(canonicalPurchaseReceiptForm(receipt())).toEqual([
+      'purchasing-receipt-create.v1',
+      PO,
+      null,
+      [[LINE_A, '30000']],
+    ]);
+  });
+
+  it('uses v2 only for cost-bearing receipts and binds exact value into intent', () => {
+    const valued = canonicalPurchaseReceiptForm(
+      receipt({
+        lines: [
+          {
+            purchaseOrderLineId: LINE_A,
+            acceptedQuantityScaled: '30000',
+            inventoryValueMinor: '0',
+          },
+        ],
+      }),
+    );
+    expect(valued).toEqual(['purchasing-receipt-create.v2', PO, null, [[LINE_A, '30000', '0']]]);
+    expect(
+      JSON.stringify(
+        canonicalPurchaseReceiptForm(
+          receipt({
+            lines: [
+              {
+                purchaseOrderLineId: LINE_A,
+                acceptedQuantityScaled: '30000',
+                inventoryValueMinor: '1',
+              },
+            ],
+          }),
+        ),
+      ),
+    ).not.toBe(JSON.stringify(valued));
+  });
+
   it('are stable across line order', () => {
     const forward = canonicalPurchaseOrderForm(
       order({

@@ -58,6 +58,15 @@ const UNSIGNED_SCALED = z
   .string()
   .regex(/^(0|[1-9][0-9]{0,17})$/, 'must be a non-negative integer string');
 
+const MAX_POSTGRES_BIGINT_MINOR_TEXT = '9223372036854775807';
+const NON_NEGATIVE_MINOR = z
+  .string()
+  .regex(/^(0|[1-9][0-9]{0,18})$/, 'must be a canonical non-negative integer string')
+  .refine(
+    (value) => value.length < 19 || value <= MAX_POSTGRES_BIGINT_MINOR_TEXT,
+    'must fit PostgreSQL BIGINT',
+  );
+
 /**
  * Opaque merchant text, deliberately not UUID-normalized.
  *
@@ -117,7 +126,13 @@ const receiptBody = z
     reference: REFERENCE.nullable().optional(),
     lines: z
       .array(
-        z.object({ purchaseOrderLineId: UUID, acceptedQuantityScaled: UNSIGNED_SCALED }).strict(),
+        z
+          .object({
+            purchaseOrderLineId: UUID,
+            acceptedQuantityScaled: UNSIGNED_SCALED,
+            inventoryValueMinor: NON_NEGATIVE_MINOR.optional(),
+          })
+          .strict(),
       )
       .min(1)
       .max(MAX_PURCHASING_LINES),
@@ -264,6 +279,7 @@ const MESSAGES: Readonly<Record<PurchasingFailureReason, string>> = {
   'too-many-lines': 'عدد البنود في العملية تجاوز الحد المسموح.',
   'invalid-name': 'اسم المورد غير صالح.',
   'invalid-reference': 'الرقم المرجعي غير صالح.',
+  'invalid-money': 'قيمة المخزون غير صالحة.',
   'unknown-supplier': 'المورد غير موجود.',
   'inactive-supplier': 'المورد غير مفعل.',
   'unknown-branch': 'الفرع غير موجود.',
@@ -297,6 +313,7 @@ const STATUS: Readonly<Record<PurchasingFailureReason, number>> = {
   'too-many-lines': 422,
   'invalid-name': 422,
   'invalid-reference': 422,
+  'invalid-money': 422,
   'unknown-supplier': 404,
   'inactive-supplier': 409,
   'unknown-branch': 404,
@@ -558,6 +575,16 @@ export function registerPurchasingAdminRoutes(
 
       const parsed = receiptBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      // Receiving quantity and establishing acquisition value are separate
+      // authorities. A receiver may still accept goods with unknown cost, but
+      // any explicit inventory value additionally requires costing authority.
+      if (
+        parsed.data.lines.some((line) => line.inventoryValueMinor !== undefined) &&
+        !principal.permissions.includes('inventory.cost.manage')
+      ) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
 
       const result = await service.receive(principal, {
         operationId: parsed.data.operationId,
