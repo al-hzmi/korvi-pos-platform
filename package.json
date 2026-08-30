@@ -30,7 +30,9 @@
     "verify": "bash scripts/verify.sh"
   },
   "overrides": {
-    "deepmerge-ts": "8.0.2"
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    }
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

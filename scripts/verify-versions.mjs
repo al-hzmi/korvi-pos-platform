@@ -1,5 +1,5 @@
 /**
- * Assert every pinned dependency and root override is a real, published,
+ * Assert every pinned dependency and root override leaf is a real, published,
  * production-stable version.
  *
  * A pin is only a guarantee if something checks it. This runs in `verify` and
@@ -57,6 +57,21 @@ function newestPublishedStable(versions) {
     .at(-1);
 }
 
+function collectOverrideLeaves(node, pins, path = []) {
+  for (const [name, value] of Object.entries(node ?? {})) {
+    const nextPath = [...path, name];
+    if (typeof value === 'string') {
+      pins.set(name, value);
+      continue;
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      collectOverrideLeaves(value, pins, nextPath);
+      continue;
+    }
+    throw new TypeError(`Unsupported override value at ${nextPath.join(' > ')}`);
+  }
+}
+
 const pins = new Map();
 let manifestShapeFailures = 0;
 for (const file of manifests) {
@@ -69,15 +84,11 @@ for (const file of manifests) {
   }
 
   if (file === 'package.json') {
-    for (const [name, value] of Object.entries(json.overrides ?? {})) {
-      if (typeof value !== 'string') {
-        console.error(
-          `FAIL  override ${name}: nested/non-string overrides are not accepted without extending the verifier.`,
-        );
-        manifestShapeFailures += 1;
-        continue;
-      }
-      pins.set(name, value);
+    try {
+      collectOverrideLeaves(json.overrides, pins);
+    } catch (error) {
+      console.error(`FAIL  root overrides: ${error instanceof Error ? error.message : String(error)}`);
+      manifestShapeFailures += 1;
     }
   }
 }
