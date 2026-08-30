@@ -25,9 +25,13 @@ function refusalOf(work: () => unknown): string {
 describe('costing request boundaries', () => {
   it('accepts exact non-negative minor-unit text and rejects float-like input', () => {
     expect(parseNonNegativeMinor('0', 'value')).toBe(0n);
-    expect(parseNonNegativeMinor('9007199254740993', 'value')).toBe(9007199254740993n);
+    expect(parseNonNegativeMinor('9007199254740993', 'value')).toBe(
+      9007199254740993n,
+    );
     for (const bad of ['-1', '01', '1.0', '1e3', '+1', '', ' 1', '1 ', 'NaN']) {
-      expect(refusalOf(() => parseNonNegativeMinor(bad, 'value')), bad).toBe('invalid-money');
+      expect(refusalOf(() => parseNonNegativeMinor(bad, 'value')), bad).toBe(
+        'invalid-money',
+      );
     }
   });
 });
@@ -41,7 +45,10 @@ describe('integer value conservation', () => {
   });
 
   it('leaves no residual when the final known quantity is consumed', () => {
-    const first = consumeKnownCost({ knownQuantityScaled: 3000n, knownValueMinor: 100n }, 1000n);
+    const first = consumeKnownCost(
+      { knownQuantityScaled: 3000n, knownValueMinor: 100n },
+      1000n,
+    );
     expect(first.consumedKnownValueMinor).toBe(33n);
     const second = consumeKnownCost(first, 1000n);
     expect(second.consumedKnownValueMinor).toBe(33n);
@@ -165,6 +172,11 @@ describe('original-sale return basis', () => {
       knownValueMinor: 0n,
       cumulativeReturnedQuantityScaled: 4000n,
     });
-    expect(first.knownValueMinor + second.knownValueMinor + third.knownValueMinor + final.knownValueMinor).toBe(100n);
+    expect(
+      first.knownValueMinor +
+        second.knownValueMinor +
+        third.knownValueMinor +
+        final.knownValueMinor,
+    ).toBe(100n);
   });
 });
