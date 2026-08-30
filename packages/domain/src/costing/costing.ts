@@ -28,7 +28,10 @@ const CANONICAL_UNSIGNED_INTEGER = /^(0|[1-9]\d*)$/;
 
 export function parseNonNegativeMinor(value: string, field: string): bigint {
   if (!CANONICAL_UNSIGNED_INTEGER.test(value)) {
-    throw new CostingRequestError('invalid-money', `${field} must be canonical non-negative integer text.`);
+    throw new CostingRequestError(
+      'invalid-money',
+      `${field} must be canonical non-negative integer text.`,
+    );
   }
   return BigInt(value);
 }
@@ -251,7 +254,10 @@ export function bootstrapUnknownCost(
   const positiveOnHand = stockQuantityScaled > 0n ? stockQuantityScaled : 0n;
   const unknownQuantity = positiveOnHand - pool.knownQuantityScaled;
   if (unknownQuantity <= 0n) {
-    throw new CostingRequestError('nothing-to-value', 'There is no unknown positive stock to value.');
+    throw new CostingRequestError(
+      'nothing-to-value',
+      'There is no unknown positive stock to value.',
+    );
   }
 
   return {
