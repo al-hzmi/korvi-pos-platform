@@ -29,9 +29,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Normalize the single escaping defect in the temporary generator.
-          # The generated TypeScript must contain ${...} Prisma tagged-template
-          # interpolations; the generator source must escape them exactly once.
+          # Normalize the escaping defect in the temporary generator. The eight
+          # generated Prisma tagged-template interpolations must be escaped
+          # exactly once in generator source and have no backslash in output.
           python3 - <<'PY'
           from pathlib import Path
           path = Path('scripts/strike-5c-bootstrap-materialize.mjs')
@@ -39,8 +39,8 @@ jobs:
           bad = r'\\${'
           good = r'\${'
           count = source.count(bad)
-          if count != 7:
-              raise SystemExit(f'expected 7 over-escaped template interpolations, found {count}')
+          if count != 8:
+              raise SystemExit(f'expected 8 over-escaped template interpolations, found {count}')
           path.write_text(source.replace(bad, good))
           PY
 
