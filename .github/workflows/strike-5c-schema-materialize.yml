@@ -33,10 +33,11 @@ jobs:
           set -euo pipefail
           node scripts/strike-5c-schema-materialize.mjs
           node scripts/strike-5c-sale-transfer-materialize.mjs
+          node scripts/strike-5c-regression-materialize.mjs
           npm run format
           npm exec -w @korvi/database -- prisma format
 
-          allowed='^(packages/database/prisma/schema\.prisma|packages/database/src/repositories/sale-repository\.ts|packages/database/src/inventory/stock-ledger\.ts|packages/database/src/costing/ledger\.ts|packages/database/src/repositories/inventory-repository\.ts|scripts/strike-5c-sale-transfer-materialize\.mjs)$'
+          allowed='^(packages/database/prisma/schema\.prisma|packages/database/prisma/migrations/20260830210000_costing_authority/migration\.sql|packages/database/src/__tests__/repository-tenancy\.test\.ts|packages/database/src/repositories/sale-repository\.ts|packages/database/src/inventory/stock-ledger\.ts|packages/database/src/costing/ledger\.ts|packages/database/src/repositories/inventory-repository\.ts|scripts/strike-5c-sale-transfer-materialize\.mjs|scripts/strike-5c-regression-materialize\.mjs)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo 'Unexpected formatter/materializer changes:' >&2
@@ -52,11 +53,14 @@ jobs:
             git config user.email 'actions@users.noreply.github.com'
             git add \
               packages/database/prisma/schema.prisma \
+              packages/database/prisma/migrations/20260830210000_costing_authority/migration.sql \
+              packages/database/src/__tests__/repository-tenancy.test.ts \
               packages/database/src/repositories/sale-repository.ts \
               packages/database/src/inventory/stock-ledger.ts \
               packages/database/src/costing/ledger.ts \
               packages/database/src/repositories/inventory-repository.ts \
-              scripts/strike-5c-sale-transfer-materialize.mjs
+              scripts/strike-5c-sale-transfer-materialize.mjs \
+              scripts/strike-5c-regression-materialize.mjs
             git commit -m 'feat(costing): freeze sale basis and conserve transfer value'
             git push origin HEAD:strike/5c-costing-authority
           fi
