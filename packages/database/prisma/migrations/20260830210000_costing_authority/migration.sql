@@ -6,6 +6,18 @@
 
 BEGIN;
 
+-- These occupied tables already use FORCE RLS. The migration runs as their
+-- non-bypass owner with no tenant context, so their historical rows would be
+-- invisible to both the backfill UPDATEs and the balance seed SELECT unless
+-- FORCE is lifted. RLS remains enabled throughout, and this DDL is inside the
+-- same transaction: concurrent sessions cannot observe an unforced committed
+-- state. FORCE is restored immediately after the last historical read below.
+ALTER TABLE "inventory_movements" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "sale_lines" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "return_lines" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "purchase_receipt_lines" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "inventory_balances" NO FORCE ROW LEVEL SECURITY;
+
 -- ---------------------------------------------------------------------------
 -- Cost evidence on the causal stock ledger
 -- ---------------------------------------------------------------------------
@@ -195,6 +207,14 @@ INSERT INTO "inventory_cost_balances"
 SELECT
   "tenantId", "branchId", "productId", 0, 0, "revision", 0, CURRENT_TIMESTAMP
 FROM "inventory_balances";
+
+-- Close the transactional owner-only backfill window before creating any new
+-- append-only evidence or permission state.
+ALTER TABLE "inventory_movements" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "sale_lines" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "return_lines" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "purchase_receipt_lines" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "inventory_balances" FORCE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
 -- Append-only valuation evidence

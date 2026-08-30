@@ -335,6 +335,9 @@ describe.skipIf(url === '')('pre-5C costing migration rehearsal, live', () => {
   }, 180_000);
 
   afterAll(async () => {
+    // If the migration itself failed, its explicit BEGIN leaves this session
+    // aborted. Roll it back first so cleanup still removes the rehearsal.
+    await client.query('ROLLBACK');
     await client.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
     await client.end();
   });
@@ -519,7 +522,7 @@ describe.skipIf(url === '')('pre-5C costing migration rehearsal, live', () => {
     expect(new Set(grants.map((grant) => grant.id)).size).toBe(6);
   });
 
-  it('forces RLS on new cost tables and restores it on the backfilled role tables', async () => {
+  it('forces RLS on new tables and restores it on every table used for backfill', async () => {
     const { rows } = await client.query<{
       relname: string;
       enabled: boolean;
@@ -530,12 +533,15 @@ describe.skipIf(url === '')('pre-5C costing migration rehearsal, live', () => {
          JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = $1
           AND c.relname IN (
-            'inventory_cost_balances', 'inventory_valuation_events', 'roles', 'role_permissions'
+            'inventory_cost_balances', 'inventory_valuation_events',
+            'inventory_balances', 'inventory_movements',
+            'sale_lines', 'return_lines', 'purchase_receipt_lines',
+            'roles', 'role_permissions'
           )
         ORDER BY c.relname`,
       [SCHEMA],
     );
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(9);
     for (const row of rows) {
       expect(row.enabled, row.relname).toBe(true);
       expect(row.forced, row.relname).toBe(true);
