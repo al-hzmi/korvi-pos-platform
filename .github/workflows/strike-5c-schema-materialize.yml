@@ -43,25 +43,64 @@ jobs:
 
           node scripts/strike-5c-bootstrap-materialize.mjs
 
-          # Extend the lazy adapter through a single, exact method anchor. Avoid
-          # replacing the whole object so formatting cannot make the patch brittle.
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('apps/api/src/server.ts')
-          source = path.read_text()
+
+          # The costing test already imported CostingRequestError before this
+          # slice. The generator adds the new canonical helper next to the
+          # bootstrap helper; keep the import set unique rather than masking a
+          # compiler error.
+          test = Path('packages/domain/src/costing/__tests__/costing.test.ts')
+          source = test.read_text()
+          duplicate = '  canonicalCostBootstrapForm,\n  CostingRequestError,\n'
+          if source.count('  CostingRequestError,\n') == 2:
+              if source.count(duplicate) != 1:
+                  raise SystemExit('unexpected duplicate costing import shape')
+              test.write_text(source.replace(duplicate, '  canonicalCostBootstrapForm,\n'))
+          elif source.count('  CostingRequestError,\n') != 1:
+              raise SystemExit('CostingRequestError import invariant failed')
+
+          # Production lazy adapter must expose every method of the authority.
+          server = Path('apps/api/src/server.ts')
+          source = server.read_text()
           needle = '    balances: (principal, query) => resolve().balances(principal, query),\n'
           addition = needle + '    bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),\n'
           if addition not in source:
               count = source.count(needle)
               if count != 1:
                   raise SystemExit(f'expected one lazy inventory balances anchor, found {count}')
-              path.write_text(source.replace(needle, addition))
+              server.write_text(source.replace(needle, addition))
+
+          # Route test double must remain a complete structural implementation;
+          # do not cast around the new authority method.
+          routes = Path('apps/api/src/__tests__/inventory-admin-routes.test.ts')
+          source = routes.read_text()
+          adjust = '    async adjust(_principal, request: AdjustmentRequest) {\n'
+          bootstrap = """    async bootstrapCost(_principal, request) {
+            seen.push({ method: 'bootstrapCost', request });
+            return answer({
+              id: '018fb000-0000-7000-8000-0000000000c1',
+              branchId: request.branchId,
+              productId: request.productId,
+              valuedQuantityScaled: '1000',
+              stockRevision: '12',
+              costRevision: '1',
+              occurredAt: '2026-08-27T00:00:00.000Z',
+              replayed: false,
+            });
+          },
+"""
+          if bootstrap not in source:
+              count = source.count(adjust)
+              if count != 1:
+                  raise SystemExit(f'expected one inventory test adjust anchor, found {count}')
+              routes.write_text(source.replace(adjust, bootstrap + adjust))
           PY
 
           npm run format
           npm exec -w @korvi/database -- prisma format
 
-          allowed='^(apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/routes/inventory-admin\.ts|apps/api/src/server\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/index\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|scripts/strike-5c-bootstrap-materialize\.mjs)$'
+          allowed='^(apps/api/src/__tests__/inventory-admin-routes\.test\.ts|apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/routes/inventory-admin\.ts|apps/api/src/server\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/index\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|scripts/strike-5c-bootstrap-materialize\.mjs)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo 'Unexpected bootstrap materializer changes:' >&2
@@ -76,6 +115,7 @@ jobs:
             git config user.name 'Korvi Validation Automation'
             git config user.email 'actions@users.noreply.github.com'
             git add \
+              apps/api/src/__tests__/inventory-admin-routes.test.ts \
               apps/api/src/inventory/fingerprint.ts \
               apps/api/src/inventory/service.ts \
               apps/api/src/routes/inventory-admin.ts \
