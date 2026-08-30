@@ -1873,15 +1873,22 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
 
     // The movement is attached to the sale, which is what "in the sale
     // transaction" means when the sale committed.
-    const movements = await withTenant(prisma, scope.tenantId, async (tx) =>
-      tx.inventoryMovement.findMany({
+    const saleEvidence = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      line: await tx.saleLine.findFirst({
+        where: { tenantId: T.tenant, saleId: result.sale.saleId, productId: T.milk },
+        select: { id: true },
+      }),
+      movements: await tx.inventoryMovement.findMany({
         where: { tenantId: T.tenant, sourceType: 'sale', sourceId: result.sale.saleId },
       }),
-    );
+    }));
+    const movements = saleEvidence.movements;
     expect(movements).toHaveLength(1);
     expect(movements[0]?.quantityScaled).toBe(-2_000n);
-    // Historical causality is untouched: a sale has no document line to name.
-    expect(movements[0]?.sourceLineId).toBeNull();
+    // 5C freezes the movement basis on the exact sale line. The causal link
+    // must name that line rather than merely being non-null.
+    expect(saleEvidence.line).not.toBeNull();
+    expect(movements[0]?.sourceLineId).toBe(saleEvidence.line?.id);
   }, 60_000);
 
   it('keeps the original-sale return reversal in the return transaction and steps revision', async () => {
@@ -1933,20 +1940,29 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     expect(afterReturn?.quantityScaled).toBe(afterSale.quantityScaled + 1_000n);
     expect(afterReturn?.revision).toBe(afterSale.revision + 1n);
 
-    const movements = await withTenant(prisma, scope.tenantId, async (tx) =>
-      tx.inventoryMovement.findMany({
+    const returnEvidence = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      line: await tx.returnLine.findFirst({
+        where: {
+          tenantId: T.tenant,
+          returnId: result.document.returnId,
+          saleLineId,
+        },
+        select: { id: true },
+      }),
+      movements: await tx.inventoryMovement.findMany({
         where: {
           tenantId: T.tenant,
           sourceType: 'return',
           sourceId: result.document.returnId,
         },
       }),
-    );
+    }));
+    const movements = returnEvidence.movements;
     expect(movements).toHaveLength(1);
     expect(movements[0]?.quantityScaled).toBe(1_000n);
     expect(movements[0]?.kind).toBe('return');
-    // A return names no Stage-5 document line either.
-    expect(movements[0]?.sourceLineId).toBeNull();
+    expect(returnEvidence.line).not.toBeNull();
+    expect(movements[0]?.sourceLineId).toBe(returnEvidence.line?.id);
   }, 90_000);
 
   it('keeps a refused checkout from moving stock or stepping revision', async () => {
