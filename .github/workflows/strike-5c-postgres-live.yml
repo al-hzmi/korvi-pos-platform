@@ -125,6 +125,11 @@ jobs:
           fi
           echo "app_role_flags=$role_flags" | tee -a "$PROOF_LOG"
 
+      - name: Build live test runtime
+        run: |
+          npm run db:generate
+          npm run build
+
       - name: Run every live proof as the application role
         shell: bash
         env:
