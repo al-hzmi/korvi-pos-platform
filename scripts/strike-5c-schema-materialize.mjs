@@ -51,8 +51,8 @@ replaceFirst(
 
 replaceFirst(
   'receipt line costing fields',
-  `  beforeQuantityScaled BigInt\n  afterQuantityScaled BigInt\n  resultRevision       BigInt\n\n  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n`,
-  `  beforeQuantityScaled BigInt\n  afterQuantityScaled BigInt\n  resultRevision       BigInt\n\n  /// Null means the goods were accepted before trusted acquisition value was\n  /// available. Cost evidence remains explicit unknown rather than blocking stock.\n  inventoryValueMinor       BigInt?\n  costKnownQuantityScaled   BigInt @default(0)\n  costUnknownQuantityScaled BigInt @default(0)\n  costValueMinor            BigInt @default(0)\n  costProvenance            String @default("historical-unknown")\n\n  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n`,
+  `  beforeQuantityScaled BigInt\n  afterQuantityScaled  BigInt\n  resultRevision       BigInt\n\n  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n`,
+  `  beforeQuantityScaled BigInt\n  afterQuantityScaled  BigInt\n  resultRevision       BigInt\n\n  /// Null means the goods were accepted before trusted acquisition value was\n  /// available. Cost evidence remains explicit unknown rather than blocking stock.\n  inventoryValueMinor       BigInt?\n  costKnownQuantityScaled   BigInt @default(0)\n  costUnknownQuantityScaled BigInt @default(0)\n  costValueMinor            BigInt @default(0)\n  costProvenance            String @default("historical-unknown")\n\n  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n`,
 );
 
 replaceFirst(
