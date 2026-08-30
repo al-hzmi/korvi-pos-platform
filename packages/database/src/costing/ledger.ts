@@ -63,7 +63,9 @@ function assertIncomingBasis(delta: bigint, basis: IncomingCostBasis): void {
     throw new Error('Costing invariant failed: incoming cost basis cannot be negative.');
   }
   if (basis.knownQuantityScaled + basis.unknownQuantityScaled !== delta) {
-    throw new Error('Costing invariant failed: incoming cost quantities do not reconcile to movement.');
+    throw new Error(
+      'Costing invariant failed: incoming cost quantities do not reconcile to movement.',
+    );
   }
   if (basis.knownQuantityScaled === 0n && basis.knownValueMinor !== 0n) {
     throw new Error('Costing invariant failed: value cannot exist without known quantity.');
@@ -165,11 +167,7 @@ export function prepareMovementCost(
   const knownDeficitValue =
     knownDeficit === 0n
       ? 0n
-      : prefixAllocatedValue(
-          basis.knownValueMinor,
-          basis.knownQuantityScaled,
-          knownDeficit,
-        );
+      : prefixAllocatedValue(basis.knownValueMinor, basis.knownQuantityScaled, knownDeficit);
 
   const assetKnownQuantity = basis.knownQuantityScaled - knownDeficit;
   const assetKnownValue = basis.knownValueMinor - knownDeficitValue;

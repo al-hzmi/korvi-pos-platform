@@ -263,12 +263,14 @@ CREATE INDEX "inventory_valuation_events_tenantId_source_idx"
 
 ALTER TABLE "inventory_cost_balances" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "inventory_cost_balances" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "inventory_cost_balances_isolation" ON "inventory_cost_balances";
 CREATE POLICY "inventory_cost_balances_isolation" ON "inventory_cost_balances"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "inventory_valuation_events" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "inventory_valuation_events" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "inventory_valuation_events_isolation" ON "inventory_valuation_events";
 CREATE POLICY "inventory_valuation_events_isolation" ON "inventory_valuation_events"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());

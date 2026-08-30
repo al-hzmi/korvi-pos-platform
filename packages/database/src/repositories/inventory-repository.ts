@@ -104,12 +104,7 @@ export async function applyMovementWithin(
     throw new Error('Inventory invariant failed: zero delta is not a causal movement.');
   }
 
-  const before = await lockBalanceWithin(
-    tx,
-    tenant,
-    movement.branchId,
-    movement.productId,
-  );
+  const before = await lockBalanceWithin(tx, tenant, movement.branchId, movement.productId);
   const currentCost = await lockCostBalanceWithin(
     tx,
     tenant,

@@ -984,6 +984,12 @@ export async function recordInventoryTransfer(
         lineId,
       );
 
+      // The destination receives the exact basis the source movement just
+      // consumed. This is the transfer valuation conservation boundary: no
+      // branch can manufacture a fresh average, and no value can disappear
+      // between the two legs. If the destination is negative, the shared
+      // costing authority records any known value used to fill that deficit as
+      // catch-up evidence rather than pretending it remains an inventory asset.
       const into = await applyMovementWithin(
         tx,
         tenant,
@@ -1001,7 +1007,18 @@ export async function recordInventoryTransfer(
         },
         true,
         lineId,
+        out.cost,
       );
+
+      if (
+        into.cost.knownQuantityScaled !== out.cost.knownQuantityScaled ||
+        into.cost.unknownQuantityScaled !== out.cost.unknownQuantityScaled ||
+        into.cost.knownValueMinor !== out.cost.knownValueMinor
+      ) {
+        throw new Error(
+          'Transfer cost basis changed between source and destination movement evidence.',
+        );
+      }
 
       await tx.inventoryTransferLine.create({
         data: {

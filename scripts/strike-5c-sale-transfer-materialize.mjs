@@ -16,7 +16,8 @@ function replaceOnce(text, label, before, after) {
 }
 
 transform('packages/database/src/repositories/sale-repository.ts', (source) => {
-  if (source.includes('Sale movement cost basis does not reconcile to its sale line.')) return source;
+  if (source.includes('Sale movement cost basis does not reconcile to its sale line.'))
+    return source;
 
   let next = replaceOnce(
     source,
@@ -35,7 +36,9 @@ transform('packages/database/src/repositories/sale-repository.ts', (source) => {
 });
 
 transform('packages/database/src/inventory/stock-ledger.ts', (source) => {
-  if (source.includes('Transfer cost basis changed between source and destination movement evidence.')) {
+  if (
+    source.includes('Transfer cost basis changed between source and destination movement evidence.')
+  ) {
     return source;
   }
 
