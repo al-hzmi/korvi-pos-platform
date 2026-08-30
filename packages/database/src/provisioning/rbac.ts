@@ -22,6 +22,8 @@ export const PERMISSION_CATALOGUE: Readonly<
   'inventory.read': { ar: 'عرض المخزون', en: 'View inventory' },
   'inventory.adjust': { ar: 'تسوية المخزون', en: 'Adjust inventory' },
   'inventory.transfer': { ar: 'تحويل المخزون بين الفروع', en: 'Transfer inventory' },
+  'inventory.cost.read': { ar: 'عرض تكلفة المخزون', en: 'View inventory cost' },
+  'inventory.cost.manage': { ar: 'إدارة تقييم تكلفة المخزون', en: 'Manage inventory valuation' },
   'purchasing.read': { ar: 'عرض المشتريات والموردين', en: 'View purchasing and suppliers' },
   'purchasing.manage': {
     ar: 'إدارة الموردين وأوامر الشراء',
