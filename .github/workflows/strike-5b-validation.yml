@@ -1,0 +1,147 @@
+name: Strike 5B Validation
+
+on:
+  push:
+    branches:
+      - review/strike-5b-validation
+
+permissions:
+  contents: write
+
+concurrency:
+  group: strike-5b-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5b_validation?schema=public
+      SHADOW_DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5b_shadow?schema=public
+
+    steps:
+      - name: Check out validation branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Materialize lockfile from exact stable pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          if ! git diff --quiet -- package-lock.json; then
+            git diff --check -- package-lock.json
+            git config user.name 'Korvi Validation Automation'
+            git config user.email 'actions@users.noreply.github.com'
+            git add package-lock.json
+            git commit -m 'chore(deps): refresh strike 5b validation lockfile'
+            git push origin HEAD:review/strike-5b-validation
+          fi
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Verify stable dependency authority
+        run: npm run versions:verify
+
+      - name: Audit dependencies
+        run: npm run audit
+
+      - name: Create fresh non-superuser RLS databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD=postgres
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi LOGIN PASSWORD 'korvi' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+          CREATE DATABASE korvi_5b_validation OWNER korvi;
+          CREATE DATABASE korvi_5b_shadow OWNER korvi;
+          SQL
+          export PGPASSWORD=korvi
+          PROOF="$(psql -h localhost -U korvi -d korvi_5b_validation -Atc "SELECT current_user || '|' || current_database() || '|' || rolsuper || '|' || rolbypassrls FROM pg_roles WHERE rolname = current_user")"
+          test "$PROOF" = 'korvi|korvi_5b_validation|false|false'
+          echo "role-proof=$PROOF"
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Apply exactly eleven forward migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 11
+          npm exec -w @korvi/database -- prisma migrate deploy
+          export PGPASSWORD=korvi
+          APPLIED="$(psql -h localhost -U korvi -d korvi_5b_validation -Atc 'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL')"
+          test "$APPLIED" = '11'
+          echo "applied-migrations=$APPLIED"
+
+      - name: Prove migration-schema drift is zero
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm exec -w @korvi/database -- prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --exit-code
+
+      - name: Strike 5B C0 targeted proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx vitest run \
+            packages/domain/src/purchasing/__tests__/purchasing.test.ts \
+            apps/api/src/__tests__/purchasing-admin-routes.test.ts \
+            apps/api/src/__tests__/purchasing-receiving-live.test.ts \
+            packages/database/src/__tests__/purchasing-permission-migration-live.test.ts \
+            packages/database/src/__tests__/purchasing-snapshot-live.test.ts \
+            apps/api/src/__tests__/inventory-stock-live.test.ts \
+            apps/api/src/__tests__/checkout-live.test.ts \
+            apps/api/src/__tests__/returns-live.test.ts \
+            packages/database/src/__tests__/rls-live.test.ts \
+            apps/api/src/__tests__/owner-bootstrap-live.test.ts
+
+      - name: Full verify 1 of 3
+        run: npm run verify
+
+      - name: Restore generated Next declaration after verify 1
+        run: git checkout -- apps/pos-web/next-env.d.ts
+
+      - name: Full verify 2 of 3
+        run: npm run verify
+
+      - name: Restore generated Next declaration after verify 2
+        run: git checkout -- apps/pos-web/next-env.d.ts
+
+      - name: Full verify 3 of 3
+        run: npm run verify
+
+      - name: Final worktree and whitespace gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout -- apps/pos-web/next-env.d.ts
+          git diff --check
+          test -z "$(git status --porcelain)"
+          echo 'STRIKE-5B-VALIDATION-GREEN'
