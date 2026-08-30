@@ -1,15 +1,23 @@
-import { StockRequestError } from '@korvi/domain';
+import { CostingRequestError, StockRequestError, requirePrincipalPermission } from '@korvi/domain';
 import {
   StockOperationRefusedError,
   listBalancePage,
   recordInventoryAdjustment,
+  recordInventoryCostBootstrap,
   recordInventoryCount,
   recordInventoryTransfer,
 } from '@korvi/database';
-import { fingerprintAdjustment, fingerprintCount, fingerprintTransfer } from './fingerprint.js';
+import {
+  fingerprintAdjustment,
+  fingerprintCostBootstrap,
+  fingerprintCount,
+  fingerprintTransfer,
+} from './fingerprint.js';
 import type {
   AdjustmentRequest,
   AuthenticatedPrincipal,
+  CostBootstrapRequest,
+  CostingRequestRefusal,
   CountRequest,
   StockRequestRefusal,
   TransferRequest,
@@ -18,6 +26,7 @@ import type {
   AdjustmentResult,
   BalancePage,
   CountResult,
+  InventoryCostBootstrapResult,
   PrismaClient,
   StockOperationRefusal,
   TransferResult,
@@ -34,7 +43,8 @@ import type {
  * (ADR-0024 §4).
  */
 
-export type StockFailureReason = StockRequestRefusal | StockOperationRefusal;
+export type StockFailureReason =
+  StockRequestRefusal | CostingRequestRefusal | StockOperationRefusal;
 
 export type StockResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
@@ -49,6 +59,10 @@ export interface MerchantInventoryService {
     principal: AuthenticatedPrincipal,
     query: { readonly branchId: string; readonly limit: number; readonly cursor: string | null },
   ): Promise<BalancePage>;
+  bootstrapCost(
+    principal: AuthenticatedPrincipal,
+    request: CostBootstrapRequest,
+  ): Promise<StockResult<InventoryCostBootstrapResult>>;
   adjust(
     principal: AuthenticatedPrincipal,
     request: AdjustmentRequest,
@@ -75,7 +89,7 @@ async function attempt<T>(work: () => Promise<T>): Promise<StockResult<T>> {
   try {
     return { outcome: 'success', value: await work() };
   } catch (error) {
-    if (error instanceof StockRequestError) {
+    if (error instanceof StockRequestError || error instanceof CostingRequestError) {
       return { outcome: 'failure', reason: error.detail, productId: null };
     }
     if (error instanceof StockOperationRefusedError) {
@@ -95,6 +109,19 @@ export function createMerchantInventoryService(deps: {
       // The tenant is the session's. A branch id is a legitimate filter, and
       // under RLS one belonging to another merchant simply matches nothing.
       return listBalancePage(prisma, principal.tenantId, query.branchId, query.limit, query.cursor);
+    },
+
+    async bootstrapCost(principal, request) {
+      // Defense in depth: internal callers cannot bypass the route's permission.
+      requirePrincipalPermission(principal, 'inventory.cost.manage');
+      return attempt(() =>
+        recordInventoryCostBootstrap(
+          prisma,
+          { tenantId: principal.tenantId, userId: principal.userId },
+          request,
+          fingerprintCostBootstrap(request, principal.userId),
+        ),
+      );
     },
 
     async adjust(principal, request) {

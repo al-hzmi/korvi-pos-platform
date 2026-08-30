@@ -32,9 +32,9 @@ import type { TransactionClient } from '../tenant-context.js';
  *
  * ## Scope
  *
- * Only the four Strike 5B purchasing scopes write here. The 5A stock scopes are
- * untouched: their replays reconstruct from documents whose lines are immutable
- * evidence, and changing that is not this correction's business.
+ * The four Strike 5B purchasing scopes and Strike 5C's prospective cost
+ * bootstrap write here. The 5A stock-document scopes are untouched: their
+ * replays reconstruct from documents whose lines are immutable evidence.
  *
  * `resultSnapshot` is nullable because operations that committed before the
  * column existed have no recorded answer, and inventing one would be worse than

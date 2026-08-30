@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
-import { canonicalAdjustmentForm, canonicalCountForm, canonicalTransferForm } from '@korvi/domain';
-import type { AdjustmentRequest, CountRequest, TransferRequest } from '@korvi/domain';
+import {
+  canonicalAdjustmentForm,
+  canonicalCostBootstrapForm,
+  canonicalCountForm,
+  canonicalTransferForm,
+} from '@korvi/domain';
+import type {
+  AdjustmentRequest,
+  CostBootstrapRequest,
+  CountRequest,
+  TransferRequest,
+} from '@korvi/domain';
 
 /**
  * The request fingerprint, hashed here and canonicalized in the domain.
@@ -37,4 +47,10 @@ export function fingerprintCount(request: CountRequest, actorUserId: string): st
 
 export function fingerprintTransfer(request: TransferRequest, actorUserId: string): string {
   return digest(canonicalTransferForm(request), actorUserId);
+}
+export function fingerprintCostBootstrap(
+  request: CostBootstrapRequest,
+  actorUserId: string,
+): string {
+  return digest(canonicalCostBootstrapForm(request), actorUserId);
 }

@@ -192,6 +192,12 @@ export type {
 export { listBalancePage, MAX_BALANCE_PAGE } from './inventory/balances.js';
 export type { BalancePage, BalancePageRow } from './inventory/balances.js';
 
+// Prospective costing bootstrap (Strike 5C). It values only the currently
+// unknown positive quantity derived under stock + cost row locks; it never
+// changes stock quantity/revision or rewrites historical movement evidence.
+export { recordInventoryCostBootstrap } from './costing/bootstrap.js';
+export type { CostBootstrapActor, InventoryCostBootstrapResult } from './costing/bootstrap.js';
+
 // Purchasing and receiving authority (Strike 5B). Same rule as above: every
 // function here derives its tenant from a server-supplied actor and opens its
 // own tenant-scoped transaction.

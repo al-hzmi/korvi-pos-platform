@@ -1,4 +1,5 @@
 import { DomainError } from '../errors.js';
+import { canonicalUuid } from '../inventory/stock.js';
 
 /**
  * Pure integer valuation rules for Strike 5C (ADR-0024 §8).
@@ -19,7 +20,11 @@ export class CostingRequestError extends DomainError {
 }
 
 export type CostingRequestRefusal =
-  'invalid-money' | 'invalid-quantity' | 'non-positive-quantity' | 'nothing-to-value';
+  | 'invalid-money'
+  | 'invalid-quantity'
+  | 'non-positive-quantity'
+  | 'invalid-operation-id'
+  | 'nothing-to-value';
 
 const CANONICAL_UNSIGNED_INTEGER = /^(0|[1-9]\d{0,18})$/;
 const POSTGRES_BIGINT_MAX = (1n << 63n) - 1n;
@@ -334,4 +339,49 @@ export function allocateOriginalSaleReturnBasis(
     cumulativeReturnedQuantityScaled: afterReturned,
     cumulativeKnownReturnedQuantityScaled: knownAfter,
   };
+}
+export const COST_IDEMPOTENCY_SCOPES = { bootstrap: 'inventory-cost-bootstrap' } as const;
+
+export interface CostBootstrapRequest {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly productId: string;
+  readonly totalValueMinor: string;
+}
+
+export interface ValidatedCostBootstrap {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly productId: string;
+  readonly totalValueMinor: bigint;
+}
+
+export function validateCostBootstrapRequest(
+  request: CostBootstrapRequest,
+): ValidatedCostBootstrap {
+  const operationId = request.operationId.trim();
+  if (operationId.length === 0 || operationId.length > 120) {
+    throw new CostingRequestError(
+      'invalid-operation-id',
+      'operationId must contain between 1 and 120 characters.',
+    );
+  }
+  return {
+    operationId,
+    branchId: canonicalUuid(request.branchId, 'branchId'),
+    productId: canonicalUuid(request.productId, 'productId'),
+    totalValueMinor: parseNonNegativeMinor(request.totalValueMinor, 'totalValueMinor'),
+  };
+}
+
+/** Stable intent form: all UUIDs and integer text are canonical before hashing. */
+export function canonicalCostBootstrapForm(request: CostBootstrapRequest): readonly unknown[] {
+  const plan = validateCostBootstrapRequest(request);
+  return [
+    COST_IDEMPOTENCY_SCOPES.bootstrap,
+    plan.operationId,
+    plan.branchId,
+    plan.productId,
+    plan.totalValueMinor.toString(),
+  ];
 }

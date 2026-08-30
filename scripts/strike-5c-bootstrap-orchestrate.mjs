@@ -14,8 +14,8 @@ function replaceExactlyOnce(path, label, before, after) {
 {
   const path = 'scripts/strike-5c-bootstrap-materialize.mjs';
   const source = readFileSync(path, 'utf8');
-  const overEscaped = String.raw`\\\${`;
-  const escapedOnce = String.raw`\\${`;
+  const overEscaped = '\\\\${';
+  const escapedOnce = '\\${';
   const count = source.split(overEscaped).length - 1;
   if (count !== 8) {
     throw new Error(`bootstrap generator interpolation invariant: expected 8, found ${count}`);

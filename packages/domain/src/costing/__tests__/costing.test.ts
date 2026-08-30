@@ -5,6 +5,7 @@ import {
   applyKnownInflowAgainstDeficit,
   assertPoolFitsStock,
   bootstrapUnknownCost,
+  canonicalCostBootstrapForm,
   consumeKnownCost,
   consumeOutflowUnknownFirst,
   incrementalAllocatedValue,
@@ -177,5 +178,30 @@ describe('original-sale return basis', () => {
         third.knownValueMinor +
         final.knownValueMinor,
     ).toBe(100n);
+  });
+  it('canonicalizes cost bootstrap intent and refuses malformed money', () => {
+    expect(
+      canonicalCostBootstrapForm({
+        operationId: '  op-1  ',
+        branchId: '018F6000-0000-7000-8000-000000000001',
+        productId: '018F6000-0000-7000-8000-000000000002',
+        totalValueMinor: '100',
+      }),
+    ).toEqual([
+      'inventory-cost-bootstrap',
+      'op-1',
+      '018f6000-0000-7000-8000-000000000001',
+      '018f6000-0000-7000-8000-000000000002',
+      '100',
+    ]);
+
+    expect(() =>
+      canonicalCostBootstrapForm({
+        operationId: 'op-2',
+        branchId: '018f6000-0000-7000-8000-000000000001',
+        productId: '018f6000-0000-7000-8000-000000000002',
+        totalValueMinor: '01',
+      }),
+    ).toThrow(CostingRequestError);
   });
 });

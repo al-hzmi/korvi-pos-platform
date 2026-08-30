@@ -81,6 +81,13 @@ const TRANSFER = {
   lines: [{ productId: A.milk, quantityScaled: '1000' }],
 };
 
+const COST_BOOTSTRAP = {
+  operationId: 'op-cost-bootstrap-1',
+  branchId: A.branch,
+  productId: A.milk,
+  totalValueMinor: '4500',
+};
+
 let app: FastifyInstance;
 let seen: { method: string; request: unknown }[];
 let nextFailure: { reason: StockFailureReason; productId: string | null } | null;
@@ -111,6 +118,19 @@ function recordingInventory(): MerchantInventoryService {
         ],
         nextCursor: null,
       };
+    },
+    async bootstrapCost(_principal, request) {
+      seen.push({ method: 'bootstrapCost', request });
+      return answer({
+        id: '018fb000-0000-7000-8000-0000000000c1',
+        branchId: request.branchId,
+        productId: request.productId,
+        valuedQuantityScaled: '1000',
+        stockRevision: '12',
+        costRevision: '1',
+        occurredAt: '2026-08-27T00:00:00.000Z',
+        replayed: false,
+      });
     },
     async adjust(_principal, request: AdjustmentRequest) {
       seen.push({ method: 'adjust', request });
@@ -251,6 +271,7 @@ const get = (url: string, cookie: string | null) =>
   });
 
 const ROUTES = [
+  ['/v1/admin/inventory/cost-bootstrap', COST_BOOTSTRAP] as const,
   ['/v1/admin/inventory/adjustments', ADJUSTMENT] as const,
   ['/v1/admin/inventory/counts', COUNT] as const,
   ['/v1/admin/inventory/transfers', TRANSFER] as const,
@@ -303,6 +324,23 @@ describe('the stock authority requires a session and the exact permission', () =
     const allowed = await build(['inventory.transfer']);
     const second = await cookieFor(allowed);
     expect((await post('/v1/admin/inventory/transfers', second, TRANSFER)).statusCode).toBe(201);
+  });
+
+  it('demands inventory.cost.manage for bootstrap, which adjust does not imply', async () => {
+    const server = await build(['inventory.adjust']);
+    const cookie = await cookieFor(server);
+    expect(
+      (await post('/v1/admin/inventory/cost-bootstrap', cookie, COST_BOOTSTRAP)).statusCode,
+    ).toBe(403);
+    expect(seen).toHaveLength(0);
+
+    await app.close();
+    const allowed = await build(['inventory.cost.manage']);
+    const second = await cookieFor(allowed);
+    expect(
+      (await post('/v1/admin/inventory/cost-bootstrap', second, COST_BOOTSTRAP)).statusCode,
+    ).toBe(201);
+    expect(seen).toEqual([{ method: 'bootstrapCost', request: COST_BOOTSTRAP }]);
   });
 
   it('is decided by the permission and not by the role name', async () => {
@@ -406,6 +444,32 @@ describe('authority fields cannot be threaded through the body', () => {
     expect(JSON.parse(response.body)).toEqual({ error: 'forbidden_field', field: 'tenantId' });
     expect(seen).toHaveLength(0);
   });
+
+  it('refuses every client-supplied bootstrap quantity, pool and revision fact', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    const fields = [
+      'quantityScaled',
+      'valuedQuantityScaled',
+      'knownQuantityScaled',
+      'unknownQuantityScaled',
+      'unknownPositiveQuantity',
+      'knownValueMinor',
+      'costValueMinor',
+      'stockRevision',
+      'costRevision',
+    ];
+
+    for (const field of fields) {
+      const response = await post('/v1/admin/inventory/cost-bootstrap', cookie, {
+        ...COST_BOOTSTRAP,
+        [field]: '1000',
+      });
+      expect(response.statusCode, field).toBe(400);
+      expect(JSON.parse(response.body), field).toEqual({ error: 'forbidden_field', field });
+    }
+    expect(seen).toHaveLength(0);
+  });
 });
 
 describe('request shape', () => {
@@ -467,6 +531,19 @@ describe('request shape', () => {
     // proof that nothing on this path went through a JSON number.
     expect(response.body).toContain('"quantityScaled":"9007199254740993000"');
     expect(response.body).toContain('"revision":"12"');
+  });
+
+  it('accepts cost only as canonical non-negative integer text', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    for (const bad of ['-1', '01', '1.5', '2e3', '', ' 1', 4500]) {
+      const response = await post('/v1/admin/inventory/cost-bootstrap', cookie, {
+        ...COST_BOOTSTRAP,
+        totalValueMinor: bad,
+      });
+      expect(response.statusCode, JSON.stringify(bad)).toBe(400);
+    }
+    expect(seen).toHaveLength(0);
   });
 });
 
@@ -557,10 +634,29 @@ describe('UUID identity is canonicalized at the boundary', () => {
     }
     expect(seen).toHaveLength(0);
   });
+
+  it('canonicalizes bootstrap identities and preserves financial values as strings', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    const response = await post('/v1/admin/inventory/cost-bootstrap', cookie, {
+      ...COST_BOOTSTRAP,
+      branchId: A.branch.toUpperCase(),
+      productId: A.milk.toUpperCase(),
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(seen).toEqual([{ method: 'bootstrapCost', request: COST_BOOTSTRAP }]);
+    expect(response.body).toContain('"valuedQuantityScaled":"1000"');
+    expect(response.body).toContain('"stockRevision":"12"');
+    expect(response.body).toContain('"costRevision":"1"');
+  });
 });
 
 describe('typed refusals map to stable statuses', () => {
   const cases: readonly [StockFailureReason, number][] = [
+    ['invalid-money', 422],
+    ['invalid-operation-id', 422],
+    ['nothing-to-value', 409],
     ['stock-changed', 409],
     ['insufficient-stock', 409],
     ['idempotency-conflict', 409],

@@ -348,6 +348,7 @@ function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
 
   return {
     balances: (principal, query) => resolve().balances(principal, query),
+    bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),
     adjust: (principal, request) => resolve().adjust(principal, request),
     count: (principal, request) => resolve().count(principal, request),
     transfer: (principal, request) => resolve().transfer(principal, request),

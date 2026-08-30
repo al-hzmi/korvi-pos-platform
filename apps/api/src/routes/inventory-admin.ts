@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 /**
  * The merchant stock authority, over HTTP.
  *
- * Four routes, three permissions and one rule that governs all of them: the
+ * Five routes, four permissions and one rule that governs all of them: the
  * browser may state *what it wants to happen*, never *what already happened*
  * and never *who is asking*. The tenant and the actor come from the session;
  * balances, revisions and derived deltas come from the locked rows.
@@ -100,6 +100,15 @@ const transferBody = z
   })
   .strict();
 
+const costBootstrapBody = z
+  .object({
+    operationId: OPERATION_ID,
+    branchId: UUID,
+    productId: UUID,
+    totalValueMinor: z.string().regex(/^(0|[1-9][0-9]{0,18})$/),
+  })
+  .strict();
+
 const balancesQuery = z
   .object({
     branchId: UUID,
@@ -143,6 +152,19 @@ const FORBIDDEN_STOCK_FIELDS = [
 
 const FORBIDDEN_COUNT_FIELDS = ['deltaQuantityScaled', ...FORBIDDEN_STOCK_FIELDS] as const;
 
+const FORBIDDEN_COST_BOOTSTRAP_FIELDS = [
+  'quantityScaled',
+  'valuedQuantityScaled',
+  'knownQuantityScaled',
+  'unknownQuantityScaled',
+  'unknownPositiveQuantity',
+  'knownValueMinor',
+  'costValueMinor',
+  'stockRevision',
+  'costRevision',
+  ...FORBIDDEN_STOCK_FIELDS,
+] as const;
+
 function forbiddenField(body: unknown, fields: readonly string[]): string | null {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return null;
   for (const field of fields) {
@@ -169,6 +191,9 @@ function forbiddenField(body: unknown, fields: readonly string[]): string | null
  */
 const MESSAGES: Readonly<Record<StockFailureReason, string>> = {
   'invalid-uuid': 'معرّف غير صالح.',
+  'invalid-money': 'قيمة التكلفة غير صالحة.',
+  'invalid-operation-id': 'رقم العملية غير صالح.',
+  'nothing-to-value': 'لا توجد كمية موجبة مجهولة التكلفة لتقييمها.',
   'invalid-quantity': 'الكمية غير صالحة.',
   'invalid-revision': 'رقم المراجعة غير صالح.',
   'zero-delta': 'لا يمكن تسجيل تسوية بكمية صفرية.',
@@ -199,6 +224,9 @@ const MESSAGES: Readonly<Record<StockFailureReason, string>> = {
  */
 const STATUS: Readonly<Record<StockFailureReason, number>> = {
   'invalid-uuid': 422,
+  'invalid-money': 422,
+  'invalid-operation-id': 422,
+  'nothing-to-value': 409,
   'invalid-quantity': 422,
   'invalid-revision': 422,
   'zero-delta': 422,
@@ -261,6 +289,26 @@ export function registerInventoryAdminRoutes(
         cursor: parsed.data.cursor ?? null,
       });
       return reply.code(200).send(page);
+    },
+  );
+
+  app.post(
+    '/v1/admin/inventory/cost-bootstrap',
+    { preHandler: [guards.requireSession, guards.requirePermission('inventory.cost.manage')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      const field = forbiddenField(request.body, FORBIDDEN_COST_BOOTSTRAP_FIELDS);
+      if (field !== null) return reply.code(400).send({ error: 'forbidden_field', field });
+      const parsed = costBootstrapBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      const result = await service.bootstrapCost(principal, parsed.data);
+      if (result.outcome === 'failure') {
+        return failure(reply, result.reason, result.productId);
+      }
+      return reply.code(result.value.replayed ? 200 : 201).send(result.value);
     },
   );
 
