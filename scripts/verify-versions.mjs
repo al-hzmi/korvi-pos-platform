@@ -1,9 +1,10 @@
 /**
- * Assert every pinned dependency is a real, published, production-stable version.
+ * Assert every pinned dependency and root override is a real, published,
+ * production-stable version.
  *
  * A pin is only a guarantee if something checks it. This runs in `verify` and
  * in CI, so a dependency can never quietly drift onto a preview, beta or canary
- * build — including through a transitive bump or a hand edit.
+ * build — including through a transitive security override or a hand edit.
  *
  * Deliberate departures from the newest production-stable release are listed in
  * ALLOWED_BEHIND with the ADR that justifies each. Anything else lagging the
@@ -57,6 +58,7 @@ function newestPublishedStable(versions) {
 }
 
 const pins = new Map();
+let manifestShapeFailures = 0;
 for (const file of manifests) {
   const json = JSON.parse(readFileSync(file, 'utf8'));
   for (const field of ['dependencies', 'devDependencies']) {
@@ -65,9 +67,22 @@ for (const file of manifests) {
       pins.set(name, range);
     }
   }
+
+  if (file === 'package.json') {
+    for (const [name, value] of Object.entries(json.overrides ?? {})) {
+      if (typeof value !== 'string') {
+        console.error(
+          `FAIL  override ${name}: nested/non-string overrides are not accepted without extending the verifier.`,
+        );
+        manifestShapeFailures += 1;
+        continue;
+      }
+      pins.set(name, value);
+    }
+  }
 }
 
-let failures = 0;
+let failures = manifestShapeFailures;
 
 for (const [name, pin] of [...pins].sort()) {
   if (!EXACT_STABLE.test(pin)) {

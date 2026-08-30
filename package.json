@@ -29,6 +29,9 @@
     "audit": "bash scripts/audit.sh",
     "verify": "bash scripts/verify.sh"
   },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
+  },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.3",
