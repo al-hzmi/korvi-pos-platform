@@ -12,8 +12,6 @@ jobs:
   materialize:
     runs-on: ubuntu-latest
     env:
-      # Prisma 7 loads prisma.config.ts even for format/generate. These commands
-      # do not connect, but the config still requires a syntactically valid URL.
       DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5c_schema?schema=public
     steps:
       - name: Check out
@@ -38,10 +36,11 @@ jobs:
           node scripts/strike-5c-receiving-boundary-fix.mjs
           node scripts/strike-5c-service-cost-permission-materialize.mjs
           node scripts/strike-5c-return-basis-materialize.mjs
+          node scripts/strike-5c-bootstrap-materialize.mjs
           npm run format
           npm exec -w @korvi/database -- prisma format
 
-          allowed='^(apps/api/src/__tests__/purchasing-admin-routes\.test\.ts|apps/api/src/__tests__/purchasing-service\.test\.ts|apps/api/src/__tests__/returns-live\.test\.ts|apps/api/src/purchasing/service\.ts|apps/api/src/routes/purchasing-admin\.ts|packages/database/prisma/schema\.prisma|packages/database/prisma/migrations/20260830210000_costing_authority/migration\.sql|packages/database/src/__tests__/repository-tenancy\.test\.ts|packages/database/src/repositories/sale-repository\.ts|packages/database/src/repositories/return-repository\.ts|packages/database/src/inventory/stock-ledger\.ts|packages/database/src/costing/ledger\.ts|packages/database/src/repositories/inventory-repository\.ts|packages/database/src/purchasing/receiving\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|packages/domain/src/purchasing/purchasing\.ts|packages/domain/src/purchasing/__tests__/purchasing\.test\.ts|scripts/strike-5c-sale-transfer-materialize\.mjs|scripts/strike-5c-regression-materialize\.mjs|scripts/strike-5c-receiving-cost-materialize\.mjs|scripts/strike-5c-receiving-boundary-fix\.mjs|scripts/strike-5c-service-cost-permission-materialize\.mjs|scripts/strike-5c-return-basis-materialize\.mjs)$'
+          allowed='^(apps/api/src/__tests__/purchasing-admin-routes\.test\.ts|apps/api/src/__tests__/purchasing-service\.test\.ts|apps/api/src/__tests__/returns-live\.test\.ts|apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/purchasing/service\.ts|apps/api/src/routes/inventory-admin\.ts|apps/api/src/routes/purchasing-admin\.ts|packages/database/prisma/schema\.prisma|packages/database/prisma/migrations/20260830210000_costing_authority/migration\.sql|packages/database/src/__tests__/repository-tenancy\.test\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/costing/ledger\.ts|packages/database/src/index\.ts|packages/database/src/inventory/stock-ledger\.ts|packages/database/src/purchasing/receiving\.ts|packages/database/src/repositories/inventory-repository\.ts|packages/database/src/repositories/return-repository\.ts|packages/database/src/repositories/sale-repository\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|packages/domain/src/purchasing/purchasing\.ts|packages/domain/src/purchasing/__tests__/purchasing\.test\.ts|scripts/strike-5c-bootstrap-materialize\.mjs|scripts/strike-5c-sale-transfer-materialize\.mjs|scripts/strike-5c-regression-materialize\.mjs|scripts/strike-5c-receiving-cost-materialize\.mjs|scripts/strike-5c-receiving-boundary-fix\.mjs|scripts/strike-5c-service-cost-permission-materialize\.mjs|scripts/strike-5c-return-basis-materialize\.mjs)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo 'Unexpected formatter/materializer changes:' >&2
@@ -59,27 +58,33 @@ jobs:
               apps/api/src/__tests__/purchasing-admin-routes.test.ts \
               apps/api/src/__tests__/purchasing-service.test.ts \
               apps/api/src/__tests__/returns-live.test.ts \
+              apps/api/src/inventory/fingerprint.ts \
+              apps/api/src/inventory/service.ts \
               apps/api/src/purchasing/service.ts \
+              apps/api/src/routes/inventory-admin.ts \
               apps/api/src/routes/purchasing-admin.ts \
               packages/database/prisma/schema.prisma \
               packages/database/prisma/migrations/20260830210000_costing_authority/migration.sql \
               packages/database/src/__tests__/repository-tenancy.test.ts \
-              packages/database/src/repositories/sale-repository.ts \
-              packages/database/src/repositories/return-repository.ts \
-              packages/database/src/inventory/stock-ledger.ts \
+              packages/database/src/costing/bootstrap.ts \
               packages/database/src/costing/ledger.ts \
-              packages/database/src/repositories/inventory-repository.ts \
+              packages/database/src/index.ts \
+              packages/database/src/inventory/stock-ledger.ts \
               packages/database/src/purchasing/receiving.ts \
+              packages/database/src/repositories/inventory-repository.ts \
+              packages/database/src/repositories/return-repository.ts \
+              packages/database/src/repositories/sale-repository.ts \
               packages/domain/src/costing/costing.ts \
               packages/domain/src/costing/__tests__/costing.test.ts \
               packages/domain/src/purchasing/purchasing.ts \
               packages/domain/src/purchasing/__tests__/purchasing.test.ts \
+              scripts/strike-5c-bootstrap-materialize.mjs \
               scripts/strike-5c-sale-transfer-materialize.mjs \
               scripts/strike-5c-regression-materialize.mjs \
               scripts/strike-5c-receiving-cost-materialize.mjs \
               scripts/strike-5c-receiving-boundary-fix.mjs \
               scripts/strike-5c-service-cost-permission-materialize.mjs \
               scripts/strike-5c-return-basis-materialize.mjs
-            git commit -m 'fix(costing): restore original sale basis on returns'
+            git commit -m 'feat(costing): add prospective cost bootstrap authority'
             git push origin HEAD:strike/5c-costing-authority
           fi
