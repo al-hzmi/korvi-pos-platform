@@ -1,0 +1,40 @@
+name: Strike 5C Schema Materializer
+
+on:
+  push:
+    branches:
+      - strike/5c-costing-authority
+
+permissions:
+  contents: write
+
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Materialize and validate schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/strike-5c-schema-materialize.mjs
+          npm exec -w @korvi/database -- prisma format
+          npm run db:generate
+          git diff --check
+          if ! git diff --quiet -- packages/database/prisma/schema.prisma; then
+            git config user.name 'Korvi Validation Automation'
+            git config user.email 'actions@users.noreply.github.com'
+            git add packages/database/prisma/schema.prisma
+            git commit -m 'feat(costing): materialize costing prisma schema'
+            git push origin HEAD:strike/5c-costing-authority
+          fi
