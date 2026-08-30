@@ -1,4 +1,4 @@
-import { PurchasingRequestError } from '@korvi/domain';
+import { PurchasingRequestError, requirePrincipalPermission } from '@korvi/domain';
 import {
   PurchasingRefusedError,
   createPurchaseOrder,
@@ -198,6 +198,13 @@ export function createMerchantPurchasingService(deps: {
     },
 
     async receive(principal, request) {
+      // Defense in depth: the HTTP route enforces this too, but the service is
+      // an authority boundary in its own right. An internal caller must not be
+      // able to establish acquisition value merely by bypassing the route.
+      if (request.lines.some((line) => line.inventoryValueMinor !== undefined)) {
+        requirePrincipalPermission(principal, 'inventory.cost.manage');
+      }
+
       return attempt(() =>
         recordPurchaseReceipt(
           prisma,
