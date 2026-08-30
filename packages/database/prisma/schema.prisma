@@ -1723,4 +1723,3 @@ model GlobalCatalogItem {
 
   @@map("global_catalog_items")
 }
- M packages/database/prisma/schema.prisma
