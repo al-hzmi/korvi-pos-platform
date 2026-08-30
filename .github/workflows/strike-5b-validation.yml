@@ -114,6 +114,13 @@ jobs:
             --to-schema prisma/schema.prisma \
             --exit-code
 
+      - name: Build runtime workspace dependencies for targeted tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+
       - name: Strike 5B C0 targeted proof
         shell: bash
         run: |
