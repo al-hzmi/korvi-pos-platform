@@ -44,23 +44,40 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Materialize lockfile from exact stable pins and security overrides
+      - name: Re-resolve lockfile from exact pins and security override
         shell: bash
         run: |
           set -euo pipefail
+          cp package-lock.json /tmp/package-lock.before.json
+          rm package-lock.json
           npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
-          npm update deepmerge-ts --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          git diff --check -- package-lock.json
+          if grep -q '"node_modules/@prisma/config/node_modules/deepmerge-ts"' package-lock.json; then
+            echo 'vulnerable nested deepmerge resolution remains after clean lock re-resolution' >&2
+            exit 1
+          fi
+          if ! grep -q '"node_modules/deepmerge-ts"' package-lock.json; then
+            echo 'patched deepmerge resolution missing from regenerated lockfile' >&2
+            exit 1
+          fi
           if ! git diff --quiet -- package-lock.json; then
-            git diff --check -- package-lock.json
             git config user.name 'Korvi Validation Automation'
             git config user.email 'actions@users.noreply.github.com'
             git add package-lock.json
-            git commit -m 'chore(deps): refresh strike 5b validation lockfile'
+            git commit -m 'chore(deps): re-resolve strike 5b validation lockfile'
             git push origin HEAD:review/strike-5b-validation
           fi
 
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Prove patched deepmerge tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ls deepmerge-ts --all
+          test "$(node -p "require('./node_modules/deepmerge-ts/package.json').version")" = '8.0.2'
+          test ! -e node_modules/@prisma/config/node_modules/deepmerge-ts/package.json
 
       - name: Verify stable dependency authority
         run: npm run versions:verify
