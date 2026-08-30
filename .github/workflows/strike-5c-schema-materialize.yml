@@ -29,9 +29,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Normalize the escaping defect in the temporary generator. The eight
-          # generated Prisma tagged-template interpolations must be escaped
-          # exactly once in generator source and have no backslash in output.
           python3 - <<'PY'
           from pathlib import Path
           path = Path('scripts/strike-5c-bootstrap-materialize.mjs')
@@ -45,10 +42,39 @@ jobs:
           PY
 
           node scripts/strike-5c-bootstrap-materialize.mjs
+
+          # Keep the lazy server adapter structurally complete when the inventory
+          # authority gains the bootstrap operation. This is part of the product
+          # boundary, not a test-only cast or suppression.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/api/src/server.ts')
+          source = path.read_text()
+          before = """  return {
+            balances: (principal, query) => resolve().balances(principal, query),
+            adjust: (principal, request) => resolve().adjust(principal, request),
+            count: (principal, request) => resolve().count(principal, request),
+            transfer: (principal, request) => resolve().transfer(principal, request),
+          };
+          """
+          after = """  return {
+            balances: (principal, query) => resolve().balances(principal, query),
+            bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),
+            adjust: (principal, request) => resolve().adjust(principal, request),
+            count: (principal, request) => resolve().count(principal, request),
+            transfer: (principal, request) => resolve().transfer(principal, request),
+          };
+          """
+          if after not in source:
+              if source.count(before) != 1:
+                  raise SystemExit(f'expected one lazy inventory adapter anchor, found {source.count(before)}')
+              path.write_text(source.replace(before, after))
+          PY
+
           npm run format
           npm exec -w @korvi/database -- prisma format
 
-          allowed='^(apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/routes/inventory-admin\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/index\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|scripts/strike-5c-bootstrap-materialize\.mjs)$'
+          allowed='^(apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/routes/inventory-admin\.ts|apps/api/src/server\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/index\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|scripts/strike-5c-bootstrap-materialize\.mjs)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo 'Unexpected bootstrap materializer changes:' >&2
@@ -66,6 +92,7 @@ jobs:
               apps/api/src/inventory/fingerprint.ts \
               apps/api/src/inventory/service.ts \
               apps/api/src/routes/inventory-admin.ts \
+              apps/api/src/server.ts \
               packages/database/src/costing/bootstrap.ts \
               packages/database/src/index.ts \
               packages/domain/src/costing/costing.ts \
