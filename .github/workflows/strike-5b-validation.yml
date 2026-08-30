@@ -44,11 +44,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Materialize lockfile from exact stable pins
+      - name: Materialize lockfile from exact stable pins and security overrides
         shell: bash
         run: |
           set -euo pipefail
           npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          npm update deepmerge-ts --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
           if ! git diff --quiet -- package-lock.json; then
             git diff --check -- package-lock.json
             git config user.name 'Korvi Validation Automation'
