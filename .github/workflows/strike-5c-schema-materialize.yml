@@ -29,13 +29,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Earlier slices are already committed product source. Re-running their
-          # one-shot materializers would make tooling history an execution dependency.
+          # Normalize the single escaping defect in the temporary generator.
+          # The generated TypeScript must contain ${...} Prisma tagged-template
+          # interpolations; the generator source must escape them exactly once.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/strike-5c-bootstrap-materialize.mjs')
+          source = path.read_text()
+          bad = r'\\${'
+          good = r'\${'
+          count = source.count(bad)
+          if count != 7:
+              raise SystemExit(f'expected 7 over-escaped template interpolations, found {count}')
+          path.write_text(source.replace(bad, good))
+          PY
+
           node scripts/strike-5c-bootstrap-materialize.mjs
           npm run format
           npm exec -w @korvi/database -- prisma format
 
-          allowed='^(apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/routes/inventory-admin\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/index\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts)$'
+          allowed='^(apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/routes/inventory-admin\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/index\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|scripts/strike-5c-bootstrap-materialize\.mjs)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo 'Unexpected bootstrap materializer changes:' >&2
@@ -56,7 +69,8 @@ jobs:
               packages/database/src/costing/bootstrap.ts \
               packages/database/src/index.ts \
               packages/domain/src/costing/costing.ts \
-              packages/domain/src/costing/__tests__/costing.test.ts
+              packages/domain/src/costing/__tests__/costing.test.ts \
+              scripts/strike-5c-bootstrap-materialize.mjs
             git commit -m 'feat(costing): add prospective cost bootstrap authority'
             git push origin HEAD:strike/5c-costing-authority
           fi
