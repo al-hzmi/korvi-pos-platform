@@ -14,10 +14,12 @@ import {
   listSuppliers,
   provisionPermissionCatalogue,
   provisionTenantRbac,
+  recordInventoryCostBootstrap,
   recordPurchaseReceipt,
   updateSupplier,
   withTenant,
 } from '@korvi/database';
+import { fingerprintCostBootstrap } from '../inventory/fingerprint.js';
 import {
   fingerprintPurchaseOrder,
   fingerprintPurchaseReceipt,
@@ -67,6 +69,7 @@ const T = {
   inactive: '018f5b00-0000-7000-8000-0000000000aa',
   doomedProduct: '018f5b00-0000-7000-8000-0000000000ab',
   customRole: '018f5b00-0000-7000-8000-0000000000ac',
+  costReceipt: '018f5b00-0000-7000-8000-0000000000b0',
 } as const;
 
 const OTHER = {
@@ -187,6 +190,46 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     });
   }
 
+  /** The tenant's complete mutable valuation state plus immutable evidence count. */
+  async function costFootprint(): Promise<{
+    balances: number;
+    events: number;
+    knownQuantityTotal: string;
+    knownValueTotal: string;
+    stockRevisionTotal: string;
+    costRevisionTotal: string;
+  }> {
+    return withTenant(prisma, scope.tenantId, async (tx) => {
+      const rows = await tx.inventoryCostBalance.findMany({
+        where: { tenantId: T.tenant },
+        select: {
+          knownQuantityScaled: true,
+          knownValueMinor: true,
+          stockRevision: true,
+          costRevision: true,
+        },
+      });
+      let knownQuantityTotal = 0n;
+      let knownValueTotal = 0n;
+      let stockRevisionTotal = 0n;
+      let costRevisionTotal = 0n;
+      for (const row of rows) {
+        knownQuantityTotal += row.knownQuantityScaled;
+        knownValueTotal += row.knownValueMinor;
+        stockRevisionTotal += row.stockRevision;
+        costRevisionTotal += row.costRevision;
+      }
+      return {
+        balances: rows.length,
+        events: await tx.inventoryValuationEvent.count({ where: { tenantId: T.tenant } }),
+        knownQuantityTotal: knownQuantityTotal.toString(),
+        knownValueTotal: knownValueTotal.toString(),
+        stockRevisionTotal: stockRevisionTotal.toString(),
+        costRevisionTotal: costRevisionTotal.toString(),
+      };
+    });
+  }
+
   async function movementsFor(receiptId: string): Promise<
     {
       branchId: string;
@@ -195,6 +238,10 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
       kind: string;
       sourceType: string | null;
       sourceLineId: string | null;
+      costKnownQuantityScaled: bigint;
+      costUnknownQuantityScaled: bigint;
+      costValueMinor: bigint;
+      costProvenance: string;
     }[]
   > {
     return withTenant(prisma, scope.tenantId, async (tx) =>
@@ -207,6 +254,10 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
           kind: true,
           sourceType: true,
           sourceLineId: true,
+          costKnownQuantityScaled: true,
+          costUnknownQuantityScaled: true,
+          costValueMinor: true,
+          costProvenance: true,
         },
         orderBy: { productId: 'asc' },
       }),
@@ -275,6 +326,53 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     return { blocked, result: await within('operation under uncommitted change', 30_000, started) };
   }
 
+  /** Start real contenders behind one held stock row, then release them together. */
+  async function behindBalanceGate<T>(
+    productId: string,
+    label: string,
+    work: () => Promise<T>,
+  ): Promise<{ blocked: number; result: T }> {
+    const gate = new pg.Client({ connectionString: url });
+    await gate.connect();
+    await gate.query('BEGIN');
+    await gate.query("SELECT set_config('app.tenant_id', $1, true)", [T.tenant]);
+    const gatePidResult = await gate.query<{ pid: number }>(
+      'SELECT pg_backend_pid()::integer AS pid',
+    );
+    const gatePid = gatePidResult.rows[0]?.pid;
+    if (gatePid === undefined) throw new Error('balance gate backend PID was not returned');
+    await gate.query(
+      `SELECT "revision" FROM "inventory_balances"
+        WHERE "tenantId" = $1::uuid AND "branchId" = $2::uuid AND "productId" = $3::uuid
+        FOR UPDATE`,
+      [T.tenant, T.branchA, productId],
+    );
+
+    const started = work();
+    let blocked = 0;
+    for (let attempt = 0; attempt < 50 && blocked < 2; attempt += 1) {
+      const { rows } = await gate.query<{ n: string }>(
+        `WITH RECURSIVE waiters(pid) AS (
+           SELECT pid
+             FROM pg_stat_activity
+            WHERE $1::integer = ANY(pg_blocking_pids(pid))
+           UNION
+           SELECT activity.pid
+             FROM pg_stat_activity AS activity
+             JOIN waiters ON waiters.pid = ANY(pg_blocking_pids(activity.pid))
+         )
+         SELECT count(*)::text AS n FROM waiters`,
+        [gatePid],
+      );
+      blocked = Number(rows[0]?.n ?? '0');
+      if (blocked < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    await gate.query('COMMIT');
+    await gate.end();
+    return { blocked, result: await within(label, 30_000, started) };
+  }
+
   beforeAll(async () => {
     prisma = createPrismaClient(url);
     second = createPrismaClient(url);
@@ -332,6 +430,7 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
         [T.untracked, 'SERVICE', 'unit', false, true],
         [T.inactive, 'OLD-SKU', 'unit', true, false],
         [T.doomedProduct, 'DOOMED', 'unit', true, true],
+        [T.costReceipt, 'COST-RECEIPT', 'unit', true, true],
       ] as const) {
         await tx.product.create({
           data: {
@@ -630,6 +729,12 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     expect(movements[0]?.sourceLineId).toBe(line?.id);
     expect(movements[0]?.quantityScaled).toBe(30_000n);
     expect(movements[0]?.branchId).toBe(T.branchA);
+    expect(movements[0]).toMatchObject({
+      costKnownQuantityScaled: 0n,
+      costUnknownQuantityScaled: 30_000n,
+      costValueMinor: 0n,
+      costProvenance: 'unknown',
+    });
 
     // The accumulator, the audit event and the idempotency reservation all
     // landed in the same transaction as the stock.
@@ -653,8 +758,30 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
       receiptLines: await tx.purchaseReceiptLine.count({
         where: { tenantId: T.tenant, purchaseReceiptId: partial.id },
       }),
+      receiptCost: await tx.purchaseReceiptLine.findFirstOrThrow({
+        where: { tenantId: T.tenant, purchaseReceiptId: partial.id },
+        select: {
+          inventoryValueMinor: true,
+          costKnownQuantityScaled: true,
+          costUnknownQuantityScaled: true,
+          costValueMinor: true,
+          costProvenance: true,
+        },
+      }),
     }));
-    expect(evidence).toEqual({ accumulated: '30000', audit: 1, key: 1, receiptLines: 1 });
+    expect(evidence).toEqual({
+      accumulated: '30000',
+      audit: 1,
+      key: 1,
+      receiptLines: 1,
+      receiptCost: {
+        inventoryValueMinor: null,
+        costKnownQuantityScaled: 0n,
+        costUnknownQuantityScaled: 30_000n,
+        costValueMinor: 0n,
+        costProvenance: 'unknown',
+      },
+    });
 
     // F — the balance of the order, and the status moves to received.
     const final = await receive({
@@ -692,6 +819,167 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
       }),
     );
     expect((closedRefusal as PurchasingRefusedError).detail).toBe('purchase-order-closed');
+  }, 120_000);
+
+  it('5C: serialises cost bootstrap against a valued receipt and preserves both bases', async () => {
+    const po = await freshOrder([{ productId: T.costReceipt, orderedQuantityScaled: '2000' }]);
+
+    // This is the exact state bootstrap exists to resolve: five historical
+    // units are on hand, but no cost pool or invented valuation exists yet.
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branchA,
+          productId: T.costReceipt,
+          quantityScaled: 5_000n,
+          revision: 0n,
+          updatedAt: new Date(),
+        },
+      });
+    });
+
+    const bootstrapRequest = {
+      operationId: `bootstrap-receipt-${newId()}`,
+      branchId: T.branchA,
+      productId: T.costReceipt,
+      totalValueMinor: '100',
+    };
+    const receiptRequest: PurchaseReceiptRequest = {
+      operationId: `valued-receipt-${newId()}`,
+      purchaseOrderId: po.id,
+      reference: null,
+      lines: [
+        {
+          purchaseOrderLineId: po.lineIdFor(T.costReceipt),
+          acceptedQuantityScaled: '2000',
+          inventoryValueMinor: '40',
+        },
+      ],
+    };
+
+    const raced = await behindBalanceGate(T.costReceipt, 'bootstrap against valued receipt', () =>
+      Promise.allSettled([
+        recordInventoryCostBootstrap(
+          second,
+          actor,
+          bootstrapRequest,
+          fingerprintCostBootstrap(bootstrapRequest, T.user),
+        ),
+        receive(receiptRequest, actor, prisma),
+      ]),
+    );
+    expect(
+      raced.blocked,
+      'bootstrap and receipt were not both waiting behind the held stock row',
+    ).toBe(2);
+
+    const [bootstrapOutcome, receiptOutcome] = raced.result;
+    if (bootstrapOutcome === undefined || bootstrapOutcome.status === 'rejected') {
+      throw new Error(
+        `bootstrap failed: ${String(bootstrapOutcome?.status === 'rejected' ? bootstrapOutcome.reason : 'missing result')}`,
+      );
+    }
+    if (receiptOutcome === undefined || receiptOutcome.status === 'rejected') {
+      throw new Error(
+        `receipt failed: ${String(receiptOutcome?.status === 'rejected' ? receiptOutcome.reason : 'missing result')}`,
+      );
+    }
+
+    // Whichever transaction reached the row first, bootstrap values only the
+    // same five historical unknown units. The receipt contributes its own
+    // independently recorded 2-unit / 40-minor-unit acquisition basis.
+    expect(bootstrapOutcome.value.valuedQuantityScaled).toBe('5000');
+    expect(['0', '1']).toContain(bootstrapOutcome.value.stockRevision);
+    expect(['1', '2']).toContain(bootstrapOutcome.value.costRevision);
+    expect(receiptOutcome.value.purchaseOrderStatus).toBe('received');
+
+    const evidence = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      stock: await tx.inventoryBalance.findFirstOrThrow({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costReceipt },
+        select: { quantityScaled: true, revision: true },
+      }),
+      cost: await tx.inventoryCostBalance.findFirstOrThrow({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costReceipt },
+        select: {
+          knownQuantityScaled: true,
+          knownValueMinor: true,
+          stockRevision: true,
+          costRevision: true,
+        },
+      }),
+      receiptLine: await tx.purchaseReceiptLine.findFirstOrThrow({
+        where: { tenantId: T.tenant, purchaseReceiptId: receiptOutcome.value.id },
+        select: {
+          id: true,
+          inventoryValueMinor: true,
+          costKnownQuantityScaled: true,
+          costUnknownQuantityScaled: true,
+          costValueMinor: true,
+          costProvenance: true,
+        },
+      }),
+      movement: await tx.inventoryMovement.findFirstOrThrow({
+        where: {
+          tenantId: T.tenant,
+          sourceType: 'purchase-receipt',
+          sourceId: receiptOutcome.value.id,
+        },
+        select: {
+          sourceLineId: true,
+          costKnownQuantityScaled: true,
+          costUnknownQuantityScaled: true,
+          costValueMinor: true,
+          costProvenance: true,
+        },
+      }),
+      valuationEvents: await tx.inventoryValuationEvent.findMany({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costReceipt },
+        select: {
+          eventKind: true,
+          knownQuantityScaled: true,
+          unknownQuantityScaled: true,
+          knownValueMinor: true,
+        },
+        orderBy: { eventKind: 'asc' },
+      }),
+    }));
+
+    expect(evidence.stock).toEqual({ quantityScaled: 7_000n, revision: 1n });
+    expect(evidence.cost).toEqual({
+      knownQuantityScaled: 7_000n,
+      knownValueMinor: 140n,
+      stockRevision: 1n,
+      costRevision: 2n,
+    });
+    expect(evidence.receiptLine).toMatchObject({
+      inventoryValueMinor: 40n,
+      costKnownQuantityScaled: 2_000n,
+      costUnknownQuantityScaled: 0n,
+      costValueMinor: 40n,
+      costProvenance: 'recorded',
+    });
+    expect(evidence.movement).toEqual({
+      sourceLineId: evidence.receiptLine.id,
+      costKnownQuantityScaled: 2_000n,
+      costUnknownQuantityScaled: 0n,
+      costValueMinor: 40n,
+      costProvenance: 'recorded',
+    });
+    expect(evidence.valuationEvents).toEqual([
+      {
+        eventKind: 'bootstrap',
+        knownQuantityScaled: 5_000n,
+        unknownQuantityScaled: 0n,
+        knownValueMinor: 100n,
+      },
+      {
+        eventKind: 'movement',
+        knownQuantityScaled: 2_000n,
+        unknownQuantityScaled: 0n,
+        knownValueMinor: 40n,
+      },
+    ]);
   }, 120_000);
 
   // -------------------------------------------------------------------------
@@ -1230,10 +1518,11 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
   // Q — atomicity
   // -------------------------------------------------------------------------
 
-  it('Q: a late failure rolls back receipt, accumulators, status, stock, audit and idempotency', async () => {
+  it('Q: a late failure rolls back receipt, stock, cost, audit and idempotency', async () => {
     const po = await freshOrder([{ productId: T.milk, orderedQuantityScaled: '8000' }]);
     const lineId = po.lineIdFor(T.milk);
     const footprint = await stockFootprint();
+    const costBefore = await costFootprint();
 
     // A fault installed in the database rather than the code under test. The
     // audit insert is the last write of the receipt transaction, so refusing it
@@ -1255,14 +1544,19 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
         FOR EACH ROW EXECUTE FUNCTION korvi_test_refuse_receipt_audit();`);
 
     const operationId = `rc-late-${newId()}`;
-    const failed = await refusal(() =>
-      receive({
-        operationId,
-        purchaseOrderId: po.id,
-        reference: null,
-        lines: [{ purchaseOrderLineId: lineId, acceptedQuantityScaled: '4000' }],
-      }),
-    );
+    const request: PurchaseReceiptRequest = {
+      operationId,
+      purchaseOrderId: po.id,
+      reference: null,
+      lines: [
+        {
+          purchaseOrderLineId: lineId,
+          acceptedQuantityScaled: '4000',
+          inventoryValueMinor: '80',
+        },
+      ],
+    };
+    const failed = await refusal(() => receive(request));
     expect(failed.message).toMatch(/korvi test fault/);
 
     await fault.query(`
@@ -1272,6 +1566,7 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
 
     // Nothing survives. Half a receipt is stock that arrived with no evidence.
     expect(await stockFootprint()).toEqual(footprint);
+    expect(await costFootprint()).toEqual(costBefore);
     const residue = await withTenant(prisma, scope.tenantId, async (tx) => ({
       receipts: await tx.purchaseReceipt.count({ where: { tenantId: T.tenant, operationId } }),
       receiptLines: await tx.purchaseReceiptLine.count({
@@ -1303,12 +1598,7 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
 
     // The operation id is free again, because its reservation rolled back with
     // everything else. A retry succeeds rather than being told it conflicts.
-    const retried = await receive({
-      operationId,
-      purchaseOrderId: po.id,
-      reference: null,
-      lines: [{ purchaseOrderLineId: lineId, acceptedQuantityScaled: '4000' }],
-    });
+    const retried = await receive(request);
     expect(retried.replayed).toBe(false);
     expect(retried.purchaseOrderStatus).toBe('partially_received');
   }, 120_000);

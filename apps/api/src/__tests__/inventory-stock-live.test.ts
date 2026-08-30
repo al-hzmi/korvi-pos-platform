@@ -17,6 +17,7 @@ import {
   listBalancePage,
   provisionPermissionCatalogue,
   provisionTenantRbac,
+  recordInventoryCostBootstrap,
   recordInventoryAdjustment,
   recordInventoryCount,
   recordInventoryTransfer,
@@ -26,6 +27,7 @@ import { createCheckoutService } from '../checkout/service.js';
 import { createReturnService } from '../returns/service.js';
 import {
   fingerprintAdjustment,
+  fingerprintCostBootstrap,
   fingerprintCount,
   fingerprintTransfer,
 } from '../inventory/fingerprint.js';
@@ -75,6 +77,8 @@ const T = {
   untracked: '018f5a00-0000-7000-8000-0000000000ab',
   inactive: '018f5a00-0000-7000-8000-0000000000ac',
   customRole: '018f5a00-0000-7000-8000-0000000000ad',
+  costSale: '018f5a00-0000-7000-8000-0000000000b0',
+  costTransfer: '018f5a00-0000-7000-8000-0000000000b1',
 } as const;
 
 const OTHER = {
@@ -151,6 +155,20 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
       });
       return row;
     });
+  }
+
+  async function costOf(branchId: string, productId: string) {
+    return withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.inventoryCostBalance.findFirst({
+        where: { tenantId: T.tenant, branchId, productId },
+        select: {
+          knownQuantityScaled: true,
+          knownValueMinor: true,
+          stockRevision: true,
+          costRevision: true,
+        },
+      }),
+    );
   }
 
   async function setQuantity(
@@ -288,6 +306,8 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
         [T.scale, 'TOMATO', 'weighted', true, true],
         [T.untracked, 'SERVICE', 'unit', false, true],
         [T.inactive, 'OLD-SKU', 'unit', true, false],
+        [T.costSale, 'COST-SALE', 'unit', true, true],
+        [T.costTransfer, 'COST-TRANSFER', 'unit', true, true],
       ] as const) {
         await tx.product.create({
           data: {
@@ -1171,6 +1191,138 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     expect(moved).toBe(transferCommitted ? 2_000n : 0n);
   }, 90_000);
 
+  it('serialises cost bootstrap against a sale without losing stock or value', async () => {
+    await allowNegative(false);
+    await setQuantity(T.branchA, T.costSale, 10_000n);
+    const before = await balanceOf(T.branchA, T.costSale);
+    if (before === null) throw new Error('no opening bootstrap/sale balance');
+
+    const bootstrapRequest = {
+      operationId: `bootstrap-sale-${newId()}`,
+      branchId: T.branchA,
+      productId: T.costSale,
+      totalValueMinor: '100',
+    };
+    const principal: AuthenticatedPrincipal = {
+      tenantId: T.tenant,
+      tenantSlug: T.slug,
+      userId: T.user,
+      sessionId: newId(),
+      email: 'sara@stock-live-a.test',
+      displayName: 'سارة',
+      roles: ['cashier'],
+      permissions: ['sale.create', 'product.read'],
+      maxDiscountBasisPoints: 0n,
+      branchId: T.branchA,
+    };
+
+    const raced = await behindBalanceGate(T.costSale, 'bootstrap against sale', () =>
+      Promise.allSettled([
+        recordInventoryCostBootstrap(
+          second,
+          actor,
+          bootstrapRequest,
+          fingerprintCostBootstrap(bootstrapRequest, T.user),
+        ),
+        checkout.checkout({
+          principal,
+          operationId: newId(),
+          terminalId: T.terminal,
+          cashReceivedMinor: '10000',
+          lines: [{ productId: T.costSale, quantityScaled: '2000' }],
+        }),
+      ]),
+    );
+    expect(raced.blocked, 'bootstrap and sale were not both waiting behind the held row').toBe(2);
+
+    const [bootstrapOutcome, saleOutcome] = raced.result;
+    if (bootstrapOutcome?.status !== 'fulfilled') {
+      throw new Error(`bootstrap failed: ${String(bootstrapOutcome?.reason)}`);
+    }
+    if (saleOutcome === undefined) throw new Error('sale failed: missing result');
+    if (saleOutcome.status === 'rejected') {
+      throw new Error(`sale failed: ${String(saleOutcome.reason)}`);
+    }
+    if (saleOutcome.value.outcome !== 'success') {
+      throw new Error(`sale refused: ${saleOutcome.value.reason}`);
+    }
+
+    const valuedQuantity = BigInt(bootstrapOutcome.value.valuedQuantityScaled);
+    expect([8_000n, 10_000n]).toContain(valuedQuantity);
+    const stock = await balanceOf(T.branchA, T.costSale);
+    const cost = await costOf(T.branchA, T.costSale);
+    expect(stock).toEqual({ quantityScaled: 8_000n, revision: before.revision + 1n });
+    expect(cost).toMatchObject({
+      knownQuantityScaled: 8_000n,
+      knownValueMinor: valuedQuantity === 10_000n ? 80n : 100n,
+      stockRevision: stock?.revision,
+      costRevision: valuedQuantity === 10_000n ? 2n : 1n,
+    });
+  }, 90_000);
+
+  it('serialises cost bootstrap against transfer and conserves the exact basis', async () => {
+    await setQuantity(T.branchA, T.costTransfer, 10_000n);
+    await setQuantity(T.branchB, T.costTransfer, 0n);
+
+    const bootstrapRequest = {
+      operationId: `bootstrap-transfer-${newId()}`,
+      branchId: T.branchA,
+      productId: T.costTransfer,
+      totalValueMinor: '100',
+    };
+    const move: TransferRequest = {
+      operationId: `bootstrap-race-transfer-${newId()}`,
+      fromBranchId: T.branchA,
+      toBranchId: T.branchB,
+      reason: null,
+      lines: [{ productId: T.costTransfer, quantityScaled: '2000' }],
+    };
+
+    const raced = await behindBalanceGate(T.costTransfer, 'bootstrap against transfer', () =>
+      Promise.allSettled([
+        recordInventoryCostBootstrap(
+          second,
+          actor,
+          bootstrapRequest,
+          fingerprintCostBootstrap(bootstrapRequest, T.user),
+        ),
+        recordInventoryTransfer(prisma, actor, move, fingerprintTransfer(move, T.user)),
+      ]),
+    );
+    expect(raced.blocked, 'bootstrap and transfer were not both waiting behind the held row').toBe(
+      2,
+    );
+
+    const [bootstrapOutcome, transferOutcome] = raced.result;
+    if (bootstrapOutcome?.status !== 'fulfilled') {
+      throw new Error(`bootstrap failed: ${String(bootstrapOutcome?.reason)}`);
+    }
+    if (transferOutcome?.status !== 'fulfilled') {
+      throw new Error(`transfer failed: ${String(transferOutcome?.reason)}`);
+    }
+
+    const valuedQuantity = BigInt(bootstrapOutcome.value.valuedQuantityScaled);
+    expect([8_000n, 10_000n]).toContain(valuedQuantity);
+    const [sourceStock, destinationStock, sourceCost, destinationCost] = await Promise.all([
+      balanceOf(T.branchA, T.costTransfer),
+      balanceOf(T.branchB, T.costTransfer),
+      costOf(T.branchA, T.costTransfer),
+      costOf(T.branchB, T.costTransfer),
+    ]);
+    expect(sourceStock?.quantityScaled).toBe(8_000n);
+    expect(destinationStock?.quantityScaled).toBe(2_000n);
+    expect(sourceCost?.knownQuantityScaled).toBe(8_000n);
+    expect(sourceCost?.knownValueMinor).toBe(valuedQuantity === 10_000n ? 80n : 100n);
+    expect(destinationCost?.knownQuantityScaled).toBe(valuedQuantity === 10_000n ? 2_000n : 0n);
+    expect(destinationCost?.knownValueMinor).toBe(valuedQuantity === 10_000n ? 20n : 0n);
+    expect(
+      (sourceCost?.knownQuantityScaled ?? 0n) + (destinationCost?.knownQuantityScaled ?? 0n),
+    ).toBe(valuedQuantity);
+    expect((sourceCost?.knownValueMinor ?? 0n) + (destinationCost?.knownValueMinor ?? 0n)).toBe(
+      100n,
+    );
+  }, 90_000);
+
   // -------------------------------------------------------------------------
   // Stale authority facts
   //
@@ -1213,6 +1365,53 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     await holder.query('COMMIT');
     await holder.end();
     return { blocked, result: await within('operation under uncommitted change', 30_000, started) };
+  }
+
+  /** Start real contenders behind one held stock row, then release them together. */
+  async function behindBalanceGate<T>(
+    productId: string,
+    label: string,
+    work: () => Promise<T>,
+  ): Promise<{ blocked: number; result: T }> {
+    const gate = new pg.Client({ connectionString: url });
+    await gate.connect();
+    await gate.query('BEGIN');
+    await gate.query("SELECT set_config('app.tenant_id', $1, true)", [T.tenant]);
+    const gatePidResult = await gate.query<{ pid: number }>(
+      'SELECT pg_backend_pid()::integer AS pid',
+    );
+    const gatePid = gatePidResult.rows[0]?.pid;
+    if (gatePid === undefined) throw new Error('balance gate backend PID was not returned');
+    await gate.query(
+      `SELECT "revision" FROM "inventory_balances"
+        WHERE "tenantId" = $1::uuid AND "branchId" = $2::uuid AND "productId" = $3::uuid
+        FOR UPDATE`,
+      [T.tenant, T.branchA, productId],
+    );
+
+    const started = work();
+    let blocked = 0;
+    for (let attempt = 0; attempt < 50 && blocked < 2; attempt += 1) {
+      const { rows } = await gate.query<{ n: string }>(
+        `WITH RECURSIVE waiters(pid) AS (
+           SELECT pid
+             FROM pg_stat_activity
+            WHERE $1::integer = ANY(pg_blocking_pids(pid))
+           UNION
+           SELECT activity.pid
+             FROM pg_stat_activity AS activity
+             JOIN waiters ON waiters.pid = ANY(pg_blocking_pids(activity.pid))
+         )
+         SELECT count(*)::text AS n FROM waiters`,
+        [gatePid],
+      );
+      blocked = Number(rows[0]?.n ?? '0');
+      if (blocked < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    await gate.query('COMMIT');
+    await gate.end();
+    return { blocked, result: await within(label, 30_000, started) };
   }
 
   it('cannot commit a stock mutation on a branch that is being deactivated', async () => {
