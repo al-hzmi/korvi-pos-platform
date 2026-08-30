@@ -34,7 +34,6 @@ jobs:
           node scripts/strike-5c-schema-materialize.mjs
           node scripts/strike-5c-sale-transfer-materialize.mjs
           npm exec -- prettier --write \
-            packages/database/prisma/schema.prisma \
             packages/database/src/repositories/sale-repository.ts \
             packages/database/src/inventory/stock-ledger.ts
           npm exec -w @korvi/database -- prisma format
