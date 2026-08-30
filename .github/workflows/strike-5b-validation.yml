@@ -48,7 +48,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp package-lock.json /tmp/package-lock.before.json
           rm package-lock.json
           npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
           git diff --check -- package-lock.json
@@ -61,23 +60,26 @@ jobs:
             exit 1
           fi
           if ! git diff --quiet -- package-lock.json; then
-            git config user.name 'Korvi Validation Automation'
-            git config user.email 'actions@users.noreply.github.com'
-            git add package-lock.json
-            git commit -m 'chore(deps): re-resolve strike 5b validation lockfile'
-            git push origin HEAD:review/strike-5b-validation
+            echo 'lockfile is not deterministic after clean re-resolution' >&2
+            exit 1
           fi
 
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Prove patched deepmerge tree
+      - name: Prove patched deepmerge resolution
         shell: bash
         run: |
           set -euo pipefail
-          npm ls deepmerge-ts --all
           test "$(node -p "require('./node_modules/deepmerge-ts/package.json').version")" = '8.0.2'
           test ! -e node_modules/@prisma/config/node_modules/deepmerge-ts/package.json
+          node --input-type=module - <<'NODE'
+          import { deepmerge } from 'deepmerge-ts';
+          const left = { nested: { one: 1 } };
+          const right = { nested: { two: 2 } };
+          const merged = deepmerge(left, right);
+          if (merged.nested.one !== 1 || merged.nested.two !== 2) process.exit(1);
+          NODE
 
       - name: Verify stable dependency authority
         run: npm run versions:verify
