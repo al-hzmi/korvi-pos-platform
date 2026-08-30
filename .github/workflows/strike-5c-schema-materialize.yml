@@ -35,10 +35,11 @@ jobs:
           node scripts/strike-5c-sale-transfer-materialize.mjs
           node scripts/strike-5c-regression-materialize.mjs
           node scripts/strike-5c-receiving-cost-materialize.mjs
+          node scripts/strike-5c-receiving-boundary-fix.mjs
           npm run format
           npm exec -w @korvi/database -- prisma format
 
-          allowed='^(apps/api/src/__tests__/purchasing-admin-routes\.test\.ts|apps/api/src/routes/purchasing-admin\.ts|packages/database/prisma/schema\.prisma|packages/database/prisma/migrations/20260830210000_costing_authority/migration\.sql|packages/database/src/__tests__/repository-tenancy\.test\.ts|packages/database/src/repositories/sale-repository\.ts|packages/database/src/inventory/stock-ledger\.ts|packages/database/src/costing/ledger\.ts|packages/database/src/repositories/inventory-repository\.ts|packages/database/src/purchasing/receiving\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|packages/domain/src/purchasing/purchasing\.ts|packages/domain/src/purchasing/__tests__/purchasing\.test\.ts|scripts/strike-5c-sale-transfer-materialize\.mjs|scripts/strike-5c-regression-materialize\.mjs|scripts/strike-5c-receiving-cost-materialize\.mjs)$'
+          allowed='^(apps/api/src/__tests__/purchasing-admin-routes\.test\.ts|apps/api/src/routes/purchasing-admin\.ts|packages/database/prisma/schema\.prisma|packages/database/prisma/migrations/20260830210000_costing_authority/migration\.sql|packages/database/src/__tests__/repository-tenancy\.test\.ts|packages/database/src/repositories/sale-repository\.ts|packages/database/src/inventory/stock-ledger\.ts|packages/database/src/costing/ledger\.ts|packages/database/src/repositories/inventory-repository\.ts|packages/database/src/purchasing/receiving\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|packages/domain/src/purchasing/purchasing\.ts|packages/domain/src/purchasing/__tests__/purchasing\.test\.ts|scripts/strike-5c-sale-transfer-materialize\.mjs|scripts/strike-5c-regression-materialize\.mjs|scripts/strike-5c-receiving-cost-materialize\.mjs|scripts/strike-5c-receiving-boundary-fix\.mjs)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo 'Unexpected formatter/materializer changes:' >&2
@@ -69,7 +70,8 @@ jobs:
               packages/domain/src/purchasing/__tests__/purchasing.test.ts \
               scripts/strike-5c-sale-transfer-materialize.mjs \
               scripts/strike-5c-regression-materialize.mjs \
-              scripts/strike-5c-receiving-cost-materialize.mjs
+              scripts/strike-5c-receiving-cost-materialize.mjs \
+              scripts/strike-5c-receiving-boundary-fix.mjs
             git commit -m 'feat(costing): add receipt acquisition value authority'
             git push origin HEAD:strike/5c-costing-authority
           fi
