@@ -76,20 +76,22 @@ model Tenant {
   // Every tenant-owned model points back here, which is exactly the point:
   // if a new model has no line in this list, it has no tenant, and the RLS
   // test will refuse it.
-  branches           Branch[]
-  users              User[]
-  memberships        TenantMembership[]
-  roles              Role[]
-  rolePermissions    RolePermission[]
-  userRoles          UserRole[]
-  terminals          Terminal[]
-  settings           TenantSettings?
-  categories         Category[]
-  products           Product[]
-  productBarcodes    ProductBarcode[]
-  productPrices      ProductPrice[]
-  inventoryBalances  InventoryBalance[]
-  inventoryMovements InventoryMovement[]
+  branches                 Branch[]
+  users                    User[]
+  memberships              TenantMembership[]
+  roles                    Role[]
+  rolePermissions          RolePermission[]
+  userRoles                UserRole[]
+  terminals                Terminal[]
+  settings                 TenantSettings?
+  categories               Category[]
+  products                 Product[]
+  productBarcodes          ProductBarcode[]
+  productPrices            ProductPrice[]
+  inventoryBalances        InventoryBalance[]
+  inventoryMovements       InventoryMovement[]
+  inventoryCostBalances    InventoryCostBalance[]
+  inventoryValuationEvents InventoryValuationEvent[]
   inventoryAdjustments     InventoryAdjustment[]
   inventoryAdjustmentLines InventoryAdjustmentLine[]
   inventoryCounts          InventoryCount[]
@@ -101,25 +103,25 @@ model Tenant {
   purchaseOrderLines       PurchaseOrderLine[]
   purchaseReceipts         PurchaseReceipt[]
   purchaseReceiptLines     PurchaseReceiptLine[]
-  customers          Customer[]
-  shifts             Shift[]
-  cashMovements      CashMovement[]
-  sales              Sale[]
-  saleLines          SaleLine[]
-  saleDiscounts      SaleDiscount[]
-  tenders            Tender[]
-  invoices           Invoice[]
-  taxBreakdown       InvoiceTaxBreakdown[]
-  returns            Return[]
-  returnLines        ReturnLine[]
-  refunds            Refund[]
-  idempotencyKeys    IdempotencyKey[]
-  auditEvents        AuditEvent[]
-  sessions           Session[]
-  ownerBootstraps    TenantOwnerBootstrapInvitation[]
-  commercialAccount  TenantCommercialAccount?
-  planAssignments    TenantPlanAssignment[]
-  planEntitlements   TenantPlanEntitlement[]
+  customers                Customer[]
+  shifts                   Shift[]
+  cashMovements            CashMovement[]
+  sales                    Sale[]
+  saleLines                SaleLine[]
+  saleDiscounts            SaleDiscount[]
+  tenders                  Tender[]
+  invoices                 Invoice[]
+  taxBreakdown             InvoiceTaxBreakdown[]
+  returns                  Return[]
+  returnLines              ReturnLine[]
+  refunds                  Refund[]
+  idempotencyKeys          IdempotencyKey[]
+  auditEvents              AuditEvent[]
+  sessions                 Session[]
+  ownerBootstraps          TenantOwnerBootstrapInvitation[]
+  commercialAccount        TenantCommercialAccount?
+  planAssignments          TenantPlanAssignment[]
+  planEntitlements         TenantPlanEntitlement[]
 
   @@unique([provisioningOperationId])
   @@map("tenants")
@@ -135,20 +137,22 @@ model Branch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  terminals          Terminal[]
-  inventoryBalances  InventoryBalance[]
-  inventoryMovements InventoryMovement[]
-  inventoryAdjustments InventoryAdjustment[]
-  inventoryCounts      InventoryCount[]
-  transfersOut         InventoryTransfer[] @relation("InventoryTransferSource")
-  transfersIn          InventoryTransfer[] @relation("InventoryTransferDestination")
-  purchaseOrders       PurchaseOrder[]
-  purchaseReceipts     PurchaseReceipt[]
-  shifts             Shift[]
-  sales              Sale[]
-  returns            Return[]
-  memberships        TenantMembership[]
+  tenant                   Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  terminals                Terminal[]
+  inventoryBalances        InventoryBalance[]
+  inventoryMovements       InventoryMovement[]
+  inventoryCostBalances    InventoryCostBalance[]
+  inventoryValuationEvents InventoryValuationEvent[]
+  inventoryAdjustments     InventoryAdjustment[]
+  inventoryCounts          InventoryCount[]
+  transfersOut             InventoryTransfer[]       @relation("InventoryTransferSource")
+  transfersIn              InventoryTransfer[]       @relation("InventoryTransferDestination")
+  purchaseOrders           PurchaseOrder[]
+  purchaseReceipts         PurchaseReceipt[]
+  shifts                   Shift[]
+  sales                    Sale[]
+  returns                  Return[]
+  memberships              TenantMembership[]
 
   @@unique([tenantId, code])
   /// The tenant-consistency key. A child row references this table by
@@ -195,11 +199,12 @@ model User {
   saleDiscounts SaleDiscount[]
   returns       Return[]
 
-  inventoryAdjustments InventoryAdjustment[]
-  inventoryCounts      InventoryCount[]
-  inventoryTransfers   InventoryTransfer[]
-  purchaseOrders       PurchaseOrder[]
-  purchaseReceipts     PurchaseReceipt[]
+  inventoryAdjustments     InventoryAdjustment[]
+  inventoryCounts          InventoryCount[]
+  inventoryTransfers       InventoryTransfer[]
+  purchaseOrders           PurchaseOrder[]
+  purchaseReceipts         PurchaseReceipt[]
+  inventoryValuationEvents InventoryValuationEvent[]
 
   @@unique([tenantId, email])
   /// The tenant-consistency key. A child row references this table by
@@ -497,19 +502,21 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category           Category?           @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: NoAction)
-  barcodes           ProductBarcode[]
-  prices             ProductPrice[]
-  inventoryBalances  InventoryBalance[]
-  inventoryMovements InventoryMovement[]
+  tenant                   Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category                 Category?                 @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: NoAction)
+  barcodes                 ProductBarcode[]
+  prices                   ProductPrice[]
+  inventoryBalances        InventoryBalance[]
+  inventoryMovements       InventoryMovement[]
+  inventoryCostBalances    InventoryCostBalance[]
+  inventoryValuationEvents InventoryValuationEvent[]
   inventoryAdjustmentLines InventoryAdjustmentLine[]
   inventoryCountLines      InventoryCountLine[]
   inventoryTransferLines   InventoryTransferLine[]
   purchaseOrderLines       PurchaseOrderLine[]
   purchaseReceiptLines     PurchaseReceiptLine[]
-  saleLines          SaleLine[]
-  returnLines        ReturnLine[]
+  saleLines                SaleLine[]
+  returnLines              ReturnLine[]
 
   @@unique([tenantId, sku])
   /// The tenant-consistency key. A child row references this table by
@@ -611,8 +618,8 @@ model InventoryMovement {
   reason         String?
 
   /// The sale or return that caused it, when there was one.
-  sourceType String?
-  sourceId   String? @db.Uuid
+  sourceType   String?
+  sourceId     String? @db.Uuid
   /// Which line of that document, when the document has lines.
   ///
   /// A transfer posts two legs for one line and both carry the same sourceId,
@@ -621,6 +628,14 @@ model InventoryMovement {
   /// 5A: those have no line to point at, and inventing one would be inventing
   /// provenance.
   sourceLineId String? @db.Uuid
+
+  /// Exact immutable valuation evidence for this stock movement. The two
+  /// quantities are absolute magnitudes and always reconcile to abs(quantityScaled).
+  costKnownQuantityScaled   BigInt @default(0)
+  costUnknownQuantityScaled BigInt @default(0)
+  costValueMinor            BigInt @default(0)
+  /// 'historical-unknown' | 'unknown' | 'recorded' | 'mixed'
+  costProvenance            String @default("historical-unknown")
 
   actorUserId String?  @db.Uuid
   occurredAt  DateTime
@@ -634,6 +649,67 @@ model InventoryMovement {
   @@index([tenantId, sourceType, sourceId])
   @@index([tenantId, sourceLineId])
   @@map("inventory_movements")
+}
+
+/// Exact known-value subset of the branch/product stock balance. This table
+/// deliberately does not duplicate total stock quantity; unknown positive stock
+/// is derived from inventory_balances.quantityScaled - knownQuantityScaled.
+model InventoryCostBalance {
+  tenantId  String @db.Uuid
+  branchId  String @db.Uuid
+  productId String @db.Uuid
+
+  knownQuantityScaled BigInt   @default(0)
+  knownValueMinor     BigInt   @default(0)
+  stockRevision       BigInt   @default(0)
+  costRevision        BigInt   @default(0)
+  updatedAt           DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@id([tenantId, branchId, productId])
+  @@index([tenantId, branchId])
+  @@map("inventory_cost_balances")
+}
+
+/// Append-only valuation evidence. Stock movements, explicit valuation
+/// bootstrap and negative-stock catch-up all leave facts here; none rewrites
+/// historical documents or fabricates pre-5C cost.
+model InventoryValuationEvent {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  branchId  String @db.Uuid
+  productId String @db.Uuid
+
+  /// 'movement' | 'bootstrap' | 'deficit-catchup'
+  eventKind             String
+  /// 'unknown' | 'recorded' | 'mixed'
+  provenance            String
+  knownQuantityScaled   BigInt @default(0)
+  unknownQuantityScaled BigInt @default(0)
+  knownValueMinor       BigInt @default(0)
+
+  sourceType   String?
+  sourceId     String? @db.Uuid
+  sourceLineId String? @db.Uuid
+  actorUserId  String? @db.Uuid
+
+  stockRevision BigInt
+  costRevision  BigInt
+  occurredAt    DateTime
+  createdAt     DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  actor   User?   @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, branchId, productId, occurredAt])
+  @@index([tenantId, sourceType, sourceId])
+  @@map("inventory_valuation_events")
 }
 
 // ---------------------------------------------------------------------------
@@ -984,6 +1060,14 @@ model PurchaseReceiptLine {
   afterQuantityScaled  BigInt
   resultRevision       BigInt
 
+  /// Null means the goods were accepted before trusted acquisition value was
+  /// available. Cost evidence remains explicit unknown rather than blocking stock.
+  inventoryValueMinor       BigInt?
+  costKnownQuantityScaled   BigInt  @default(0)
+  costUnknownQuantityScaled BigInt  @default(0)
+  costValueMinor            BigInt  @default(0)
+  costProvenance            String  @default("historical-unknown")
+
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseReceipt   PurchaseReceipt   @relation(fields: [tenantId, purchaseReceiptId], references: [tenantId, id], onDelete: Cascade)
   purchaseOrderLine PurchaseOrderLine @relation(fields: [tenantId, purchaseOrderLineId], references: [tenantId, id], onDelete: NoAction)
@@ -1195,6 +1279,13 @@ model SaleLine {
   netMinor            BigInt
   vatMinor            BigInt
   totalMinor          BigInt
+
+  /// Immutable original inventory cost basis. Returns restore this exact basis
+  /// rather than consulting the branch's current moving value pool.
+  costKnownQuantityScaled   BigInt @default(0)
+  costUnknownQuantityScaled BigInt @default(0)
+  costValueMinor            BigInt @default(0)
+  costProvenance            String @default("historical-unknown")
 
   tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sale        Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
@@ -1422,6 +1513,12 @@ model ReturnLine {
   netMinor            BigInt
   vatMinor            BigInt
   totalMinor          BigInt
+
+  /// Exact portion of the original sale-line basis restored by this return.
+  costKnownQuantityScaled   BigInt @default(0)
+  costUnknownQuantityScaled BigInt @default(0)
+  costValueMinor            BigInt @default(0)
+  costProvenance            String @default("historical-unknown")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   return   Return   @relation(fields: [tenantId, returnId], references: [tenantId, id], onDelete: Cascade)
