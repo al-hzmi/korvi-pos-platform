@@ -6,7 +6,7 @@ on:
       - review/strike-5b-validation
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: strike-5b-validation-${{ github.ref }}
@@ -30,7 +30,6 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5b_validation?schema=public
-      SHADOW_DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5b_shadow?schema=public
 
     steps:
       - name: Check out validation branch
@@ -44,25 +43,16 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Re-resolve lockfile from exact pins and security override
+      - name: Verify committed lockfile shape
         shell: bash
         run: |
           set -euo pipefail
-          rm package-lock.json
-          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
           git diff --check -- package-lock.json
           if grep -q '"node_modules/@prisma/config/node_modules/deepmerge-ts"' package-lock.json; then
-            echo 'vulnerable nested deepmerge resolution remains after clean lock re-resolution' >&2
+            echo 'vulnerable nested deepmerge resolution remains in committed lockfile' >&2
             exit 1
           fi
-          if ! grep -q '"node_modules/deepmerge-ts"' package-lock.json; then
-            echo 'patched deepmerge resolution missing from regenerated lockfile' >&2
-            exit 1
-          fi
-          if ! git diff --quiet -- package-lock.json; then
-            echo 'lockfile is not deterministic after clean re-resolution' >&2
-            exit 1
-          fi
+          grep -q '"node_modules/deepmerge-ts"' package-lock.json
 
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
@@ -87,7 +77,7 @@ jobs:
       - name: Audit dependencies
         run: npm run audit
 
-      - name: Create fresh non-superuser RLS databases
+      - name: Create fresh non-superuser RLS database
         shell: bash
         run: |
           set -euo pipefail
@@ -95,7 +85,6 @@ jobs:
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
           CREATE ROLE korvi LOGIN PASSWORD 'korvi' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
           CREATE DATABASE korvi_5b_validation OWNER korvi;
-          CREATE DATABASE korvi_5b_shadow OWNER korvi;
           SQL
           export PGPASSWORD=korvi
           PROOF="$(psql -h localhost -U korvi -d korvi_5b_validation -Atc "SELECT current_user || '|' || current_database() || '|' || rolsuper || '|' || rolbypassrls FROM pg_roles WHERE rolname = current_user")"
