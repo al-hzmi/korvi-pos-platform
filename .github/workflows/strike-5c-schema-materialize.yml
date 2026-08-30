@@ -25,25 +25,20 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci --registry=https://registry.npmjs.org
-      - name: Materialize and verify 5C source
+      - name: Materialize and verify current 5C slice
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/strike-5c-schema-materialize.mjs
-          node scripts/strike-5c-sale-transfer-materialize.mjs
-          node scripts/strike-5c-regression-materialize.mjs
-          node scripts/strike-5c-receiving-cost-materialize.mjs
-          node scripts/strike-5c-receiving-boundary-fix.mjs
-          node scripts/strike-5c-service-cost-permission-materialize.mjs
-          node scripts/strike-5c-return-basis-materialize.mjs
+          # Earlier slices are already committed product source. Re-running their
+          # one-shot materializers would make tooling history an execution dependency.
           node scripts/strike-5c-bootstrap-materialize.mjs
           npm run format
           npm exec -w @korvi/database -- prisma format
 
-          allowed='^(apps/api/src/__tests__/purchasing-admin-routes\.test\.ts|apps/api/src/__tests__/purchasing-service\.test\.ts|apps/api/src/__tests__/returns-live\.test\.ts|apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/purchasing/service\.ts|apps/api/src/routes/inventory-admin\.ts|apps/api/src/routes/purchasing-admin\.ts|packages/database/prisma/schema\.prisma|packages/database/prisma/migrations/20260830210000_costing_authority/migration\.sql|packages/database/src/__tests__/repository-tenancy\.test\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/costing/ledger\.ts|packages/database/src/index\.ts|packages/database/src/inventory/stock-ledger\.ts|packages/database/src/purchasing/receiving\.ts|packages/database/src/repositories/inventory-repository\.ts|packages/database/src/repositories/return-repository\.ts|packages/database/src/repositories/sale-repository\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts|packages/domain/src/purchasing/purchasing\.ts|packages/domain/src/purchasing/__tests__/purchasing\.test\.ts|scripts/strike-5c-bootstrap-materialize\.mjs|scripts/strike-5c-sale-transfer-materialize\.mjs|scripts/strike-5c-regression-materialize\.mjs|scripts/strike-5c-receiving-cost-materialize\.mjs|scripts/strike-5c-receiving-boundary-fix\.mjs|scripts/strike-5c-service-cost-permission-materialize\.mjs|scripts/strike-5c-return-basis-materialize\.mjs)$'
+          allowed='^(apps/api/src/inventory/fingerprint\.ts|apps/api/src/inventory/service\.ts|apps/api/src/routes/inventory-admin\.ts|packages/database/src/costing/bootstrap\.ts|packages/database/src/index\.ts|packages/domain/src/costing/costing\.ts|packages/domain/src/costing/__tests__/costing\.test\.ts)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
-            echo 'Unexpected formatter/materializer changes:' >&2
+            echo 'Unexpected bootstrap materializer changes:' >&2
             echo "$unexpected" >&2
             exit 1
           fi
@@ -55,36 +50,13 @@ jobs:
             git config user.name 'Korvi Validation Automation'
             git config user.email 'actions@users.noreply.github.com'
             git add \
-              apps/api/src/__tests__/purchasing-admin-routes.test.ts \
-              apps/api/src/__tests__/purchasing-service.test.ts \
-              apps/api/src/__tests__/returns-live.test.ts \
               apps/api/src/inventory/fingerprint.ts \
               apps/api/src/inventory/service.ts \
-              apps/api/src/purchasing/service.ts \
               apps/api/src/routes/inventory-admin.ts \
-              apps/api/src/routes/purchasing-admin.ts \
-              packages/database/prisma/schema.prisma \
-              packages/database/prisma/migrations/20260830210000_costing_authority/migration.sql \
-              packages/database/src/__tests__/repository-tenancy.test.ts \
               packages/database/src/costing/bootstrap.ts \
-              packages/database/src/costing/ledger.ts \
               packages/database/src/index.ts \
-              packages/database/src/inventory/stock-ledger.ts \
-              packages/database/src/purchasing/receiving.ts \
-              packages/database/src/repositories/inventory-repository.ts \
-              packages/database/src/repositories/return-repository.ts \
-              packages/database/src/repositories/sale-repository.ts \
               packages/domain/src/costing/costing.ts \
-              packages/domain/src/costing/__tests__/costing.test.ts \
-              packages/domain/src/purchasing/purchasing.ts \
-              packages/domain/src/purchasing/__tests__/purchasing.test.ts \
-              scripts/strike-5c-bootstrap-materialize.mjs \
-              scripts/strike-5c-sale-transfer-materialize.mjs \
-              scripts/strike-5c-regression-materialize.mjs \
-              scripts/strike-5c-receiving-cost-materialize.mjs \
-              scripts/strike-5c-receiving-boundary-fix.mjs \
-              scripts/strike-5c-service-cost-permission-materialize.mjs \
-              scripts/strike-5c-return-basis-materialize.mjs
+              packages/domain/src/costing/__tests__/costing.test.ts
             git commit -m 'feat(costing): add prospective cost bootstrap authority'
             git push origin HEAD:strike/5c-costing-authority
           fi
