@@ -12,6 +12,7 @@ export * from './tenancy/index.js';
 export * from './administration/index.js';
 export * from './catalog/index.js';
 export * from './inventory/index.js';
+export * from './purchasing/index.js';
 export * from './credentials/index.js';
 export * from './bootstrap/index.js';
 export * from './entitlements/index.js';

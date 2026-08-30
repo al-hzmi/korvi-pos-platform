@@ -23,10 +23,12 @@ import { registerBusinessRoutes } from './routes/business.js';
 import { createMerchantAdminService } from './admin/service.js';
 import { createMerchantProductService } from './catalog/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
+import { createMerchantPurchasingService } from './purchasing/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
+import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -38,6 +40,7 @@ import type { OwnerBootstrapService } from './bootstrap/service.js';
 import type { MerchantAdminService } from './admin/service.js';
 import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
+import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
@@ -92,6 +95,16 @@ export interface ServerDeps {
    * catalogue route the stock ledger.
    */
   readonly inventory?: MerchantInventoryService;
+
+  /**
+   * Purchasing and receiving authority: suppliers, purchase orders, receipts.
+   *
+   * Separate from `inventory` because only one of its operations touches
+   * stock. Ordering goods and counting them are different authorities with
+   * different permissions, and sharing an object would blur the boundary this
+   * strike exists to draw (ADR-0024 §7).
+   */
+  readonly purchasing?: MerchantPurchasingService;
 
   /**
    * Read-only onboarding readiness authority.
@@ -342,6 +355,34 @@ function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
 }
 
 /**
+ * Purchasing authority, built once on first use like the others so /health
+ * never needs a database connection.
+ */
+function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
+  let built: MerchantPurchasingService | null = null;
+
+  const resolve = (): MerchantPurchasingService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantPurchasingService({ prisma: createPrismaClient(url) });
+    return built;
+  };
+
+  return {
+    listSuppliers: (principal, query) => resolve().listSuppliers(principal, query),
+    getSupplier: (principal, supplierId) => resolve().getSupplier(principal, supplierId),
+    createSupplier: (principal, request) => resolve().createSupplier(principal, request),
+    updateSupplier: (principal, request) => resolve().updateSupplier(principal, request),
+    listPurchaseOrders: (principal, query) => resolve().listPurchaseOrders(principal, query),
+    getPurchaseOrder: (principal, id) => resolve().getPurchaseOrder(principal, id),
+    createPurchaseOrder: (principal, request) => resolve().createPurchaseOrder(principal, request),
+    listReceipts: (principal, id, limit) => resolve().listReceipts(principal, id, limit),
+    receive: (principal, request) => resolve().receive(principal, request),
+  };
+}
+
+/**
  * Read-only onboarding authority, constructed lazily like the other database
  * services so /health never needs a database connection.
  */
@@ -429,6 +470,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerInventoryAdminRoutes(app, {
     service: deps.inventory ?? lazyInventoryService(config),
+    guards,
+  });
+  registerPurchasingAdminRoutes(app, {
+    service: deps.purchasing ?? lazyPurchasingService(config),
     guards,
   });
   registerBootstrapRoutes(app, {

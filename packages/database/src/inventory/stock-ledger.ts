@@ -82,6 +82,23 @@ import type { PrismaClient } from '../client.js';
  *     single-lock actor cannot be an interior node of a wait cycle;
  *   - balances are ordered canonically in step 6, which is the property the
  *     opposite-direction transfer proof rests on.
+ *
+ * ## Why several helpers below are exported
+ *
+ * `lockBranches`, `lockProducts`, `lockBalances`, `lockedOrThrow` and
+ * `claimOperation` are exported for the purchasing authority (Strike 5B), and
+ * for nothing else — none of them is re-exported from the package barrel, for
+ * the same reason `applyMovementWithin` is not: each takes a raw tenant string
+ * and an open transaction, and is safe only because its callers run inside
+ * `withTenant`.
+ *
+ * Sharing them rather than copying them is the point. Receiving has to take
+ * the same locks, in the same class order, with the same "hold the fact, then
+ * judge it" discipline; a second implementation of that would be a second
+ * lock order, and two lock orders is how a deadlock gets designed in. The
+ * refusal *vocabulary* differs between the two surfaces, so purchasing
+ * translates `StockOperationRefusedError` at its own boundary rather than
+ * these functions learning about purchasing.
  */
 
 // ---------------------------------------------------------------------------
@@ -143,7 +160,7 @@ function canonicalOrder(keys: readonly BalanceKey[]): readonly BalanceKey[] {
  * assumption, and this is the file where that assumption would be paid for in
  * production deadlocks.
  */
-async function lockBalances(
+export async function lockBalances(
   tx: TransactionClient,
   tenant: string,
   keys: readonly BalanceKey[],
@@ -183,7 +200,7 @@ async function lockBalances(
   return locked;
 }
 
-function lockedOrThrow(locked: Map<string, LockedBalance>, key: BalanceKey): LockedBalance {
+export function lockedOrThrow(locked: Map<string, LockedBalance>, key: BalanceKey): LockedBalance {
   const found = locked.get(keyOf(key));
   if (found === undefined) {
     throw new StockOperationRefusedError('unknown-product', key.productId);
@@ -211,7 +228,7 @@ function lockedOrThrow(locked: Map<string, LockedBalance>, key: BalanceKey): Loc
  * else's" are the same answer — which is the answer the caller should get in
  * both cases anyway.
  */
-async function lockBranches(
+export async function lockBranches(
   tx: TransactionClient,
   tenant: string,
   branchIds: readonly string[],
@@ -228,7 +245,7 @@ async function lockBranches(
   }
 }
 
-interface ProductFact {
+export interface ProductFact {
   readonly productType: StockProductType;
 }
 
@@ -245,7 +262,7 @@ interface ProductFact {
  * Adjusting it would start keeping one behind their back, and the balance
  * would then disagree with every report that respects the flag.
  */
-async function lockProducts(
+export async function lockProducts(
   tx: TransactionClient,
   tenant: string,
   productIds: readonly string[],
@@ -296,7 +313,7 @@ async function lockNegativeStockPolicy(tx: TransactionClient, tenant: string): P
 // Idempotency
 // ---------------------------------------------------------------------------
 
-type ReservationOutcome =
+export type ReservationOutcome =
   { readonly kind: 'reserved' } | { readonly kind: 'replay'; readonly resultId: string };
 
 /**
@@ -313,7 +330,7 @@ type ReservationOutcome =
  * and the document roll back together — there is no window in which the key
  * says "done" and the document does not exist.
  */
-async function claimOperation(
+export async function claimOperation(
   tx: TransactionClient,
   tenant: string,
   scope: string,
