@@ -11,6 +11,10 @@ permissions:
 jobs:
   schema:
     runs-on: ubuntu-latest
+    env:
+      # Prisma 7 loads prisma.config.ts even for format/generate. These commands
+      # do not connect, but the config still requires a syntactically valid URL.
+      DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5c_schema?schema=public
     steps:
       - name: Check out
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
