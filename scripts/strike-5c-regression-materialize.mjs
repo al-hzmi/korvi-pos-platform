@@ -18,12 +18,12 @@ function replaceOnce(text, label, before, after) {
 transform('packages/database/src/__tests__/repository-tenancy.test.ts', (source) => {
   let next = source;
 
-  if (!next.includes(`sql.includes('\"inventory_cost_balances\"')`)) {
+  if (!next.includes(`sql.includes('"inventory_cost_balances"')`)) {
     next = replaceOnce(
       next,
       'tenant fake cost balance query',
-      `            if (sql.includes('\"inventory_balances\"')) {\n              return Promise.resolve([{ quantityScaled: 0n, revision: 1n }]);\n            }\n`,
-      `            if (sql.includes('\"inventory_cost_balances\"')) {\n              // Strike 5C's valuation cursor is subordinate to the already\n              // locked stock row. The fake returns a synchronized zero-known\n              // pool so this file continues proving tenant binding rather than\n              // pretending to prove PostgreSQL costing behaviour.\n              return Promise.resolve([\n                {\n                  knownQuantityScaled: 0n,\n                  knownValueMinor: 0n,\n                  stockRevision: 1n,\n                  costRevision: 0n,\n                },\n              ]);\n            }\n            if (sql.includes('\"inventory_balances\"')) {\n              return Promise.resolve([{ quantityScaled: 0n, revision: 1n }]);\n            }\n`,
+      `            if (sql.includes('"inventory_balances"')) {\n              return Promise.resolve([{ quantityScaled: 0n, revision: 1n }]);\n            }\n`,
+      `            if (sql.includes('"inventory_cost_balances"')) {\n              // Strike 5C's valuation cursor is subordinate to the already\n              // locked stock row. The fake returns a synchronized zero-known\n              // pool so this file continues proving tenant binding rather than\n              // pretending to prove PostgreSQL costing behaviour.\n              return Promise.resolve([\n                {\n                  knownQuantityScaled: 0n,\n                  knownValueMinor: 0n,\n                  stockRevision: 1n,\n                  costRevision: 0n,\n                },\n              ]);\n            }\n            if (sql.includes('"inventory_balances"')) {\n              return Promise.resolve([{ quantityScaled: 0n, revision: 1n }]);\n            }\n`,
     );
   }
 
@@ -36,12 +36,12 @@ transform('packages/database/src/__tests__/repository-tenancy.test.ts', (source)
     );
   }
 
-  if (!next.includes(`sql.includes('UPDATE \"inventory_balances\"')`)) {
+  if (!next.includes(`sql.includes('UPDATE "inventory_balances"')`)) {
     next = replaceOnce(
       next,
       'guarded stock update selector',
-      `    const update = f.raw.find((sql) => sql.includes('\"inventory_balances\"'));\n`,
-      `    // Strike 5C now locks the stock row before valuing the movement. The\n    // earlier SELECT ... FOR UPDATE is not the floor-enforcing mutation; this\n    // assertion deliberately selects the UPDATE whose predicate is the actual\n    // concurrency authority.\n    const update = f.raw.find((sql) => sql.includes('UPDATE \"inventory_balances\"'));\n`,
+      `    const update = f.raw.find((sql) => sql.includes('"inventory_balances"'));\n`,
+      `    // Strike 5C now locks the stock row before valuing the movement. The\n    // earlier SELECT ... FOR UPDATE is not the floor-enforcing mutation; this\n    // assertion deliberately selects the UPDATE whose predicate is the actual\n    // concurrency authority.\n    const update = f.raw.find((sql) => sql.includes('UPDATE "inventory_balances"'));\n`,
     );
   }
 
