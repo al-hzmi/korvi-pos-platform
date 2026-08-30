@@ -19,10 +19,7 @@ export class CostingRequestError extends DomainError {
 }
 
 export type CostingRequestRefusal =
-  | 'invalid-money'
-  | 'invalid-quantity'
-  | 'non-positive-quantity'
-  | 'nothing-to-value';
+  'invalid-money' | 'invalid-quantity' | 'non-positive-quantity' | 'nothing-to-value';
 
 const CANONICAL_UNSIGNED_INTEGER = /^(0|[1-9]\d*)$/;
 
