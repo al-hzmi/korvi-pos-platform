@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 function replaceExactlyOnce(path, label, before, after) {
   const source = readFileSync(path, 'utf8');
@@ -16,14 +16,73 @@ function replaceExactlyOnce(path, label, before, after) {
   const source = readFileSync(path, 'utf8');
   const overEscaped = '\\\\${';
   const escapedOnce = '\\${';
-  const count = source.split(overEscaped).length - 1;
-  if (count !== 8) {
-    throw new Error(`bootstrap generator interpolation invariant: expected 8, found ${count}`);
+  const overEscapedCount = source.split(overEscaped).length - 1;
+  if (overEscapedCount === 8) {
+    writeFileSync(path, source.split(overEscaped).join(escapedOnce));
+  } else if (overEscapedCount === 0) {
+    const normalizedCount = source.split(escapedOnce).length - 1;
+    if (normalizedCount !== 8) {
+      throw new Error(
+        `bootstrap generator interpolation invariant: expected 8 normalized expressions, found ${normalizedCount}`,
+      );
+    }
+  } else {
+    throw new Error(
+      `bootstrap generator interpolation invariant: expected 0 or 8 over-escaped expressions, found ${overEscapedCount}`,
+    );
   }
-  writeFileSync(path, source.split(overEscaped).join(escapedOnce));
 }
 
-await import('./strike-5c-bootstrap-materialize.mjs');
+const materializedMarkers = [
+  {
+    path: 'packages/domain/src/costing/costing.ts',
+    marker: 'export interface CostBootstrapRequest {',
+  },
+  {
+    path: 'packages/domain/src/costing/__tests__/costing.test.ts',
+    marker: 'canonicalCostBootstrapForm({',
+  },
+  {
+    path: 'packages/database/src/costing/bootstrap.ts',
+    marker: 'export async function recordInventoryCostBootstrap(',
+  },
+  {
+    path: 'packages/database/src/index.ts',
+    marker: "export { recordInventoryCostBootstrap } from './costing/bootstrap.js';",
+  },
+  {
+    path: 'apps/api/src/inventory/fingerprint.ts',
+    marker: 'export function fingerprintCostBootstrap(',
+  },
+  {
+    path: 'apps/api/src/inventory/service.ts',
+    marker: 'async bootstrapCost(principal, request) {',
+  },
+  {
+    path: 'apps/api/src/routes/inventory-admin.ts',
+    marker: "'/v1/admin/inventory/cost-bootstrap'",
+  },
+  {
+    path: 'apps/api/src/server.ts',
+    marker: 'bootstrapCost: (principal, request) =>',
+  },
+  {
+    path: 'apps/api/src/__tests__/inventory-admin-routes.test.ts',
+    marker: 'async bootstrapCost(_principal, request) {',
+  },
+];
+
+const presentMarkers = materializedMarkers.filter(
+  ({ path, marker }) => existsSync(path) && readFileSync(path, 'utf8').includes(marker),
+);
+if (presentMarkers.length === 0) {
+  await import('./strike-5c-bootstrap-materialize.mjs');
+} else if (presentMarkers.length !== materializedMarkers.length) {
+  const missing = materializedMarkers
+    .filter(({ path, marker }) => !existsSync(path) || !readFileSync(path, 'utf8').includes(marker))
+    .map(({ path }) => path);
+  throw new Error(`partial bootstrap materialization; missing markers in: ${missing.join(', ')}`);
+}
 
 // The file already imported CostingRequestError before bootstrap existed. Keep
 // the generated import set unique instead of suppressing the compiler error.
