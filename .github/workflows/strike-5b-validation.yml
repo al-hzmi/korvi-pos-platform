@@ -6,7 +6,7 @@ on:
       - review/strike-5b-validation
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: strike-5b-validation-${{ github.ref }}
@@ -30,6 +30,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5b_validation?schema=public
+      KORVI_TEST_DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_5b_validation?schema=public
 
     steps:
       - name: Check out validation branch
@@ -56,29 +57,6 @@ jobs:
 
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
-
-      - name: Normalize reviewed governance and verifier formatting
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx prettier --write \
-            docs/decisions/ADR-0007-runtime-and-framework-versions.md \
-            docs/decisions/ADR-0009-supply-chain-and-ci.md \
-            scripts/verify-versions.mjs
-          if ! git diff --quiet -- \
-            docs/decisions/ADR-0007-runtime-and-framework-versions.md \
-            docs/decisions/ADR-0009-supply-chain-and-ci.md \
-            scripts/verify-versions.mjs; then
-            git diff --check
-            git config user.name 'Korvi Validation Automation'
-            git config user.email 'actions@users.noreply.github.com'
-            git add \
-              docs/decisions/ADR-0007-runtime-and-framework-versions.md \
-              docs/decisions/ADR-0009-supply-chain-and-ci.md \
-              scripts/verify-versions.mjs
-            git commit -m 'style(tooling): normalize supply-chain review files'
-            git push origin HEAD:review/strike-5b-validation
-          fi
 
       - name: Prove patched deepmerge resolution
         shell: bash
