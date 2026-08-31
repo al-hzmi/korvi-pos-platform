@@ -9,11 +9,12 @@ import {
   ControlNav,
   firstAuthorizedSection,
 } from '../control/control-nav';
-import { ControlSurface } from '../control/control-app';
+import { ControlSurface, preserveCommandBeforeUnload } from '../control/control-app';
 import { DashboardPanel } from '../control/dashboard-panel';
 import { InventoryOperations } from '../control/inventory-operations';
 import {
   BootstrapResult,
+  costRefreshPending,
   CostBootstrapForm,
   InventoryCostPanelView,
 } from '../control/inventory-cost-panel';
@@ -26,6 +27,7 @@ import {
 import { MembersPanel } from '../control/members-panel';
 import { ProductsPanel } from '../control/products-panel';
 import {
+  OrderDetail,
   PurchasingOperations,
   ReceiptLineEditor,
   resolveOrderLineProduct,
@@ -93,6 +95,21 @@ function surface(state: Parameters<typeof controlView>[0]): string {
 }
 
 describe('control navigation', () => {
+  it('raises both browser unload signals while a command is unresolved', () => {
+    let prevented = false;
+    const event = {
+      preventDefault: () => {
+        prevented = true;
+      },
+      returnValue: false,
+    } as unknown as BeforeUnloadEvent;
+
+    preserveCommandBeforeUnload(event);
+
+    expect(prevented).toBe(true);
+    expect(event.returnValue).toBe(true);
+  });
+
   it('names every planned module of the product', () => {
     expect(CONTROL_ENTRIES.map((entry) => entry.label)).toEqual([
       'الرئيسية',
@@ -412,6 +429,7 @@ describe('inventory balance presentation', () => {
     expect(adjustment).toContain('جرد فعلي');
     expect(adjustment).not.toContain('تحويل إلى فرع');
     expect(adjustment).toContain('الخادم');
+    expect(adjustment).toContain('\u2066MILK-1L\u2069');
 
     const transfer = renderToStaticMarkup(
       createElement(InventoryOperations, {
@@ -556,6 +574,12 @@ describe('inventory balance presentation', () => {
 });
 
 describe('inventory cost presentation', () => {
+  it('requires the promised fresh generation before a second cost decision', () => {
+    expect(costRefreshPending(8, 7)).toBe(true);
+    expect(costRefreshPending(8, 8)).toBe(false);
+    expect(costRefreshPending(null, 7)).toBe(false);
+  });
+
   const branch = {
     id: '018fb000-0000-7000-8000-0000000000a1',
     code: 'MAIN',
@@ -642,6 +666,7 @@ describe('inventory cost presentation', () => {
     expect(allowed).toContain('إجمالي قيمة اقتناء الكمية المجهولة');
     expect(allowed).toContain('يشتق الخادم الكمية الحالية');
     expect(allowed).toContain('h-touch');
+    expect(allowed).toContain('\u2066MILK-1L\u2069');
   });
 
   it('keeps the valued product identity explicit after it leaves the eligible set', () => {
@@ -811,6 +836,22 @@ describe('purchasing presentation', () => {
     expect(markup).toContain('مورد الرياض');
     expect(markup).toContain('PO-1');
     expect(markup).not.toMatch(/قيمة المخزون|تكلفة الوحدة|inventoryValueMinor/);
+    expect(markup).toContain('\u2066PO-1\u2069');
+    expect(markup).toContain('h-touch');
+  });
+
+  it('keeps a failed order-detail read directly recoverable', () => {
+    const markup = renderToStaticMarkup(
+      createElement(OrderDetail, {
+        state: { kind: 'failed', orderId: 'order-1', message: 'تعذر التحميل' },
+        products: pages.products.rows,
+        onRetry: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('تعذر التحميل');
+    expect(markup).toContain('إعادة تحميل تفاصيل الأمر');
+    expect(markup).toContain('h-touch');
   });
 });
 

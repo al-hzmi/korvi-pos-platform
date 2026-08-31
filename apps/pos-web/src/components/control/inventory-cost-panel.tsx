@@ -11,6 +11,7 @@ import {
   executeCostCommand,
 } from '../../lib/cost-command';
 import { createCostCommandFlight } from '../../lib/cost-command-flight';
+import { isolateLtrText } from '../../lib/bidi';
 import { describeFailure } from '../../lib/failures';
 import { formatMinor } from '../../lib/money';
 import { formatScaled } from '../../lib/quantity';
@@ -27,6 +28,10 @@ import type { CostCommandIntent } from '../../lib/cost-command-flight';
 import type { Failure } from '../../lib/failures';
 
 const PAGE_SIZE = 50;
+
+export function costRefreshPending(requiredGeneration: number | null, generation: number): boolean {
+  return requiredGeneration !== null && generation < requiredGeneration;
+}
 
 export function describeCostReadFailure(error: unknown): Failure {
   const failure = describeFailure(error);
@@ -311,7 +316,7 @@ export function CostBootstrapForm({
   const flight = useRef(createCostCommandFlight());
   const workspaceOwned = useRef(false);
   const selected = eligible.find((row) => row.productId === productId) ?? eligible[0];
-  const awaitingRefresh = requiredGeneration !== null && generation < requiredGeneration;
+  const awaitingRefresh = costRefreshPending(requiredGeneration, generation);
 
   const releaseWorkspace = useCallback((): void => {
     if (!workspaceOwned.current) return;
@@ -322,9 +327,11 @@ export function CostBootstrapForm({
   useEffect(() => {
     if (requiredGeneration !== null && generation >= requiredGeneration) {
       setRequiredGeneration(null);
-      releaseWorkspace();
+      if (submission.kind === 'failed' && submission.failure.action === 'refresh-cost') {
+        releaseWorkspace();
+      }
     }
-  }, [generation, releaseWorkspace, requiredGeneration]);
+  }, [generation, releaseWorkspace, requiredGeneration, submission]);
 
   const locked =
     workspaceLocked ||
@@ -338,6 +345,11 @@ export function CostBootstrapForm({
       ));
 
   const clearDecision = (): void => {
+    // A successful valuation changed the row the next decision would use.
+    // Keep both the result and the global command lock until a fresh read has
+    // actually arrived; a failed refresh must never turn stale guidance into a
+    // second valuation decision.
+    if (awaitingRefresh || refreshing) return;
     flight.current.reset();
     setTotalValue('');
     setValidation(null);
@@ -358,7 +370,7 @@ export function CostBootstrapForm({
     void executeCostCommand(api, intent)
       .then((result) => {
         flight.current.settle('succeeded');
-        setRequiredGeneration(null);
+        setRequiredGeneration(generation + 1);
         setSubmission({ kind: 'succeeded', result, product });
         onRefresh();
       })
@@ -444,7 +456,7 @@ export function CostBootstrapForm({
                 >
                   {eligible.map((row) => (
                     <option key={row.productId} value={row.productId}>
-                      {row.nameAr} — {row.sku}
+                      {row.nameAr} — {isolateLtrText(row.sku)}
                     </option>
                   ))}
                 </select>
@@ -496,8 +508,13 @@ export function CostBootstrapForm({
                 إعادة إرسال نفس التقييم
               </Button>
             ) : submission.kind === 'succeeded' ? (
-              <Button type="button" variant="outline" onClick={clearDecision}>
-                بدء تقييم جديد
+              <Button
+                type="button"
+                variant="outline"
+                disabled={awaitingRefresh || refreshing}
+                onClick={clearDecision}
+              >
+                {awaitingRefresh || refreshing ? 'بانتظار تحديث حقائق التكلفة' : 'بدء تقييم جديد'}
               </Button>
             ) : (
               <Button

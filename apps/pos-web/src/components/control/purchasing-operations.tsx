@@ -14,6 +14,7 @@ import {
   purchasingFlightOutcomeFor,
 } from '../../lib/purchasing-command';
 import { createPurchasingCommandFlight } from '../../lib/purchasing-command-flight';
+import { isolateLtrText } from '../../lib/bidi';
 import { formatTimestamp } from '../../lib/datetime';
 import { formatScaled } from '../../lib/quantity';
 import type { FormEvent, JSX } from 'react';
@@ -43,7 +44,7 @@ type SubmissionState =
   | { readonly kind: 'failed'; readonly failure: PurchasingCommandFailure }
   | { readonly kind: 'succeeded'; readonly result: PurchasingCommandResult };
 
-type DetailState =
+export type DetailState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly orderId: string }
   | { readonly kind: 'failed'; readonly orderId: string; readonly message: string }
@@ -66,12 +67,14 @@ function statusLabel(status: PurchaseOrderStatus): string {
 }
 
 function supplierName(suppliers: readonly PurchasingSupplier[], id: string): string {
-  return suppliers.find((supplier) => supplier.id === id)?.name ?? id;
+  return suppliers.find((supplier) => supplier.id === id)?.name ?? isolateLtrText(id);
 }
 
 function productName(products: readonly PurchasingProduct[], id: string): string {
   const product = products.find((candidate) => candidate.id === id);
-  return product === undefined ? id : `${product.nameAr} — ${product.sku}`;
+  return product === undefined
+    ? isolateLtrText(id)
+    : `${product.nameAr} — ${isolateLtrText(product.sku)}`;
 }
 
 export function resolveOrderLineProduct(
@@ -282,9 +285,9 @@ function OrdersTable({
               <td className="px-3 py-3">
                 <Button
                   type="button"
-                  size="sm"
                   variant={selectedOrderId === order.id ? 'primary' : 'outline'}
                   disabled={disabled}
+                  aria-label={`تفاصيل أمر الشراء ${isolateLtrText(order.reference ?? order.id)}`}
                   onClick={() => onSelect(order.id)}
                 >
                   التفاصيل
@@ -298,12 +301,14 @@ function OrdersTable({
   );
 }
 
-function OrderDetail({
+export function OrderDetail({
   state,
   products,
+  onRetry,
 }: {
   readonly state: DetailState;
   readonly products: readonly PurchasingProduct[];
+  readonly onRetry: () => void;
 }): JSX.Element | null {
   if (state.kind === 'idle') return null;
   if (state.kind === 'loading') {
@@ -315,9 +320,14 @@ function OrderDetail({
   }
   if (state.kind === 'failed')
     return (
-      <StatusNote tone="danger" live>
-        {state.message}
-      </StatusNote>
+      <div className="flex flex-col items-start gap-3">
+        <StatusNote tone="danger" live>
+          {state.message}
+        </StatusNote>
+        <Button type="button" variant="outline" onClick={onRetry}>
+          إعادة تحميل تفاصيل الأمر
+        </Button>
+      </div>
     );
   return (
     <CardSurface className="flex flex-col gap-4 p-4">
@@ -874,7 +884,7 @@ export function PurchasingOperations({
                 >
                   {activeBranches.map((branch) => (
                     <option key={branch.id} value={branch.id}>
-                      {branch.nameAr} — {branch.code}
+                      {branch.nameAr} — {isolateLtrText(branch.code)}
                     </option>
                   ))}
                 </select>
@@ -928,7 +938,7 @@ export function PurchasingOperations({
                     >
                       {activeProducts.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.nameAr} — {product.sku}
+                          {product.nameAr} — {isolateLtrText(product.sku)}
                         </option>
                       ))}
                     </select>
@@ -1046,12 +1056,20 @@ export function PurchasingOperations({
       )}
 
       {workspace === 'orders' ? (
-        <OrderDetail state={detail} products={pages.products.rows} />
+        <OrderDetail
+          state={detail}
+          products={pages.products.rows}
+          onRetry={() => void loadDetail()}
+        />
       ) : null}
 
       {workspace === 'receiving' ? (
         <>
-          <OrderDetail state={detail} products={pages.products.rows} />
+          <OrderDetail
+            state={detail}
+            products={pages.products.rows}
+            onRetry={() => void loadDetail()}
+          />
           {canReceive && detail.kind === 'ready' && detail.order.status !== 'received' ? (
             <CardSurface className="p-4">
               <form className="flex flex-col gap-4" onSubmit={submitReceipt}>

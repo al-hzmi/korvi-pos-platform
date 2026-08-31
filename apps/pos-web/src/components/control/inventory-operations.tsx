@@ -11,6 +11,7 @@ import {
   inventoryFlightOutcomeFor,
 } from '../../lib/inventory-command';
 import { createInventoryCommandFlight } from '../../lib/inventory-command-flight';
+import { isolateLtrText } from '../../lib/bidi';
 import { formatScaled } from '../../lib/quantity';
 import type { FormEvent, JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
@@ -316,7 +317,7 @@ export function InventoryOperations({
                 >
                   {products.map((product) => (
                     <option key={product.productId} value={product.productId}>
-                      {product.nameAr} — {product.sku}
+                      {product.nameAr} — {isolateLtrText(product.sku)}
                     </option>
                   ))}
                 </select>
@@ -338,7 +339,7 @@ export function InventoryOperations({
                   >
                     {destinations.map((destination) => (
                       <option key={destination.id} value={destination.id}>
-                        {destination.nameAr} — {destination.code}
+                        {destination.nameAr} — {isolateLtrText(destination.code)}
                       </option>
                     ))}
                   </select>

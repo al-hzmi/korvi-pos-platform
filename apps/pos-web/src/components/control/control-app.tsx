@@ -68,6 +68,14 @@ function sectionTitle(section: ControlSection): string {
   }
 }
 
+/** Preserve an unresolved command across every browser's unload contract. */
+export function preserveCommandBeforeUnload(event: BeforeUnloadEvent): void {
+  event.preventDefault();
+  // Firefox and older Chromium releases still require the legacy signal in
+  // addition to preventDefault() before they show the browser-owned warning.
+  event.returnValue = true;
+}
+
 function Section({
   section,
   api,
@@ -131,11 +139,8 @@ function Workspace({
 
   useEffect(() => {
     if (!commandLocked) return undefined;
-    const preserveCommand = (event: BeforeUnloadEvent): void => {
-      event.preventDefault();
-    };
-    window.addEventListener('beforeunload', preserveCommand);
-    return () => window.removeEventListener('beforeunload', preserveCommand);
+    window.addEventListener('beforeunload', preserveCommandBeforeUnload);
+    return () => window.removeEventListener('beforeunload', preserveCommandBeforeUnload);
   }, [commandLocked]);
 
   return (
@@ -164,7 +169,7 @@ function Workspace({
               نقطة البيع
             </a>
           )}
-          <Button variant="ghost" size="sm" disabled={commandLocked} onClick={onSignOut}>
+          <Button variant="ghost" disabled={commandLocked} onClick={onSignOut}>
             خروج
           </Button>
         </div>
