@@ -12,7 +12,7 @@
   "dependencies": {
     "@korvi/domain": "*",
     "@korvi/ui": "*",
-    "next": "16.3.1",
+    "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zustand": "5.0.15"
@@ -20,7 +20,7 @@
   "devDependencies": {
     "@korvi/config": "*",
     "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.4",
+    "@types/react-dom": "19.2.5",
     "autoprefixer": "10.5.4",
     "postcss": "8.5.26",
     "tailwindcss": "3.4.19"
