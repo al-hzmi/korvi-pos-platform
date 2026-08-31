@@ -1,20 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import {
-  CostingCapacityError,
-  CostingRequestError,
-  newId,
-  tenantId as brandTenantId,
-} from '@korvi/domain';
+import { CostingCapacityError, newId, tenantId as brandTenantId } from '@korvi/domain';
 import {
   StockOperationRefusedError,
+  CostBootstrapRefusedError,
   createPrismaClient,
   listCostBalancePage,
+  recordInventoryAdjustment,
   recordInventoryCostBootstrap,
   withTenant,
 } from '@korvi/database';
-import { fingerprintCostBootstrap } from '../inventory/fingerprint.js';
-import type { CostBootstrapRequest, TenantScope } from '@korvi/domain';
+import { fingerprintAdjustment, fingerprintCostBootstrap } from '../inventory/fingerprint.js';
+import type { AdjustmentRequest, CostBootstrapRequest, TenantScope } from '@korvi/domain';
 import type { CostBootstrapActor, PrismaClient } from '@korvi/database';
 
 /**
@@ -37,6 +34,7 @@ const T = {
   late: '018f5c00-0000-7000-8000-0000000000a6',
   capacity: '018f5c00-0000-7000-8000-0000000000a7',
   read: '018f5c00-0000-7000-8000-0000000000a8',
+  stale: '018f5c00-0000-7000-8000-0000000000a9',
 } as const;
 
 const OTHER = {
@@ -85,8 +83,17 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
     productId: string,
     totalValueMinor: string,
     operationId: string = 'bootstrap-' + newId(),
+    observation: {
+      readonly expectedStockRevision: string;
+      readonly expectedCostRevision: string;
+      readonly expectedUnknownPositiveQuantityScaled: string;
+    } = {
+      expectedStockRevision: '0',
+      expectedCostRevision: '0',
+      expectedUnknownPositiveQuantityScaled: '1',
+    },
   ): CostBootstrapRequest {
-    return { operationId, branchId: T.branch, productId, totalValueMinor };
+    return { operationId, branchId: T.branch, productId, totalValueMinor, ...observation };
   }
 
   const bootstrap = (
@@ -181,6 +188,7 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
         [T.late, 'LATE'],
         [T.capacity, 'CAPACITY'],
         [T.read, 'READ'],
+        [T.stale, 'STALE'],
       ] as const) {
         await tx.product.create({
           data: {
@@ -373,7 +381,11 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
     });
 
     const operationId = 'derive-' + newId();
-    const input = request(T.known, '150', operationId);
+    const input = request(T.known, '150', operationId, {
+      expectedStockRevision: '7',
+      expectedCostRevision: '2',
+      expectedUnknownPositiveQuantityScaled: '3000',
+    });
     const result = await bootstrap(input);
     expect(result).toMatchObject({
       branchId: T.branch,
@@ -434,7 +446,11 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
 
   it('commits exactly once when duplicate submissions arrive together', async () => {
     await setBalance(T.duplicate, 3000n, 4n);
-    const input = request(T.duplicate, '100', 'duplicate-' + newId());
+    const input = request(T.duplicate, '100', 'duplicate-' + newId(), {
+      expectedStockRevision: '4',
+      expectedCostRevision: '0',
+      expectedUnknownPositiveQuantityScaled: '3000',
+    });
 
     const results = await within(
       'duplicate cost bootstraps',
@@ -455,12 +471,196 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
     expect(after.events).toHaveLength(1);
   }, 60_000);
 
-  it('rolls back reservation and the materialized cost row when there is nothing to value', async () => {
+  it('rejects an old human observation after an intervening receipt and leaves no residue', async () => {
+    await setBalance(T.stale, 10_000n, 20n);
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryCostBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branch,
+          productId: T.stale,
+          knownQuantityScaled: 0n,
+          knownValueMinor: 0n,
+          stockRevision: 20n,
+          costRevision: 4n,
+          updatedAt: new Date(),
+        },
+      });
+    });
+
+    const staleOperationId = 'stale-receipt-' + newId();
+    const oldDecision = request(T.stale, '100', staleOperationId, {
+      expectedStockRevision: '20',
+      expectedCostRevision: '4',
+      expectedUnknownPositiveQuantityScaled: '10000',
+    });
+    const receipt: AdjustmentRequest = {
+      operationId: 'unknown-receipt-' + newId(),
+      branchId: T.branch,
+      reason: 'استلام غير مقيّم لاختبار تعارض القراءة',
+      lines: [{ productId: T.stale, deltaQuantityScaled: '10000' }],
+    };
+    await recordInventoryAdjustment(
+      second,
+      actor,
+      receipt,
+      fingerprintAdjustment(receipt, actor.userId),
+    );
+    const afterReceipt = await state(T.stale);
+
+    const failed = await refusal(() => bootstrap(oldDecision));
+    expect(failed).toBeInstanceOf(CostBootstrapRefusedError);
+    expect((failed as CostBootstrapRefusedError).detail).toBe('cost-state-changed');
+    expect(await state(T.stale)).toEqual(afterReceipt);
+    const staleResidue = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      key: await tx.idempotencyKey.count({
+        where: {
+          tenantId: T.tenant,
+          scope: 'inventory-cost-bootstrap',
+          operationId: staleOperationId,
+        },
+      }),
+      bootstrapEvents: await tx.inventoryValuationEvent.count({
+        where: {
+          tenantId: T.tenant,
+          branchId: T.branch,
+          productId: T.stale,
+          eventKind: 'bootstrap',
+        },
+      }),
+      bootstrapAudits: await tx.auditEvent.count({
+        where: {
+          tenantId: T.tenant,
+          eventType: 'inventory.cost.bootstrapped',
+          metadata: { path: ['operationId'], equals: staleOperationId },
+        },
+      }),
+    }));
+    expect(staleResidue).toEqual({ key: 0, bootstrapEvents: 0, bootstrapAudits: 0 });
+
+    const freshOperationId = 'fresh-receipt-' + newId();
+    const fresh = await bootstrap(
+      request(T.stale, '100', freshOperationId, {
+        expectedStockRevision: '21',
+        expectedCostRevision: '4',
+        expectedUnknownPositiveQuantityScaled: '20000',
+      }),
+    );
+    expect(fresh).toMatchObject({ valuedQuantityScaled: '20000', replayed: false });
+    const replay = await bootstrap(
+      request(T.stale, '100', freshOperationId, {
+        expectedStockRevision: '21',
+        expectedCostRevision: '4',
+        expectedUnknownPositiveQuantityScaled: '20000',
+      }),
+    );
+    expect(replay).toEqual({ ...fresh, replayed: true });
+  }, 90_000);
+
+  it('rejects an old human observation after an intervening outflow', async () => {
+    await setBalance(T.stale, 10_000n, 30n);
+    const staleOperationId = 'stale-outflow-' + newId();
+    const oldDecision = request(T.stale, '100', staleOperationId, {
+      expectedStockRevision: '30',
+      expectedCostRevision: '0',
+      expectedUnknownPositiveQuantityScaled: '10000',
+    });
+    const outflow: AdjustmentRequest = {
+      operationId: 'unknown-outflow-' + newId(),
+      branchId: T.branch,
+      reason: 'صرف لاختبار تعارض القراءة',
+      lines: [{ productId: T.stale, deltaQuantityScaled: '-2000' }],
+    };
+    await recordInventoryAdjustment(
+      second,
+      actor,
+      outflow,
+      fingerprintAdjustment(outflow, actor.userId),
+    );
+    const afterOutflow = await state(T.stale);
+
+    const failed = await refusal(() => bootstrap(oldDecision));
+    expect(failed).toBeInstanceOf(CostBootstrapRefusedError);
+    expect((failed as CostBootstrapRefusedError).detail).toBe('cost-state-changed');
+    expect(await state(T.stale)).toEqual(afterOutflow);
+    const residue = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.idempotencyKey.count({
+        where: {
+          tenantId: T.tenant,
+          scope: 'inventory-cost-bootstrap',
+          operationId: staleOperationId,
+        },
+      }),
+    );
+    expect(residue).toBe(0);
+
+    const fresh = await bootstrap(
+      request(T.stale, '100', 'fresh-outflow-' + newId(), {
+        expectedStockRevision: '31',
+        expectedCostRevision: '0',
+        expectedUnknownPositiveQuantityScaled: '8000',
+      }),
+    );
+    expect(fresh.valuedQuantityScaled).toBe('8000');
+  }, 90_000);
+
+  it('rejects an old observation when another bootstrap changes cost state only', async () => {
+    await setBalance(T.stale, 5_000n, 40n);
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryCostBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branch,
+          productId: T.stale,
+          knownQuantityScaled: 2_000n,
+          knownValueMinor: 20n,
+          stockRevision: 40n,
+          costRevision: 7n,
+          updatedAt: new Date(),
+        },
+      });
+    });
+    const observation = {
+      expectedStockRevision: '40',
+      expectedCostRevision: '7',
+      expectedUnknownPositiveQuantityScaled: '3000',
+    } as const;
+    const staleOperationId = 'stale-after-bootstrap-' + newId();
+    const staleDecision = request(T.stale, '90', staleOperationId, observation);
+
+    const winner = await bootstrap(
+      request(T.stale, '90', 'winning-bootstrap-' + newId(), observation),
+      second,
+    );
+    expect(winner).toMatchObject({
+      valuedQuantityScaled: '3000',
+      stockRevision: '40',
+      costRevision: '8',
+    });
+    const afterWinner = await state(T.stale);
+
+    const failed = await refusal(() => bootstrap(staleDecision));
+    expect(failed).toBeInstanceOf(CostBootstrapRefusedError);
+    expect((failed as CostBootstrapRefusedError).detail).toBe('cost-state-changed');
+    expect(await state(T.stale)).toEqual(afterWinner);
+    const residue = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.idempotencyKey.count({
+        where: {
+          tenantId: T.tenant,
+          scope: 'inventory-cost-bootstrap',
+          operationId: staleOperationId,
+        },
+      }),
+    );
+    expect(residue).toBe(0);
+  }, 90_000);
+
+  it('rolls back reservation and the materialized cost row when the observation is stale', async () => {
     await setBalance(T.empty, 0n, 0n);
     const operationId = 'empty-' + newId();
     const failed = await refusal(() => bootstrap(request(T.empty, '0', operationId)));
-    expect(failed).toBeInstanceOf(CostingRequestError);
-    expect((failed as CostingRequestError).detail).toBe('nothing-to-value');
+    expect(failed).toBeInstanceOf(CostBootstrapRefusedError);
+    expect((failed as CostBootstrapRefusedError).detail).toBe('cost-state-changed');
 
     const after = await state(T.empty);
     expect(after.stock).toEqual({ quantityScaled: 0n, revision: 0n });
@@ -500,7 +700,15 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
     const before = await state(T.capacity);
     const operationId = 'capacity-' + newId();
 
-    const failed = await refusal(() => bootstrap(request(T.capacity, '1', operationId)));
+    const failed = await refusal(() =>
+      bootstrap(
+        request(T.capacity, '1', operationId, {
+          expectedStockRevision: '5',
+          expectedCostRevision: '3',
+          expectedUnknownPositiveQuantityScaled: '1000',
+        }),
+      ),
+    );
     expect(failed).toBeInstanceOf(CostingCapacityError);
     expect(await state(T.capacity)).toEqual(before);
 
@@ -535,7 +743,15 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
     const operationId = 'late-' + newId();
     let failed: Error;
     try {
-      failed = await refusal(() => bootstrap(request(T.late, '91', operationId)));
+      failed = await refusal(() =>
+        bootstrap(
+          request(T.late, '91', operationId, {
+            expectedStockRevision: '9',
+            expectedCostRevision: '0',
+            expectedUnknownPositiveQuantityScaled: '2000',
+          }),
+        ),
+      );
     } finally {
       await fault.query(`
         DROP TRIGGER IF EXISTS korvi_test_refuse_cost_bootstrap_audit ON "audit_events";

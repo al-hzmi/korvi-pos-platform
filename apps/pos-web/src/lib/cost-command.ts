@@ -23,7 +23,7 @@ function valueMessage(reason: string): string {
   return 'أدخل قيمة اقتناء صحيحة بالريال دون فواصل أو رموز.';
 }
 
-/** Build the value-only intent; quantity and revisions remain server authority. */
+/** Build one decision bound to the exact row the manager reviewed. */
 export function buildCostBootstrapIntent(
   draft: {
     readonly branchId: string;
@@ -50,6 +50,9 @@ export function buildCostBootstrapIntent(
         branchId: draft.branchId,
         productId: draft.product.productId,
         totalValueMinor: value.value,
+        expectedStockRevision: draft.product.stockRevision,
+        expectedCostRevision: draft.product.costRevision,
+        expectedUnknownPositiveQuantityScaled: draft.product.unknownPositiveQuantityScaled,
       },
     },
   };
@@ -100,6 +103,7 @@ export function describeCostCommandFailure(error: unknown): CostCommandFailure {
       'inactive_product',
       'untracked_product',
       'stock_changed',
+      'cost_state_changed',
     ].includes(error.code)
   ) {
     return {

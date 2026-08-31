@@ -71,13 +71,16 @@ describe('merchant administration API client', () => {
     expect(wire.calls[0]!.url).not.toMatch(/tenant|known|unknown|value|revision/);
   });
 
-  it('posts only prospective valuation identity and exact total value', async () => {
+  it('posts valuation identity, exact value and only frozen observation guards', async () => {
     const wire = transport({ id: 'cost-1', replayed: false });
     await createApiClient(wire.fetch).inventoryCostBootstrap({
       operationId: 'cost-op',
       branchId: 'branch-1',
       productId: 'product-1',
       totalValueMinor: '9007199254740993',
+      expectedStockRevision: '12',
+      expectedCostRevision: '8',
+      expectedUnknownPositiveQuantityScaled: '3000',
     });
 
     expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/cost-bootstrap');
@@ -86,9 +89,12 @@ describe('merchant administration API client', () => {
       branchId: 'branch-1',
       productId: 'product-1',
       totalValueMinor: '9007199254740993',
+      expectedStockRevision: '12',
+      expectedCostRevision: '8',
+      expectedUnknownPositiveQuantityScaled: '3000',
     });
     expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
-      /quantity|knownValue|stockRevision|costRevision|tenant|actor/,
+      /knownValue|valuedQuantity|tenant|actor|resultRevision|currentRevision/,
     );
   });
 

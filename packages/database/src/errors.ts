@@ -298,6 +298,21 @@ export class StockOperationRefusedError extends DatabaseError {
   }
 }
 
+/** A valuation decision no longer describes the locked facts the manager reviewed. */
+export type CostBootstrapRefusal = 'cost-state-changed';
+
+export class CostBootstrapRefusedError extends DatabaseError {
+  public override readonly name = 'CostBootstrapRefusedError';
+  public readonly detail: CostBootstrapRefusal;
+  public readonly productId: string;
+
+  public constructor(productId: string) {
+    super('Cost bootstrap refused: cost-state-changed');
+    this.detail = 'cost-state-changed';
+    this.productId = productId;
+  }
+}
+
 /**
  * A purchasing or receiving operation was refused.
  *

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { PurchasingRequestError, newId, tenantId as brandTenantId } from '@korvi/domain';
 import {
+  CostBootstrapRefusedError,
   PurchasingRefusedError,
   assignRole,
   createPrismaClient,
@@ -71,6 +72,8 @@ const T = {
   doomedProduct: '018f5b00-0000-7000-8000-0000000000ab',
   customRole: '018f5b00-0000-7000-8000-0000000000ac',
   costReceipt: '018f5b00-0000-7000-8000-0000000000b0',
+  costFreshness: '018f5b00-0000-7000-8000-0000000000b1',
+  costUnknownFreshness: '018f5b00-0000-7000-8000-0000000000b2',
 } as const;
 
 const OTHER = {
@@ -432,6 +435,8 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
         [T.inactive, 'OLD-SKU', 'unit', true, false],
         [T.doomedProduct, 'DOOMED', 'unit', true, true],
         [T.costReceipt, 'COST-RECEIPT', 'unit', true, true],
+        [T.costFreshness, 'COST-FRESHNESS', 'unit', true, true],
+        [T.costUnknownFreshness, 'COST-UNKNOWN-FRESHNESS', 'unit', true, true],
       ] as const) {
         await tx.product.create({
           data: {
@@ -828,6 +833,279 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     expect((closedRefusal as PurchasingRefusedError).detail).toBe('purchase-order-closed');
   }, 120_000);
 
+  it('5C: rejects an observation captured before an unknown-cost receipt', async () => {
+    const po = await freshOrder([
+      { productId: T.costUnknownFreshness, orderedQuantityScaled: '2000' },
+    ]);
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branchA,
+          productId: T.costUnknownFreshness,
+          quantityScaled: 5_000n,
+          revision: 5n,
+          updatedAt: new Date(),
+        },
+      });
+      await tx.inventoryCostBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branchA,
+          productId: T.costUnknownFreshness,
+          knownQuantityScaled: 0n,
+          knownValueMinor: 0n,
+          stockRevision: 5n,
+          costRevision: 2n,
+          updatedAt: new Date(),
+        },
+      });
+    });
+    const staleOperationId = `stale-unknown-receipt-${newId()}`;
+    const staleDecision = {
+      operationId: staleOperationId,
+      branchId: T.branchA,
+      productId: T.costUnknownFreshness,
+      totalValueMinor: '100',
+      expectedStockRevision: '5',
+      expectedCostRevision: '2',
+      expectedUnknownPositiveQuantityScaled: '5000',
+    };
+    await receive(
+      {
+        operationId: `unknown-receipt-${newId()}`,
+        purchaseOrderId: po.id,
+        reference: null,
+        lines: [
+          {
+            purchaseOrderLineId: po.lineIdFor(T.costUnknownFreshness),
+            acceptedQuantityScaled: '2000',
+          },
+        ],
+      },
+      actor,
+      second,
+    );
+    const afterReceipt = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      stock: await tx.inventoryBalance.findFirstOrThrow({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costUnknownFreshness },
+        select: { quantityScaled: true, revision: true },
+      }),
+      cost: await tx.inventoryCostBalance.findFirstOrThrow({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costUnknownFreshness },
+        select: {
+          knownQuantityScaled: true,
+          knownValueMinor: true,
+          stockRevision: true,
+          costRevision: true,
+        },
+      }),
+      events: await tx.inventoryValuationEvent.count({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costUnknownFreshness },
+      }),
+    }));
+    expect(afterReceipt).toEqual({
+      stock: { quantityScaled: 7_000n, revision: 6n },
+      cost: {
+        knownQuantityScaled: 0n,
+        knownValueMinor: 0n,
+        stockRevision: 6n,
+        costRevision: 2n,
+      },
+      events: 1,
+    });
+
+    const failed = await refusal(() =>
+      recordInventoryCostBootstrap(
+        prisma,
+        actor,
+        staleDecision,
+        fingerprintCostBootstrap(staleDecision, T.user),
+      ),
+    );
+    expect(failed).toBeInstanceOf(CostBootstrapRefusedError);
+    const residue = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      key: await tx.idempotencyKey.count({
+        where: {
+          tenantId: T.tenant,
+          scope: 'inventory-cost-bootstrap',
+          operationId: staleOperationId,
+        },
+      }),
+      bootstrapEvents: await tx.inventoryValuationEvent.count({
+        where: {
+          tenantId: T.tenant,
+          branchId: T.branchA,
+          productId: T.costUnknownFreshness,
+          eventKind: 'bootstrap',
+        },
+      }),
+      audit: await tx.auditEvent.count({
+        where: {
+          tenantId: T.tenant,
+          eventType: 'inventory.cost.bootstrapped',
+          metadata: { path: ['operationId'], equals: staleOperationId },
+        },
+      }),
+    }));
+    expect(residue).toEqual({ key: 0, bootstrapEvents: 0, audit: 0 });
+
+    const freshDecision = {
+      ...staleDecision,
+      operationId: `fresh-unknown-receipt-${newId()}`,
+      expectedStockRevision: '6',
+      expectedUnknownPositiveQuantityScaled: '7000',
+    };
+    const fresh = await recordInventoryCostBootstrap(
+      prisma,
+      actor,
+      freshDecision,
+      fingerprintCostBootstrap(freshDecision, T.user),
+    );
+    expect(fresh).toMatchObject({ valuedQuantityScaled: '7000', costRevision: '3' });
+  }, 120_000);
+
+  it('5C: rejects an observation captured before a known-cost receipt', async () => {
+    const po = await freshOrder([{ productId: T.costFreshness, orderedQuantityScaled: '2000' }]);
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branchA,
+          productId: T.costFreshness,
+          quantityScaled: 5_000n,
+          revision: 10n,
+          updatedAt: new Date(),
+        },
+      });
+      await tx.inventoryCostBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branchA,
+          productId: T.costFreshness,
+          knownQuantityScaled: 0n,
+          knownValueMinor: 0n,
+          stockRevision: 10n,
+          costRevision: 3n,
+          updatedAt: new Date(),
+        },
+      });
+    });
+    const staleOperationId = `stale-known-receipt-${newId()}`;
+    const staleDecision = {
+      operationId: staleOperationId,
+      branchId: T.branchA,
+      productId: T.costFreshness,
+      totalValueMinor: '100',
+      expectedStockRevision: '10',
+      expectedCostRevision: '3',
+      expectedUnknownPositiveQuantityScaled: '5000',
+    };
+    await receive(
+      {
+        operationId: `known-receipt-${newId()}`,
+        purchaseOrderId: po.id,
+        reference: null,
+        lines: [
+          {
+            purchaseOrderLineId: po.lineIdFor(T.costFreshness),
+            acceptedQuantityScaled: '2000',
+            inventoryValueMinor: '40',
+          },
+        ],
+      },
+      actor,
+      second,
+    );
+    const afterReceipt = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      stock: await tx.inventoryBalance.findFirstOrThrow({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costFreshness },
+        select: { quantityScaled: true, revision: true },
+      }),
+      cost: await tx.inventoryCostBalance.findFirstOrThrow({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costFreshness },
+        select: {
+          knownQuantityScaled: true,
+          knownValueMinor: true,
+          stockRevision: true,
+          costRevision: true,
+        },
+      }),
+      events: await tx.inventoryValuationEvent.count({
+        where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costFreshness },
+      }),
+    }));
+    expect(afterReceipt).toEqual({
+      stock: { quantityScaled: 7_000n, revision: 11n },
+      cost: {
+        knownQuantityScaled: 2_000n,
+        knownValueMinor: 40n,
+        stockRevision: 11n,
+        costRevision: 4n,
+      },
+      events: 1,
+    });
+
+    const failed = await refusal(() =>
+      recordInventoryCostBootstrap(
+        prisma,
+        actor,
+        staleDecision,
+        fingerprintCostBootstrap(staleDecision, T.user),
+      ),
+    );
+    expect(failed).toBeInstanceOf(CostBootstrapRefusedError);
+    const residue = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      state: {
+        stock: await tx.inventoryBalance.findFirstOrThrow({
+          where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costFreshness },
+          select: { quantityScaled: true, revision: true },
+        }),
+        cost: await tx.inventoryCostBalance.findFirstOrThrow({
+          where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costFreshness },
+          select: {
+            knownQuantityScaled: true,
+            knownValueMinor: true,
+            stockRevision: true,
+            costRevision: true,
+          },
+        }),
+        events: await tx.inventoryValuationEvent.count({
+          where: { tenantId: T.tenant, branchId: T.branchA, productId: T.costFreshness },
+        }),
+      },
+      key: await tx.idempotencyKey.count({
+        where: {
+          tenantId: T.tenant,
+          scope: 'inventory-cost-bootstrap',
+          operationId: staleOperationId,
+        },
+      }),
+      audit: await tx.auditEvent.count({
+        where: {
+          tenantId: T.tenant,
+          eventType: 'inventory.cost.bootstrapped',
+          metadata: { path: ['operationId'], equals: staleOperationId },
+        },
+      }),
+    }));
+    expect(residue).toEqual({ state: afterReceipt, key: 0, audit: 0 });
+
+    const freshDecision = {
+      ...staleDecision,
+      operationId: `fresh-known-receipt-${newId()}`,
+      expectedStockRevision: '11',
+      expectedCostRevision: '4',
+    };
+    const fresh = await recordInventoryCostBootstrap(
+      prisma,
+      actor,
+      freshDecision,
+      fingerprintCostBootstrap(freshDecision, T.user),
+    );
+    expect(fresh).toMatchObject({ valuedQuantityScaled: '5000', costRevision: '5' });
+  }, 120_000);
+
   it('5C: serialises cost bootstrap against a valued receipt and preserves both bases', async () => {
     const po = await freshOrder([{ productId: T.costReceipt, orderedQuantityScaled: '2000' }]);
 
@@ -851,6 +1129,9 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
       branchId: T.branchA,
       productId: T.costReceipt,
       totalValueMinor: '100',
+      expectedStockRevision: '0',
+      expectedCostRevision: '0',
+      expectedUnknownPositiveQuantityScaled: '5000',
     };
     const receiptRequest: PurchaseReceiptRequest = {
       operationId: `valued-receipt-${newId()}`,
@@ -882,23 +1163,24 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     ).toBe(2);
 
     const [bootstrapOutcome, receiptOutcome] = raced.result;
-    if (bootstrapOutcome === undefined || bootstrapOutcome.status === 'rejected') {
-      throw new Error(
-        `bootstrap failed: ${String(bootstrapOutcome?.status === 'rejected' ? bootstrapOutcome.reason : 'missing result')}`,
-      );
-    }
     if (receiptOutcome === undefined || receiptOutcome.status === 'rejected') {
       throw new Error(
         `receipt failed: ${String(receiptOutcome?.status === 'rejected' ? receiptOutcome.reason : 'missing result')}`,
       );
     }
 
-    // Whichever transaction reached the row first, bootstrap values only the
-    // same five historical unknown units. The receipt contributes its own
-    // independently recorded 2-unit / 40-minor-unit acquisition basis.
-    expect(bootstrapOutcome.value.valuedQuantityScaled).toBe('5000');
-    expect(['0', '1']).toContain(bootstrapOutcome.value.stockRevision);
-    expect(['1', '2']).toContain(bootstrapOutcome.value.costRevision);
+    // If the receipt wins the lock, the old human observation must be refused;
+    // if bootstrap wins, it values exactly the five units that were observed.
+    const bootstrapCommitted = bootstrapOutcome?.status === 'fulfilled';
+    if (!bootstrapCommitted) {
+      expect(bootstrapOutcome?.reason).toBeInstanceOf(CostBootstrapRefusedError);
+    } else {
+      expect(bootstrapOutcome.value).toMatchObject({
+        valuedQuantityScaled: '5000',
+        stockRevision: '0',
+        costRevision: '1',
+      });
+    }
     expect(receiptOutcome.value.purchaseOrderStatus).toBe('received');
 
     const evidence = await withTenant(prisma, scope.tenantId, async (tx) => ({
@@ -954,10 +1236,10 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
 
     expect(evidence.stock).toEqual({ quantityScaled: 7_000n, revision: 1n });
     expect(evidence.cost).toEqual({
-      knownQuantityScaled: 7_000n,
-      knownValueMinor: 140n,
+      knownQuantityScaled: bootstrapCommitted ? 7_000n : 2_000n,
+      knownValueMinor: bootstrapCommitted ? 140n : 40n,
       stockRevision: 1n,
-      costRevision: 2n,
+      costRevision: bootstrapCommitted ? 2n : 1n,
     });
     expect(evidence.receiptLine).toMatchObject({
       inventoryValueMinor: 40n,
@@ -973,20 +1255,31 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
       costValueMinor: 40n,
       costProvenance: 'recorded',
     });
-    expect(evidence.valuationEvents).toEqual([
-      {
-        eventKind: 'bootstrap',
-        knownQuantityScaled: 5_000n,
-        unknownQuantityScaled: 0n,
-        knownValueMinor: 100n,
-      },
-      {
-        eventKind: 'movement',
-        knownQuantityScaled: 2_000n,
-        unknownQuantityScaled: 0n,
-        knownValueMinor: 40n,
-      },
-    ]);
+    expect(evidence.valuationEvents).toEqual(
+      bootstrapCommitted
+        ? [
+            {
+              eventKind: 'bootstrap',
+              knownQuantityScaled: 5_000n,
+              unknownQuantityScaled: 0n,
+              knownValueMinor: 100n,
+            },
+            {
+              eventKind: 'movement',
+              knownQuantityScaled: 2_000n,
+              unknownQuantityScaled: 0n,
+              knownValueMinor: 40n,
+            },
+          ]
+        : [
+            {
+              eventKind: 'movement',
+              knownQuantityScaled: 2_000n,
+              unknownQuantityScaled: 0n,
+              knownValueMinor: 40n,
+            },
+          ],
+    );
   }, 120_000);
 
   // -------------------------------------------------------------------------

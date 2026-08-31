@@ -22,6 +22,9 @@ function freezeIntent(intent: CostCommandIntent): CostCommandIntent {
       branchId: intent.request.branchId,
       productId: intent.request.productId,
       totalValueMinor: intent.request.totalValueMinor,
+      expectedStockRevision: intent.request.expectedStockRevision,
+      expectedCostRevision: intent.request.expectedCostRevision,
+      expectedUnknownPositiveQuantityScaled: intent.request.expectedUnknownPositiveQuantityScaled,
     }),
   });
 }

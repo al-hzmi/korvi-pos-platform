@@ -38,6 +38,7 @@ export type CostingRequestRefusal =
   | 'invalid-quantity'
   | 'non-positive-quantity'
   | 'invalid-operation-id'
+  | 'invalid-revision'
   | 'nothing-to-value';
 
 const CANONICAL_UNSIGNED_INTEGER = /^(0|[1-9]\d{0,18})$/;
@@ -114,6 +115,16 @@ export function assertPoolFitsStock(stockQuantityScaled: bigint, pool: KnownCost
   if (pool.knownQuantityScaled > positiveOnHand) {
     throw new Error('Costing invariant failed: known cost quantity exceeds positive stock.');
   }
+}
+
+/** Exact positive stock not yet covered by recorded acquisition value. */
+export function unknownPositiveQuantityScaled(
+  stockQuantityScaled: bigint,
+  pool: KnownCostPool,
+): bigint {
+  assertPoolFitsStock(stockQuantityScaled, pool);
+  const positiveOnHand = stockQuantityScaled > 0n ? stockQuantityScaled : 0n;
+  return positiveOnHand - pool.knownQuantityScaled;
 }
 
 /**
@@ -289,10 +300,8 @@ export function bootstrapUnknownCost(
   pool: KnownCostPool,
   totalValueMinor: bigint,
 ): CostBootstrapResult {
-  assertPoolFitsStock(stockQuantityScaled, pool);
   requireNonNegative(totalValueMinor, 'totalValueMinor');
-  const positiveOnHand = stockQuantityScaled > 0n ? stockQuantityScaled : 0n;
-  const unknownQuantity = positiveOnHand - pool.knownQuantityScaled;
+  const unknownQuantity = unknownPositiveQuantityScaled(stockQuantityScaled, pool);
   if (unknownQuantity <= 0n) {
     throw new CostingRequestError(
       'nothing-to-value',
@@ -382,6 +391,10 @@ export interface CostBootstrapRequest {
   readonly branchId: string;
   readonly productId: string;
   readonly totalValueMinor: string;
+  /** Observation preconditions only; the server still derives all resulting cost facts. */
+  readonly expectedStockRevision: string;
+  readonly expectedCostRevision: string;
+  readonly expectedUnknownPositiveQuantityScaled: string;
 }
 
 export interface ValidatedCostBootstrap {
@@ -389,6 +402,20 @@ export interface ValidatedCostBootstrap {
   readonly branchId: string;
   readonly productId: string;
   readonly totalValueMinor: bigint;
+  readonly expectedStockRevision: bigint;
+  readonly expectedCostRevision: bigint;
+  readonly expectedUnknownPositiveQuantityScaled: bigint;
+}
+
+function parseObservation(value: string, field: string, detail: CostingRequestRefusal): bigint {
+  if (!CANONICAL_UNSIGNED_INTEGER.test(value)) {
+    throw new CostingRequestError(detail, `${field} must be canonical non-negative integer text.`);
+  }
+  const parsed = BigInt(value);
+  if (parsed > POSTGRES_BIGINT_MAX) {
+    throw new CostingRequestError(detail, `${field} exceeds PostgreSQL BIGINT storage.`);
+  }
+  return parsed;
 }
 
 export function validateCostBootstrapRequest(
@@ -401,11 +428,33 @@ export function validateCostBootstrapRequest(
       'operationId must contain between 1 and 120 characters.',
     );
   }
+  const expectedUnknownPositiveQuantityScaled = parseObservation(
+    request.expectedUnknownPositiveQuantityScaled,
+    'expectedUnknownPositiveQuantityScaled',
+    'invalid-quantity',
+  );
+  if (expectedUnknownPositiveQuantityScaled === 0n) {
+    throw new CostingRequestError(
+      'non-positive-quantity',
+      'expectedUnknownPositiveQuantityScaled must be positive.',
+    );
+  }
   return {
     operationId,
     branchId: canonicalUuid(request.branchId, 'branchId'),
     productId: canonicalUuid(request.productId, 'productId'),
     totalValueMinor: parseNonNegativeMinor(request.totalValueMinor, 'totalValueMinor'),
+    expectedStockRevision: parseObservation(
+      request.expectedStockRevision,
+      'expectedStockRevision',
+      'invalid-revision',
+    ),
+    expectedCostRevision: parseObservation(
+      request.expectedCostRevision,
+      'expectedCostRevision',
+      'invalid-revision',
+    ),
+    expectedUnknownPositiveQuantityScaled,
   };
 }
 
@@ -418,5 +467,8 @@ export function canonicalCostBootstrapForm(request: CostBootstrapRequest): reado
     plan.branchId,
     plan.productId,
     plan.totalValueMinor.toString(),
+    plan.expectedStockRevision.toString(),
+    plan.expectedCostRevision.toString(),
+    plan.expectedUnknownPositiveQuantityScaled.toString(),
   ];
 }

@@ -2,7 +2,7 @@
 
 Status: **DELIVERED C1 IMPLEMENTATION — CLOSURE GATES PENDING**
 
-Authority: ADR-0024 and Release Gate 9. Predecessors: Strikes 5A, 5B and 5C.
+Authority: ADR-0024, ADR-0025 and Release Gate 9. Predecessors: Strikes 5A, 5B and 5C.
 
 ## 1. Mission
 
@@ -382,15 +382,19 @@ repeat `inventory.cost.manage` whenever any line carries value.
 
 The bootstrap affordance requires cost visibility and
 `inventory.cost.manage`. It selects from active tracked products whose last
-read has positive unknown quantity, but that read is guidance rather than
-write authority. The frozen command contains only operation id, branch,
-product and exact total value. It never sends displayed quantity, current pool
-or either revision.
+read has positive unknown quantity. The frozen command contains operation id,
+branch, product, exact total value and the read's stock revision, cost revision
+and unknown-positive quantity as `expected*` preconditions. Those observations
+bind the decision to the row the manager reviewed; they do not state the
+resulting quantity, pool or revisions.
 
 Under the established 5C locks, the server derives the unknown positive
-quantity at commit time and returns the exact quantity actually valued. The
-UI preserves that result until explicit acknowledgement, refreshes valuation
-facts, and makes clear that stock quantity and stock revision do not change.
+quantity at commit time, compares it and both revisions with the frozen
+observations, and returns the exact quantity actually valued only when all
+three match. `cost_state_changed` clears the entered total, retires the old
+operation id, forces a successful refresh and requires a new human decision.
+The UI preserves a successful result until explicit acknowledgement, refreshes
+valuation facts, and makes clear that stock quantity and stock revision do not change.
 Timeout or transport ambiguity can resend only the frozen same-id request;
 idempotency conflict blocks; a changed/no-longer-valued state requires a fresh
 cost read before a new decision.
@@ -413,8 +417,11 @@ start concurrently from the same screen.
   lines and exact totals beyond JavaScript safe integer range;
 - valued receipt requests retain purchase-order line identity only and add no
   product, branch, supplier, tax, unit-price, stock, pool or revision fields;
-- bootstrap requests contain value and identity only; synchronous double
-  submit is excluded and timeout retry preserves the frozen operation/value;
+- bootstrap requests contain value, identity and only the three `expected*`
+  observation guards; synchronous double submit is excluded and timeout retry
+  preserves the frozen operation/value/observations;
+- stale bootstrap clears the decision and operation id, requires a completed
+  refresh, and cannot leave pool/event/audit/idempotency residue;
 - permission-specific cost and receipt affordances, inactive historical view,
   refresh locks, RTL/bidi, touch and exact numeric presentation;
 - the existing live valued-receipt/bootstrap atomicity, replay, concurrency,

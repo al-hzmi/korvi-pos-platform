@@ -7,6 +7,7 @@ import {
 } from '@korvi/domain';
 import {
   StockOperationRefusedError,
+  CostBootstrapRefusedError,
   listBalancePage,
   listCostBalancePage,
   listInventoryBranchPage,
@@ -39,6 +40,7 @@ import type {
   InventoryBranchPage,
   PrismaClient,
   StockOperationRefusal,
+  CostBootstrapRefusal,
   TransferResult,
 } from '@korvi/database';
 
@@ -54,7 +56,7 @@ import type {
  */
 
 export type StockFailureReason =
-  StockRequestRefusal | CostingRequestRefusal | StockOperationRefusal;
+  StockRequestRefusal | CostingRequestRefusal | StockOperationRefusal | CostBootstrapRefusal;
 
 export type StockResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
@@ -114,6 +116,9 @@ async function attempt<T>(work: () => Promise<T>): Promise<StockResult<T>> {
     }
     if (error instanceof CostingCapacityError) {
       return { outcome: 'failure', reason: 'invalid-money', productId: null };
+    }
+    if (error instanceof CostBootstrapRefusedError) {
+      return { outcome: 'failure', reason: error.detail, productId: error.productId };
     }
     if (error instanceof StockOperationRefusedError) {
       return { outcome: 'failure', reason: error.detail, productId: error.productId };

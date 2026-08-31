@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMerchantInventoryService } from '../inventory/service.js';
 import { CostingCapacityError } from '@korvi/domain';
+import { CostBootstrapRefusedError } from '@korvi/database';
 import type {
   AdjustmentRequest,
   AuthenticatedPrincipal,
@@ -38,6 +39,9 @@ function request(totalValueMinor: string = '4500'): CostBootstrapRequest {
     branchId: BRANCH,
     productId: PRODUCT,
     totalValueMinor,
+    expectedStockRevision: '12',
+    expectedCostRevision: '8',
+    expectedUnknownPositiveQuantityScaled: '3000',
   };
 }
 
@@ -88,6 +92,14 @@ function databaseThatRefusesCapacity(): PrismaClient {
   } as unknown as PrismaClient;
 }
 
+function databaseThatRefusesStaleCost(): PrismaClient {
+  return {
+    $transaction: async () => {
+      throw new CostBootstrapRefusedError(PRODUCT);
+    },
+  } as unknown as PrismaClient;
+}
+
 describe('inventory service costing authority', () => {
   it('refuses bootstrap before touching persistence without inventory.cost.manage', async () => {
     const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
@@ -130,6 +142,18 @@ describe('inventory service costing authority', () => {
       outcome: 'failure',
       reason: 'invalid-money',
       productId: null,
+    });
+  });
+
+  it('returns a product-scoped conflict when the reviewed cost facts changed', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatRefusesStaleCost() });
+
+    await expect(
+      service.bootstrapCost(principal(['inventory.cost.manage']), request()),
+    ).resolves.toEqual({
+      outcome: 'failure',
+      reason: 'cost-state-changed',
+      productId: PRODUCT,
     });
   });
 });

@@ -290,6 +290,10 @@ export interface InventoryCostBootstrapRequest {
   readonly productId: string;
   /** Exact total value for the server-derived unknown positive quantity. */
   readonly totalValueMinor: string;
+  /** Frozen observations; the server compares them under lock before deriving the result. */
+  readonly expectedStockRevision: string;
+  readonly expectedCostRevision: string;
+  readonly expectedUnknownPositiveQuantityScaled: string;
 }
 
 export interface InventoryCostBootstrapResult {

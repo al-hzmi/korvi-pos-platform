@@ -10,6 +10,9 @@ function intent(operationId: string, totalValueMinor = '100'): CostCommandIntent
       branchId: 'branch-1',
       productId: 'product-1',
       totalValueMinor,
+      expectedStockRevision: '12',
+      expectedCostRevision: '8',
+      expectedUnknownPositiveQuantityScaled: '3000',
     },
   };
 }
@@ -26,6 +29,11 @@ describe('cost command flight', () => {
     flight.settle('ambiguous');
     expect(flight.pending()).toBe(first);
     expect(flight.begin(() => intent('op-3'))).toBe(first);
+    expect(flight.pending()?.request).toMatchObject({
+      expectedStockRevision: '12',
+      expectedCostRevision: '8',
+      expectedUnknownPositiveQuantityScaled: '3000',
+    });
   });
 
   it('retires an amendable intent and permanently stops success or conflict', () => {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCostBootstrapIntent, describeCostCommandFailure } from '../cost-command';
+import {
+  buildCostBootstrapIntent,
+  costFlightOutcomeFor,
+  describeCostCommandFailure,
+} from '../cost-command';
 import { ApiError } from '../api';
 import type { InventoryCostBalanceRow } from '../api-types';
 
@@ -22,7 +26,7 @@ const ROW: InventoryCostBalanceRow = {
 };
 
 describe('cost command construction', () => {
-  it('preserves a total past JavaScript safe integer and sends no quantity or revision', () => {
+  it('preserves exact integers and binds the decision to the displayed cost observation', () => {
     const built = buildCostBootstrapIntent(
       { branchId: ROW.branchId, product: ROW, totalValue: '90071992547409.93' },
       () => 'cost-op',
@@ -37,11 +41,14 @@ describe('cost command construction', () => {
           branchId: ROW.branchId,
           productId: ROW.productId,
           totalValueMinor: '9007199254740993',
+          expectedStockRevision: '12',
+          expectedCostRevision: '8',
+          expectedUnknownPositiveQuantityScaled: '2007199254740993000',
         },
       },
     });
     expect(JSON.stringify(built)).not.toMatch(
-      /unknownPositive|knownQuantity|knownValue|quantityScaled|stockRevision|costRevision|tenant|actor/,
+      /knownQuantity|knownValue|valuedQuantity|tenant|actor|resultRevision|currentRevision/,
     );
   });
 
@@ -79,6 +86,10 @@ describe('cost command failure classification', () => {
     expect(describeCostCommandFailure(new ApiError(409, 'nothing_to_value', null)).action).toBe(
       'refresh-cost',
     );
+    expect(describeCostCommandFailure(new ApiError(409, 'cost_state_changed', null)).action).toBe(
+      'refresh-cost',
+    );
+    expect(costFlightOutcomeFor('refresh-cost')).toBe('amendable');
     expect(describeCostCommandFailure(new ApiError(409, 'idempotency_conflict', null)).action).toBe(
       'blocking',
     );

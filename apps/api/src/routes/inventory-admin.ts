@@ -110,6 +110,9 @@ const costBootstrapBody = z
     branchId: UUID,
     productId: UUID,
     totalValueMinor: z.string().regex(/^(0|[1-9][0-9]{0,18})$/),
+    expectedStockRevision: UNSIGNED_SCALED,
+    expectedCostRevision: UNSIGNED_SCALED,
+    expectedUnknownPositiveQuantityScaled: z.string().regex(/^[1-9][0-9]{0,18}$/),
   })
   .strict();
 
@@ -232,6 +235,8 @@ const MESSAGES: Readonly<Record<StockFailureReason, string>> = {
   'untracked-product': 'هذا الصنف لا يخضع لتتبع المخزون.',
   'insufficient-stock': 'الكمية المتوفرة في الفرع لا تكفي لإتمام العملية.',
   'stock-changed': 'تغيّر رصيد المخزون أثناء الجرد. يرجى تحديث الأرصدة وإعادة الجرد.',
+  'cost-state-changed':
+    'تغيّرت حقائق المخزون أو التكلفة منذ المراجعة. حدّث البيانات واتخذ قرار تقييم جديدًا.',
   'idempotency-conflict': 'رقم العملية مستخدم لطلب مختلف.',
 };
 
@@ -265,6 +270,7 @@ const STATUS: Readonly<Record<StockFailureReason, number>> = {
   'untracked-product': 409,
   'insufficient-stock': 409,
   'stock-changed': 409,
+  'cost-state-changed': 409,
   'idempotency-conflict': 409,
 };
 

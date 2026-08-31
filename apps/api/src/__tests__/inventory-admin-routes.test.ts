@@ -86,6 +86,9 @@ const COST_BOOTSTRAP = {
   branchId: A.branch,
   productId: A.milk,
   totalValueMinor: '4500',
+  expectedStockRevision: '12',
+  expectedCostRevision: '8',
+  expectedUnknownPositiveQuantityScaled: '1000',
 };
 
 let app: FastifyInstance;
@@ -539,7 +542,7 @@ describe('authority fields cannot be threaded through the body', () => {
     expect(seen).toHaveLength(0);
   });
 
-  it('refuses every client-supplied bootstrap quantity, pool and revision fact', async () => {
+  it('accepts only prefixed observation guards and refuses client-supplied result facts', async () => {
     const server = await build(ROLE_PERMISSIONS.owner);
     const cookie = await cookieFor(server);
     const fields = [
@@ -710,6 +713,27 @@ describe('request shape', () => {
     }
     expect(seen).toHaveLength(0);
   });
+
+  it('requires canonical positive bootstrap observation guards', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    for (const body of [
+      { ...COST_BOOTSTRAP, expectedStockRevision: '01' },
+      { ...COST_BOOTSTRAP, expectedCostRevision: '-1' },
+      { ...COST_BOOTSTRAP, expectedUnknownPositiveQuantityScaled: '0' },
+      { ...COST_BOOTSTRAP, expectedUnknownPositiveQuantityScaled: '1.5' },
+      {
+        operationId: COST_BOOTSTRAP.operationId,
+        branchId: COST_BOOTSTRAP.branchId,
+        productId: COST_BOOTSTRAP.productId,
+        totalValueMinor: COST_BOOTSTRAP.totalValueMinor,
+      },
+    ]) {
+      const response = await post('/v1/admin/inventory/cost-bootstrap', cookie, body);
+      expect(response.statusCode, JSON.stringify(body)).toBe(400);
+    }
+    expect(seen).toHaveLength(0);
+  });
 });
 
 /**
@@ -845,6 +869,7 @@ describe('typed refusals map to stable statuses', () => {
     ['invalid-operation-id', 422],
     ['nothing-to-value', 409],
     ['stock-changed', 409],
+    ['cost-state-changed', 409],
     ['insufficient-stock', 409],
     ['idempotency-conflict', 409],
     ['inactive-branch', 409],

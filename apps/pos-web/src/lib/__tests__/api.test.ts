@@ -205,6 +205,9 @@ describe('the API client', () => {
         branchId: 'branch-1',
         productId: 'product-1',
         totalValueMinor: '9007199254740993',
+        expectedStockRevision: '12',
+        expectedCostRevision: '8',
+        expectedUnknownPositiveQuantityScaled: '3000',
       });
       const caught = attempt.catch((error: unknown) => error);
 

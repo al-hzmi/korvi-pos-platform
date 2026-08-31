@@ -208,6 +208,9 @@ describe('original-sale return basis', () => {
         branchId: '018F6000-0000-7000-8000-000000000001',
         productId: '018F6000-0000-7000-8000-000000000002',
         totalValueMinor: '100',
+        expectedStockRevision: '12',
+        expectedCostRevision: '8',
+        expectedUnknownPositiveQuantityScaled: '3000',
       }),
     ).toEqual([
       'inventory-cost-bootstrap',
@@ -215,6 +218,9 @@ describe('original-sale return basis', () => {
       '018f6000-0000-7000-8000-000000000001',
       '018f6000-0000-7000-8000-000000000002',
       '100',
+      '12',
+      '8',
+      '3000',
     ]);
 
     expect(() =>
@@ -223,7 +229,28 @@ describe('original-sale return basis', () => {
         branchId: '018f6000-0000-7000-8000-000000000001',
         productId: '018f6000-0000-7000-8000-000000000002',
         totalValueMinor: '01',
+        expectedStockRevision: '12',
+        expectedCostRevision: '8',
+        expectedUnknownPositiveQuantityScaled: '3000',
       }),
     ).toThrow(CostingRequestError);
+
+    const valid = {
+      operationId: 'op-3',
+      branchId: '018f6000-0000-7000-8000-000000000001',
+      productId: '018f6000-0000-7000-8000-000000000002',
+      totalValueMinor: '100',
+      expectedStockRevision: '12',
+      expectedCostRevision: '8',
+      expectedUnknownPositiveQuantityScaled: '3000',
+    } as const;
+    for (const request of [
+      { ...valid, expectedStockRevision: '01' },
+      { ...valid, expectedCostRevision: '9223372036854775808' },
+      { ...valid, expectedUnknownPositiveQuantityScaled: '0' },
+      { ...valid, expectedUnknownPositiveQuantityScaled: '1.5' },
+    ]) {
+      expect(() => canonicalCostBootstrapForm(request)).toThrow(CostingRequestError);
+    }
   });
 });

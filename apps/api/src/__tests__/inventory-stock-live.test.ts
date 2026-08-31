@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { StockRequestError, newId, tenantId as brandTenantId } from '@korvi/domain';
 import {
+  CostBootstrapRefusedError,
   StockOperationRefusedError,
   assignRole,
   createAuditRepository,
@@ -81,6 +82,7 @@ const T = {
   customRole: '018f5a00-0000-7000-8000-0000000000ad',
   costSale: '018f5a00-0000-7000-8000-0000000000b0',
   costTransfer: '018f5a00-0000-7000-8000-0000000000b1',
+  costSaleFreshness: '018f5a00-0000-7000-8000-0000000000b2',
 } as const;
 
 const OTHER = {
@@ -311,6 +313,7 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
         [T.zero, 'ZERO-SKU', 'unit', true, true],
         [T.costSale, 'COST-SALE', 'unit', true, true],
         [T.costTransfer, 'COST-TRANSFER', 'unit', true, true],
+        [T.costSaleFreshness, 'COST-SALE-FRESHNESS', 'unit', true, true],
       ] as const) {
         await tx.product.create({
           data: {
@@ -1198,6 +1201,100 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     expect(moved).toBe(transferCommitted ? 2_000n : 0n);
   }, 90_000);
 
+  it('refuses a bootstrap observation captured before a committed sale', async () => {
+    await allowNegative(false);
+    await setQuantity(T.branchA, T.costSaleFreshness, 10_000n);
+    const staleOperationId = `stale-after-sale-${newId()}`;
+    const staleRequest = {
+      operationId: staleOperationId,
+      branchId: T.branchA,
+      productId: T.costSaleFreshness,
+      totalValueMinor: '100',
+      expectedStockRevision: '0',
+      expectedCostRevision: '0',
+      expectedUnknownPositiveQuantityScaled: '10000',
+    };
+    const principal: AuthenticatedPrincipal = {
+      tenantId: T.tenant,
+      tenantSlug: T.slug,
+      userId: T.user,
+      sessionId: newId(),
+      email: 'sara@stock-live-a.test',
+      displayName: 'سارة',
+      roles: ['cashier'],
+      permissions: ['sale.create', 'product.read'],
+      maxDiscountBasisPoints: 0n,
+      branchId: T.branchA,
+    };
+    const sale = await checkout.checkout({
+      principal,
+      operationId: newId(),
+      terminalId: T.terminal,
+      cashReceivedMinor: '10000',
+      lines: [{ productId: T.costSaleFreshness, quantityScaled: '2000' }],
+    });
+    expect(sale.outcome).toBe('success');
+    const afterSale = {
+      stock: await balanceOf(T.branchA, T.costSaleFreshness),
+      cost: await costOf(T.branchA, T.costSaleFreshness),
+    };
+    expect(afterSale).toEqual({
+      stock: { quantityScaled: 8_000n, revision: 1n },
+      cost: {
+        knownQuantityScaled: 0n,
+        knownValueMinor: 0n,
+        stockRevision: 1n,
+        costRevision: 0n,
+      },
+    });
+
+    const failed = await refusal(() =>
+      recordInventoryCostBootstrap(
+        second,
+        actor,
+        staleRequest,
+        fingerprintCostBootstrap(staleRequest, T.user),
+      ),
+    );
+    expect(failed).toBeInstanceOf(CostBootstrapRefusedError);
+    expect({
+      stock: await balanceOf(T.branchA, T.costSaleFreshness),
+      cost: await costOf(T.branchA, T.costSaleFreshness),
+    }).toEqual(afterSale);
+    const residue = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      key: await tx.idempotencyKey.count({
+        where: {
+          tenantId: T.tenant,
+          scope: 'inventory-cost-bootstrap',
+          operationId: staleOperationId,
+        },
+      }),
+      bootstrapEvents: await tx.inventoryValuationEvent.count({
+        where: {
+          tenantId: T.tenant,
+          branchId: T.branchA,
+          productId: T.costSaleFreshness,
+          eventKind: 'bootstrap',
+        },
+      }),
+    }));
+    expect(residue).toEqual({ key: 0, bootstrapEvents: 0 });
+
+    const freshRequest = {
+      ...staleRequest,
+      operationId: `fresh-after-sale-${newId()}`,
+      expectedStockRevision: '1',
+      expectedUnknownPositiveQuantityScaled: '8000',
+    };
+    const fresh = await recordInventoryCostBootstrap(
+      second,
+      actor,
+      freshRequest,
+      fingerprintCostBootstrap(freshRequest, T.user),
+    );
+    expect(fresh.valuedQuantityScaled).toBe('8000');
+  }, 90_000);
+
   it('serialises cost bootstrap against a sale without losing stock or value', async () => {
     await allowNegative(false);
     await setQuantity(T.branchA, T.costSale, 10_000n);
@@ -1209,6 +1306,9 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
       branchId: T.branchA,
       productId: T.costSale,
       totalValueMinor: '100',
+      expectedStockRevision: before.revision.toString(),
+      expectedCostRevision: '0',
+      expectedUnknownPositiveQuantityScaled: '10000',
     };
     const principal: AuthenticatedPrincipal = {
       tenantId: T.tenant,
@@ -1243,9 +1343,6 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     expect(raced.blocked, 'bootstrap and sale were not both waiting behind the held row').toBe(2);
 
     const [bootstrapOutcome, saleOutcome] = raced.result;
-    if (bootstrapOutcome?.status !== 'fulfilled') {
-      throw new Error(`bootstrap failed: ${String(bootstrapOutcome?.reason)}`);
-    }
     if (saleOutcome === undefined) throw new Error('sale failed: missing result');
     if (saleOutcome.status === 'rejected') {
       throw new Error(`sale failed: ${String(saleOutcome.reason)}`);
@@ -1254,16 +1351,20 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
       throw new Error(`sale refused: ${saleOutcome.value.reason}`);
     }
 
-    const valuedQuantity = BigInt(bootstrapOutcome.value.valuedQuantityScaled);
-    expect([8_000n, 10_000n]).toContain(valuedQuantity);
+    const bootstrapCommitted = bootstrapOutcome?.status === 'fulfilled';
+    if (!bootstrapCommitted) {
+      expect(bootstrapOutcome?.reason).toBeInstanceOf(CostBootstrapRefusedError);
+    } else {
+      expect(bootstrapOutcome.value.valuedQuantityScaled).toBe('10000');
+    }
     const stock = await balanceOf(T.branchA, T.costSale);
     const cost = await costOf(T.branchA, T.costSale);
     expect(stock).toEqual({ quantityScaled: 8_000n, revision: before.revision + 1n });
     expect(cost).toMatchObject({
-      knownQuantityScaled: 8_000n,
-      knownValueMinor: valuedQuantity === 10_000n ? 80n : 100n,
+      knownQuantityScaled: bootstrapCommitted ? 8_000n : 0n,
+      knownValueMinor: bootstrapCommitted ? 80n : 0n,
       stockRevision: stock?.revision,
-      costRevision: valuedQuantity === 10_000n ? 2n : 1n,
+      costRevision: bootstrapCommitted ? 2n : 0n,
     });
   }, 90_000);
 
@@ -1276,6 +1377,9 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
       branchId: T.branchA,
       productId: T.costTransfer,
       totalValueMinor: '100',
+      expectedStockRevision: '0',
+      expectedCostRevision: '0',
+      expectedUnknownPositiveQuantityScaled: '10000',
     };
     const move: TransferRequest = {
       operationId: `bootstrap-race-transfer-${newId()}`,
@@ -1301,15 +1405,16 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     );
 
     const [bootstrapOutcome, transferOutcome] = raced.result;
-    if (bootstrapOutcome?.status !== 'fulfilled') {
-      throw new Error(`bootstrap failed: ${String(bootstrapOutcome?.reason)}`);
-    }
     if (transferOutcome?.status !== 'fulfilled') {
       throw new Error(`transfer failed: ${String(transferOutcome?.reason)}`);
     }
 
-    const valuedQuantity = BigInt(bootstrapOutcome.value.valuedQuantityScaled);
-    expect([8_000n, 10_000n]).toContain(valuedQuantity);
+    const bootstrapCommitted = bootstrapOutcome?.status === 'fulfilled';
+    if (!bootstrapCommitted) {
+      expect(bootstrapOutcome?.reason).toBeInstanceOf(CostBootstrapRefusedError);
+    } else {
+      expect(bootstrapOutcome.value.valuedQuantityScaled).toBe('10000');
+    }
     const [sourceStock, destinationStock, sourceCost, destinationCost] = await Promise.all([
       balanceOf(T.branchA, T.costTransfer),
       balanceOf(T.branchB, T.costTransfer),
@@ -1318,15 +1423,15 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     ]);
     expect(sourceStock?.quantityScaled).toBe(8_000n);
     expect(destinationStock?.quantityScaled).toBe(2_000n);
-    expect(sourceCost?.knownQuantityScaled).toBe(8_000n);
-    expect(sourceCost?.knownValueMinor).toBe(valuedQuantity === 10_000n ? 80n : 100n);
-    expect(destinationCost?.knownQuantityScaled).toBe(valuedQuantity === 10_000n ? 2_000n : 0n);
-    expect(destinationCost?.knownValueMinor).toBe(valuedQuantity === 10_000n ? 20n : 0n);
+    expect(sourceCost?.knownQuantityScaled).toBe(bootstrapCommitted ? 8_000n : 0n);
+    expect(sourceCost?.knownValueMinor).toBe(bootstrapCommitted ? 80n : 0n);
+    expect(destinationCost?.knownQuantityScaled).toBe(bootstrapCommitted ? 2_000n : 0n);
+    expect(destinationCost?.knownValueMinor).toBe(bootstrapCommitted ? 20n : 0n);
     expect(
       (sourceCost?.knownQuantityScaled ?? 0n) + (destinationCost?.knownQuantityScaled ?? 0n),
-    ).toBe(valuedQuantity);
+    ).toBe(bootstrapCommitted ? 10_000n : 0n);
     expect((sourceCost?.knownValueMinor ?? 0n) + (destinationCost?.knownValueMinor ?? 0n)).toBe(
-      100n,
+      bootstrapCommitted ? 100n : 0n,
     );
   }, 90_000);
 

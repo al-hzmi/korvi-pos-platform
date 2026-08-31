@@ -19,6 +19,7 @@ export {
   PlanEntitlementRefusedError,
   OwnerBootstrapRefusedError,
   StockOperationRefusedError,
+  CostBootstrapRefusedError,
   PurchasingRefusedError,
 } from './errors.js';
 export type {
@@ -28,6 +29,7 @@ export type {
   PlanEntitlementRefusal,
   OwnerBootstrapRefusal,
   StockOperationRefusal,
+  CostBootstrapRefusal,
   PurchasingRefusal,
 } from './errors.js';
 
@@ -194,9 +196,10 @@ export type { BalancePage, BalancePageRow } from './inventory/balances.js';
 export { listInventoryBranchPage, MAX_INVENTORY_BRANCH_PAGE } from './inventory/branches.js';
 export type { InventoryBranch, InventoryBranchPage } from './inventory/branches.js';
 
-// Prospective costing bootstrap (Strike 5C). It values only the currently
-// unknown positive quantity derived under stock + cost row locks; it never
-// changes stock quantity/revision or rewrites historical movement evidence.
+// Prospective costing bootstrap (Strike 5C / ADR-0025). It values only the
+// currently unknown positive quantity derived under stock + cost row locks,
+// after matching the frozen read observations. It never changes stock
+// quantity/revision or rewrites historical movement evidence.
 export { recordInventoryCostBootstrap } from './costing/bootstrap.js';
 export type { CostBootstrapActor, InventoryCostBootstrapResult } from './costing/bootstrap.js';
 export { listCostBalancePage, MAX_COST_BALANCE_PAGE } from './costing/balances.js';

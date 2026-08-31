@@ -2,8 +2,10 @@ import {
   COST_IDEMPOTENCY_SCOPES,
   bootstrapUnknownCost,
   newId,
+  unknownPositiveQuantityScaled,
   validateCostBootstrapRequest,
 } from '@korvi/domain';
+import { CostBootstrapRefusedError } from '../errors.js';
 import { withTenant } from '../tenant-context.js';
 import {
   claimOperation,
@@ -105,6 +107,17 @@ export async function recordInventoryCostBootstrap(
       plan.productId,
       stock.revision,
     );
+    const currentUnknownPositiveQuantityScaled = unknownPositiveQuantityScaled(
+      stock.quantityScaled,
+      cost,
+    );
+    if (
+      stock.revision !== plan.expectedStockRevision ||
+      cost.costRevision !== plan.expectedCostRevision ||
+      currentUnknownPositiveQuantityScaled !== plan.expectedUnknownPositiveQuantityScaled
+    ) {
+      throw new CostBootstrapRefusedError(plan.productId);
+    }
     const valued = bootstrapUnknownCost(stock.quantityScaled, cost, plan.totalValueMinor);
     const nextCostRevision = cost.costRevision + 1n;
 

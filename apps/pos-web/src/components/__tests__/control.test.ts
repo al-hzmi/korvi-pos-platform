@@ -664,7 +664,8 @@ describe('inventory cost presentation', () => {
     );
     expect(denied).not.toContain('إجمالي قيمة اقتناء الكمية المجهولة');
     expect(allowed).toContain('إجمالي قيمة اقتناء الكمية المجهولة');
-    expect(allowed).toContain('يشتق الخادم الكمية الحالية');
+    expect(allowed).toContain('يطابق الخادم مراجعات المخزون والتكلفة');
+    expect(allowed).toContain('يرفض القرار ويطلب قراءة جديدة');
     expect(allowed).toContain('h-touch');
     expect(allowed).toContain('\u2066MILK-1L\u2069');
   });

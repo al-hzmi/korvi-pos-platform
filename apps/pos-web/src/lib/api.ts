@@ -448,6 +448,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           branchId: request.branchId,
           productId: request.productId,
           totalValueMinor: request.totalValueMinor,
+          expectedStockRevision: request.expectedStockRevision,
+          expectedCostRevision: request.expectedCostRevision,
+          expectedUnknownPositiveQuantityScaled: request.expectedUnknownPositiveQuantityScaled,
         },
         INVENTORY_COMMAND_TIMEOUT_MS,
       );

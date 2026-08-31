@@ -2,7 +2,7 @@
 
 Status: **ACTIVE C0 IMPLEMENTATION CONTRACT**
 
-Authority: ADR-0024 §8 plus the mandatory release gates. This document narrows implementation semantics; it does not widen Stage 5 scope.
+Authority: ADR-0024 §8, as corrected by ADR-0025, plus the mandatory release gates. This document narrows implementation semantics; it does not widen Stage 5 scope.
 
 ## 1. Mission
 
@@ -159,15 +159,29 @@ The caller may state:
 - branch,
 - product,
 - total value to assign,
-- operation id.
+- operation id,
+- the observed stock revision,
+- the observed cost revision,
+- the observed unknown positive quantity.
 
-The caller may **not** state the quantity to value. Under stock and cost row locks, the server derives:
+The three observed facts are stale-read preconditions, not client authority.
+The caller may **not** state the resulting quantity to value. Under stock and
+cost row locks, the server derives:
 
 `unknownPositiveQuantity = max(stockQuantity, 0) - knownQuantity`
 
-If there is no unknown positive quantity, the operation is refused. Bootstrap does not move stock and does not increment stock revision. It increments cost revision exactly once, updates the known-cost pool, appends one immutable `bootstrap` valuation event, writes audit evidence and commits the idempotency result atomically.
+The server compares both locked revisions and the derived unknown quantity with
+the submitted observations before applying value. Any mismatch is
+`cost-state-changed`: the idempotency reservation and every tentative write
+roll back, the caller must refresh, and a new human decision receives a new
+operation id. If there is no unknown positive quantity, the operation is
+refused. Bootstrap does not move stock and does not increment stock revision.
+It increments cost revision exactly once, updates the known-cost pool, appends
+one immutable `bootstrap` valuation event, writes audit evidence and commits
+the idempotency result atomically.
 
-Same operation + same intent replays. Same operation + changed intent conflicts.
+Same operation + same intent, including identical observation preconditions,
+replays. Same operation + changed intent conflicts.
 
 ## 14. Permissions
 
@@ -201,6 +215,9 @@ Strike 5C cannot close without evidence for all applicable release gates, includ
 - receiving over-receipt concurrency,
 - rollback after late failure leaving no stock/cost/document/idempotency residue,
 - bootstrap idempotency and changed-intent conflict,
+- stale bootstrap refusal after unknown inflow, outflow, known-cost receipt and
+  sibling bootstrap, with no pool/evidence/audit/idempotency residue,
+- fresh post-conflict decision and frozen same-observation ambiguous retry,
 - bootstrap concurrency against sale/receipt/transfer,
 - cross-tenant/RLS probes,
 - forward migration from the 11-migration state,

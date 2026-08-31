@@ -25,10 +25,10 @@ import type {
  * user replaying a colleague's id would be handed that colleague's committed
  * document instead of being told the ids collide.
  *
- * Nothing the *server* derives is in here — not the resulting balance, not the
- * revision the count will produce, not the document id — because those are
- * consequences of the request rather than part of it, and including one would
- * make a lawful retry hash differently.
+ * Nothing the *server* will produce is in here — not the resulting balance,
+ * not the revision the command will produce, not the document id. Cost
+ * bootstrap does bind the observations returned by an earlier server read;
+ * those are preconditions for the human decision, not caller-authored results.
  */
 
 function digest(form: readonly unknown[], actorUserId: string): string {

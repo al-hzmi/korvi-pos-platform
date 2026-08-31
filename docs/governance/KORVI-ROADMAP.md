@@ -34,7 +34,7 @@ Sequence:
 
 ### Stage 5 — Inventory & Purchasing Foundation — **IN PROGRESS**
 
-One stock ledger and causality model; adjustments/counts/transfers; supplier/PO/receiving; MOQ/multiple rules; costing foundation; branch stock. Preserve current sale/return semantics during migration. ADR-0024 defines the authority boundary.
+One stock ledger and causality model; adjustments/counts/transfers; supplier/PO/receiving; MOQ/multiple rules; costing foundation; branch stock. Preserve current sale/return semantics during migration. ADR-0024 defines the authority boundary; ADR-0025 binds prospective cost decisions to the stock/cost observation reviewed by the manager.
 
 Sequence:
 
