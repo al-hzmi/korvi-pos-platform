@@ -127,6 +127,39 @@ function recordingPurchasing(): MerchantPurchasingService {
   };
 
   return {
+    async listBranches(_principal, query) {
+      seen.push({ method: 'listBranches', request: query });
+      return {
+        rows: [
+          {
+            id: A.branch,
+            code: 'MAIN',
+            nameAr: 'الفرع الرئيسي',
+            nameEn: 'Main',
+            isActive: true,
+          },
+        ],
+        nextCursor: null,
+      };
+    },
+    async listProducts(_principal, query) {
+      seen.push({ method: 'listProducts', request: query });
+      return {
+        rows: [
+          {
+            id: A.milk,
+            sku: 'MILK',
+            nameAr: 'حليب',
+            nameEn: 'Milk',
+            productType: 'unit',
+            unitLabel: 'حبة',
+            isActive: true,
+            trackInventory: true,
+          },
+        ],
+        nextCursor: null,
+      };
+    },
     async listSuppliers(_principal, query) {
       seen.push({ method: 'listSuppliers', request: query });
       return { rows: [supplier], nextCursor: null };
@@ -314,6 +347,8 @@ const get = (url: string, cookie: string | null) =>
   });
 
 const READS = [
+  '/v1/admin/purchasing/branches',
+  '/v1/admin/purchasing/products',
   '/v1/admin/purchasing/suppliers',
   `/v1/admin/purchasing/suppliers/${SUPPLIER}`,
   '/v1/admin/purchasing/orders',
@@ -676,11 +711,37 @@ describe('identity, quantities and refusals across the wire', () => {
 
     expect((await get('/v1/admin/purchasing/suppliers?limit=5000', cookie)).statusCode).toBe(400);
     expect((await get('/v1/admin/purchasing/orders?limit=0', cookie)).statusCode).toBe(400);
+    expect((await get('/v1/admin/purchasing/branches?limit=101', cookie)).statusCode).toBe(400);
+    expect((await get('/v1/admin/purchasing/products?limit=201', cookie)).statusCode).toBe(400);
 
     const probe = await get(`/v1/admin/purchasing/suppliers?tenantId=${A.tenant}`, cookie);
     expect(probe.statusCode).toBe(400);
     expect(probe.json()).toEqual({ error: 'forbidden_field', field: 'tenantId' });
     expect(seen).toHaveLength(0);
+  });
+
+  it('returns purchasing product identity without price, stock or tenant authority', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    const response = await get('/v1/admin/purchasing/products?limit=50', cookie);
+
+    expect(response.statusCode).toBe(200);
+    const row = response.json<{ rows: readonly Record<string, unknown>[] }>().rows[0];
+    expect(Object.keys(row ?? {}).sort()).toEqual([
+      'id',
+      'isActive',
+      'nameAr',
+      'nameEn',
+      'productType',
+      'sku',
+      'trackInventory',
+      'unitLabel',
+    ]);
+    expect(JSON.stringify(row)).not.toMatch(/tenant|price|quantity|revision|cost/);
+    expect(seen.at(0)).toEqual({
+      method: 'listProducts',
+      request: { limit: 50, cursor: null },
+    });
   });
 
   it.each(['open', 'partially_received', 'received'] as const)(

@@ -341,6 +341,146 @@ export interface InventoryTransferResult {
   readonly lines: readonly InventoryTransferLineResult[];
 }
 
+export interface PurchasingBranch {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly isActive: boolean;
+}
+
+export interface PurchasingProduct {
+  readonly id: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  readonly isActive: boolean;
+  readonly trackInventory: boolean;
+}
+
+export interface PurchasingSupplier {
+  readonly id: string;
+  readonly name: string;
+  readonly isActive: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PurchasingPage<T> {
+  readonly rows: readonly T[];
+  readonly nextCursor: string | null;
+}
+
+export type PurchaseOrderStatus = 'open' | 'partially_received' | 'received';
+
+export interface PurchaseOrderLine {
+  readonly id: string;
+  readonly productId: string;
+  readonly orderedQuantityScaled: string;
+  readonly receivedQuantityScaled: string;
+  readonly remainingQuantityScaled: string;
+}
+
+export interface PurchaseOrder {
+  readonly id: string;
+  readonly supplierId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly status: PurchaseOrderStatus;
+  readonly orderedAt: string;
+  readonly lines: readonly PurchaseOrderLine[];
+}
+
+export interface PurchaseOrderSummary {
+  readonly id: string;
+  readonly supplierId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly status: PurchaseOrderStatus;
+  readonly orderedAt: string;
+  readonly lineCount: number;
+}
+
+export interface SupplierCreateRequest {
+  readonly operationId: string;
+  readonly name: string;
+}
+
+export interface SupplierUpdateRequest {
+  readonly operationId: string;
+  readonly supplierId: string;
+  readonly name?: string;
+  readonly isActive?: boolean;
+}
+
+export interface SupplierMutationResult {
+  readonly supplier: PurchasingSupplier;
+  readonly replayed: boolean;
+}
+
+export interface PurchaseOrderCreateRequest {
+  readonly operationId: string;
+  readonly supplierId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly orderedQuantityScaled: string;
+  }[];
+}
+
+export interface PurchaseOrderCreateResult {
+  readonly order: PurchaseOrder;
+  readonly replayed: boolean;
+}
+
+export interface PurchaseReceiptCreateRequest {
+  readonly operationId: string;
+  readonly purchaseOrderId: string;
+  readonly reference: string | null;
+  readonly lines: readonly {
+    readonly purchaseOrderLineId: string;
+    readonly acceptedQuantityScaled: string;
+  }[];
+}
+
+export interface PurchaseReceiptLineResult {
+  readonly id: string;
+  readonly purchaseOrderLineId: string;
+  readonly productId: string;
+  readonly acceptedQuantityScaled: string;
+  readonly orderedQuantityScaled: string;
+  readonly beforeReceivedQuantityScaled: string;
+  readonly afterReceivedQuantityScaled: string;
+  readonly beforeQuantityScaled: string;
+  readonly afterQuantityScaled: string;
+  readonly resultRevision: string;
+}
+
+export interface PurchaseReceiptResult {
+  readonly id: string;
+  readonly purchaseOrderId: string;
+  readonly branchId: string;
+  readonly supplierId: string;
+  readonly reference: string | null;
+  readonly purchaseOrderStatus: PurchaseOrderStatus;
+  readonly receivedAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly PurchaseReceiptLineResult[];
+}
+
+export interface PurchaseReceiptSummary {
+  readonly id: string;
+  readonly purchaseOrderId: string;
+  readonly branchId: string;
+  readonly supplierId: string;
+  readonly reference: string | null;
+  readonly receivedAt: string;
+  readonly lines: readonly PurchaseReceiptLineResult[];
+}
+
 export interface AdminTerminal {
   readonly id: string;
   readonly branchId: string;

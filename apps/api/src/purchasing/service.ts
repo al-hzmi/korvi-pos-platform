@@ -2,6 +2,7 @@ import {
   CostingCapacityError,
   PurchasingRequestError,
   requirePrincipalPermission,
+  tenantId as brandTenantId,
 } from '@korvi/domain';
 import {
   PurchasingRefusedError,
@@ -9,8 +10,10 @@ import {
   createSupplier,
   getPurchaseOrder,
   getSupplier,
+  listInventoryBranchPage,
   listPurchaseOrders,
   listPurchaseReceipts,
+  listPurchasingProductPage,
   listSuppliers,
   recordPurchaseReceipt,
   updateSupplier,
@@ -32,11 +35,13 @@ import type {
 } from '@korvi/domain';
 import type {
   PrismaClient,
+  InventoryBranchPage,
   PurchaseOrderPage,
   PurchaseOrderRecord,
   PurchaseOrderResult,
   PurchaseReceiptResult,
   PurchaseReceiptSummary,
+  PurchasingProductPage,
   PurchasingRefusal,
   SupplierPage,
   SupplierRecord,
@@ -79,6 +84,14 @@ export interface PurchaseOrderQuery {
 }
 
 export interface MerchantPurchasingService {
+  listBranches(
+    principal: AuthenticatedPrincipal,
+    query: { readonly limit: number; readonly cursor: string | null },
+  ): Promise<InventoryBranchPage>;
+  listProducts(
+    principal: AuthenticatedPrincipal,
+    query: { readonly limit: number; readonly cursor: string | null },
+  ): Promise<PurchasingProductPage>;
   listSuppliers(principal: AuthenticatedPrincipal, query: SupplierQuery): Promise<SupplierPage>;
   getSupplier(
     principal: AuthenticatedPrincipal,
@@ -151,17 +164,40 @@ export function createMerchantPurchasingService(deps: {
   const { prisma } = deps;
 
   return {
+    async listBranches(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return listInventoryBranchPage(
+        prisma,
+        { tenantId: brandTenantId(principal.tenantId) },
+        query.limit,
+        query.cursor,
+      );
+    },
+
+    async listProducts(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return listPurchasingProductPage(
+        prisma,
+        { tenantId: brandTenantId(principal.tenantId) },
+        query.limit,
+        query.cursor,
+      );
+    },
+
     async listSuppliers(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
       // The tenant is the session's, always. Under RLS a filter is a filter
       // and never a way to reach another merchant's list.
       return listSuppliers(prisma, principal.tenantId, query);
     },
 
     async getSupplier(principal, supplierId) {
+      requirePrincipalPermission(principal, 'purchasing.read');
       return getSupplier(prisma, principal.tenantId, supplierId);
     },
 
     async createSupplier(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.manage');
       return attempt(() =>
         createSupplier(
           prisma,
@@ -173,6 +209,7 @@ export function createMerchantPurchasingService(deps: {
     },
 
     async updateSupplier(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.manage');
       return attempt(() =>
         updateSupplier(
           prisma,
@@ -184,14 +221,17 @@ export function createMerchantPurchasingService(deps: {
     },
 
     async listPurchaseOrders(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
       return listPurchaseOrders(prisma, principal.tenantId, query);
     },
 
     async getPurchaseOrder(principal, purchaseOrderId) {
+      requirePrincipalPermission(principal, 'purchasing.read');
       return getPurchaseOrder(prisma, principal.tenantId, purchaseOrderId);
     },
 
     async createPurchaseOrder(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.manage');
       return attempt(() =>
         createPurchaseOrder(
           prisma,
@@ -203,10 +243,12 @@ export function createMerchantPurchasingService(deps: {
     },
 
     async listReceipts(principal, purchaseOrderId, limit) {
+      requirePrincipalPermission(principal, 'purchasing.read');
       return listPurchaseReceipts(prisma, principal.tenantId, purchaseOrderId, limit);
     },
 
     async receive(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.receive');
       // Defense in depth: the HTTP route enforces this too, but the service is
       // an authority boundary in its own right. An internal caller must not be
       // able to establish acquisition value merely by bypassing the route.

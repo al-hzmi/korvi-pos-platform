@@ -19,6 +19,8 @@ import {
 } from '../control/inventory-panel';
 import { MembersPanel } from '../control/members-panel';
 import { ProductsPanel } from '../control/products-panel';
+import { PurchasingOperations, resolveOrderLineProduct } from '../control/purchasing-operations';
+import { PurchasingPanel } from '../control/purchasing-panel';
 import { SettingsPanel } from '../control/settings-panel';
 import { ProductPanel } from '../product-panel';
 import { controlView } from '../../lib/control-view';
@@ -87,6 +89,7 @@ describe('control navigation', () => {
       'المبيعات',
       'المنتجات',
       'المخزون',
+      'المشتريات',
       'العملاء',
       'الفروع والصناديق',
       'الموظفون والصلاحيات',
@@ -104,6 +107,7 @@ describe('control navigation', () => {
           'report.read',
           'product.read',
           'inventory.read',
+          'purchasing.read',
           'settings.manage',
           'users.manage',
         ],
@@ -124,7 +128,7 @@ describe('control navigation', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, { active: 'home', permissions: [], onSelect: () => undefined }),
     );
-    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(6);
+    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(7);
   });
 
   it('keeps users.manage separate from settings.manage in navigation', () => {
@@ -136,7 +140,7 @@ describe('control navigation', () => {
       }),
     );
     expect(peopleOnly).toContain('الموظفون والصلاحيات');
-    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(5);
+    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(6);
   });
 
   it('marks exactly one section as the open one', () => {
@@ -221,6 +225,18 @@ describe('control centre first paint', () => {
     expect(markup).not.toContain('لا توجد فروع');
     expect(markup).not.toContain('لا توجد أرصدة');
   });
+
+  it('does not claim empty purchasing data before all bounded reads answer', () => {
+    const markup = renderToStaticMarkup(
+      createElement(PurchasingPanel, {
+        api: idleApi,
+        permissions: ['purchasing.read'],
+      }),
+    );
+    expect(markup).toContain('جارٍ تحميل الموردين وأوامر الشراء');
+    expect(markup).not.toContain('لا توجد أوامر شراء');
+    expect(markup).not.toContain('إضافة مورد');
+  });
 });
 
 describe('who the control centre is for', () => {
@@ -230,10 +246,18 @@ describe('who the control centre is for', () => {
     expect(canOpenControlCentre(cashier.permissions)).toBe(true);
     expect(firstAuthorizedSection(cashier.permissions)).toBe('products');
     expect(firstAuthorizedSection(['inventory.read'])).toBe('inventory');
+    expect(firstAuthorizedSection(['purchasing.read'])).toBe('purchasing');
 
     const inventoryOnly = surface({ kind: 'ready', principal: principalWith(['inventory.read']) });
     expect(inventoryOnly).toContain('جارٍ تحميل فروع المخزون');
     expect(inventoryOnly).not.toContain('جارٍ تحميل المؤشرات');
+
+    const purchasingOnly = surface({
+      kind: 'ready',
+      principal: principalWith(['purchasing.read']),
+    });
+    expect(purchasingOnly).toContain('جارٍ تحميل الموردين وأوامر الشراء');
+    expect(purchasingOnly).not.toContain('جارٍ تحميل المؤشرات');
   });
 
   it('keeps the control centre blocked when no built section is authorized', () => {
@@ -505,6 +529,119 @@ describe('inventory balance presentation', () => {
       }),
     );
     expect(paging).toMatch(/disabled=""[^>]*aria-busy="true"|aria-busy="true"[^>]*disabled=""/);
+  });
+});
+
+describe('purchasing presentation', () => {
+  const pages = {
+    branches: {
+      rows: [
+        {
+          id: 'branch-1',
+          code: 'MAIN',
+          nameAr: 'الفرع الرئيسي',
+          nameEn: 'Main',
+          isActive: true,
+        },
+      ],
+      nextCursor: null,
+    },
+    products: {
+      rows: [
+        {
+          id: 'product-1',
+          sku: 'RICE-1',
+          nameAr: 'أرز',
+          nameEn: 'Rice',
+          productType: 'weighted',
+          unitLabel: 'كجم',
+          isActive: true,
+          trackInventory: true,
+        },
+      ],
+      nextCursor: null,
+    },
+    suppliers: {
+      rows: [
+        {
+          id: 'supplier-1',
+          name: 'مورد الرياض',
+          isActive: true,
+          createdAt: '2026-08-31T00:00:00.000Z',
+          updatedAt: '2026-08-31T00:00:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    },
+    orders: {
+      rows: [
+        {
+          id: 'order-1',
+          supplierId: 'supplier-1',
+          branchId: 'branch-1',
+          reference: 'PO-1',
+          status: 'partially_received',
+          orderedAt: '2026-08-31T00:00:00.000Z',
+          lineCount: 1,
+        },
+      ],
+      nextCursor: null,
+    },
+  } as const;
+
+  const common = {
+    api: idleApi,
+    pages,
+    refreshing: false,
+    loadingMore: null,
+    onRefresh: () => Promise.resolve(true),
+    onLoadMore: () => undefined,
+    onCommandLockChange: () => undefined,
+  } as const;
+
+  it('resolves distinct visible defaults before adding another order line', () => {
+    const products = [
+      pages.products.rows[0],
+      { ...pages.products.rows[0], id: 'product-2', sku: 'RICE-2' },
+    ];
+
+    expect(resolveOrderLineProduct(products, '', 0)?.id).toBe('product-1');
+    expect(resolveOrderLineProduct(products, '', 1)?.id).toBe('product-2');
+  });
+
+  it('shows supplier and order authoring only with purchasing.manage', () => {
+    const manager = renderToStaticMarkup(
+      createElement(PurchasingOperations, {
+        ...common,
+        permissions: ['purchasing.read', 'purchasing.manage'],
+      }),
+    );
+    expect(manager).toContain('إضافة مورد');
+    expect(manager).toContain('تعديل أو تعطيل مورد');
+    expect(manager).toContain('أوامر الشراء');
+
+    const reader = renderToStaticMarkup(
+      createElement(PurchasingOperations, {
+        ...common,
+        permissions: ['purchasing.read'],
+      }),
+    );
+    expect(reader).toContain('لديك صلاحية قراءة المشتريات دون إنشاء أوامر جديدة');
+    expect(reader).not.toContain('إضافة مورد');
+    expect(reader).not.toContain('إنشاء أمر الشراء');
+  });
+
+  it('renders server-derived order status and bounded identity without cost input', () => {
+    const markup = renderToStaticMarkup(
+      createElement(PurchasingOperations, {
+        ...common,
+        permissions: ['purchasing.read'],
+      }),
+    );
+    expect(markup).toContain('مستلم جزئيًا');
+    expect(markup).toContain('مورد الرياض');
+    expect(markup).toContain('PO-1');
+    expect(markup).not.toMatch(/قيمة المخزون|تكلفة الوحدة|inventoryValueMinor/);
   });
 });
 

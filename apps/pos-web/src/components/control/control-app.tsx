@@ -9,6 +9,7 @@ import { InventoryPanel } from './inventory-panel';
 import { MembersPanel } from './members-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
+import { PurchasingPanel } from './purchasing-panel';
 import { SettingsPanel } from './settings-panel';
 import { LoginScreen } from '../login-screen';
 import { Screen } from '../screen';
@@ -56,6 +57,8 @@ function sectionTitle(section: ControlSection): string {
       return 'المنتجات';
     case 'inventory':
       return 'المخزون';
+    case 'purchasing':
+      return 'المشتريات';
     case 'branches':
       return 'الفروع والصناديق';
     case 'staff':
@@ -69,12 +72,12 @@ function Section({
   section,
   api,
   principal,
-  onInventoryCommandLockChange,
+  onCommandLockChange,
 }: {
   readonly section: ControlSection;
   readonly api: ApiClient;
   readonly principal: Principal;
-  readonly onInventoryCommandLockChange: (locked: boolean) => void;
+  readonly onCommandLockChange: (locked: boolean) => void;
 }): JSX.Element {
   switch (section) {
     case 'home':
@@ -87,7 +90,15 @@ function Section({
           api={api}
           preferredBranchId={principal.branchId}
           permissions={principal.permissions}
-          onCommandLockChange={onInventoryCommandLockChange}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
+    case 'purchasing':
+      return (
+        <PurchasingPanel
+          api={api}
+          permissions={principal.permissions}
+          onCommandLockChange={onCommandLockChange}
         />
       );
     case 'branches':
@@ -112,20 +123,20 @@ function Workspace({
 }): JSX.Element {
   const initialSection = firstAuthorizedSection(principal.permissions);
   const [section, setSection] = useState<ControlSection>(() => initialSection ?? 'home');
-  const [inventoryCommandLocked, setInventoryCommandLocked] = useState(false);
+  const [commandLocked, setCommandLocked] = useState(false);
   const activeSection = canAccessControlSection(section, principal.permissions)
     ? section
     : initialSection;
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
 
   useEffect(() => {
-    if (!inventoryCommandLocked) return undefined;
+    if (!commandLocked) return undefined;
     const preserveCommand = (event: BeforeUnloadEvent): void => {
       event.preventDefault();
     };
     window.addEventListener('beforeunload', preserveCommand);
     return () => window.removeEventListener('beforeunload', preserveCommand);
-  }, [inventoryCommandLocked]);
+  }, [commandLocked]);
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
@@ -138,7 +149,7 @@ function Workspace({
           <span className="hidden text-sm font-medium text-foreground md:inline">
             {principal.user.displayName}
           </span>
-          {inventoryCommandLocked ? (
+          {commandLocked ? (
             <span
               aria-disabled="true"
               className="inline-flex h-touch cursor-not-allowed items-center rounded-md border border-input px-4 text-sm text-muted-foreground"
@@ -153,7 +164,7 @@ function Workspace({
               نقطة البيع
             </a>
           )}
-          <Button variant="ghost" size="sm" disabled={inventoryCommandLocked} onClick={onSignOut}>
+          <Button variant="ghost" size="sm" disabled={commandLocked} onClick={onSignOut}>
             خروج
           </Button>
         </div>
@@ -180,7 +191,7 @@ function Workspace({
               <ControlNav
                 active={activeSection}
                 permissions={principal.permissions}
-                locked={inventoryCommandLocked}
+                locked={commandLocked}
                 onSelect={setSection}
               />
             </CardSurface>
@@ -192,6 +203,7 @@ function Workspace({
                 {sectionTitle(activeSection)}
               </h1>
               {activeSection === 'inventory' ||
+              activeSection === 'purchasing' ||
               activeSection === 'branches' ||
               activeSection === 'staff' ||
               activeSection === 'settings' ? (
@@ -213,7 +225,7 @@ function Workspace({
               section={activeSection}
               api={api}
               principal={principal}
-              onInventoryCommandLockChange={setInventoryCommandLocked}
+              onCommandLockChange={setCommandLocked}
             />
           </main>
         </div>

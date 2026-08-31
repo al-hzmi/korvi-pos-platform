@@ -10,7 +10,8 @@ import type { JSX } from 'react';
  * that are not built say so. Built sections can still be unavailable to this
  * principal; that is a UI courtesy only, while the API remains the authority.
  */
-export type ControlSection = 'home' | 'products' | 'inventory' | 'branches' | 'staff' | 'settings';
+export type ControlSection =
+  'home' | 'products' | 'inventory' | 'purchasing' | 'branches' | 'staff' | 'settings';
 
 export interface ControlEntry {
   readonly key: string;
@@ -24,6 +25,12 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'sales', label: 'المبيعات', section: null },
   { key: 'products', label: 'المنتجات', section: 'products', permission: 'product.read' },
   { key: 'inventory', label: 'المخزون', section: 'inventory', permission: 'inventory.read' },
+  {
+    key: 'purchasing',
+    label: 'المشتريات',
+    section: 'purchasing',
+    permission: 'purchasing.read',
+  },
   { key: 'customers', label: 'العملاء', section: null },
   {
     key: 'branches',
@@ -63,7 +70,7 @@ export interface ControlNavProps {
   readonly active: ControlSection;
   readonly onSelect: (section: ControlSection) => void;
   readonly permissions?: readonly string[];
-  /** Keeps an ambiguous stock command mounted until its identity is resolved. */
+  /** Keeps an ambiguous stock or purchasing command mounted until its identity is resolved. */
   readonly locked?: boolean;
 }
 

@@ -247,3 +247,5 @@ export type {
   PurchaseReceiptResult,
   PurchaseReceiptSummary,
 } from './purchasing/receiving.js';
+export { listPurchasingProductPage, MAX_PURCHASING_PRODUCT_PAGE } from './purchasing/catalog.js';
+export type { PurchasingProduct, PurchasingProductPage } from './purchasing/catalog.js';

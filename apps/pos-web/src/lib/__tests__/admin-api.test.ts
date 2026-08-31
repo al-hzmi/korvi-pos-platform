@@ -121,6 +121,88 @@ describe('merchant administration API client', () => {
     });
   });
 
+  it('reads bounded purchasing identity and order filters without tenant scope', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    const api = createApiClient(wire.fetch);
+    await api.purchasingProducts({ limit: 100, cursor: 'product/2' });
+    await api.purchasingOrders({
+      limit: 50,
+      status: 'partially_received',
+      supplierId: 'supplier-1',
+      branchId: 'branch-1',
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/products?limit=100&cursor=product%2F2');
+    expect(wire.calls[1]!.url).toBe(
+      '/v1/admin/purchasing/orders?limit=50&branchId=branch-1&supplierId=supplier-1&status=partially_received',
+    );
+    expect(wire.calls.map((call) => call.url).join(' ')).not.toContain('tenant');
+  });
+
+  it('takes supplier update identity from the path and sends changed fields only', async () => {
+    const wire = transport({ supplier: {}, replayed: false });
+    await createApiClient(wire.fetch).updatePurchasingSupplier({
+      operationId: 'supplier-op',
+      supplierId: 'supplier/one',
+      isActive: false,
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/suppliers/supplier%2Fone');
+    expect(wire.calls[0]!.init.method).toBe('PATCH');
+    expect(bodyOf(wire.calls[0]!)).toEqual({ operationId: 'supplier-op', isActive: false });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(/supplierId|tenant|actor/);
+  });
+
+  it('posts immutable order intent without received, status or result authority', async () => {
+    const wire = transport({ order: {}, replayed: false });
+    await createApiClient(wire.fetch).createPurchaseOrder({
+      operationId: 'order-op',
+      supplierId: 'supplier-1',
+      branchId: 'branch-1',
+      reference: null,
+      lines: [{ productId: 'product-1', orderedQuantityScaled: '900719925474099300' }],
+    });
+
+    const body = bodyOf(wire.calls[0]!);
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/orders');
+    expect(body).toEqual({
+      operationId: 'order-op',
+      supplierId: 'supplier-1',
+      branchId: 'branch-1',
+      reference: null,
+      lines: [{ productId: 'product-1', orderedQuantityScaled: '900719925474099300' }],
+    });
+    expect(JSON.stringify(body)).not.toMatch(/tenant|actor|received|remaining|status|result/);
+  });
+
+  it('posts receipt line identity and accepted quantity with no cost or stock authority', async () => {
+    const wire = transport({ id: 'receipt-1', lines: [] });
+    await createApiClient(wire.fetch).receivePurchaseOrder({
+      operationId: 'receipt-op',
+      purchaseOrderId: 'order-1',
+      reference: 'DN-4',
+      lines: [{ purchaseOrderLineId: 'line-1', acceptedQuantityScaled: '30000' }],
+    });
+
+    const body = bodyOf(wire.calls[0]!);
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/receipts');
+    expect(body).toEqual({
+      operationId: 'receipt-op',
+      purchaseOrderId: 'order-1',
+      reference: 'DN-4',
+      lines: [{ purchaseOrderLineId: 'line-1', acceptedQuantityScaled: '30000' }],
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /tenant|actor|supplierId|branchId|productId|inventoryValue|cost|before|after|status|revision/,
+    );
+  });
+
+  it('reads a bounded receipt history for one encoded order identity', async () => {
+    const wire = transport({ receipts: [] });
+    await createApiClient(wire.fetch).purchasingReceipts('order/one');
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/orders/order%2Fone/receipts?limit=100');
+  });
+
   it('uses the authenticated admin settings route and PATCHes only editable fields', async () => {
     const wire = transport({});
     const api = createApiClient(wire.fetch);

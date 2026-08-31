@@ -6,7 +6,13 @@ import {
   PURCHASE_ORDER_STATUSES,
   canonicalUuid,
 } from '@korvi/domain';
-import { MAX_PURCHASE_ORDER_PAGE, MAX_RECEIPT_PAGE, MAX_SUPPLIER_PAGE } from '@korvi/database';
+import {
+  MAX_INVENTORY_BRANCH_PAGE,
+  MAX_PURCHASE_ORDER_PAGE,
+  MAX_PURCHASING_PRODUCT_PAGE,
+  MAX_RECEIPT_PAGE,
+  MAX_SUPPLIER_PAGE,
+} from '@korvi/database';
 import type { MerchantPurchasingService, PurchasingFailureReason } from '../purchasing/service.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { Guards } from '../auth/guards.js';
@@ -15,7 +21,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 /**
  * The purchasing authority, over HTTP.
  *
- * Eight routes, three permissions, and one rule that governs all of them: the
+ * Ten routes, three permissions, and one rule that governs all of them: the
  * browser may state *what it wants to happen*, never *what already happened*
  * and never *who is asking*. The tenant and the actor come from the session;
  * the supplier, branch, product and remaining quantity a receipt is measured
@@ -93,6 +99,20 @@ const supplierQuery = z
     limit: z.coerce.number().int().min(1).max(MAX_SUPPLIER_PAGE).optional(),
     cursor: UUID.optional(),
     activeOnly: z.enum(['true', 'false']).optional(),
+  })
+  .strict();
+
+const purchasingBranchesQuery = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(MAX_INVENTORY_BRANCH_PAGE).optional(),
+    cursor: UUID.optional(),
+  })
+  .strict();
+
+const purchasingProductsQuery = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(MAX_PURCHASING_PRODUCT_PAGE).optional(),
+    cursor: UUID.optional(),
   })
   .strict();
 
@@ -349,6 +369,52 @@ export function registerPurchasingAdminRoutes(
       ...(subjectId === null ? {} : { subjectId }),
     });
   }
+
+  // -------------------------------------------------------------------------
+  // Purchasing-operational identity
+  // -------------------------------------------------------------------------
+
+  app.get(
+    '/v1/admin/purchasing/branches',
+    { preHandler: [guards.requireSession, guards.requirePermission('purchasing.read')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      const field = forbiddenField(request.query, FORBIDDEN_QUERY_FIELDS);
+      if (field !== null) return reply.code(400).send({ error: 'forbidden_field', field });
+
+      const parsed = purchasingBranchesQuery.safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
+
+      const page = await service.listBranches(principal, {
+        limit: parsed.data.limit ?? 50,
+        cursor: parsed.data.cursor ?? null,
+      });
+      return reply.code(200).send(page);
+    },
+  );
+
+  app.get(
+    '/v1/admin/purchasing/products',
+    { preHandler: [guards.requireSession, guards.requirePermission('purchasing.read')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      const field = forbiddenField(request.query, FORBIDDEN_QUERY_FIELDS);
+      if (field !== null) return reply.code(400).send({ error: 'forbidden_field', field });
+
+      const parsed = purchasingProductsQuery.safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
+
+      const page = await service.listProducts(principal, {
+        limit: parsed.data.limit ?? 50,
+        cursor: parsed.data.cursor ?? null,
+      });
+      return reply.code(200).send(page);
+    },
+  );
 
   // -------------------------------------------------------------------------
   // Suppliers

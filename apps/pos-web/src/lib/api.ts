@@ -23,8 +23,23 @@ import type {
   InventoryTransferResult,
   OnboardingReadiness,
   Principal,
+  PurchaseOrder,
+  PurchaseOrderCreateRequest,
+  PurchaseOrderCreateResult,
+  PurchaseOrderStatus,
+  PurchaseOrderSummary,
+  PurchaseReceiptCreateRequest,
+  PurchaseReceiptResult,
+  PurchaseReceiptSummary,
   ProductSummary,
+  PurchasingBranch,
+  PurchasingPage,
+  PurchasingProduct,
+  PurchasingSupplier,
   ShiftSummary,
+  SupplierCreateRequest,
+  SupplierMutationResult,
+  SupplierUpdateRequest,
   TerminalsResponse,
 } from './api-types';
 
@@ -55,6 +70,7 @@ import type {
  */
 export const CHECKOUT_TIMEOUT_MS = 20_000;
 export const INVENTORY_COMMAND_TIMEOUT_MS = 20_000;
+export const PURCHASING_COMMAND_TIMEOUT_MS = 20_000;
 
 export type ApiFailureKind = 'network' | 'http';
 
@@ -124,6 +140,37 @@ export interface ApiClient {
   inventoryAdjust(request: InventoryAdjustmentRequest): Promise<InventoryAdjustmentResult>;
   inventoryCount(request: InventoryCountRequest): Promise<InventoryCountResult>;
   inventoryTransfer(request: InventoryTransferRequest): Promise<InventoryTransferResult>;
+  purchasingBranches(
+    query?: { readonly limit?: number; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<PurchasingPage<PurchasingBranch>>;
+  purchasingProducts(
+    query?: { readonly limit?: number; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<PurchasingPage<PurchasingProduct>>;
+  purchasingSuppliers(
+    query?: { readonly limit?: number; readonly cursor?: string; readonly activeOnly?: boolean },
+    options?: RequestOptions,
+  ): Promise<PurchasingPage<PurchasingSupplier>>;
+  purchasingOrders(
+    query?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly status?: PurchaseOrderStatus;
+      readonly supplierId?: string;
+      readonly branchId?: string;
+    },
+    options?: RequestOptions,
+  ): Promise<PurchasingPage<PurchaseOrderSummary>>;
+  purchasingOrder(purchaseOrderId: string, options?: RequestOptions): Promise<PurchaseOrder>;
+  purchasingReceipts(
+    purchaseOrderId: string,
+    options?: RequestOptions,
+  ): Promise<readonly PurchaseReceiptSummary[]>;
+  createPurchasingSupplier(request: SupplierCreateRequest): Promise<SupplierMutationResult>;
+  updatePurchasingSupplier(request: SupplierUpdateRequest): Promise<SupplierMutationResult>;
+  createPurchaseOrder(request: PurchaseOrderCreateRequest): Promise<PurchaseOrderCreateResult>;
+  receivePurchaseOrder(request: PurchaseReceiptCreateRequest): Promise<PurchaseReceiptResult>;
   createAdminProduct(input: AdminProductCreateInput): Promise<AdminProductBootstrap>;
   adminSettings(options?: RequestOptions): Promise<AdminTenantSettings>;
   updateAdminSettings(patch: AdminSettingsPatch): Promise<AdminTenantSettings>;
@@ -189,11 +236,18 @@ function listQuery(input: {
   readonly limit?: number;
   readonly cursor?: string;
   readonly branchId?: string;
+  readonly supplierId?: string;
+  readonly status?: string;
+  readonly activeOnly?: boolean;
 }): string {
   const search = new URLSearchParams();
   if (input.limit !== undefined) search.set('limit', String(input.limit));
   if (input.cursor !== undefined && input.cursor !== '') search.set('cursor', input.cursor);
   if (input.branchId !== undefined && input.branchId !== '') search.set('branchId', input.branchId);
+  if (input.supplierId !== undefined && input.supplierId !== '')
+    search.set('supplierId', input.supplierId);
+  if (input.status !== undefined && input.status !== '') search.set('status', input.status);
+  if (input.activeOnly !== undefined) search.set('activeOnly', String(input.activeOnly));
   const encoded = search.toString();
   return encoded === '' ? '' : `?${encoded}`;
 }
@@ -237,16 +291,21 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     body: JSON.stringify(payload),
   });
 
-  const inventoryCommand = async <T>(path: string, payload: unknown): Promise<T> => {
+  const retryableCommand = async <T>(
+    path: string,
+    payload: unknown,
+    timeoutMs: number,
+    method: 'POST' | 'PATCH' = 'POST',
+  ): Promise<T> => {
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, INVENTORY_COMMAND_TIMEOUT_MS);
+    }, timeoutMs);
 
     try {
-      return (await call(path, json(payload), { signal: controller.signal })) as T;
+      return (await call(path, json(payload, method), { signal: controller.signal })) as T;
     } catch (error) {
       if (timedOut) throw new ApiError(0, 'timeout', null);
       throw error;
@@ -364,41 +423,156 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     },
 
     async inventoryAdjust(request) {
-      return inventoryCommand<InventoryAdjustmentResult>('/v1/admin/inventory/adjustments', {
-        operationId: request.operationId,
-        branchId: request.branchId,
-        reason: request.reason,
-        lines: request.lines.map((line) => ({
-          productId: line.productId,
-          deltaQuantityScaled: line.deltaQuantityScaled,
-        })),
-      });
+      return retryableCommand<InventoryAdjustmentResult>(
+        '/v1/admin/inventory/adjustments',
+        {
+          operationId: request.operationId,
+          branchId: request.branchId,
+          reason: request.reason,
+          lines: request.lines.map((line) => ({
+            productId: line.productId,
+            deltaQuantityScaled: line.deltaQuantityScaled,
+          })),
+        },
+        INVENTORY_COMMAND_TIMEOUT_MS,
+      );
     },
 
     async inventoryCount(request) {
-      return inventoryCommand<InventoryCountResult>('/v1/admin/inventory/counts', {
-        operationId: request.operationId,
-        branchId: request.branchId,
-        reason: request.reason,
-        lines: request.lines.map((line) => ({
-          productId: line.productId,
-          countedQuantityScaled: line.countedQuantityScaled,
-          expectedRevision: line.expectedRevision,
-        })),
-      });
+      return retryableCommand<InventoryCountResult>(
+        '/v1/admin/inventory/counts',
+        {
+          operationId: request.operationId,
+          branchId: request.branchId,
+          reason: request.reason,
+          lines: request.lines.map((line) => ({
+            productId: line.productId,
+            countedQuantityScaled: line.countedQuantityScaled,
+            expectedRevision: line.expectedRevision,
+          })),
+        },
+        INVENTORY_COMMAND_TIMEOUT_MS,
+      );
     },
 
     async inventoryTransfer(request) {
-      return inventoryCommand<InventoryTransferResult>('/v1/admin/inventory/transfers', {
-        operationId: request.operationId,
-        fromBranchId: request.fromBranchId,
-        toBranchId: request.toBranchId,
-        reason: request.reason,
-        lines: request.lines.map((line) => ({
-          productId: line.productId,
-          quantityScaled: line.quantityScaled,
-        })),
-      });
+      return retryableCommand<InventoryTransferResult>(
+        '/v1/admin/inventory/transfers',
+        {
+          operationId: request.operationId,
+          fromBranchId: request.fromBranchId,
+          toBranchId: request.toBranchId,
+          reason: request.reason,
+          lines: request.lines.map((line) => ({
+            productId: line.productId,
+            quantityScaled: line.quantityScaled,
+          })),
+        },
+        INVENTORY_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async purchasingBranches(query = {}, options) {
+      return (await call(
+        `/v1/admin/purchasing/branches${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as PurchasingPage<PurchasingBranch>;
+    },
+
+    async purchasingProducts(query = {}, options) {
+      return (await call(
+        `/v1/admin/purchasing/products${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as PurchasingPage<PurchasingProduct>;
+    },
+
+    async purchasingSuppliers(query = {}, options) {
+      return (await call(
+        `/v1/admin/purchasing/suppliers${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as PurchasingPage<PurchasingSupplier>;
+    },
+
+    async purchasingOrders(query = {}, options) {
+      return (await call(
+        `/v1/admin/purchasing/orders${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as PurchasingPage<PurchaseOrderSummary>;
+    },
+
+    async purchasingOrder(purchaseOrderId, options) {
+      return (await call(
+        `/v1/admin/purchasing/orders/${encodeURIComponent(purchaseOrderId)}`,
+        { method: 'GET' },
+        options,
+      )) as PurchaseOrder;
+    },
+
+    async purchasingReceipts(purchaseOrderId, options) {
+      const body = (await call(
+        `/v1/admin/purchasing/orders/${encodeURIComponent(purchaseOrderId)}/receipts?limit=100`,
+        { method: 'GET' },
+        options,
+      )) as { readonly receipts: readonly PurchaseReceiptSummary[] };
+      return body.receipts;
+    },
+
+    async createPurchasingSupplier(request) {
+      return retryableCommand<SupplierMutationResult>(
+        '/v1/admin/purchasing/suppliers',
+        { operationId: request.operationId, name: request.name },
+        PURCHASING_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async updatePurchasingSupplier(request) {
+      return retryableCommand<SupplierMutationResult>(
+        `/v1/admin/purchasing/suppliers/${encodeURIComponent(request.supplierId)}`,
+        {
+          operationId: request.operationId,
+          ...(request.name === undefined ? {} : { name: request.name }),
+          ...(request.isActive === undefined ? {} : { isActive: request.isActive }),
+        },
+        PURCHASING_COMMAND_TIMEOUT_MS,
+        'PATCH',
+      );
+    },
+
+    async createPurchaseOrder(request) {
+      return retryableCommand<PurchaseOrderCreateResult>(
+        '/v1/admin/purchasing/orders',
+        {
+          operationId: request.operationId,
+          supplierId: request.supplierId,
+          branchId: request.branchId,
+          reference: request.reference,
+          lines: request.lines.map((line) => ({
+            productId: line.productId,
+            orderedQuantityScaled: line.orderedQuantityScaled,
+          })),
+        },
+        PURCHASING_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async receivePurchaseOrder(request) {
+      return retryableCommand<PurchaseReceiptResult>(
+        '/v1/admin/purchasing/receipts',
+        {
+          operationId: request.operationId,
+          purchaseOrderId: request.purchaseOrderId,
+          reference: request.reference,
+          lines: request.lines.map((line) => ({
+            purchaseOrderLineId: line.purchaseOrderLineId,
+            acceptedQuantityScaled: line.acceptedQuantityScaled,
+          })),
+        },
+        PURCHASING_COMMAND_TIMEOUT_MS,
+      );
     },
 
     async createAdminProduct(input) {

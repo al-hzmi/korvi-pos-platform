@@ -372,6 +372,8 @@ function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
   };
 
   return {
+    listBranches: (principal, query) => resolve().listBranches(principal, query),
+    listProducts: (principal, query) => resolve().listProducts(principal, query),
     listSuppliers: (principal, query) => resolve().listSuppliers(principal, query),
     getSupplier: (principal, supplierId) => resolve().getSupplier(principal, supplierId),
     createSupplier: (principal, request) => resolve().createSupplier(principal, request),

@@ -59,7 +59,8 @@ does not close the strike.
    prospective bootstrap exposed only under the separate 5C permissions.
 
 5D-A was delivered and verified at `39361a6b07c6f7a94074a6581a5fb513e1891077`.
-The active slice is **5D-B**.
+5D-B was delivered and verified at `fd9866c755fa5c6f4b1b428451ad38b7839fff67`.
+The active slice is **5D-C**.
 
 ## 4. 5D-A read contract
 
@@ -240,7 +241,93 @@ still revalidates all branch and product facts under its locks.
 - targeted tests, full `npm run verify`, `git diff --check`, normal CI and the
   PostgreSQL live proof green at one delivered HEAD.
 
-## 12. Strike closure
+## 12. 5D-C purchasing-operation contract
+
+### Operational identity and permissions
+
+`purchasing.read` exposes bounded, keyset-paged supplier, branch, product and
+purchase-order identity needed to understand and state a purchasing intent. It
+does not imply `product.read`, `inventory.read`, retail-price visibility or
+stock-balance visibility. The purchasing product model therefore contains
+identity, quantity shape, active state and inventory-tracking state only.
+Inactive and untracked products remain readable for historical order identity
+but are not offered for new order lines.
+
+Supplier and purchase-order mutation affordances require
+`purchasing.manage`; recording physical receipt evidence requires the separate
+`purchasing.receive`. Every read and write permission is repeated in the
+service before persistence access so an internal caller cannot bypass the HTTP
+guard. UI checks only shape affordances.
+
+### Suppliers and immutable orders
+
+A supplier can be created, renamed, activated or deactivated. There is no
+delete: existing orders and receipts remain evidence. Only an active supplier,
+active branch and active inventory-tracked product are offered for a new
+order, and the authority repeats those predicates under its locks.
+
+An order may contain multiple distinct product lines. Human decimal quantities
+are converted to canonical scaled integer strings without floating point;
+unit products refuse fractions and weighted products accept at most three
+decimal places. The browser submits supplier, destination branch, optional
+reference, product identities and ordered quantities only. It never submits
+received accumulators, remaining quantities, status, stock effects or audit
+facts. Orders are immutable after creation and do not move stock.
+
+### Partial receiving
+
+The operator selects a server order and may accept any non-empty subset of its
+remaining lines. The request names purchase-order line identities and accepted
+quantities only; supplier, branch and product are derived from the locked order
+rows. Displayed ordered, received and remaining quantities and order status are
+server truth. The browser may prevent an obvious over-receipt using the last
+read, but the locked server accumulator remains the authority under
+concurrency.
+
+5D-C intentionally omits `inventoryValueMinor` from its browser request type.
+An unvalued receipt records explicit unknown cost through the established 5C
+authority. Valued receiving is a separate 5D-D affordance requiring
+`inventory.cost.manage`; 5D-C neither invents zero cost nor silently widens a
+receiver's costing authority.
+
+### Retry, refresh and continuity
+
+Supplier mutations, order creation and receiving freeze their complete request
+and operation id synchronously before the first await. A double submit cannot
+mint a second command. A timeout, dropped connection or 5xx may resend only
+the frozen command with the same id. A typed rolled-back refusal retires that
+id before amendment. An idempotency conflict blocks further action pending
+human reconciliation.
+
+Inactive master data, a completed order, over-receipt and another state
+conflict force bounded supplier/product/branch/order and selected-order detail
+refresh before a new decision is allowed. While a command is running,
+ambiguous, successful-but-unacknowledged or blocked, control-centre navigation,
+POS navigation, logout and ordinary unload are guarded so command identity is
+not silently discarded.
+
+## 13. Proof required for 5D-C
+
+- route and service refusal for every `purchasing.read`, `purchasing.manage`
+  and `purchasing.receive` path before persistence access;
+- bounded branch and product identity reads with FORCE-RLS tenant exclusion,
+  inactive historical identity and no price or stock fields;
+- exact multi-line order quantities beyond JavaScript safe integer range,
+  fractional-unit refusal and duplicate-product refusal;
+- receipt requests contain purchase-order line identity and accepted quantity
+  only, with no tenant, actor, supplier, branch, product, status, accumulator,
+  stock, cost or result authority;
+- partial receipt, repeated partial receipt, final remainder, concurrent
+  over-receipt, atomic rollback and idempotent replay remain green in the live
+  PostgreSQL suite;
+- synchronous double-submit exclusion, frozen same-id retry, typed conflict
+  refresh and permission-specific affordances;
+- loading, empty, failure, pagination, RTL/bidi, touch and exact numeric
+  presentation review;
+- targeted tests, full `npm run verify`, `git diff --check`, normal CI and the
+  PostgreSQL live proof green at one delivered HEAD.
+
+## 14. Strike closure
 
 Strike 5D closes only after 5D-A through 5D-D are delivered, the complete
 inventory and purchasing workflow is reviewed end to end, every required gate

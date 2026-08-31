@@ -93,3 +93,88 @@ describe('purchasing service costing authority', () => {
     ).resolves.toEqual({ outcome: 'failure', reason: 'invalid-money', subjectId: null });
   });
 });
+
+describe('purchasing service permission authority', () => {
+  it('refuses every read before touching persistence without purchasing.read', async () => {
+    const service = createMerchantPurchasingService({ prisma: databaseThatMustNotBeTouched() });
+    const calls: readonly (() => Promise<unknown>)[] = [
+      () => service.listBranches(principal([]), { limit: 10, cursor: null }),
+      () => service.listProducts(principal([]), { limit: 10, cursor: null }),
+      () => service.listSuppliers(principal([]), { limit: 10, cursor: null, activeOnly: false }),
+      () => service.getSupplier(principal([]), '018f3a1c-9b2e-7c4d-8e5f-0a1b2c3d4005'),
+      () =>
+        service.listPurchaseOrders(principal([]), {
+          limit: 10,
+          cursor: null,
+          status: null,
+          supplierId: null,
+          branchId: null,
+        }),
+      () => service.getPurchaseOrder(principal([]), ORDER),
+      () => service.listReceipts(principal([]), ORDER, 10),
+    ];
+
+    for (const call of calls) {
+      await expect(call()).rejects.toMatchObject({
+        name: 'PermissionDeniedError',
+        permission: 'purchasing.read',
+      });
+    }
+  });
+
+  it('allows an authorized purchasing read to reach the tenant repository', async () => {
+    const service = createMerchantPurchasingService({ prisma: databaseThatMustNotBeTouched() });
+    await expect(
+      service.listProducts(principal(['purchasing.read']), { limit: 10, cursor: null }),
+    ).rejects.toThrow('database touched');
+  });
+
+  it('refuses supplier and order writes before persistence without purchasing.manage', async () => {
+    const service = createMerchantPurchasingService({ prisma: databaseThatMustNotBeTouched() });
+    const supplierId = '018f3a1c-9b2e-7c4d-8e5f-0a1b2c3d4005';
+    const branchId = '018f3a1c-9b2e-7c4d-8e5f-0a1b2c3d4006';
+    const productId = '018f3a1c-9b2e-7c4d-8e5f-0a1b2c3d4007';
+    const calls: readonly (() => Promise<unknown>)[] = [
+      () => service.createSupplier(principal(['purchasing.read']), { operationId: 'a', name: 'س' }),
+      () =>
+        service.updateSupplier(principal(['purchasing.read']), {
+          operationId: 'b',
+          supplierId,
+          isActive: false,
+        }),
+      () =>
+        service.createPurchaseOrder(principal(['purchasing.read']), {
+          operationId: 'c',
+          supplierId,
+          branchId,
+          reference: null,
+          lines: [{ productId, orderedQuantityScaled: '1000' }],
+        }),
+    ];
+
+    for (const call of calls) {
+      await expect(call()).rejects.toMatchObject({
+        name: 'PermissionDeniedError',
+        permission: 'purchasing.manage',
+      });
+    }
+  });
+
+  it('allows an authorized purchasing write to reach persistence', async () => {
+    const service = createMerchantPurchasingService({ prisma: databaseThatMustNotBeTouched() });
+    await expect(
+      service.createSupplier(principal(['purchasing.manage']), {
+        operationId: 'supplier-authorized',
+        name: 'مورد',
+      }),
+    ).rejects.toThrow('database touched');
+  });
+
+  it('refuses even an unknown-cost receipt before persistence without purchasing.receive', async () => {
+    const service = createMerchantPurchasingService({ prisma: databaseThatMustNotBeTouched() });
+    await expect(service.receive(principal(['purchasing.read']), request())).rejects.toMatchObject({
+      name: 'PermissionDeniedError',
+      permission: 'purchasing.receive',
+    });
+  });
+});

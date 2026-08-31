@@ -11,6 +11,7 @@ import {
   getSupplier,
   listPurchaseOrders,
   listPurchaseReceipts,
+  listPurchasingProductPage,
   listSuppliers,
   provisionPermissionCatalogue,
   provisionTenantRbac,
@@ -2206,5 +2207,27 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
 
     expect(seen).toEqual(all.rows.map((row) => row.id));
     expect(new Set(seen).size).toBe(seen.length);
+  }, 60_000);
+
+  it('exposes bounded purchasing product identity without stock, price or another tenant', async () => {
+    const page = await listPurchasingProductPage(prisma, scope, 200, null);
+    const ids = page.rows.map((row) => row.id);
+
+    expect(ids).toContain(T.milk);
+    expect(ids).toContain(T.inactive);
+    expect(ids).toContain(T.untracked);
+    expect(ids).not.toContain(OTHER.product);
+    expect(page.rows.find((row) => row.id === T.inactive)?.isActive).toBe(false);
+    expect(page.rows.find((row) => row.id === T.untracked)?.trackInventory).toBe(false);
+    expect(Object.keys(page.rows[0] ?? {}).sort()).toEqual([
+      'id',
+      'isActive',
+      'nameAr',
+      'nameEn',
+      'productType',
+      'sku',
+      'trackInventory',
+      'unitLabel',
+    ]);
   }, 60_000);
 });
