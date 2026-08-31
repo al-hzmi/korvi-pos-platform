@@ -17,6 +17,9 @@ import type {
   InventoryAdjustmentRequest,
   InventoryAdjustmentResult,
   InventoryBranchPage,
+  InventoryCostBalancePage,
+  InventoryCostBootstrapRequest,
+  InventoryCostBootstrapResult,
   InventoryCountRequest,
   InventoryCountResult,
   InventoryTransferRequest,
@@ -137,6 +140,13 @@ export interface ApiClient {
     query: { readonly branchId: string; readonly limit?: number; readonly cursor?: string },
     options?: RequestOptions,
   ): Promise<InventoryBalancePage>;
+  inventoryCostBalances(
+    query: { readonly branchId: string; readonly limit?: number; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<InventoryCostBalancePage>;
+  inventoryCostBootstrap(
+    request: InventoryCostBootstrapRequest,
+  ): Promise<InventoryCostBootstrapResult>;
   inventoryAdjust(request: InventoryAdjustmentRequest): Promise<InventoryAdjustmentResult>;
   inventoryCount(request: InventoryCountRequest): Promise<InventoryCountResult>;
   inventoryTransfer(request: InventoryTransferRequest): Promise<InventoryTransferResult>;
@@ -422,6 +432,27 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
       )) as InventoryBalancePage;
     },
 
+    async inventoryCostBalances(query, options) {
+      return (await call(
+        `/v1/admin/inventory/cost-balances${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as InventoryCostBalancePage;
+    },
+
+    async inventoryCostBootstrap(request) {
+      return retryableCommand<InventoryCostBootstrapResult>(
+        '/v1/admin/inventory/cost-bootstrap',
+        {
+          operationId: request.operationId,
+          branchId: request.branchId,
+          productId: request.productId,
+          totalValueMinor: request.totalValueMinor,
+        },
+        INVENTORY_COMMAND_TIMEOUT_MS,
+      );
+    },
+
     async inventoryAdjust(request) {
       return retryableCommand<InventoryAdjustmentResult>(
         '/v1/admin/inventory/adjustments',
@@ -569,6 +600,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           lines: request.lines.map((line) => ({
             purchaseOrderLineId: line.purchaseOrderLineId,
             acceptedQuantityScaled: line.acceptedQuantityScaled,
+            ...(line.inventoryValueMinor === undefined
+              ? {}
+              : { inventoryValueMinor: line.inventoryValueMinor }),
           })),
         },
         PURCHASING_COMMAND_TIMEOUT_MS,

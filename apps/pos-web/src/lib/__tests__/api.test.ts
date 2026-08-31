@@ -191,6 +191,33 @@ describe('the API client', () => {
     }
   });
 
+  it('classifies an unanswered cost bootstrap as ambiguous', async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = (_url: string, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      const attempt = createApiClient(hung).inventoryCostBootstrap({
+        operationId: 'cost-op-1',
+        branchId: 'branch-1',
+        productId: 'product-1',
+        totalValueMinor: '9007199254740993',
+      });
+      const caught = attempt.catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(INVENTORY_COMMAND_TIMEOUT_MS + 1);
+      const error = await caught;
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).code).toBe('timeout');
+      expect((error as ApiError).ambiguous).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('classifies an unanswered purchase receipt as ambiguous', async () => {
     vi.useFakeTimers();
     try {

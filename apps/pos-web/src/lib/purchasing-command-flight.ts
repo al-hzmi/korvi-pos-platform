@@ -20,9 +20,7 @@ export interface PurchasingCommandFlight {
   reset(): void;
 }
 
-function freezeLines<T extends Readonly<Record<string, string>>>(
-  lines: readonly T[],
-): readonly Readonly<T>[] {
+function freezeLines<T extends object>(lines: readonly T[]): readonly Readonly<T>[] {
   return Object.freeze(lines.map((line) => Object.freeze({ ...line }) as Readonly<T>));
 }
 

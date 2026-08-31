@@ -57,6 +57,41 @@ describe('merchant administration API client', () => {
     expect(wire.calls[0]!.url).not.toMatch(/tenant|actor|quantity|revision/);
   });
 
+  it('reads bounded valuation facts with no tenant or output fields in the query', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    await createApiClient(wire.fetch).inventoryCostBalances({
+      branchId: '018fb000-0000-7000-8000-0000000000a1',
+      limit: 50,
+      cursor: '018fb000-0000-7000-8000-0000000000a5',
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/inventory/cost-balances?limit=50&cursor=018fb000-0000-7000-8000-0000000000a5&branchId=018fb000-0000-7000-8000-0000000000a1',
+    );
+    expect(wire.calls[0]!.url).not.toMatch(/tenant|known|unknown|value|revision/);
+  });
+
+  it('posts only prospective valuation identity and exact total value', async () => {
+    const wire = transport({ id: 'cost-1', replayed: false });
+    await createApiClient(wire.fetch).inventoryCostBootstrap({
+      operationId: 'cost-op',
+      branchId: 'branch-1',
+      productId: 'product-1',
+      totalValueMinor: '9007199254740993',
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/cost-bootstrap');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: 'cost-op',
+      branchId: 'branch-1',
+      productId: 'product-1',
+      totalValueMinor: '9007199254740993',
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /quantity|knownValue|stockRevision|costRevision|tenant|actor/,
+    );
+  });
+
   it('posts only adjustment intent and exact scaled text', async () => {
     const wire = transport({ id: 'adjustment-1', lines: [] });
     await createApiClient(wire.fetch).inventoryAdjust({
@@ -194,6 +229,47 @@ describe('merchant administration API client', () => {
     });
     expect(JSON.stringify(body)).not.toMatch(
       /tenant|actor|supplierId|branchId|productId|inventoryValue|cost|before|after|status|revision/,
+    );
+  });
+
+  it('preserves mixed valued and unknown receipt lines, including known zero', async () => {
+    const wire = transport({ id: 'receipt-2', lines: [] });
+    await createApiClient(wire.fetch).receivePurchaseOrder({
+      operationId: 'receipt-cost-op',
+      purchaseOrderId: 'order-1',
+      reference: null,
+      lines: [
+        {
+          purchaseOrderLineId: 'line-1',
+          acceptedQuantityScaled: '1000',
+          inventoryValueMinor: '0',
+        },
+        { purchaseOrderLineId: 'line-2', acceptedQuantityScaled: '2500' },
+        {
+          purchaseOrderLineId: 'line-3',
+          acceptedQuantityScaled: '3000',
+          inventoryValueMinor: '9007199254740993',
+        },
+      ],
+    });
+
+    expect(bodyOf(wire.calls[0]!)).toMatchObject({
+      lines: [
+        {
+          purchaseOrderLineId: 'line-1',
+          acceptedQuantityScaled: '1000',
+          inventoryValueMinor: '0',
+        },
+        { purchaseOrderLineId: 'line-2', acceptedQuantityScaled: '2500' },
+        {
+          purchaseOrderLineId: 'line-3',
+          acceptedQuantityScaled: '3000',
+          inventoryValueMinor: '9007199254740993',
+        },
+      ],
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /unitCost|tax|price|knownQuantity|stockRevision|costRevision|tenant|actor/,
     );
   });
 

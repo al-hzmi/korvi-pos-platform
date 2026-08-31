@@ -15,6 +15,24 @@ function intent(operationId: string): PurchasingCommandIntent {
   };
 }
 
+function valuedReceipt(operationId: string): PurchasingCommandIntent {
+  return {
+    kind: 'receipt',
+    request: {
+      operationId,
+      purchaseOrderId: 'order-1',
+      reference: null,
+      lines: [
+        {
+          purchaseOrderLineId: 'line-1',
+          acceptedQuantityScaled: '1000',
+          inventoryValueMinor: '9007199254740993',
+        },
+      ],
+    },
+  };
+}
+
 describe('purchasing command flight', () => {
   it('claims synchronously so a double submit cannot mint a second operation', () => {
     const flight = createPurchasingCommandFlight();
@@ -38,6 +56,19 @@ describe('purchasing command flight', () => {
     expect(Object.isFrozen(retry?.request)).toBe(true);
     if (retry?.kind === 'order-create') {
       expect(Object.isFrozen(retry.request.lines)).toBe(true);
+      expect(Object.isFrozen(retry.request.lines[0])).toBe(true);
+    }
+  });
+
+  it('freezes valued receipt evidence into the same-id retry', () => {
+    const flight = createPurchasingCommandFlight();
+    const first = flight.begin(() => valuedReceipt('receipt-op'));
+    flight.settle('ambiguous');
+    const retry = flight.begin(() => valuedReceipt('different-op'));
+
+    expect(retry).toBe(first);
+    if (retry?.kind === 'receipt') {
+      expect(retry.request.lines[0]?.inventoryValueMinor).toBe('9007199254740993');
       expect(Object.isFrozen(retry.request.lines[0])).toBe(true);
     }
   });

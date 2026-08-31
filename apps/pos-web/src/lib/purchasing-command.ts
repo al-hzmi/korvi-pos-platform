@@ -1,5 +1,6 @@
 import { MAX_PURCHASING_LINES, MAX_PURCHASING_REFERENCE, MAX_SUPPLIER_NAME } from '@korvi/domain';
 import { ApiError } from './api';
+import { parseSarToPostgresMinor } from './money';
 import { parseInventoryQuantityToScaled } from './quantity';
 import type { ApiClient } from './api';
 import type {
@@ -29,6 +30,12 @@ export type PurchasingDraftResult =
   | { readonly ok: true; readonly intent: PurchasingCommandIntent }
   | { readonly ok: false; readonly message: string };
 
+export interface ReceiptInventoryValueDraft {
+  /** Explicit opt-in keeps omitted unknown cost distinct from known zero. */
+  readonly enabled: boolean;
+  readonly value: string;
+}
+
 function boundedOptionalReference(reference: string): string | null | undefined {
   const trimmed = reference.trim();
   if (trimmed.length > MAX_PURCHASING_REFERENCE) return undefined;
@@ -44,6 +51,14 @@ function quantityMessage(reason: string): string {
     return 'كمية الشراء أو الاستلام يجب أن تكون أكبر من صفر.';
   }
   return 'أدخل كمية عشرية صحيحة دون فواصل أو رموز.';
+}
+
+function inventoryValueMessage(reason: string): string {
+  if (reason === 'empty') {
+    return 'أدخل إجمالي قيمة اقتناء الكمية المستلمة أو ألغِ خيار تسجيل القيمة.';
+  }
+  if (reason === 'precision') return 'قيمة الاقتناء تقبل منزلتين عشريتين كحد أقصى.';
+  return 'أدخل قيمة اقتناء صحيحة بالريال دون فواصل أو رموز.';
 }
 
 export function buildSupplierCreateIntent(name: string, mint: () => string): PurchasingDraftResult {
@@ -145,6 +160,7 @@ export function buildPurchaseReceiptIntent(
     readonly reference: string;
     readonly products: readonly PurchasingProduct[];
     readonly quantities: Readonly<Record<string, string>>;
+    readonly inventoryValues?: Readonly<Record<string, ReceiptInventoryValueDraft>>;
   },
   mint: () => string,
 ): PurchasingDraftResult {
@@ -156,10 +172,20 @@ export function buildPurchaseReceiptIntent(
     return { ok: false, message: 'الرقم المرجعي تجاوز 120 حرفًا.' };
   }
 
-  const lines: { purchaseOrderLineId: string; acceptedQuantityScaled: string }[] = [];
+  const lines: {
+    purchaseOrderLineId: string;
+    acceptedQuantityScaled: string;
+    inventoryValueMinor?: string;
+  }[] = [];
   for (const line of input.order.lines) {
     const draft = input.quantities[line.id]?.trim() ?? '';
-    if (draft === '') continue;
+    const valueDraft = input.inventoryValues?.[line.id];
+    if (draft === '') {
+      if (valueDraft?.enabled === true) {
+        return { ok: false, message: 'أدخل كمية الاستلام قبل تسجيل قيمة اقتنائها.' };
+      }
+      continue;
+    }
     const product = input.products.find((candidate) => candidate.id === line.productId);
     if (product === undefined) {
       return { ok: false, message: 'تعذر إثبات نوع أحد أصناف الأمر. حدّث بيانات المشتريات.' };
@@ -169,7 +195,17 @@ export function buildPurchaseReceiptIntent(
     if (BigInt(quantity.value) > BigInt(line.remainingQuantityScaled)) {
       return { ok: false, message: 'إحدى كميات الاستلام تتجاوز الكمية المتبقية في الأمر.' };
     }
-    lines.push({ purchaseOrderLineId: line.id, acceptedQuantityScaled: quantity.value });
+    if (valueDraft?.enabled === true) {
+      const value = parseSarToPostgresMinor(valueDraft.value);
+      if (!value.ok) return { ok: false, message: inventoryValueMessage(value.reason) };
+      lines.push({
+        purchaseOrderLineId: line.id,
+        acceptedQuantityScaled: quantity.value,
+        inventoryValueMinor: value.value,
+      });
+    } else {
+      lines.push({ purchaseOrderLineId: line.id, acceptedQuantityScaled: quantity.value });
+    }
   }
   if (lines.length === 0) {
     return { ok: false, message: 'أدخل كمية مستلمة لبند واحد على الأقل.' };
@@ -183,8 +219,8 @@ export function buildPurchaseReceiptIntent(
         operationId: mint(),
         purchaseOrderId: input.order.id,
         reference,
-        // 5D-C records quantity evidence only. `inventoryValueMinor` is not in
-        // this browser type and cannot leak into the request before 5D-D.
+        // A line without inventoryValueMinor remains explicit unknown cost;
+        // present "0" remains known zero and is never collapsed by truthiness.
         lines,
       },
     },

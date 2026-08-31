@@ -199,6 +199,8 @@ export type { InventoryBranch, InventoryBranchPage } from './inventory/branches.
 // changes stock quantity/revision or rewrites historical movement evidence.
 export { recordInventoryCostBootstrap } from './costing/bootstrap.js';
 export type { CostBootstrapActor, InventoryCostBootstrapResult } from './costing/bootstrap.js';
+export { listCostBalancePage, MAX_COST_BALANCE_PAGE } from './costing/balances.js';
+export type { CostBalancePage, CostBalancePageRow } from './costing/balances.js';
 
 // Purchasing and receiving authority (Strike 5B). Same rule as above: every
 // function here derives its tenant from a server-supplied actor and opens its

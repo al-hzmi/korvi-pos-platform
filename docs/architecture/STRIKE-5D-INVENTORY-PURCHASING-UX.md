@@ -60,7 +60,8 @@ does not close the strike.
 
 5D-A was delivered and verified at `39361a6b07c6f7a94074a6581a5fb513e1891077`.
 5D-B was delivered and verified at `fd9866c755fa5c6f4b1b428451ad38b7839fff67`.
-The active slice is **5D-C**.
+5D-C was delivered and verified at `30b2a915567e5a3b6ee61cf75a8c955d03dc4fc9`.
+The active slice is **5D-D**.
 
 ## 4. 5D-A read contract
 
@@ -327,7 +328,94 @@ not silently discarded.
 - targeted tests, full `npm run verify`, `git diff --check`, normal CI and the
   PostgreSQL live proof green at one delivered HEAD.
 
-## 14. Strike closure
+## 14. 5D-D cost-affordance contract
+
+### Cost visibility
+
+`inventory.cost.read` exposes a bounded branch/product valuation page. The
+page contains operational product identity plus exact current facts:
+
+- total `quantityScaled` from the stock balance;
+- `knownQuantityScaled` and `knownValueMinor` from the cost pool;
+- server-derived `unknownPositiveQuantityScaled`;
+- stock and cost revisions.
+
+All are decimal integer strings. The read never divides the pool into an
+average or unit cost, never consults retail price, and never exposes tenant or
+actor identity. An absent active-product balance is displayed as exact zero
+without materialization. A materialized cost cursor that disagrees with its
+stock revision is an invariant failure; the read must fail rather than label a
+broken pool as unknown.
+
+The cost endpoint requires `inventory.cost.read` independently of
+`inventory.read`. In the current control-centre composition, cost facts are a
+sub-workspace of the inventory section, so the browser needs `inventory.read`
+to enter that section and `inventory.cost.read` to render the valuation page.
+Neither server permission implies the other.
+
+### Valued receiving
+
+A receiver holding `inventory.cost.manage` may opt in separately on each
+accepted purchase-order line and state one exact **total acquisition value for
+that line's accepted quantity**. The amount is entered in SAR, converted by
+string/bigint arithmetic and sent as canonical minor-unit text. It is not a
+unit price, tax amount, invoice total or selling price.
+
+Opt-in is explicit because omission and zero are different facts:
+
+- unchecked/omitted `inventoryValueMinor` records unknown cost;
+- checked `0.00` sends `"0"` and records known zero value.
+
+Mixed valued and unvalued lines in one receipt remain valid. The browser does
+not add product, branch, supplier, quantity accumulator, stock result, cost
+pool or revision authority. The established receiving route and service both
+repeat `inventory.cost.manage` whenever any line carries value.
+
+### Prospective bootstrap
+
+The bootstrap affordance requires cost visibility and
+`inventory.cost.manage`. It selects from active tracked products whose last
+read has positive unknown quantity, but that read is guidance rather than
+write authority. The frozen command contains only operation id, branch,
+product and exact total value. It never sends displayed quantity, current pool
+or either revision.
+
+Under the established 5C locks, the server derives the unknown positive
+quantity at commit time and returns the exact quantity actually valued. The
+UI preserves that result until explicit acknowledgement, refreshes valuation
+facts, and makes clear that stock quantity and stock revision do not change.
+Timeout or transport ambiguity can resend only the frozen same-id request;
+idempotency conflict blocks; a changed/no-longer-valued state requires a fresh
+cost read before a new decision.
+
+Stock commands and bootstrap share the control-centre command lock. One
+ambiguous or unacknowledged command cannot be abandoned by switching branch,
+section, POS, logout or ordinary unload, and sibling mutation forms cannot
+start concurrently from the same screen.
+
+## 15. Proof required for 5D-D
+
+- route and service refusal for `inventory.cost.read` and
+  `inventory.cost.manage` before persistence access;
+- bounded cost pages, exact strings beyond JavaScript safe integer range,
+  non-materialized zero rows, foreign-branch exclusion and loud cursor
+  divergence under live FORCE-RLS PostgreSQL;
+- no tenant, retail price, average/unit cost or client-supplied valuation facts
+  in the cost read path;
+- explicit omitted-versus-known-zero receipt behavior, mixed valued/unvalued
+  lines and exact totals beyond JavaScript safe integer range;
+- valued receipt requests retain purchase-order line identity only and add no
+  product, branch, supplier, tax, unit-price, stock, pool or revision fields;
+- bootstrap requests contain value and identity only; synchronous double
+  submit is excluded and timeout retry preserves the frozen operation/value;
+- permission-specific cost and receipt affordances, inactive historical view,
+  refresh locks, RTL/bidi, touch and exact numeric presentation;
+- the existing live valued-receipt/bootstrap atomicity, replay, concurrency,
+  overflow, rollback and tenant-isolation proofs remain green;
+- targeted tests, full `npm run verify`, `git diff --check`, normal CI and the
+  PostgreSQL live proof are green at one delivered HEAD.
+
+## 16. Strike closure
 
 Strike 5D closes only after 5D-A through 5D-D are delivered, the complete
 inventory and purchasing workflow is reviewed end to end, every required gate

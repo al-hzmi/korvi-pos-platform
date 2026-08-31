@@ -20,6 +20,7 @@ import type { FormEvent, JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type {
   PurchaseOrder,
+  PurchaseOrderLine,
   PurchaseOrderStatus,
   PurchaseReceiptSummary,
   PurchasingProduct,
@@ -28,6 +29,7 @@ import type {
 import type {
   PurchasingCommandFailure,
   PurchasingCommandResult,
+  ReceiptInventoryValueDraft,
 } from '../../lib/purchasing-command';
 import type { PurchasingCommandIntent } from '../../lib/purchasing-command-flight';
 import type { PurchasingPages } from './purchasing-panel';
@@ -78,6 +80,79 @@ export function resolveOrderLineProduct(
   index: number,
 ): PurchasingProduct | undefined {
   return products.find((product) => product.id === productId) ?? products[index] ?? products[0];
+}
+
+export function ReceiptLineEditor({
+  line,
+  label,
+  quantity,
+  inventoryValue,
+  canManageCost,
+  disabled,
+  onQuantityChange,
+  onCostEnabledChange,
+  onCostValueChange,
+}: {
+  readonly line: PurchaseOrderLine;
+  readonly label: string;
+  readonly quantity: string;
+  readonly inventoryValue: ReceiptInventoryValueDraft;
+  readonly canManageCost: boolean;
+  readonly disabled: boolean;
+  readonly onQuantityChange: (value: string) => void;
+  readonly onCostEnabledChange: (enabled: boolean) => void;
+  readonly onCostValueChange: (value: string) => void;
+}): JSX.Element {
+  return (
+    <div className="grid gap-3 rounded-md border border-border p-3 text-sm md:grid-cols-2 md:items-end">
+      <div className="font-medium">
+        <span>{label}</span>
+        <span className="mt-1 block text-xs text-muted-foreground">
+          المتبقي: <Numeric value={formatScaled(line.remainingQuantityScaled)} />
+        </span>
+      </div>
+      <label className="flex flex-col gap-2 font-medium">
+        الكمية المستلمة
+        <input
+          aria-label={`الكمية المستلمة ${label}`}
+          className="h-touch rounded-md border border-input bg-background px-3 font-mono"
+          dir="ltr"
+          inputMode="decimal"
+          disabled={disabled}
+          value={quantity}
+          onChange={(event) => onQuantityChange(event.target.value)}
+        />
+      </label>
+      {canManageCost ? (
+        <div className="flex flex-col gap-3 md:col-span-2">
+          <label className="flex min-h-touch items-center gap-2 font-medium">
+            <input
+              type="checkbox"
+              checked={inventoryValue.enabled}
+              disabled={disabled}
+              onChange={(event) => onCostEnabledChange(event.target.checked)}
+            />
+            تسجيل إجمالي قيمة اقتناء موثوقة لهذه الكمية
+          </label>
+          {inventoryValue.enabled ? (
+            <label className="flex flex-col gap-2 font-medium md:max-w-md">
+              إجمالي قيمة اقتناء الكمية المستلمة (ر.س)
+              <input
+                aria-label={`إجمالي قيمة اقتناء ${label}`}
+                className="h-touch rounded-md border border-input bg-background px-3 font-mono"
+                dir="ltr"
+                inputMode="decimal"
+                placeholder="0.00"
+                disabled={disabled}
+                value={inventoryValue.value}
+                onChange={(event) => onCostValueChange(event.target.value)}
+              />
+            </label>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function SuppliersTable({
@@ -339,6 +414,7 @@ export function PurchasingOperations({
 }: PurchasingOperationsProps): JSX.Element {
   const canManage = permissions.includes('purchasing.manage');
   const canReceive = permissions.includes('purchasing.receive');
+  const canManageCost = permissions.includes('inventory.cost.manage');
   const [workspace, setWorkspace] = useState<Workspace>(() =>
     canManage ? 'suppliers' : canReceive ? 'receiving' : 'orders',
   );
@@ -361,6 +437,9 @@ export function PurchasingOperations({
   const [detail, setDetail] = useState<DetailState>({ kind: 'idle' });
   const [receiptReference, setReceiptReference] = useState('');
   const [receiptQuantities, setReceiptQuantities] = useState<Readonly<Record<string, string>>>({});
+  const [receiptInventoryValues, setReceiptInventoryValues] = useState<
+    Readonly<Record<string, ReceiptInventoryValueDraft>>
+  >({});
   const [validation, setValidation] = useState<string | null>(null);
   const [submission, setSubmission] = useState<SubmissionState>({ kind: 'idle' });
   const flight = useRef(createPurchasingCommandFlight());
@@ -472,6 +551,7 @@ export function PurchasingOperations({
     setValidation(null);
     setSubmission({ kind: 'idle' });
     setReceiptQuantities({});
+    setReceiptInventoryValues({});
     setReceiptReference('');
     onCommandLockChange(false);
   };
@@ -486,6 +566,7 @@ export function PurchasingOperations({
           current.map((line) => ({ ...line, productId: '', quantity: '' })),
         );
         setReceiptReference('');
+        setReceiptInventoryValues({});
         setSubmission({ kind: 'idle' });
         setValidation('تم تحديث سجل المشتريات. أعد إدخال القرار على البيانات الجديدة.');
         onCommandLockChange(false);
@@ -516,6 +597,7 @@ export function PurchasingOperations({
         setSubmission({ kind: 'failed', failure });
         if (failure.action === 'refresh-purchasing') {
           setReceiptQuantities({});
+          setReceiptInventoryValues({});
           reconcile();
         } else if (failure.action === 'edit-command') {
           onCommandLockChange(false);
@@ -586,6 +668,7 @@ export function PurchasingOperations({
         reference: receiptReference,
         products: pages.products.rows,
         quantities: receiptQuantities,
+        inventoryValues: receiptInventoryValues,
       },
       newId,
     );
@@ -944,6 +1027,7 @@ export function PurchasingOperations({
             onSelect={(orderId) => {
               setSelectedOrderId(orderId);
               setReceiptQuantities({});
+              setReceiptInventoryValues({});
               setValidation(null);
             }}
           />
@@ -975,10 +1059,18 @@ export function PurchasingOperations({
                   سجّل الكمية المقبولة فعليًا فقط. يشتق الخادم المتبقي والحالة وأثر المخزون تحت
                   الأقفال.
                 </p>
-                <StatusNote tone="warning">
-                  سيُسجل هذا الاستلام بتكلفة مجهولة حتى تُضاف قيمة اقتناء موثوقة بصلاحية التكلفة
-                  المستقلة. لا يحوّل النظام التكلفة المجهولة إلى صفر.
-                </StatusNote>
+                {canManageCost ? (
+                  <StatusNote tone="info">
+                    اترك خيار القيمة غير محدد لتسجيل تكلفة مجهولة. عند تحديده، أدخل إجمالي قيمة
+                    اقتناء الكمية المقبولة في ذلك السطر؛ القيمة ليست سعر وحدة ولا ضريبة ولا سعر بيع،
+                    و0.00 قيمة معروفة صفرية وليست تكلفة مجهولة.
+                  </StatusNote>
+                ) : (
+                  <StatusNote tone="warning">
+                    سيُسجل هذا الاستلام بتكلفة مجهولة حتى تُضاف قيمة اقتناء موثوقة بصلاحية التكلفة
+                    المستقلة. لا يحوّل النظام التكلفة المجهولة إلى صفر.
+                  </StatusNote>
+                )}
                 <label className="flex flex-col gap-2 text-sm font-medium">
                   مرجع إشعار التسليم (اختياري)
                   <input
@@ -995,35 +1087,44 @@ export function PurchasingOperations({
                 </label>
                 {detail.order.lines
                   .filter((line) => line.remainingQuantityScaled !== '0')
-                  .map((line) => (
-                    <label
-                      key={line.id}
-                      className="grid gap-2 rounded-md border border-border p-3 text-sm font-medium md:grid-cols-2 md:items-end"
-                    >
-                      <span>
-                        {productName(pages.products.rows, line.productId)}
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          المتبقي: <Numeric value={formatScaled(line.remainingQuantityScaled)} />
-                        </span>
-                      </span>
-                      <input
-                        aria-label={`الكمية المستلمة ${productName(pages.products.rows, line.productId)}`}
-                        className="h-touch rounded-md border border-input bg-background px-3 font-mono"
-                        dir="ltr"
-                        inputMode="decimal"
+                  .map((line) => {
+                    const inventoryValue = receiptInventoryValues[line.id] ?? {
+                      enabled: false,
+                      value: '',
+                    };
+                    return (
+                      <ReceiptLineEditor
+                        key={line.id}
+                        line={line}
+                        label={productName(pages.products.rows, line.productId)}
+                        quantity={receiptQuantities[line.id] ?? ''}
+                        inventoryValue={inventoryValue}
+                        canManageCost={canManageCost}
                         disabled={formLocked}
-                        value={receiptQuantities[line.id] ?? ''}
-                        onChange={(event) => {
+                        onQuantityChange={(value) => {
                           flight.current.reset();
-                          setReceiptQuantities((current) => ({
+                          setReceiptQuantities((current) => ({ ...current, [line.id]: value }));
+                          setValidation(null);
+                        }}
+                        onCostEnabledChange={(enabled) => {
+                          flight.current.reset();
+                          setReceiptInventoryValues((current) => ({
                             ...current,
-                            [line.id]: event.target.value,
+                            [line.id]: { enabled, value: current[line.id]?.value ?? '' },
+                          }));
+                          setValidation(null);
+                        }}
+                        onCostValueChange={(value) => {
+                          flight.current.reset();
+                          setReceiptInventoryValues((current) => ({
+                            ...current,
+                            [line.id]: { enabled: true, value },
                           }));
                           setValidation(null);
                         }}
                       />
-                    </label>
-                  ))}
+                    );
+                  })}
                 <Button type="submit" loading={submission.kind === 'running'} disabled={formLocked}>
                   تسجيل الاستلام
                 </Button>

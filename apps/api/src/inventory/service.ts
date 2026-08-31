@@ -8,6 +8,7 @@ import {
 import {
   StockOperationRefusedError,
   listBalancePage,
+  listCostBalancePage,
   listInventoryBranchPage,
   recordInventoryAdjustment,
   recordInventoryCostBootstrap,
@@ -32,6 +33,7 @@ import type {
 import type {
   AdjustmentResult,
   BalancePage,
+  CostBalancePage,
   CountResult,
   InventoryCostBootstrapResult,
   InventoryBranchPage,
@@ -71,6 +73,10 @@ export interface MerchantInventoryService {
     principal: AuthenticatedPrincipal,
     query: { readonly branchId: string; readonly limit: number; readonly cursor: string | null },
   ): Promise<BalancePage>;
+  costBalances(
+    principal: AuthenticatedPrincipal,
+    query: { readonly branchId: string; readonly limit: number; readonly cursor: string | null },
+  ): Promise<CostBalancePage>;
   bootstrapCost(
     principal: AuthenticatedPrincipal,
     request: CostBootstrapRequest,
@@ -137,6 +143,20 @@ export function createMerchantInventoryService(deps: {
       // The tenant is the session's. A branch id is a legitimate filter, and
       // under RLS one belonging to another merchant simply matches nothing.
       return listBalancePage(prisma, principal.tenantId, query.branchId, query.limit, query.cursor);
+    },
+
+    async costBalances(principal, query) {
+      // Cost visibility is independent of ordinary stock visibility. Repeating
+      // the check here prevents an internal caller from turning a route-only
+      // guard into accidental margin disclosure.
+      requirePrincipalPermission(principal, 'inventory.cost.read');
+      return listCostBalancePage(
+        prisma,
+        principal.tenantId,
+        query.branchId,
+        query.limit,
+        query.cursor,
+      );
     },
 
     async bootstrapCost(principal, request) {

@@ -260,6 +260,49 @@ export interface InventoryBalancePage {
   readonly nextCursor: string | null;
 }
 
+/** Current valuation facts; no average/unit-cost figure is derived here. */
+export interface InventoryCostBalanceRow {
+  readonly branchId: string;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  readonly isActive: boolean;
+  readonly trackInventory: boolean;
+  readonly quantityScaled: string;
+  readonly knownQuantityScaled: string;
+  readonly unknownPositiveQuantityScaled: string;
+  readonly knownValueMinor: string;
+  readonly stockRevision: string;
+  readonly costRevision: string;
+}
+
+export interface InventoryCostBalancePage {
+  readonly rows: readonly InventoryCostBalanceRow[];
+  readonly nextCursor: string | null;
+}
+
+export interface InventoryCostBootstrapRequest {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly productId: string;
+  /** Exact total value for the server-derived unknown positive quantity. */
+  readonly totalValueMinor: string;
+}
+
+export interface InventoryCostBootstrapResult {
+  readonly id: string;
+  readonly branchId: string;
+  readonly productId: string;
+  readonly valuedQuantityScaled: string;
+  readonly stockRevision: string;
+  readonly costRevision: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+}
+
 export interface InventoryAdjustmentRequest {
   readonly operationId: string;
   readonly branchId: string;
@@ -443,6 +486,8 @@ export interface PurchaseReceiptCreateRequest {
   readonly lines: readonly {
     readonly purchaseOrderLineId: string;
     readonly acceptedQuantityScaled: string;
+    /** Omission is unknown cost; present zero is known zero-value acquisition. */
+    readonly inventoryValueMinor?: string;
   }[];
 }
 

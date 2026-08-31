@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { newId } from '@korvi/domain';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
@@ -84,8 +84,10 @@ export interface InventoryOperationsProps {
   readonly balances: readonly InventoryBalanceRow[];
   readonly refreshing: boolean;
   readonly balanceGeneration: number;
+  readonly workspaceLocked?: boolean;
   readonly permissions: readonly string[];
   readonly onRefreshBalances: () => void;
+  readonly onCommandLockAcquire: () => boolean;
   readonly onCommandLockChange: (locked: boolean) => void;
 }
 
@@ -96,8 +98,10 @@ export function InventoryOperations({
   balances,
   refreshing,
   balanceGeneration,
+  workspaceLocked = false,
   permissions,
   onRefreshBalances,
+  onCommandLockAcquire,
   onCommandLockChange,
 }: InventoryOperationsProps): JSX.Element | null {
   const canAdjust = permissions.includes('inventory.adjust');
@@ -113,6 +117,13 @@ export function InventoryOperations({
   const [submission, setSubmission] = useState<SubmissionState>({ kind: 'idle' });
   const [requiredFreshGeneration, setRequiredFreshGeneration] = useState<number | null>(null);
   const flight = useRef(createInventoryCommandFlight());
+  const workspaceOwned = useRef(false);
+
+  const releaseWorkspace = useCallback((): void => {
+    if (!workspaceOwned.current) return;
+    workspaceOwned.current = false;
+    onCommandLockChange(false);
+  }, [onCommandLockChange]);
 
   const products = balances.filter((row) => row.isActive && row.trackInventory);
   const selectedProduct = products.find((row) => row.productId === productId) ?? products[0];
@@ -126,13 +137,15 @@ export function InventoryOperations({
 
   useEffect(() => {
     if (requiredFreshGeneration !== null && balanceGeneration >= requiredFreshGeneration) {
-      onCommandLockChange(false);
+      setRequiredFreshGeneration(null);
+      releaseWorkspace();
     }
-  }, [balanceGeneration, onCommandLockChange, requiredFreshGeneration]);
+  }, [balanceGeneration, releaseWorkspace, requiredFreshGeneration]);
 
   if (!canAdjust && !canTransfer) return null;
 
   const locked =
+    workspaceLocked ||
     refreshing ||
     awaitingFreshBalance ||
     submission.kind === 'running' ||
@@ -150,13 +163,16 @@ export function InventoryOperations({
     setValidation(null);
     setRequiredFreshGeneration(null);
     setSubmission({ kind: 'idle' });
-    onCommandLockChange(false);
+    releaseWorkspace();
   };
 
   const transmit = (build: () => InventoryCommandIntent): void => {
+    if (!workspaceOwned.current) {
+      if (!onCommandLockAcquire()) return;
+      workspaceOwned.current = true;
+    }
     const intent = flight.current.begin(build);
     if (intent === null) return;
-    onCommandLockChange(true);
     setSubmission({ kind: 'running' });
     setValidation(null);
 
@@ -176,7 +192,7 @@ export function InventoryOperations({
           setQuantity('');
           onRefreshBalances();
         } else if (failure.action === 'edit-command') {
-          onCommandLockChange(false);
+          releaseWorkspace();
         }
       });
   };

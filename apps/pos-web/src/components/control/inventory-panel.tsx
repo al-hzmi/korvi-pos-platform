@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { InventoryOperations } from './inventory-operations';
+import { InventoryCostPanel } from './inventory-cost-panel';
 import { describeFailure } from '../../lib/failures';
 import { formatScaled } from '../../lib/quantity';
 import type { JSX, ReactNode } from 'react';
@@ -16,6 +17,13 @@ import type {
 import type { Failure } from '../../lib/failures';
 
 const PAGE_SIZE = 50;
+
+/** Atomically claims the shared stock/cost mutation workspace before React renders. */
+export function acquireInventoryCommandWorkspace(lock: { current: boolean }): boolean {
+  if (lock.current) return false;
+  lock.current = true;
+  return true;
+}
 
 export function describeInventoryReadFailure(error: unknown): Failure {
   const failure = describeFailure(error);
@@ -62,6 +70,7 @@ interface InventoryPanelViewProps {
   readonly onLoadMoreBalances: () => void;
   readonly branchSelectionDisabled?: boolean;
   readonly operations?: ReactNode;
+  readonly costing?: ReactNode;
 }
 
 function failureTone(failure: Failure): 'warning' | 'danger' {
@@ -139,6 +148,7 @@ export function InventoryPanelView({
   onLoadMoreBalances,
   branchSelectionDisabled = false,
   operations,
+  costing,
 }: InventoryPanelViewProps): JSX.Element {
   if (branches.kind === 'loading') {
     return (
@@ -286,6 +296,7 @@ export function InventoryPanelView({
       ) : null}
 
       {visibleBalances.kind === 'ready' ? operations : null}
+      {costing}
     </div>
   );
 }
@@ -323,6 +334,12 @@ export function InventoryPanel({
   const selectBranch = useCallback((branchId: string) => {
     if (!commandLock.current) setSelectedBranchId(branchId);
   }, []);
+
+  const acquireCommandLock = useCallback((): boolean => {
+    if (!acquireInventoryCommandWorkspace(commandLock)) return false;
+    setCommandLock(true);
+    return true;
+  }, [setCommandLock]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -500,8 +517,23 @@ export function InventoryPanel({
         balances={balances.page.rows}
         refreshing={balances.refreshing}
         balanceGeneration={balances.generation}
+        workspaceLocked={commandLocked}
         permissions={permissions}
         onRefreshBalances={() => setBalanceReload((current) => current + 1)}
+        onCommandLockAcquire={acquireCommandLock}
+        onCommandLockChange={setCommandLock}
+      />
+    ) : null;
+  const costing =
+    selectedBranch !== undefined && permissions.includes('inventory.cost.read') ? (
+      <InventoryCostPanel
+        key={selectedBranch.id}
+        api={api}
+        branch={selectedBranch}
+        canManageCost={permissions.includes('inventory.cost.manage')}
+        workspaceLocked={commandLocked}
+        refreshToken={balanceReload}
+        onCommandLockAcquire={acquireCommandLock}
         onCommandLockChange={setCommandLock}
       />
     ) : null;
@@ -518,6 +550,7 @@ export function InventoryPanel({
       onLoadMoreBalances={loadMoreBalances}
       branchSelectionDisabled={commandLocked}
       operations={operations}
+      costing={costing}
     />
   );
 }

@@ -141,6 +141,31 @@ function recordingInventory(): MerchantInventoryService {
         nextCursor: null,
       };
     },
+    async costBalances(_principal, query) {
+      seen.push({ method: 'costBalances', request: query });
+      return {
+        rows: [
+          {
+            branchId: A.branch,
+            productId: A.milk,
+            sku: 'MILK-1L',
+            nameAr: 'حليب',
+            nameEn: 'Milk',
+            productType: 'unit',
+            unitLabel: 'each',
+            isActive: true,
+            trackInventory: true,
+            quantityScaled: '9007199254740993000',
+            knownQuantityScaled: '7000000000000000000',
+            unknownPositiveQuantityScaled: '2007199254740993000',
+            knownValueMinor: '900719925474099300',
+            stockRevision: '12',
+            costRevision: '8',
+          },
+        ],
+        nextCursor: null,
+      };
+    },
     async bootstrapCost(_principal, request) {
       seen.push({ method: 'bootstrapCost', request });
       return answer({
@@ -313,6 +338,9 @@ describe('the stock authority requires a session and the exact permission', () =
       401,
     );
     expect((await get('/v1/admin/inventory/branches', null)).statusCode).toBe(401);
+    expect(
+      (await get(`/v1/admin/inventory/cost-balances?branchId=${A.branch}`, null)).statusCode,
+    ).toBe(401);
     expect(seen).toHaveLength(0);
   });
 
@@ -324,6 +352,25 @@ describe('the stock authority requires a session and the exact permission', () =
     ).toBe(403);
     expect((await get('/v1/admin/inventory/branches', cookie)).statusCode).toBe(403);
     expect(seen).toHaveLength(0);
+  });
+
+  it('demands inventory.cost.read for valuation facts, which stock or cost-write access does not imply', async () => {
+    for (const permissions of [['inventory.read'], ['inventory.cost.manage']] as const) {
+      const server = await build(permissions);
+      const cookie = await cookieFor(server);
+      expect(
+        (await get(`/v1/admin/inventory/cost-balances?branchId=${A.branch}`, cookie)).statusCode,
+        permissions[0],
+      ).toBe(403);
+      expect(seen).toHaveLength(0);
+      await app.close();
+    }
+
+    const allowed = await build(['inventory.cost.read']);
+    const second = await cookieFor(allowed);
+    expect(
+      (await get(`/v1/admin/inventory/cost-balances?branchId=${A.branch}`, second)).statusCode,
+    ).toBe(200);
   });
 
   it('demands inventory.adjust for adjustments and counts', async () => {
@@ -478,6 +525,20 @@ describe('authority fields cannot be threaded through the body', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('refuses tenant and client-supplied valuation facts in the cost read query', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    for (const field of ['tenantId', 'knownValueMinor', 'unknownPositiveQuantityScaled']) {
+      const response = await get(
+        `/v1/admin/inventory/cost-balances?branchId=${A.branch}&${field}=1000`,
+        cookie,
+      );
+      expect(response.statusCode, field).toBe(400);
+      expect(response.json(), field).toEqual({ error: 'forbidden_field', field });
+    }
+    expect(seen).toHaveLength(0);
+  });
+
   it('refuses every client-supplied bootstrap quantity, pool and revision fact', async () => {
     const server = await build(ROLE_PERMISSIONS.owner);
     const cookie = await cookieFor(server);
@@ -487,6 +548,7 @@ describe('authority fields cannot be threaded through the body', () => {
       'knownQuantityScaled',
       'unknownQuantityScaled',
       'unknownPositiveQuantity',
+      'unknownPositiveQuantityScaled',
       'knownValueMinor',
       'costValueMinor',
       'stockRevision',
@@ -552,6 +614,14 @@ describe('request shape', () => {
     expect(
       (await get(`/v1/admin/inventory/balances?branchId=${A.branch}&limit=200`, cookie)).statusCode,
     ).toBe(200);
+    expect(
+      (await get(`/v1/admin/inventory/cost-balances?branchId=${A.branch}&limit=201`, cookie))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      (await get(`/v1/admin/inventory/cost-balances?branchId=${A.branch}&limit=200`, cookie))
+        .statusCode,
+    ).toBe(200);
     expect((await get('/v1/admin/inventory/branches?limit=101', cookie)).statusCode).toBe(400);
     expect((await get('/v1/admin/inventory/branches?limit=100', cookie)).statusCode).toBe(200);
     expect((await get('/v1/admin/inventory/branches?cursor=not-a-uuid', cookie)).statusCode).toBe(
@@ -604,6 +674,28 @@ describe('request shape', () => {
     });
     expect(response.body).not.toMatch(/tenantId|settings|permissions|createdAt/);
     expect(seen).toEqual([{ method: 'branches', request: { limit: 25, cursor: null } }]);
+  });
+
+  it('returns exact valuation facts without tenant, retail-price or unit-cost authority', async () => {
+    const server = await build(['inventory.cost.read']);
+    const cookie = await cookieFor(server);
+    const response = await get(
+      `/v1/admin/inventory/cost-balances?branchId=${A.branch}&limit=25`,
+      cookie,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('"quantityScaled":"9007199254740993000"');
+    expect(response.body).toContain('"knownQuantityScaled":"7000000000000000000"');
+    expect(response.body).toContain('"unknownPositiveQuantityScaled":"2007199254740993000"');
+    expect(response.body).toContain('"knownValueMinor":"900719925474099300"');
+    expect(response.body).not.toMatch(/tenantId|priceMinor|unitCost|averageCost|vatBasisPoints/);
+    expect(seen).toEqual([
+      {
+        method: 'costBalances',
+        request: { branchId: A.branch, limit: 25, cursor: null },
+      },
+    ]);
   });
 
   it('accepts cost only as canonical non-negative integer text', async () => {
@@ -663,6 +755,17 @@ describe('UUID identity is canonicalized at the boundary', () => {
     const query = seen[0]?.request as { branchId: string; cursor: string | null };
     expect(query.branchId).toBe(A.branch);
     expect(query.cursor).toBe(A.milk);
+  });
+
+  it('canonicalizes cost read branch and cursor identities', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    const response = await get(
+      `/v1/admin/inventory/cost-balances?branchId=${A.branch.toUpperCase()}&cursor=${A.milk.toUpperCase()}`,
+      cookie,
+    );
+    expect(response.statusCode).toBe(200);
+    expect(seen[0]?.request).toEqual({ branchId: A.branch, limit: 50, cursor: A.milk });
   });
 
   it('canonicalizes the inventory branch cursor', async () => {

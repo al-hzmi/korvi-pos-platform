@@ -13,13 +13,23 @@ import { ControlSurface } from '../control/control-app';
 import { DashboardPanel } from '../control/dashboard-panel';
 import { InventoryOperations } from '../control/inventory-operations';
 import {
+  BootstrapResult,
+  CostBootstrapForm,
+  InventoryCostPanelView,
+} from '../control/inventory-cost-panel';
+import {
+  acquireInventoryCommandWorkspace,
   describeInventoryReadFailure,
   InventoryPanel,
   InventoryPanelView,
 } from '../control/inventory-panel';
 import { MembersPanel } from '../control/members-panel';
 import { ProductsPanel } from '../control/products-panel';
-import { PurchasingOperations, resolveOrderLineProduct } from '../control/purchasing-operations';
+import {
+  PurchasingOperations,
+  ReceiptLineEditor,
+  resolveOrderLineProduct,
+} from '../control/purchasing-operations';
 import { PurchasingPanel } from '../control/purchasing-panel';
 import { SettingsPanel } from '../control/settings-panel';
 import { ProductPanel } from '../product-panel';
@@ -310,6 +320,14 @@ describe('inventory balance presentation', () => {
     onLoadMoreBalances: () => undefined,
   } as const;
 
+  it('claims the stock/cost command workspace synchronously across sibling forms', () => {
+    const lock = { current: false };
+    expect(acquireInventoryCommandWorkspace(lock)).toBe(true);
+    expect(acquireInventoryCommandWorkspace(lock)).toBe(false);
+    lock.current = false;
+    expect(acquireInventoryCommandWorkspace(lock)).toBe(true);
+  });
+
   it('does not reuse cashier-cart wording for an inventory read failure', () => {
     const failure = describeInventoryReadFailure(new ApiError(0, 'network', null));
     expect(failure.message).toContain('بيانات المخزون');
@@ -386,6 +404,7 @@ describe('inventory balance presentation', () => {
         balanceGeneration: 1,
         permissions: ['inventory.adjust'],
         onRefreshBalances: () => undefined,
+        onCommandLockAcquire: () => true,
         onCommandLockChange: () => undefined,
       }),
     );
@@ -407,6 +426,7 @@ describe('inventory balance presentation', () => {
         balanceGeneration: 1,
         permissions: ['inventory.transfer'],
         onRefreshBalances: () => undefined,
+        onCommandLockAcquire: () => true,
         onCommandLockChange: () => undefined,
       }),
     );
@@ -424,6 +444,7 @@ describe('inventory balance presentation', () => {
         balanceGeneration: 1,
         permissions: ['inventory.read'],
         onRefreshBalances: () => undefined,
+        onCommandLockAcquire: () => true,
         onCommandLockChange: () => undefined,
       }),
     );
@@ -456,6 +477,7 @@ describe('inventory balance presentation', () => {
         balanceGeneration: 1,
         permissions: ['inventory.adjust', 'inventory.transfer'],
         onRefreshBalances: () => undefined,
+        onCommandLockAcquire: () => true,
         onCommandLockChange: () => undefined,
       }),
     );
@@ -472,6 +494,7 @@ describe('inventory balance presentation', () => {
         balanceGeneration: 1,
         permissions: ['inventory.adjust'],
         onRefreshBalances: () => undefined,
+        onCommandLockAcquire: () => true,
         onCommandLockChange: () => undefined,
       }),
     );
@@ -529,6 +552,119 @@ describe('inventory balance presentation', () => {
       }),
     );
     expect(paging).toMatch(/disabled=""[^>]*aria-busy="true"|aria-busy="true"[^>]*disabled=""/);
+  });
+});
+
+describe('inventory cost presentation', () => {
+  const branch = {
+    id: '018fb000-0000-7000-8000-0000000000a1',
+    code: 'MAIN',
+    nameAr: 'الفرع الرئيسي',
+    nameEn: 'Main',
+    isActive: true,
+  } as const;
+  const row = {
+    branchId: branch.id,
+    productId: '018fb000-0000-7000-8000-0000000000a5',
+    sku: 'MILK-1L',
+    nameAr: 'حليب طازج',
+    nameEn: 'Fresh Milk',
+    productType: 'unit',
+    unitLabel: 'حبة',
+    isActive: true,
+    trackInventory: true,
+    quantityScaled: '9007199254740993000',
+    knownQuantityScaled: '7000000000000000000',
+    unknownPositiveQuantityScaled: '2007199254740993000',
+    knownValueMinor: '900719925474099300',
+    stockRevision: '12',
+    costRevision: '8',
+  } as const;
+  const ready = {
+    kind: 'ready',
+    page: { rows: [row], nextCursor: null },
+    loadingMore: false,
+    refreshing: false,
+    generation: 1,
+    loadFailure: null,
+  } as const;
+
+  it('renders exact known/unknown facts without deriving a unit or average cost', () => {
+    const markup = renderToStaticMarkup(
+      createElement(InventoryCostPanelView, {
+        state: ready,
+        canManageCost: false,
+        onRetry: () => undefined,
+        onLoadMore: () => undefined,
+      }),
+    );
+    expect(markup).toContain('حليب طازج');
+    expect(markup).toContain('2007199254740993');
+    expect(markup).toContain('9007199254740993.00');
+    expect(markup).toContain('مختلطة');
+    expect(markup).toContain('صلاحية قراءة التكلفة دون صلاحية إنشاء تقييم');
+    expect(markup).not.toMatch(/متوسط التكلفة|تكلفة الوحدة/);
+    expect(markup).toContain('لا تستنتج تكلفة من سعر البيع');
+    expect(markup.match(/dir="ltr"/g)?.length ?? 0).toBeGreaterThanOrEqual(7);
+  });
+
+  it('shows prospective bootstrap only when cost management is also granted', () => {
+    const form = createElement(CostBootstrapForm, {
+      api: idleApi,
+      branch,
+      rows: [row],
+      refreshing: false,
+      generation: 1,
+      workspaceLocked: false,
+      onRefresh: () => undefined,
+      onCommandLockAcquire: () => true,
+      onCommandLockChange: () => undefined,
+    });
+    const denied = renderToStaticMarkup(
+      createElement(InventoryCostPanelView, {
+        state: ready,
+        canManageCost: false,
+        onRetry: () => undefined,
+        onLoadMore: () => undefined,
+        bootstrap: form,
+      }),
+    );
+    const allowed = renderToStaticMarkup(
+      createElement(InventoryCostPanelView, {
+        state: ready,
+        canManageCost: true,
+        onRetry: () => undefined,
+        onLoadMore: () => undefined,
+        bootstrap: form,
+      }),
+    );
+    expect(denied).not.toContain('إجمالي قيمة اقتناء الكمية المجهولة');
+    expect(allowed).toContain('إجمالي قيمة اقتناء الكمية المجهولة');
+    expect(allowed).toContain('يشتق الخادم الكمية الحالية');
+    expect(allowed).toContain('h-touch');
+  });
+
+  it('keeps the valued product identity explicit after it leaves the eligible set', () => {
+    const markup = renderToStaticMarkup(
+      createElement(BootstrapResult, {
+        product: row,
+        result: {
+          id: '018fb000-0000-7000-8000-0000000000c1',
+          branchId: branch.id,
+          productId: row.productId,
+          valuedQuantityScaled: row.unknownPositiveQuantityScaled,
+          stockRevision: row.stockRevision,
+          costRevision: '9',
+          occurredAt: '2026-08-31T00:00:00.000Z',
+          replayed: false,
+        },
+      }),
+    );
+
+    expect(markup).toContain('حليب طازج');
+    expect(markup).toContain('MILK-1L');
+    expect(markup).toContain(row.productId);
+    expect(markup).toContain('2007199254740993');
   });
 });
 
@@ -607,6 +743,39 @@ describe('purchasing presentation', () => {
 
     expect(resolveOrderLineProduct(products, '', 0)?.id).toBe('product-1');
     expect(resolveOrderLineProduct(products, '', 1)?.id).toBe('product-2');
+  });
+
+  it('renders receipt value input only for independent cost management authority', () => {
+    const line = {
+      id: 'line-1',
+      productId: 'product-1',
+      orderedQuantityScaled: '3000',
+      receivedQuantityScaled: '1000',
+      remainingQuantityScaled: '2000',
+    } as const;
+    const commonLine = {
+      line,
+      label: 'حليب — MILK-1L',
+      quantity: '1',
+      inventoryValue: { enabled: true, value: '0.00' },
+      disabled: false,
+      onQuantityChange: () => undefined,
+      onCostEnabledChange: () => undefined,
+      onCostValueChange: () => undefined,
+    } as const;
+    const receiver = renderToStaticMarkup(
+      createElement(ReceiptLineEditor, { ...commonLine, canManageCost: false }),
+    );
+    const costManager = renderToStaticMarkup(
+      createElement(ReceiptLineEditor, { ...commonLine, canManageCost: true }),
+    );
+
+    expect(receiver).toContain('الكمية المستلمة');
+    expect(receiver).not.toContain('قيمة اقتناء');
+    expect(costManager).toContain('إجمالي قيمة اقتناء الكمية المستلمة');
+    expect(costManager).toContain('value="0.00"');
+    expect(costManager).toContain('type="checkbox"');
+    expect(costManager).toContain('h-touch');
   });
 
   it('shows supplier and order authoring only with purchasing.manage', () => {

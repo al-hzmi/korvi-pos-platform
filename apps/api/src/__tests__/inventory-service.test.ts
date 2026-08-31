@@ -135,7 +135,7 @@ describe('inventory service costing authority', () => {
 });
 
 describe('inventory service read authority', () => {
-  it('refuses branch and balance reads before persistence without inventory.read', async () => {
+  it('refuses branch, stock and cost reads before persistence without their exact permission', async () => {
     const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
     const denied = principal(['sale.create']);
 
@@ -149,6 +149,12 @@ describe('inventory service read authority', () => {
       name: 'PermissionDeniedError',
       permission: 'inventory.read',
     });
+    await expect(
+      service.costBalances(denied, { branchId: BRANCH, limit: 50, cursor: null }),
+    ).rejects.toMatchObject({
+      name: 'PermissionDeniedError',
+      permission: 'inventory.cost.read',
+    });
   });
 
   it('allows inventory.read to reach the tenant-scoped branch and balance repositories', async () => {
@@ -160,6 +166,27 @@ describe('inventory service read authority', () => {
     );
     await expect(
       service.balances(allowed, { branchId: BRANCH, limit: 50, cursor: null }),
+    ).rejects.toThrow('database touched');
+  });
+
+  it('keeps cost visibility separate from inventory.read', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
+
+    for (const permissions of [['inventory.read'], ['inventory.cost.manage']] as const) {
+      await expect(
+        service.costBalances(principal(permissions), {
+          branchId: BRANCH,
+          limit: 50,
+          cursor: null,
+        }),
+      ).rejects.toMatchObject({ permission: 'inventory.cost.read' });
+    }
+    await expect(
+      service.costBalances(principal(['inventory.cost.read']), {
+        branchId: BRANCH,
+        limit: 50,
+        cursor: null,
+      }),
     ).rejects.toThrow('database touched');
   });
 });

@@ -9,6 +9,7 @@ import {
 import {
   StockOperationRefusedError,
   createPrismaClient,
+  listCostBalancePage,
   recordInventoryCostBootstrap,
   withTenant,
 } from '@korvi/database';
@@ -35,6 +36,7 @@ const T = {
   empty: '018f5c00-0000-7000-8000-0000000000a5',
   late: '018f5c00-0000-7000-8000-0000000000a6',
   capacity: '018f5c00-0000-7000-8000-0000000000a7',
+  read: '018f5c00-0000-7000-8000-0000000000a8',
 } as const;
 
 const OTHER = {
@@ -178,6 +180,7 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
         [T.empty, 'EMPTY'],
         [T.late, 'LATE'],
         [T.capacity, 'CAPACITY'],
+        [T.read, 'READ'],
       ] as const) {
         await tx.product.create({
           data: {
@@ -270,6 +273,86 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
       expect(table.relforcerowsecurity, table.relname).toBe(true);
     }
     await client.end();
+  }, 60_000);
+
+  it('reads exact current pools, derives unknown positive quantity and excludes foreign branches', async () => {
+    await setBalance(T.read, 9_007_199_254_740_993_000n, 12n);
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryCostBalance.create({
+        data: {
+          tenantId: T.tenant,
+          branchId: T.branch,
+          productId: T.read,
+          knownQuantityScaled: 7_000_000_000_000_000_000n,
+          knownValueMinor: 900_719_925_474_099_300n,
+          stockRevision: 12n,
+          costRevision: 8n,
+          updatedAt: new Date(),
+        },
+      });
+    });
+
+    const page = await listCostBalancePage(prisma, T.tenant, T.branch, 200, null);
+    expect(page.rows.find((row) => row.productId === T.read)).toMatchObject({
+      sku: 'READ',
+      quantityScaled: '9007199254740993000',
+      knownQuantityScaled: '7000000000000000000',
+      unknownPositiveQuantityScaled: '2007199254740993000',
+      knownValueMinor: '900719925474099300',
+      stockRevision: '12',
+      costRevision: '8',
+    });
+    expect(page.rows.find((row) => row.productId === T.empty)).toMatchObject({
+      quantityScaled: '0',
+      knownQuantityScaled: '0',
+      unknownPositiveQuantityScaled: '0',
+      knownValueMinor: '0',
+      stockRevision: '0',
+      costRevision: '0',
+    });
+    expect(JSON.stringify(page)).not.toMatch(/tenantId|priceMinor|unitCost|averageCost/);
+
+    const absentWasNotMaterialized = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.inventoryCostBalance.findFirst({
+        where: { tenantId: T.tenant, branchId: T.branch, productId: T.empty },
+      }),
+    );
+    expect(absentWasNotMaterialized).toBeNull();
+    await expect(listCostBalancePage(prisma, T.tenant, OTHER.branch, 200, null)).resolves.toEqual({
+      rows: [],
+      nextCursor: null,
+    });
+
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.inventoryCostBalance.update({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: T.tenant,
+            branchId: T.branch,
+            productId: T.read,
+          },
+        },
+        data: { stockRevision: 11n },
+      });
+    });
+    try {
+      await expect(listCostBalancePage(prisma, T.tenant, T.branch, 200, null)).rejects.toThrow(
+        'unsynchronized cursor',
+      );
+    } finally {
+      await withTenant(prisma, scope.tenantId, async (tx) => {
+        await tx.inventoryCostBalance.update({
+          where: {
+            tenantId_branchId_productId: {
+              tenantId: T.tenant,
+              branchId: T.branch,
+              productId: T.read,
+            },
+          },
+          data: { stockRevision: 12n },
+        });
+      });
+    }
   }, 60_000);
 
   it('derives only unknown positive quantity and commits immutable evidence atomically', async () => {

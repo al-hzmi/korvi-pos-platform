@@ -110,7 +110,7 @@ describe('purchasing command construction', () => {
     expect(fractional).toMatchObject({ ok: false });
   });
 
-  it('builds a partial receipt from server line identities and never includes cost authority', () => {
+  it('builds an unvalued partial receipt without inventing cost authority', () => {
     const built = buildPurchaseReceiptIntent(
       {
         order: ORDER,
@@ -135,6 +135,108 @@ describe('purchasing command construction', () => {
     expect(JSON.stringify(built)).not.toMatch(
       /inventoryValue|productId|branchId|supplierId|status/,
     );
+  });
+
+  it('keeps explicit valued receipt totals exact and distinguishes known zero from omission', () => {
+    const secondLine = {
+      ...ORDER.lines[0]!,
+      id: 'line-2',
+      productId: UNIT.id,
+      orderedQuantityScaled: '2000',
+      receivedQuantityScaled: '0',
+      remainingQuantityScaled: '2000',
+    };
+    const order = { ...ORDER, lines: [ORDER.lines[0]!, secondLine] };
+    const built = buildPurchaseReceiptIntent(
+      {
+        order,
+        reference: '',
+        products: [WEIGHTED, UNIT],
+        quantities: { 'line-1': '2.125', 'line-2': '1' },
+        inventoryValues: {
+          'line-1': { enabled: true, value: '90071992547409.93' },
+          'line-2': { enabled: true, value: '0.00' },
+        },
+      },
+      () => 'op-valued-receipt',
+    );
+
+    expect(built).toEqual({
+      ok: true,
+      intent: {
+        kind: 'receipt',
+        request: {
+          operationId: 'op-valued-receipt',
+          purchaseOrderId: ORDER.id,
+          reference: null,
+          lines: [
+            {
+              purchaseOrderLineId: 'line-1',
+              acceptedQuantityScaled: '2125',
+              inventoryValueMinor: '9007199254740993',
+            },
+            {
+              purchaseOrderLineId: 'line-2',
+              acceptedQuantityScaled: '1000',
+              inventoryValueMinor: '0',
+            },
+          ],
+        },
+      },
+    });
+    expect(BigInt('9007199254740993')).toBeGreaterThan(BigInt(Number.MAX_SAFE_INTEGER));
+  });
+
+  it('omits a disabled value and refuses enabled value without a receipt quantity', () => {
+    const omitted = buildPurchaseReceiptIntent(
+      {
+        order: ORDER,
+        reference: '',
+        products: [WEIGHTED],
+        quantities: { 'line-1': '1' },
+        inventoryValues: { 'line-1': { enabled: false, value: '77.00' } },
+      },
+      () => 'op-unknown',
+    );
+    expect(JSON.stringify(omitted)).not.toContain('inventoryValueMinor');
+
+    let minted = false;
+    const invalid = buildPurchaseReceiptIntent(
+      {
+        order: ORDER,
+        reference: '',
+        products: [WEIGHTED],
+        quantities: {},
+        inventoryValues: { 'line-1': { enabled: true, value: '10.00' } },
+      },
+      () => {
+        minted = true;
+        return 'op';
+      },
+    );
+    expect(invalid).toMatchObject({ ok: false });
+    expect(minted).toBe(false);
+  });
+
+  it('refuses malformed or over-precise acquisition value before minting an operation', () => {
+    for (const value of ['', '1.001', '1e3', '-1', '9,00']) {
+      let minted = false;
+      const built = buildPurchaseReceiptIntent(
+        {
+          order: ORDER,
+          reference: '',
+          products: [WEIGHTED],
+          quantities: { 'line-1': '1' },
+          inventoryValues: { 'line-1': { enabled: true, value } },
+        },
+        () => {
+          minted = true;
+          return 'op';
+        },
+      );
+      expect(built.ok, value).toBe(false);
+      expect(minted, value).toBe(false);
+    }
   });
 
   it('refuses an obvious over-receipt using exact bigint comparison', () => {
