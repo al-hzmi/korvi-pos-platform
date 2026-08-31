@@ -39,9 +39,9 @@ One stock ledger and causality model; adjustments/counts/transfers; supplier/PO/
 Sequence:
 
 1. **5A Stock Ledger Integrity — substantially established.** Balance revision, authoritative adjustments, concurrency-safe absolute counts, atomic branch transfers, idempotency, audit, strict RLS and sale/return regression proof are implemented and proved against live PostgreSQL. C0 data-integrity strike, reviewed and closed.
-2. **5B Purchasing & Receiving — ACTIVE.** Suppliers, purchase orders, partial receiving and receipt-to-stock atomicity. Purchase orders do not mutate stock; accepted receipts do. Over-receipt is refused under concurrency while PO-line locks are held. No costing, valuation, supplier invoice or UI is in scope — see `docs/architecture/STRIKE-5B-PURCHASING-RECEIVING.md`. Not closed until independent review and the Human Gate pass.
-3. **5C Costing Authority.** Exact integer valuation foundation with explicit unknown historical provenance, deterministic conservation/rounding and original-sale cost restoration on returns.
-4. **5D Inventory & Purchasing UX.** Operational merchant UI over the server authorities, including branch stock and purchasing workflows. UI never becomes stock/cost authority.
+2. **5B Purchasing & Receiving — substantially established.** Suppliers, immutable purchase orders, partial receiving and receipt-to-stock atomicity are implemented and proved against live PostgreSQL. Purchase orders do not mutate stock; accepted receipts do. Over-receipt is refused under concurrency while PO-line locks are held.
+3. **5C Costing Authority — substantially established.** Exact integer valuation, explicit unknown historical provenance, deterministic remainder conservation, sale-line cost-basis freeze, original-sale return restoration, transfer conservation, valued receiving and prospective bootstrap authority are implemented and proved against fresh and occupied PostgreSQL. Independent C0 review and the Human Gate closed the strike at `600373c`.
+4. **5D Inventory & Purchasing UX — ACTIVE.** Bounded operational UI over the established server authorities. 5D-A begins with branch stock read; later slices own stock commands, purchasing workflows and separately permissioned cost affordances. UI never becomes stock/cost authority — see `docs/architecture/STRIKE-5D-INVENTORY-PURCHASING-UX.md`.
 
 ### Stage 6 — Offline & Device Continuity
 

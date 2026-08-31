@@ -29,10 +29,11 @@ Legend: `A` Accepted, `AR` Architected, `I` Implemented, `T` Tested, `PR` Produc
 | User/membership administration UI/API | B0 | C0 | A/AR/I/T for authority and administration UI through 4B; 4D adds signed one-time initial-owner credential bootstrap with replay/concurrency/rollback proof, but general staff invitation/recovery remains outstanding; not PR | Control Plane/Auth | Security, Audit |
 | Branch/terminal administration | B0 | C1 | A/AR/I/T for authority and administration UI through 4B; onboarding readiness consumes live active branch/terminal truth through 4D; not yet PR | Control Plane | Security, Operations |
 | Product write/catalogue management | B0 | C1 | A/AR/I/T for the minimal audited onboarding product bootstrap authority through 4D; full catalogue management remains deferred | Inventory/Catalogue | Audit, UX |
-| Stock ledger/adjustments | B0 | C0 | A; inventory foundation partially exists | Inventory/DB | Data Integrity, Live DB |
-| Transfers/counting | B1 | C1 | A | Inventory | Data Integrity |
-| Suppliers/PO/receiving | B1 | C1 | A | Purchasing | Data Integrity, Audit |
-| Costing foundation | B1 | C0 | A | Inventory/Domain | Financial |
+| Stock ledger/adjustments | B0 | C0 | A/AR/I/T through 5A; authoritative balances, revisions, movements, adjustments, counts, idempotency, RLS and live concurrency/rollback proof established | Inventory/DB | Data Integrity, Live DB |
+| Transfers/counting | B1 | C1 | A/AR/I/T through 5A; atomic branch transfers and stale-safe absolute counts established; operational UI belongs to active 5D | Inventory | Data Integrity, UX |
+| Suppliers/PO/receiving | B1 | C1 | A/AR/I/T through 5B; immutable PO intent, partial receiving, exact accumulators, atomic stock effects and live over-receipt/rollback proof established; operational UI belongs to active 5D | Purchasing | Data Integrity, Audit, UX |
+| Costing foundation | B1 | C0 | A/AR/I/T through 5C; explicit unknown provenance, exact valuation conservation, sale/return/transfer/receiving basis and prospective bootstrap authority established; cost UX belongs to active 5D | Inventory/Domain | Financial, Live DB, Security |
+| Inventory & purchasing operational UX | B1 | C1 | A/AR; bounded 5D contract accepted, implementation active beginning with branch stock read; no stock or cost authority in the browser | POS/Inventory/Purchasing | UX, Security, Performance |
 | Offline transaction continuity | B0 | C0/C1 | A/AR foundation; not PR | Offline/Device | Offline, Security, Data Integrity |
 | Device continuity/recovery | B2 | C1 | A | Device Continuity | Offline, Security, Production |
 | ZATCA Phase 1 invoice/QR facts | B0 | C0 | A/AR/I/T foundation | Compliance/Printing | ZATCA |
