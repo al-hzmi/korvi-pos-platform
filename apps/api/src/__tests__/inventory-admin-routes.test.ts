@@ -105,6 +105,21 @@ function recordingInventory(): MerchantInventoryService {
   }
 
   return {
+    async branches(_principal, query) {
+      seen.push({ method: 'branches', request: query });
+      return {
+        rows: [
+          {
+            id: A.branch,
+            code: 'MAIN',
+            nameAr: 'الفرع الرئيسي',
+            nameEn: 'Main',
+            isActive: true,
+          },
+        ],
+        nextCursor: null,
+      };
+    },
     async balances(_principal, query) {
       seen.push({ method: 'balances', request: query });
       return {
@@ -112,6 +127,11 @@ function recordingInventory(): MerchantInventoryService {
           {
             branchId: A.branch,
             productId: A.milk,
+            sku: 'MILK-1L',
+            nameAr: 'حليب',
+            nameEn: 'Milk',
+            productType: 'unit',
+            unitLabel: 'each',
             quantityScaled: '9007199254740993000',
             revision: '12',
           },
@@ -290,6 +310,7 @@ describe('the stock authority requires a session and the exact permission', () =
     expect((await get(`/v1/admin/inventory/balances?branchId=${A.branch}`, null)).statusCode).toBe(
       401,
     );
+    expect((await get('/v1/admin/inventory/branches', null)).statusCode).toBe(401);
     expect(seen).toHaveLength(0);
   });
 
@@ -299,6 +320,7 @@ describe('the stock authority requires a session and the exact permission', () =
     expect(
       (await get(`/v1/admin/inventory/balances?branchId=${A.branch}`, cookie)).statusCode,
     ).toBe(403);
+    expect((await get('/v1/admin/inventory/branches', cookie)).statusCode).toBe(403);
     expect(seen).toHaveLength(0);
   });
 
@@ -445,6 +467,15 @@ describe('authority fields cannot be threaded through the body', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('refuses tenant authority in the inventory branch query', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    const response = await get(`/v1/admin/inventory/branches?tenantId=${A.tenant}`, cookie);
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({ error: 'forbidden_field', field: 'tenantId' });
+    expect(seen).toHaveLength(0);
+  });
+
   it('refuses every client-supplied bootstrap quantity, pool and revision fact', async () => {
     const server = await build(ROLE_PERMISSIONS.owner);
     const cookie = await cookieFor(server);
@@ -519,6 +550,11 @@ describe('request shape', () => {
     expect(
       (await get(`/v1/admin/inventory/balances?branchId=${A.branch}&limit=200`, cookie)).statusCode,
     ).toBe(200);
+    expect((await get('/v1/admin/inventory/branches?limit=101', cookie)).statusCode).toBe(400);
+    expect((await get('/v1/admin/inventory/branches?limit=100', cookie)).statusCode).toBe(200);
+    expect((await get('/v1/admin/inventory/branches?cursor=not-a-uuid', cookie)).statusCode).toBe(
+      400,
+    );
   });
 
   it('returns quantity and revision as strings, not numbers', async () => {
@@ -531,6 +567,39 @@ describe('request shape', () => {
     // proof that nothing on this path went through a JSON number.
     expect(response.body).toContain('"quantityScaled":"9007199254740993000"');
     expect(response.body).toContain('"revision":"12"');
+    expect(response.json()).toMatchObject({
+      rows: [
+        {
+          productId: A.milk,
+          sku: 'MILK-1L',
+          nameAr: 'حليب',
+          productType: 'unit',
+          unitLabel: 'each',
+        },
+      ],
+    });
+  });
+
+  it('returns a bounded inventory branch identity without tenant or settings authority', async () => {
+    const server = await build(['inventory.read']);
+    const cookie = await cookieFor(server);
+    const response = await get('/v1/admin/inventory/branches?limit=25', cookie);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      rows: [
+        {
+          id: A.branch,
+          code: 'MAIN',
+          nameAr: 'الفرع الرئيسي',
+          nameEn: 'Main',
+          isActive: true,
+        },
+      ],
+      nextCursor: null,
+    });
+    expect(response.body).not.toMatch(/tenantId|settings|permissions|createdAt/);
+    expect(seen).toEqual([{ method: 'branches', request: { limit: 25, cursor: null } }]);
   });
 
   it('accepts cost only as canonical non-negative integer text', async () => {
@@ -590,6 +659,17 @@ describe('UUID identity is canonicalized at the boundary', () => {
     const query = seen[0]?.request as { branchId: string; cursor: string | null };
     expect(query.branchId).toBe(A.branch);
     expect(query.cursor).toBe(A.milk);
+  });
+
+  it('canonicalizes the inventory branch cursor', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    const response = await get(
+      `/v1/admin/inventory/branches?cursor=${A.branch.toUpperCase()}`,
+      cookie,
+    );
+    expect(response.statusCode).toBe(200);
+    expect(seen[0]?.request).toEqual({ limit: 50, cursor: A.branch });
   });
 
   it('H. refuses a mixed-case duplicate product with the typed refusal', async () => {

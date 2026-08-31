@@ -15,6 +15,7 @@ import {
   createTenantRepository,
   createTerminalRepository,
   listBalancePage,
+  listInventoryBranchPage,
   provisionPermissionCatalogue,
   provisionTenantRbac,
   recordInventoryCostBootstrap,
@@ -2318,6 +2319,12 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     expect(first.nextCursor).not.toBeNull();
     expect(typeof first.rows[0]?.quantityScaled).toBe('string');
     expect(typeof first.rows[0]?.revision).toBe('string');
+    expect(first.rows[0]).toMatchObject({
+      sku: 'MILK-1L',
+      nameAr: 'MILK-1L',
+      productType: 'unit',
+      unitLabel: 'each',
+    });
 
     const second_ = await listBalancePage(prisma, T.tenant, T.branchA, 1, first.nextCursor);
     expect(second_.rows[0]?.productId).not.toBe(first.rows[0]?.productId);
@@ -2325,6 +2332,45 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     // The other tenant's branch id yields nothing under this tenant's scope.
     const foreign = await listBalancePage(prisma, T.tenant, OTHER.branch, 50, null);
     expect(foreign.rows).toHaveLength(0);
+
+    await setQuantity(T.branchA, T.inactive, 2_000n);
+    const withInactive = await listBalancePage(prisma, T.tenant, T.branchA, 50, null);
+    expect(withInactive.rows).toContainEqual(
+      expect.objectContaining({ productId: T.inactive, sku: 'OLD-SKU' }),
+    );
+  }, 60_000);
+
+  it('lists bounded operational branch identity under tenant scope', async () => {
+    const first = await listInventoryBranchPage(prisma, scope, 1, null);
+    expect(first.rows).toHaveLength(1);
+    expect(first.nextCursor).not.toBeNull();
+    expect(first.rows[0]).toEqual(
+      expect.objectContaining({
+        id: T.branchA,
+        code: '01',
+        nameAr: 'فرع 01',
+        isActive: true,
+      }),
+    );
+    expect(first.rows[0]).not.toHaveProperty('tenantId');
+    expect(first.rows[0]).not.toHaveProperty('createdAt');
+
+    const secondPage = await listInventoryBranchPage(prisma, scope, 1, first.nextCursor);
+    expect(secondPage.rows[0]?.id).not.toBe(first.rows[0]?.id);
+
+    const allTenantBranches = await listInventoryBranchPage(prisma, scope, 100, null);
+    expect(allTenantBranches.rows).toContainEqual(
+      expect.objectContaining({ id: T.branchClosed, isActive: false }),
+    );
+    expect(allTenantBranches.rows.some((branch) => branch.id === OTHER.branch)).toBe(false);
+
+    const foreign = await listInventoryBranchPage(
+      prisma,
+      { tenantId: brandTenantId(OTHER.tenant) },
+      100,
+      T.branchA,
+    );
+    expect(foreign.rows.every((branch) => branch.id !== T.branchA)).toBe(true);
   }, 60_000);
 });
 

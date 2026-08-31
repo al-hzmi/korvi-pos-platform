@@ -30,6 +30,33 @@ function bodyOf(call: Recorded): Record<string, unknown> {
 }
 
 describe('merchant administration API client', () => {
+  it('reads bounded inventory branches without borrowing settings authority', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    await createApiClient(wire.fetch).inventoryBranches({
+      limit: 50,
+      cursor: '018fb000-0000-7000-8000-0000000000a1',
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/inventory/branches?limit=50&cursor=018fb000-0000-7000-8000-0000000000a1',
+    );
+    expect(wire.calls[0]!.url).not.toContain('tenant');
+  });
+
+  it('reads exact balance pages with branch, limit and cursor as the only filters', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    await createApiClient(wire.fetch).inventoryBalances({
+      branchId: '018fb000-0000-7000-8000-0000000000a1',
+      limit: 100,
+      cursor: '018fb000-0000-7000-8000-0000000000a5',
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/inventory/balances?limit=100&cursor=018fb000-0000-7000-8000-0000000000a5&branchId=018fb000-0000-7000-8000-0000000000a1',
+    );
+    expect(wire.calls[0]!.url).not.toMatch(/tenant|actor|quantity|revision/);
+  });
+
   it('uses the authenticated admin settings route and PATCHes only editable fields', async () => {
     const wire = transport({});
     const api = createApiClient(wire.fetch);

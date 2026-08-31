@@ -3,10 +3,12 @@ import {
   CostingRequestError,
   StockRequestError,
   requirePrincipalPermission,
+  tenantId as brandTenantId,
 } from '@korvi/domain';
 import {
   StockOperationRefusedError,
   listBalancePage,
+  listInventoryBranchPage,
   recordInventoryAdjustment,
   recordInventoryCostBootstrap,
   recordInventoryCount,
@@ -32,6 +34,7 @@ import type {
   BalancePage,
   CountResult,
   InventoryCostBootstrapResult,
+  InventoryBranchPage,
   PrismaClient,
   StockOperationRefusal,
   TransferResult,
@@ -60,6 +63,10 @@ export type StockResult<T> =
     };
 
 export interface MerchantInventoryService {
+  branches(
+    principal: AuthenticatedPrincipal,
+    query: { readonly limit: number; readonly cursor: string | null },
+  ): Promise<InventoryBranchPage>;
   balances(
     principal: AuthenticatedPrincipal,
     query: { readonly branchId: string; readonly limit: number; readonly cursor: string | null },
@@ -115,7 +122,18 @@ export function createMerchantInventoryService(deps: {
   const { prisma } = deps;
 
   return {
+    async branches(principal, query) {
+      requirePrincipalPermission(principal, 'inventory.read');
+      return listInventoryBranchPage(
+        prisma,
+        { tenantId: brandTenantId(principal.tenantId) },
+        query.limit,
+        query.cursor,
+      );
+    },
+
     async balances(principal, query) {
+      requirePrincipalPermission(principal, 'inventory.read');
       // The tenant is the session's. A branch id is a legitimate filter, and
       // under RLS one belonging to another merchant simply matches nothing.
       return listBalancePage(prisma, principal.tenantId, query.branchId, query.limit, query.cursor);

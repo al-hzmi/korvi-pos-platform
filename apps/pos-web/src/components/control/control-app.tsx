@@ -3,8 +3,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
-import { ControlNav } from './control-nav';
+import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './control-nav';
 import { DashboardPanel } from './dashboard-panel';
+import { InventoryPanel } from './inventory-panel';
 import { MembersPanel } from './members-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
@@ -53,6 +54,8 @@ function sectionTitle(section: ControlSection): string {
       return 'الرئيسية';
     case 'products':
       return 'المنتجات';
+    case 'inventory':
+      return 'المخزون';
     case 'branches':
       return 'الفروع والصناديق';
     case 'staff':
@@ -76,6 +79,8 @@ function Section({
       return <DashboardPanel api={api} />;
     case 'products':
       return <ProductsPanel api={api} canWrite={hasPermission(principal, 'product.write')} />;
+    case 'inventory':
+      return <InventoryPanel api={api} preferredBranchId={principal.branchId} />;
     case 'branches':
       return <BranchesPanel api={api} />;
     case 'staff':
@@ -96,8 +101,11 @@ function Workspace({
   readonly principal: Principal;
   readonly onSignOut: () => void;
 }): JSX.Element {
-  const [section, setSection] = useState<ControlSection>('home');
-  const permitted = hasPermission(principal, 'report.read');
+  const initialSection = firstAuthorizedSection(principal.permissions);
+  const [section, setSection] = useState<ControlSection>(() => initialSection ?? 'home');
+  const activeSection = canAccessControlSection(section, principal.permissions)
+    ? section
+    : initialSection;
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
 
   return (
@@ -123,7 +131,7 @@ function Workspace({
         </div>
       </header>
 
-      {!permitted ? (
+      {activeSection === null ? (
         <main className="mx-auto w-full max-w-lg p-6">
           <CardSurface className="flex flex-col gap-4 p-6">
             <StatusNote tone="warning" live>
@@ -142,7 +150,7 @@ function Workspace({
           <aside className="w-full shrink-0 lg:w-64" aria-label="التنقل">
             <CardSurface className="p-2">
               <ControlNav
-                active={section}
+                active={activeSection}
                 permissions={principal.permissions}
                 onSelect={setSection}
               />
@@ -151,15 +159,20 @@ function Workspace({
 
           <main className="flex min-h-0 flex-1 flex-col gap-4">
             <div>
-              <h1 className="text-2xl font-semibold text-foreground">{sectionTitle(section)}</h1>
-              {section === 'branches' || section === 'staff' || section === 'settings' ? (
+              <h1 className="text-2xl font-semibold text-foreground">
+                {sectionTitle(activeSection)}
+              </h1>
+              {activeSection === 'inventory' ||
+              activeSection === 'branches' ||
+              activeSection === 'staff' ||
+              activeSection === 'settings' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
                   إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
                 </p>
               ) : null}
             </div>
 
-            {section === 'home' && canReadOnboarding ? (
+            {activeSection === 'home' && canReadOnboarding ? (
               <OnboardingPanel
                 api={api}
                 permissions={principal.permissions}
@@ -167,7 +180,7 @@ function Workspace({
               />
             ) : null}
 
-            <Section section={section} api={api} principal={principal} />
+            <Section section={activeSection} api={api} principal={principal} />
           </main>
         </div>
       )}

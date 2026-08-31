@@ -3,14 +3,25 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ROLE_PERMISSIONS } from '@korvi/domain';
 import { BranchesPanel } from '../control/branches-panel';
-import { CONTROL_ENTRIES, ControlNav } from '../control/control-nav';
+import {
+  canOpenControlCentre,
+  CONTROL_ENTRIES,
+  ControlNav,
+  firstAuthorizedSection,
+} from '../control/control-nav';
 import { ControlSurface } from '../control/control-app';
 import { DashboardPanel } from '../control/dashboard-panel';
+import {
+  describeInventoryReadFailure,
+  InventoryPanel,
+  InventoryPanelView,
+} from '../control/inventory-panel';
 import { MembersPanel } from '../control/members-panel';
 import { ProductsPanel } from '../control/products-panel';
 import { SettingsPanel } from '../control/settings-panel';
 import { ProductPanel } from '../product-panel';
 import { controlView } from '../../lib/control-view';
+import { ApiError } from '../../lib/api';
 import { LOGOUT_UNCONFIRMED, hasPermission } from '../../lib/session';
 import type { ApiClient } from '../../lib/api';
 import type { Principal, ProductSummary } from '../../lib/api-types';
@@ -88,7 +99,13 @@ describe('control navigation', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, {
         active: 'home',
-        permissions: ['settings.manage', 'users.manage'],
+        permissions: [
+          'report.read',
+          'product.read',
+          'inventory.read',
+          'settings.manage',
+          'users.manage',
+        ],
         onSelect: () => undefined,
       }),
     );
@@ -106,7 +123,7 @@ describe('control navigation', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, { active: 'home', permissions: [], onSelect: () => undefined }),
     );
-    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(3);
+    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(6);
   });
 
   it('keeps users.manage separate from settings.manage in navigation', () => {
@@ -118,14 +135,14 @@ describe('control navigation', () => {
       }),
     );
     expect(peopleOnly).toContain('الموظفون والصلاحيات');
-    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(2);
+    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(5);
   });
 
   it('marks exactly one section as the open one', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, {
         active: 'products',
-        permissions: ['settings.manage', 'users.manage'],
+        permissions: ['product.read', 'settings.manage', 'users.manage'],
         onSelect: () => undefined,
       }),
     );
@@ -177,13 +194,36 @@ describe('control centre first paint', () => {
     expect(markup).not.toContain('لا يوجد موظفون في المنشأة حتى الآن');
     expect(markup).not.toContain('إضافة الموظف');
   });
+
+  it('does not claim an empty stock ledger before branches have loaded', () => {
+    const markup = renderToStaticMarkup(
+      createElement(InventoryPanel, { api: idleApi, preferredBranchId: 'b-1' }),
+    );
+    expect(markup).toContain('جارٍ تحميل فروع المخزون');
+    expect(markup).not.toContain('لا توجد فروع');
+    expect(markup).not.toContain('لا توجد أرصدة');
+  });
 });
 
 describe('who the control centre is for', () => {
-  it('withholds it from a cashier and offers it to a manager', () => {
-    expect(hasPermission(principalWith(ROLE_PERMISSIONS.cashier), 'report.read')).toBe(false);
-    expect(hasPermission(principalWith(ROLE_PERMISSIONS.manager), 'report.read')).toBe(true);
-    expect(hasPermission(principalWith(ROLE_PERMISSIONS.owner), 'report.read')).toBe(true);
+  it('admits an operational role without granting it the dashboard', () => {
+    const cashier = principalWith(ROLE_PERMISSIONS.cashier);
+    expect(hasPermission(cashier, 'report.read')).toBe(false);
+    expect(canOpenControlCentre(cashier.permissions)).toBe(true);
+    expect(firstAuthorizedSection(cashier.permissions)).toBe('products');
+    expect(firstAuthorizedSection(['inventory.read'])).toBe('inventory');
+
+    const inventoryOnly = surface({ kind: 'ready', principal: principalWith(['inventory.read']) });
+    expect(inventoryOnly).toContain('جارٍ تحميل فروع المخزون');
+    expect(inventoryOnly).not.toContain('جارٍ تحميل المؤشرات');
+  });
+
+  it('keeps the control centre blocked when no built section is authorized', () => {
+    expect(canOpenControlCentre([])).toBe(false);
+    const markup = surface({ kind: 'ready', principal: principalWith([]) });
+    expect(markup).toContain('لا تملك صلاحية الاطلاع على لوحة التحكم');
+    expect(markup).not.toContain('جارٍ تحميل المؤشرات');
+    expect(markup).not.toContain('جارٍ تحميل فروع المخزون');
   });
 
   it('does not confuse dashboard access with merchant administration', () => {
@@ -198,6 +238,130 @@ describe('who the control centre is for', () => {
 
   it('is the same permission the server dashboard route demands', () => {
     expect(ROLE_PERMISSIONS.cashier).not.toContain('report.read');
+  });
+});
+
+describe('inventory balance presentation', () => {
+  const branchId = '018fb000-0000-7000-8000-0000000000a1';
+  const branches = {
+    kind: 'ready',
+    page: {
+      rows: [
+        {
+          id: branchId,
+          code: 'MAIN-1',
+          nameAr: 'الفرع الرئيسي',
+          nameEn: 'Main',
+          isActive: true,
+        },
+      ],
+      nextCursor: null,
+    },
+    loadingMore: false,
+    loadFailure: null,
+  } as const;
+  const handlers = {
+    onSelectBranch: () => undefined,
+    onRetryBranches: () => undefined,
+    onLoadMoreBranches: () => undefined,
+    onRetryBalances: () => undefined,
+    onLoadMoreBalances: () => undefined,
+  } as const;
+
+  it('does not reuse cashier-cart wording for an inventory read failure', () => {
+    const failure = describeInventoryReadFailure(new ApiError(0, 'network', null));
+    expect(failure.message).toContain('بيانات المخزون');
+    expect(failure.message).not.toContain('السلة');
+    expect(failure.action).toBe('retry-same');
+  });
+
+  it('renders server product identity and exact scaled quantities with bidi isolation', () => {
+    const markup = renderToStaticMarkup(
+      createElement(InventoryPanelView, {
+        ...handlers,
+        branches,
+        selectedBranchId: branchId,
+        balances: {
+          kind: 'ready',
+          branchId,
+          page: {
+            rows: [
+              {
+                branchId,
+                productId: '018fb000-0000-7000-8000-0000000000a5',
+                sku: 'MILK-1L',
+                nameAr: 'حليب طازج',
+                nameEn: 'Fresh Milk',
+                productType: 'unit',
+                unitLabel: 'each',
+                quantityScaled: '1250',
+                revision: '9007199254740993',
+              },
+            ],
+            nextCursor: null,
+          },
+          loadingMore: false,
+          loadFailure: null,
+        },
+      }),
+    );
+
+    expect(markup).toContain('حليب طازج');
+    expect(markup).toContain('MILK-1L');
+    expect(markup).toContain('1.25');
+    expect(markup).toContain('9007199254740993');
+    expect(markup.match(/dir="ltr"/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
+    expect(markup).toContain('h-touch');
+  });
+
+  it('shows an empty balance only after a selected branch answered', () => {
+    const markup = renderToStaticMarkup(
+      createElement(InventoryPanelView, {
+        ...handlers,
+        branches,
+        selectedBranchId: branchId,
+        balances: {
+          kind: 'ready',
+          branchId,
+          page: { rows: [], nextCursor: null },
+          loadingMore: false,
+          loadFailure: null,
+        },
+      }),
+    );
+    expect(markup).toContain('لا توجد أرصدة مخزون مسجلة');
+    expect(markup).not.toContain('جارٍ تحميل أرصدة الفرع');
+  });
+
+  it('keeps read failures recoverable and disables a page action while loading', () => {
+    const failed = renderToStaticMarkup(
+      createElement(InventoryPanelView, {
+        ...handlers,
+        branches,
+        selectedBranchId: branchId,
+        balances: {
+          kind: 'failed',
+          branchId,
+          failure: { code: 'network', message: 'تعذر الاتصال.', action: 'retry-same' },
+        },
+      }),
+    );
+    expect(failed).toContain('تعذر الاتصال');
+    expect(failed).toContain('إعادة تحميل الأرصدة');
+
+    const paging = renderToStaticMarkup(
+      createElement(InventoryPanelView, {
+        ...handlers,
+        branches: {
+          ...branches,
+          page: { ...branches.page, nextCursor: branchId },
+          loadingMore: true,
+        },
+        selectedBranchId: branchId,
+        balances: { kind: 'loading', branchId },
+      }),
+    );
+    expect(paging).toMatch(/disabled=""[^>]*aria-busy="true"|aria-busy="true"[^>]*disabled=""/);
   });
 });
 

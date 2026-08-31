@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CardSurface } from '@korvi/ui';
 import { TopBar } from './top-bar';
+import { canOpenControlCentre } from './control/control-nav';
 import { ProductPanel } from './product-panel';
 import { CartPanel } from './cart-panel';
 import { CheckoutPanel } from './checkout-panel';
@@ -12,7 +13,6 @@ import { previewCart } from '../lib/cart';
 import { intentLocked, signOutBlocked } from '../lib/checkout';
 import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
-import { hasPermission } from '../lib/session';
 import { parseSarToMinor } from '../lib/money';
 import { useCart } from '../hooks/use-cart';
 import { useCheckout } from '../hooks/use-checkout';
@@ -143,7 +143,7 @@ export function CashierScreen({
     <div className="flex h-screen flex-col bg-muted/40">
       <TopBar
         cashierName={principal.user.displayName}
-        showControlCentre={hasPermission(principal, 'report.read')}
+        showControlCentre={canOpenControlCentre(principal.permissions)}
         terminal={terminal}
         busy={checkout.state.phase === 'submitting'}
         signOutBlocked={signOutBlocked(checkout.state)}

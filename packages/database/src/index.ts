@@ -191,6 +191,8 @@ export type {
 } from './inventory/stock-ledger.js';
 export { listBalancePage, MAX_BALANCE_PAGE } from './inventory/balances.js';
 export type { BalancePage, BalancePageRow } from './inventory/balances.js';
+export { listInventoryBranchPage, MAX_INVENTORY_BRANCH_PAGE } from './inventory/branches.js';
+export type { InventoryBranch, InventoryBranchPage } from './inventory/branches.js';
 
 // Prospective costing bootstrap (Strike 5C). It values only the currently
 // unknown positive quantity derived under stock + cost row locks; it never

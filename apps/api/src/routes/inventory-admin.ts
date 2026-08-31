@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { MAX_STOCK_LINES, MAX_STOCK_REASON, canonicalUuid } from '@korvi/domain';
-import { MAX_BALANCE_PAGE } from '@korvi/database';
+import { MAX_BALANCE_PAGE, MAX_INVENTORY_BRANCH_PAGE } from '@korvi/database';
 import type { MerchantInventoryService, StockFailureReason } from '../inventory/service.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { Guards } from '../auth/guards.js';
@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 /**
  * The merchant stock authority, over HTTP.
  *
- * Five routes, four permissions and one rule that governs all of them: the
+ * Six routes, four permissions and one rule that governs all of them: the
  * browser may state *what it wants to happen*, never *what already happened*
  * and never *who is asking*. The tenant and the actor come from the session;
  * balances, revisions and derived deltas come from the locked rows.
@@ -113,6 +113,13 @@ const balancesQuery = z
   .object({
     branchId: UUID,
     limit: z.coerce.number().int().min(1).max(MAX_BALANCE_PAGE).optional(),
+    cursor: UUID.optional(),
+  })
+  .strict();
+
+const branchesQuery = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(MAX_INVENTORY_BRANCH_PAGE).optional(),
     cursor: UUID.optional(),
   })
   .strict();
@@ -269,6 +276,27 @@ export function registerInventoryAdminRoutes(
       ...(productId === null ? {} : { productId }),
     });
   }
+
+  app.get(
+    '/v1/admin/inventory/branches',
+    { preHandler: [guards.requireSession, guards.requirePermission('inventory.read')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      const field = forbiddenField(request.query, FORBIDDEN_STOCK_FIELDS);
+      if (field !== null) return reply.code(400).send({ error: 'forbidden_field', field });
+
+      const parsed = branchesQuery.safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
+
+      const page = await service.branches(principal, {
+        limit: parsed.data.limit ?? 50,
+        cursor: parsed.data.cursor ?? null,
+      });
+      return reply.code(200).send(page);
+    },
+  );
 
   app.get(
     '/v1/admin/inventory/balances',

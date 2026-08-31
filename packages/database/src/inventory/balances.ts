@@ -1,5 +1,7 @@
 import { withTenant } from '../tenant-context.js';
+import { oneOf } from '../repositories/mapping.js';
 import type { PrismaClient } from '../client.js';
+import type { ProductType } from '@korvi/domain';
 
 /**
  * Reading balances, with the concurrency evidence a count will need.
@@ -17,6 +19,11 @@ import type { PrismaClient } from '../client.js';
 export interface BalancePageRow {
   readonly branchId: string;
   readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: ProductType;
+  readonly unitLabel: string;
   readonly quantityScaled: string;
   readonly revision: string;
 }
@@ -28,6 +35,8 @@ export interface BalancePage {
 }
 
 export const MAX_BALANCE_PAGE = 200;
+
+const PRODUCT_TYPES: readonly ProductType[] = ['unit', 'weighted'];
 
 export async function listBalancePage(
   prisma: PrismaClient,
@@ -42,14 +51,28 @@ export async function listBalancePage(
     // One more than asked for, so "is there another page" is answered by the
     // read itself rather than by a second count query that could disagree.
     const rows = await tx.$queryRaw<
-      { branchId: string; productId: string; quantityScaled: bigint; revision: bigint }[]
+      {
+        branchId: string;
+        productId: string;
+        sku: string;
+        nameAr: string;
+        nameEn: string | null;
+        productType: string;
+        unitLabel: string;
+        quantityScaled: bigint;
+        revision: bigint;
+      }[]
     >`
-      SELECT "branchId", "productId", "quantityScaled", "revision"
-        FROM "inventory_balances"
-       WHERE "tenantId" = ${tenantId}::uuid
-         AND "branchId" = ${branchId}::uuid
-         AND (${cursor}::uuid IS NULL OR "productId" > ${cursor}::uuid)
-       ORDER BY "productId" ASC
+      SELECT b."branchId", b."productId", p."sku", p."nameAr", p."nameEn",
+             p."productType", p."unitLabel", b."quantityScaled", b."revision"
+        FROM "inventory_balances" b
+        JOIN "products" p
+          ON p."tenantId" = b."tenantId"
+         AND p."id" = b."productId"
+       WHERE b."tenantId" = ${tenantId}::uuid
+         AND b."branchId" = ${branchId}::uuid
+         AND (${cursor}::uuid IS NULL OR b."productId" > ${cursor}::uuid)
+       ORDER BY b."productId" ASC
        LIMIT ${bounded + 1}`;
 
     const page = rows.slice(0, bounded);
@@ -58,6 +81,11 @@ export async function listBalancePage(
       rows: page.map((row) => ({
         branchId: row.branchId,
         productId: row.productId,
+        sku: row.sku,
+        nameAr: row.nameAr,
+        nameEn: row.nameEn,
+        productType: oneOf(PRODUCT_TYPES, row.productType, 'products.productType'),
+        unitLabel: row.unitLabel,
         quantityScaled: row.quantityScaled.toString(),
         revision: row.revision.toString(),
       })),

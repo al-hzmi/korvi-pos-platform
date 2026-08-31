@@ -347,6 +347,7 @@ function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
   };
 
   return {
+    branches: (principal, query) => resolve().branches(principal, query),
     balances: (principal, query) => resolve().balances(principal, query),
     bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),
     adjust: (principal, request) => resolve().adjust(principal, request),

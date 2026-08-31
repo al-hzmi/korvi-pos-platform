@@ -225,6 +225,39 @@ export interface AdminBranch {
   readonly createdAt: string;
 }
 
+/** Read-only branch identity exposed under inventory.read, not settings.manage. */
+export interface InventoryBranch {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly isActive: boolean;
+}
+
+export interface InventoryBalanceRow {
+  readonly branchId: string;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  /** Exact quantity scaled by 1000. */
+  readonly quantityScaled: string;
+  /** Exact server revision a later absolute count must observe. */
+  readonly revision: string;
+}
+
+export interface InventoryBranchPage {
+  readonly rows: readonly InventoryBranch[];
+  readonly nextCursor: string | null;
+}
+
+export interface InventoryBalancePage {
+  readonly rows: readonly InventoryBalanceRow[];
+  readonly nextCursor: string | null;
+}
+
 export interface AdminTerminal {
   readonly id: string;
   readonly branchId: string;

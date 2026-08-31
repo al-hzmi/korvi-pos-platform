@@ -13,6 +13,8 @@ import type {
   CheckoutRequest,
   DashboardSummary,
   CheckoutResponse,
+  InventoryBalancePage,
+  InventoryBranchPage,
   OnboardingReadiness,
   Principal,
   ProductSummary,
@@ -104,6 +106,14 @@ export interface ApiClient {
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
 
   onboardingReadiness(options?: RequestOptions): Promise<OnboardingReadiness>;
+  inventoryBranches(
+    query?: { readonly limit?: number; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<InventoryBranchPage>;
+  inventoryBalances(
+    query: { readonly branchId: string; readonly limit?: number; readonly cursor?: string },
+    options?: RequestOptions,
+  ): Promise<InventoryBalancePage>;
   createAdminProduct(input: AdminProductCreateInput): Promise<AdminProductBootstrap>;
   adminSettings(options?: RequestOptions): Promise<AdminTenantSettings>;
   updateAdminSettings(patch: AdminSettingsPatch): Promise<AdminTenantSettings>;
@@ -307,6 +317,22 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         { method: 'GET' },
         options,
       )) as OnboardingReadiness;
+    },
+
+    async inventoryBranches(query = {}, options) {
+      return (await call(
+        `/v1/admin/inventory/branches${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as InventoryBranchPage;
+    },
+
+    async inventoryBalances(query, options) {
+      return (await call(
+        `/v1/admin/inventory/balances${listQuery(query)}`,
+        { method: 'GET' },
+        options,
+      )) as InventoryBalancePage;
     },
 
     async createAdminProduct(input) {

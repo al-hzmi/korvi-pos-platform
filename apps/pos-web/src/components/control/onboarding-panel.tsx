@@ -46,6 +46,8 @@ function canOpen(section: ControlSection, permissions: readonly string[]): boole
       return permissions.includes('users.manage');
     case 'products':
       return permissions.includes('product.write');
+    case 'inventory':
+      return permissions.includes('inventory.read');
     case 'home':
       return true;
   }

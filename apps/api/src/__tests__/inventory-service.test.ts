@@ -98,3 +98,33 @@ describe('inventory service costing authority', () => {
     });
   });
 });
+
+describe('inventory service read authority', () => {
+  it('refuses branch and balance reads before persistence without inventory.read', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
+    const denied = principal(['sale.create']);
+
+    await expect(service.branches(denied, { limit: 50, cursor: null })).rejects.toMatchObject({
+      name: 'PermissionDeniedError',
+      permission: 'inventory.read',
+    });
+    await expect(
+      service.balances(denied, { branchId: BRANCH, limit: 50, cursor: null }),
+    ).rejects.toMatchObject({
+      name: 'PermissionDeniedError',
+      permission: 'inventory.read',
+    });
+  });
+
+  it('allows inventory.read to reach the tenant-scoped branch and balance repositories', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
+    const allowed = principal(['inventory.read']);
+
+    await expect(service.branches(allowed, { limit: 50, cursor: null })).rejects.toThrow(
+      'database touched',
+    );
+    await expect(
+      service.balances(allowed, { branchId: BRANCH, limit: 50, cursor: null }),
+    ).rejects.toThrow('database touched');
+  });
+});
