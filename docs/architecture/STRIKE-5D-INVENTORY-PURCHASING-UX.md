@@ -1,6 +1,6 @@
 # Strike 5D — Inventory & Purchasing UX
 
-Status: **ACTIVE C1 IMPLEMENTATION CONTRACT**
+Status: **DELIVERED C1 IMPLEMENTATION — CLOSURE GATES PENDING**
 
 Authority: ADR-0024 and Release Gate 9. Predecessors: Strikes 5A, 5B and 5C.
 
@@ -61,7 +61,14 @@ does not close the strike.
 5D-A was delivered and verified at `39361a6b07c6f7a94074a6581a5fb513e1891077`.
 5D-B was delivered and verified at `fd9866c755fa5c6f4b1b428451ad38b7839fff67`.
 5D-C was delivered and verified at `30b2a915567e5a3b6ee61cf75a8c955d03dc4fc9`.
-The active slice is **5D-D**.
+5D-D was delivered at `dc3d20e4a791e3a6ffbe1b555451b43322462c55`.
+The end-to-end author audit and C1 remediation were delivered at
+`c0d3ebc0af5f61b13d6241848fd4da32c7a83b82`.
+
+All four implementation slices are delivered. The active work is **strike
+closure**: preserve one-HEAD verification evidence, complete an independent
+review and actual visual-browser review, resolve any resulting C0/C1 findings,
+and obtain the Human Gate. Delivery evidence does not by itself close 5D.
 
 ## 4. 5D-A read contract
 
