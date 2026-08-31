@@ -257,10 +257,11 @@ describe.skipIf(url === '')('inventory cost bootstrap, live', () => {
       relrowsecurity: boolean;
       relforcerowsecurity: boolean;
     }>(
-      `SELECT relname, relrowsecurity, relforcerowsecurity
-         FROM pg_class
-        WHERE relname = ANY($1) AND relkind = 'r'
-        ORDER BY relname`,
+      `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = ANY($1) AND c.relkind = 'r'
+        ORDER BY c.relname`,
       [['inventory_cost_balances', 'inventory_valuation_events']],
     );
     expect(tables).toHaveLength(2);

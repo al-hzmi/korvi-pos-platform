@@ -543,9 +543,11 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
       relrowsecurity: boolean;
       relforcerowsecurity: boolean;
     }>(
-      `SELECT relname, relrowsecurity, relforcerowsecurity
-         FROM pg_class WHERE relname = ANY($1) AND relkind = 'r'
-        ORDER BY relname`,
+      `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = ANY($1) AND c.relkind = 'r'
+        ORDER BY c.relname`,
       [[...NEW_TABLES]],
     );
     expect(tables).toHaveLength(NEW_TABLES.length);
@@ -560,8 +562,12 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
       relname: string;
       relforcerowsecurity: boolean;
     }>(
-      `SELECT relname, relforcerowsecurity FROM pg_class
-        WHERE relname IN ('roles','role_permissions') AND relkind = 'r'`,
+      `SELECT c.relname, c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname IN ('roles','role_permissions')
+          AND c.relkind = 'r'`,
     );
     expect(rbac).toHaveLength(2);
     for (const table of rbac) expect(table.relforcerowsecurity, table.relname).toBe(true);

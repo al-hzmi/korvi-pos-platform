@@ -430,9 +430,11 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
       relrowsecurity: boolean;
       relforcerowsecurity: boolean;
     }>(
-      `SELECT relname, relrowsecurity, relforcerowsecurity
-         FROM pg_class WHERE relname = ANY($1) AND relkind = 'r'
-        ORDER BY relname`,
+      `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = ANY($1) AND c.relkind = 'r'
+        ORDER BY c.relname`,
       [[...NEW_TABLES]],
     );
     expect(tables).toHaveLength(NEW_TABLES.length);
@@ -445,7 +447,9 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     // an honest "unknown history" rather than a fabricated one.
     const { rows: column } = await client.query<{ column_default: string | null }>(
       `SELECT column_default FROM information_schema.columns
-        WHERE table_name = 'inventory_balances' AND column_name = 'revision'`,
+        WHERE table_schema = 'public'
+          AND table_name = 'inventory_balances'
+          AND column_name = 'revision'`,
     );
     expect(column[0]?.column_default).toBe('0');
     await client.end();
