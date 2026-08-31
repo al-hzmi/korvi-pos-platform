@@ -24,6 +24,8 @@ export interface BalancePageRow {
   readonly nameEn: string | null;
   readonly productType: ProductType;
   readonly unitLabel: string;
+  readonly isActive: boolean;
+  readonly trackInventory: boolean;
   readonly quantityScaled: string;
   readonly revision: string;
 }
@@ -59,20 +61,28 @@ export async function listBalancePage(
         nameEn: string | null;
         productType: string;
         unitLabel: string;
+        isActive: boolean;
+        trackInventory: boolean;
         quantityScaled: bigint;
         revision: bigint;
       }[]
     >`
-      SELECT b."branchId", b."productId", p."sku", p."nameAr", p."nameEn",
-             p."productType", p."unitLabel", b."quantityScaled", b."revision"
-        FROM "inventory_balances" b
-        JOIN "products" p
-          ON p."tenantId" = b."tenantId"
-         AND p."id" = b."productId"
-       WHERE b."tenantId" = ${tenantId}::uuid
+      SELECT br."id" AS "branchId", p."id" AS "productId", p."sku", p."nameAr",
+             p."nameEn", p."productType", p."unitLabel", p."isActive", p."trackInventory",
+             COALESCE(b."quantityScaled", 0::bigint) AS "quantityScaled",
+             COALESCE(b."revision", 0::bigint) AS "revision"
+        FROM "products" p
+        JOIN "branches" br
+          ON br."tenantId" = p."tenantId"
+         AND br."id" = ${branchId}::uuid
+        LEFT JOIN "inventory_balances" b
+          ON b."tenantId" = p."tenantId"
          AND b."branchId" = ${branchId}::uuid
-         AND (${cursor}::uuid IS NULL OR b."productId" > ${cursor}::uuid)
-       ORDER BY b."productId" ASC
+         AND b."productId" = p."id"
+       WHERE p."tenantId" = ${tenantId}::uuid
+         AND ((br."isActive" AND p."isActive" AND p."trackInventory") OR b."productId" IS NOT NULL)
+         AND (${cursor}::uuid IS NULL OR p."id" > ${cursor}::uuid)
+       ORDER BY p."id" ASC
        LIMIT ${bounded + 1}`;
 
     const page = rows.slice(0, bounded);
@@ -86,6 +96,8 @@ export async function listBalancePage(
         nameEn: row.nameEn,
         productType: oneOf(PRODUCT_TYPES, row.productType, 'products.productType'),
         unitLabel: row.unitLabel,
+        isActive: row.isActive,
+        trackInventory: row.trackInventory,
         quantityScaled: row.quantityScaled.toString(),
         revision: row.revision.toString(),
       })),

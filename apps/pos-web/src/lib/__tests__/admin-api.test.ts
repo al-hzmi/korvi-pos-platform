@@ -57,6 +57,70 @@ describe('merchant administration API client', () => {
     expect(wire.calls[0]!.url).not.toMatch(/tenant|actor|quantity|revision/);
   });
 
+  it('posts only adjustment intent and exact scaled text', async () => {
+    const wire = transport({ id: 'adjustment-1', lines: [] });
+    await createApiClient(wire.fetch).inventoryAdjust({
+      operationId: 'op-adjust',
+      branchId: 'branch-1',
+      reason: 'تلف',
+      lines: [{ productId: 'product-1', deltaQuantityScaled: '-1250' }],
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/adjustments');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: 'op-adjust',
+      branchId: 'branch-1',
+      reason: 'تلف',
+      lines: [{ productId: 'product-1', deltaQuantityScaled: '-1250' }],
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /tenant|actor|before|after|revision/,
+    );
+  });
+
+  it('binds a count to the exact server revision and never sends a delta', async () => {
+    const wire = transport({ id: 'count-1', lines: [] });
+    await createApiClient(wire.fetch).inventoryCount({
+      operationId: 'op-count',
+      branchId: 'branch-1',
+      reason: null,
+      lines: [
+        {
+          productId: 'product-1',
+          countedQuantityScaled: '0',
+          expectedRevision: '9007199254740993',
+        },
+      ],
+    });
+
+    const body = bodyOf(wire.calls[0]!);
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/counts');
+    expect(body).toMatchObject({
+      lines: [{ countedQuantityScaled: '0', expectedRevision: '9007199254740993' }],
+    });
+    expect(JSON.stringify(body)).not.toMatch(/delta|currentRevision|resultRevision/);
+  });
+
+  it('posts transfer direction and requested quantity without resulting balances', async () => {
+    const wire = transport({ id: 'transfer-1', lines: [] });
+    await createApiClient(wire.fetch).inventoryTransfer({
+      operationId: 'op-transfer',
+      fromBranchId: 'branch-1',
+      toBranchId: 'branch-2',
+      reason: 'إعادة توزيع',
+      lines: [{ productId: 'product-1', quantityScaled: '1000' }],
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/transfers');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: 'op-transfer',
+      fromBranchId: 'branch-1',
+      toBranchId: 'branch-2',
+      reason: 'إعادة توزيع',
+      lines: [{ productId: 'product-1', quantityScaled: '1000' }],
+    });
+  });
+
   it('uses the authenticated admin settings route and PATCHes only editable fields', async () => {
     const wire = transport({});
     const api = createApiClient(wire.fetch);

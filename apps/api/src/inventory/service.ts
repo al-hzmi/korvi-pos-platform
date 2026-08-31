@@ -153,6 +153,9 @@ export function createMerchantInventoryService(deps: {
     },
 
     async adjust(principal, request) {
+      // A future internal caller must not be able to bypass the HTTP guard and
+      // write stock merely because it can obtain the service object.
+      requirePrincipalPermission(principal, 'inventory.adjust');
       return attempt(() =>
         recordInventoryAdjustment(
           prisma,
@@ -164,6 +167,7 @@ export function createMerchantInventoryService(deps: {
     },
 
     async count(principal, request) {
+      requirePrincipalPermission(principal, 'inventory.adjust');
       return attempt(() =>
         recordInventoryCount(
           prisma,
@@ -175,6 +179,7 @@ export function createMerchantInventoryService(deps: {
     },
 
     async transfer(principal, request) {
+      requirePrincipalPermission(principal, 'inventory.transfer');
       return attempt(() =>
         recordInventoryTransfer(
           prisma,

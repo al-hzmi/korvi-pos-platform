@@ -242,6 +242,8 @@ export interface InventoryBalanceRow {
   readonly nameEn: string | null;
   readonly productType: 'unit' | 'weighted';
   readonly unitLabel: string;
+  readonly isActive: boolean;
+  readonly trackInventory: boolean;
   /** Exact quantity scaled by 1000. */
   readonly quantityScaled: string;
   /** Exact server revision a later absolute count must observe. */
@@ -256,6 +258,87 @@ export interface InventoryBranchPage {
 export interface InventoryBalancePage {
   readonly rows: readonly InventoryBalanceRow[];
   readonly nextCursor: string | null;
+}
+
+export interface InventoryAdjustmentRequest {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly reason: string;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly deltaQuantityScaled: string;
+  }[];
+}
+
+export interface InventoryCountRequest {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly reason: string | null;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly countedQuantityScaled: string;
+    readonly expectedRevision: string;
+  }[];
+}
+
+export interface InventoryTransferRequest {
+  readonly operationId: string;
+  readonly fromBranchId: string;
+  readonly toBranchId: string;
+  readonly reason: string | null;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly quantityScaled: string;
+  }[];
+}
+
+export interface InventoryStockLineResult {
+  readonly productId: string;
+  readonly beforeQuantityScaled: string;
+  readonly afterQuantityScaled: string;
+  readonly deltaQuantityScaled: string;
+  readonly resultRevision: string;
+}
+
+export interface InventoryAdjustmentResult {
+  readonly id: string;
+  readonly branchId: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly InventoryStockLineResult[];
+}
+
+export interface InventoryCountLineResult extends InventoryStockLineResult {
+  readonly countedQuantityScaled: string;
+  readonly expectedRevision: string;
+}
+
+export interface InventoryCountResult {
+  readonly id: string;
+  readonly branchId: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly InventoryCountLineResult[];
+}
+
+export interface InventoryTransferLineResult {
+  readonly productId: string;
+  readonly quantityScaled: string;
+  readonly sourceBeforeQuantityScaled: string;
+  readonly sourceAfterQuantityScaled: string;
+  readonly destinationBeforeQuantityScaled: string;
+  readonly destinationAfterQuantityScaled: string;
+  readonly sourceResultRevision: string;
+  readonly destinationResultRevision: string;
+}
+
+export interface InventoryTransferResult {
+  readonly id: string;
+  readonly fromBranchId: string;
+  readonly toBranchId: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly InventoryTransferLineResult[];
 }
 
 export interface AdminTerminal {

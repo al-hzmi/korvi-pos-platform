@@ -58,7 +58,8 @@ does not close the strike.
 4. **5D-D — Cost affordances.** Cost visibility, valued receiving and
    prospective bootstrap exposed only under the separate 5C permissions.
 
-The active slice is **5D-A**. No mutation UI is implied by this first slice.
+5D-A was delivered and verified at `39361a6b07c6f7a94074a6581a5fb513e1891077`.
+The active slice is **5D-B**.
 
 ## 4. 5D-A read contract
 
@@ -82,7 +83,14 @@ Each balance row is server-derived and contains:
 - product SKU, Arabic/English name, product type and unit label;
 - exact `quantityScaled` and `revision` strings.
 
-Product identity is joined on the server. The client must not issue an
+Product identity is joined on the server. For an active operational branch,
+active inventory-tracked products whose balance has never been materialized are returned with exact zero
+quantity and revision; a merchant must be able to record the first receipt,
+count or adjustment without inventing a balance row in the browser. The read
+does not materialize that zero. Inactive or no-longer-tracked products remain
+visible only when a historical balance row exists.
+
+The client must not issue an
 unbounded catalogue read or guess that a separately paged catalogue contains
 every balance row. Inactive products remain readable when a balance exists;
 deactivation must not hide historical stock truth.
@@ -157,9 +165,84 @@ does not imply `settings.manage`, `inventory.adjust`, `inventory.transfer`,
 - targeted tests, full `npm run verify`, `git diff --check`, normal CI and the
   applicable PostgreSQL proof green at the same delivered HEAD.
 
-## 9. Strike closure
+## 9. 5D-A delivery boundary
 
 5D remains open after 5D-A. Closure requires all four bounded slices, a complete
 UX/accessibility review, resolution of every C0/C1 finding, full verification,
 independent review where required and the Human Gate. No progress percentage is
 created from partial screen count.
+
+## 10. 5D-B stock-operation contract
+
+### Permission boundaries
+
+- adjustment and absolute count affordances require `inventory.adjust`;
+- transfer affordances require the separate `inventory.transfer` permission;
+- the service repeats the same checks before touching persistence, so an
+  internal caller cannot bypass the HTTP guard;
+- `inventory.read` alone remains read-only and does not render mutation forms.
+
+The current operational form records one product per document. This is a
+bounded UI decision, not a server restriction: the established authority keeps
+its bounded multi-line contract for scanners and future batch workflows.
+
+### Exact intent
+
+The browser converts a human decimal quantity to scaled integer text using
+string and bigint arithmetic only. A unit product accepts whole quantities; a
+weighted product accepts at most three decimals. A count may observe zero, a
+transfer must be positive, and an adjustment must be non-zero and signed.
+
+An adjustment sends a required merchant reason and signed delta. A count sends
+the observed absolute quantity and the exact revision returned with the
+selected balance; it never sends a derived delta. A transfer sends direction
+and requested quantity; it never predicts either resulting balance. Optional
+reasons are trimmed and become `null` when empty.
+
+### Retry and concurrency behavior
+
+The browser owns a synchronous command flight outside React state. The first
+submit freezes the complete request and operation id before awaiting. A double
+click cannot mint a second operation. A timeout, dropped connection or 5xx is
+ambiguous and may resend only that frozen request under the same operation id.
+A typed, rolled-back refusal retires the id before the merchant edits anything.
+An idempotency conflict blocks further submission pending human review.
+While a command is running, ambiguous, successful-but-unacknowledged by the
+operator, or blocked, the branch selector and control-centre navigation remain
+locked and page unload receives the browser's confirmation guard. The command
+context is not silently discarded by ordinary navigation.
+
+`stock_changed` clears the counted quantity, refreshes the server balance and
+keeps controls disabled until that refresh finishes. The operator must recount
+against the new revision; the UI must never silently rebase an old physical
+observation. Successful operations refresh balances while preserving their
+server document result and indicate whether the answer was an idempotent
+replay.
+
+Inactive branches are historical read-only views. Inactive or untracked
+products are visible where history requires but are not offered as new command
+lines. Only active loaded branches may be transfer destinations; the server
+still revalidates all branch and product facts under its locks.
+
+## 11. Proof required for 5D-B
+
+- route and service permission refusal before persistence access;
+- zero-balance active products visible without creating a database balance;
+- a foreign branch id still returns no product or zero-balance rows;
+- decimal-to-scaled conversion for signed, zero-count, weighted and unit edge
+  cases without floating point;
+- count payload contains the displayed revision and no delta;
+- adjustment and transfer payloads contain no tenant, actor, before/after,
+  movement-kind or resulting-revision authority;
+- synchronous double-submit exclusion and frozen same-id retry after timeout;
+- typed stale-stock, insufficient-stock and idempotency-conflict UX paths;
+- permission-specific affordances, inactive historical view and loading locks;
+- targeted tests, full `npm run verify`, `git diff --check`, normal CI and the
+  PostgreSQL live proof green at one delivered HEAD.
+
+## 12. Strike closure
+
+Strike 5D closes only after 5D-A through 5D-D are delivered, the complete
+inventory and purchasing workflow is reviewed end to end, every required gate
+is green at one HEAD, independent review is complete and the Human Gate is
+approved.

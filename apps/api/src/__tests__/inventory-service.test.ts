@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createMerchantInventoryService } from '../inventory/service.js';
 import { CostingCapacityError } from '@korvi/domain';
-import type { AuthenticatedPrincipal, CostBootstrapRequest, Permission } from '@korvi/domain';
+import type {
+  AdjustmentRequest,
+  AuthenticatedPrincipal,
+  CostBootstrapRequest,
+  CountRequest,
+  Permission,
+  TransferRequest,
+} from '@korvi/domain';
 import type { PrismaClient } from '@korvi/database';
 
 const TENANT = '018f3a1c-9b2e-7c4d-8e5f-0a1b2c3d4e5f';
@@ -31,6 +38,34 @@ function request(totalValueMinor: string = '4500'): CostBootstrapRequest {
     branchId: BRANCH,
     productId: PRODUCT,
     totalValueMinor,
+  };
+}
+
+function adjustment(): AdjustmentRequest {
+  return {
+    operationId: 'adjust-op',
+    branchId: BRANCH,
+    reason: 'تلف',
+    lines: [{ productId: PRODUCT, deltaQuantityScaled: '-1000' }],
+  };
+}
+
+function count(): CountRequest {
+  return {
+    operationId: 'count-op',
+    branchId: BRANCH,
+    reason: null,
+    lines: [{ productId: PRODUCT, countedQuantityScaled: '1000', expectedRevision: '0' }],
+  };
+}
+
+function transfer(): TransferRequest {
+  return {
+    operationId: 'transfer-op',
+    fromBranchId: BRANCH,
+    toBranchId: '018f3a1c-9b2e-7c4d-8e5f-0a1b2c3d4005',
+    reason: null,
+    lines: [{ productId: PRODUCT, quantityScaled: '1000' }],
   };
 }
 
@@ -126,5 +161,43 @@ describe('inventory service read authority', () => {
     await expect(
       service.balances(allowed, { branchId: BRANCH, limit: 50, cursor: null }),
     ).rejects.toThrow('database touched');
+  });
+});
+
+describe('inventory service stock mutation authority', () => {
+  it('refuses adjustment and count before persistence without inventory.adjust', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
+    const denied = principal(['inventory.read']);
+
+    await expect(service.adjust(denied, adjustment())).rejects.toMatchObject({
+      name: 'PermissionDeniedError',
+      permission: 'inventory.adjust',
+    });
+    await expect(service.count(denied, count())).rejects.toMatchObject({
+      name: 'PermissionDeniedError',
+      permission: 'inventory.adjust',
+    });
+  });
+
+  it('keeps transfer under its separate service-level permission', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
+
+    await expect(
+      service.transfer(principal(['inventory.adjust']), transfer()),
+    ).rejects.toMatchObject({
+      name: 'PermissionDeniedError',
+      permission: 'inventory.transfer',
+    });
+    await expect(service.transfer(principal(['inventory.transfer']), transfer())).rejects.toThrow(
+      'database touched',
+    );
+  });
+
+  it('allows inventory.adjust to reach the adjustment and count authorities', async () => {
+    const service = createMerchantInventoryService({ prisma: databaseThatMustNotBeTouched() });
+    const allowed = principal(['inventory.adjust']);
+
+    await expect(service.adjust(allowed, adjustment())).rejects.toThrow('database touched');
+    await expect(service.count(allowed, count())).rejects.toThrow('database touched');
   });
 });

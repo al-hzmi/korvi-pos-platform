@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
 import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './control-nav';
@@ -69,10 +69,12 @@ function Section({
   section,
   api,
   principal,
+  onInventoryCommandLockChange,
 }: {
   readonly section: ControlSection;
   readonly api: ApiClient;
   readonly principal: Principal;
+  readonly onInventoryCommandLockChange: (locked: boolean) => void;
 }): JSX.Element {
   switch (section) {
     case 'home':
@@ -80,7 +82,14 @@ function Section({
     case 'products':
       return <ProductsPanel api={api} canWrite={hasPermission(principal, 'product.write')} />;
     case 'inventory':
-      return <InventoryPanel api={api} preferredBranchId={principal.branchId} />;
+      return (
+        <InventoryPanel
+          api={api}
+          preferredBranchId={principal.branchId}
+          permissions={principal.permissions}
+          onCommandLockChange={onInventoryCommandLockChange}
+        />
+      );
     case 'branches':
       return <BranchesPanel api={api} />;
     case 'staff':
@@ -103,10 +112,20 @@ function Workspace({
 }): JSX.Element {
   const initialSection = firstAuthorizedSection(principal.permissions);
   const [section, setSection] = useState<ControlSection>(() => initialSection ?? 'home');
+  const [inventoryCommandLocked, setInventoryCommandLocked] = useState(false);
   const activeSection = canAccessControlSection(section, principal.permissions)
     ? section
     : initialSection;
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
+
+  useEffect(() => {
+    if (!inventoryCommandLocked) return undefined;
+    const preserveCommand = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', preserveCommand);
+    return () => window.removeEventListener('beforeunload', preserveCommand);
+  }, [inventoryCommandLocked]);
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
@@ -119,13 +138,22 @@ function Workspace({
           <span className="hidden text-sm font-medium text-foreground md:inline">
             {principal.user.displayName}
           </span>
-          <a
-            href="/"
-            className="inline-flex h-touch items-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            نقطة البيع
-          </a>
-          <Button variant="ghost" size="sm" onClick={onSignOut}>
+          {inventoryCommandLocked ? (
+            <span
+              aria-disabled="true"
+              className="inline-flex h-touch cursor-not-allowed items-center rounded-md border border-input px-4 text-sm text-muted-foreground"
+            >
+              نقطة البيع
+            </span>
+          ) : (
+            <a
+              href="/"
+              className="inline-flex h-touch items-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              نقطة البيع
+            </a>
+          )}
+          <Button variant="ghost" size="sm" disabled={inventoryCommandLocked} onClick={onSignOut}>
             خروج
           </Button>
         </div>
@@ -152,6 +180,7 @@ function Workspace({
               <ControlNav
                 active={activeSection}
                 permissions={principal.permissions}
+                locked={inventoryCommandLocked}
                 onSelect={setSection}
               />
             </CardSurface>
@@ -180,7 +209,12 @@ function Workspace({
               />
             ) : null}
 
-            <Section section={activeSection} api={api} principal={principal} />
+            <Section
+              section={activeSection}
+              api={api}
+              principal={principal}
+              onInventoryCommandLockChange={setInventoryCommandLocked}
+            />
           </main>
         </div>
       )}

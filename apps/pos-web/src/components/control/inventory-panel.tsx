@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
+import { InventoryOperations } from './inventory-operations';
 import { describeFailure } from '../../lib/failures';
 import { formatScaled } from '../../lib/quantity';
-import type { JSX } from 'react';
+import type { JSX, ReactNode } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type {
   InventoryBalancePage,
@@ -44,6 +45,9 @@ export type InventoryBalancesState =
       readonly branchId: string;
       readonly page: InventoryBalancePage;
       readonly loadingMore: boolean;
+      readonly refreshing: boolean;
+      /** Increments only after a complete first-page read succeeds. */
+      readonly generation: number;
       readonly loadFailure: Failure | null;
     };
 
@@ -56,6 +60,8 @@ interface InventoryPanelViewProps {
   readonly onLoadMoreBranches: () => void;
   readonly onRetryBalances: () => void;
   readonly onLoadMoreBalances: () => void;
+  readonly branchSelectionDisabled?: boolean;
+  readonly operations?: ReactNode;
 }
 
 function failureTone(failure: Failure): 'warning' | 'danger' {
@@ -131,6 +137,8 @@ export function InventoryPanelView({
   onLoadMoreBranches,
   onRetryBalances,
   onLoadMoreBalances,
+  branchSelectionDisabled = false,
+  operations,
 }: InventoryPanelViewProps): JSX.Element {
   if (branches.kind === 'loading') {
     return (
@@ -182,6 +190,7 @@ export function InventoryPanelView({
             الفرع
             <select
               value={selectedBranchId}
+              disabled={branchSelectionDisabled}
               onChange={(event) => onSelectBranch(event.target.value)}
               className="h-touch rounded-md border border-input bg-background px-3 outline-none focus:ring-2 focus:ring-ring"
             >
@@ -258,17 +267,25 @@ export function InventoryPanelView({
         </StatusNote>
       ) : null}
 
+      {visibleBalances.kind === 'ready' && visibleBalances.refreshing ? (
+        <p className="text-center text-sm text-muted-foreground" role="status" aria-live="polite">
+          جارٍ تحديث الأرصدة من الخادم…
+        </p>
+      ) : null}
+
       {visibleBalances.kind === 'ready' && visibleBalances.page.nextCursor !== null ? (
         <div className="flex justify-center">
           <Button
             variant="outline"
-            loading={visibleBalances.loadingMore}
+            loading={visibleBalances.loadingMore || visibleBalances.refreshing}
             onClick={onLoadMoreBalances}
           >
             تحميل أرصدة إضافية
           </Button>
         </div>
       ) : null}
+
+      {visibleBalances.kind === 'ready' ? operations : null}
     </div>
   );
 }
@@ -276,17 +293,36 @@ export function InventoryPanelView({
 export function InventoryPanel({
   api,
   preferredBranchId,
+  permissions,
+  onCommandLockChange,
 }: {
   readonly api: ApiClient;
   readonly preferredBranchId: string | null;
+  readonly permissions: readonly string[];
+  readonly onCommandLockChange?: (locked: boolean) => void;
 }): JSX.Element {
   const [branches, setBranches] = useState<InventoryBranchesState>({ kind: 'loading' });
   const [balances, setBalances] = useState<InventoryBalancesState>({ kind: 'idle' });
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [branchReload, setBranchReload] = useState(0);
   const [balanceReload, setBalanceReload] = useState(0);
+  const [commandLocked, setCommandLocked] = useState(false);
   const branchMore = useRef<AbortController | null>(null);
   const balanceMore = useRef<AbortController | null>(null);
+  const commandLock = useRef(false);
+
+  const setCommandLock = useCallback(
+    (locked: boolean) => {
+      commandLock.current = locked;
+      setCommandLocked(locked);
+      onCommandLockChange?.(locked);
+    },
+    [onCommandLockChange],
+  );
+
+  const selectBranch = useCallback((branchId: string) => {
+    if (!commandLock.current) setSelectedBranchId(branchId);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -321,15 +357,33 @@ export function InventoryPanel({
 
     const controller = new AbortController();
     const branchId = selectedBranchId;
-    setBalances({ kind: 'loading', branchId });
+    setBalances((current) =>
+      current.kind === 'ready' && current.branchId === branchId
+        ? { ...current, refreshing: true, loadFailure: null }
+        : { kind: 'loading', branchId },
+    );
     void api
       .inventoryBalances({ branchId, limit: PAGE_SIZE }, { signal: controller.signal })
       .then((page) =>
-        setBalances({ kind: 'ready', branchId, page, loadingMore: false, loadFailure: null }),
+        setBalances((current) => ({
+          kind: 'ready',
+          branchId,
+          page,
+          loadingMore: false,
+          refreshing: false,
+          generation:
+            current.kind === 'ready' && current.branchId === branchId ? current.generation + 1 : 1,
+          loadFailure: null,
+        })),
       )
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        setBalances({ kind: 'failed', branchId, failure: describeInventoryReadFailure(error) });
+        const failure = describeInventoryReadFailure(error);
+        setBalances((current) =>
+          current.kind === 'ready' && current.branchId === branchId
+            ? { ...current, refreshing: false, loadFailure: failure }
+            : { kind: 'failed', branchId, failure },
+        );
       });
 
     return () => controller.abort();
@@ -381,7 +435,12 @@ export function InventoryPanel({
   }, [api, branches]);
 
   const loadMoreBalances = useCallback(() => {
-    if (balances.kind !== 'ready' || balances.loadingMore || balances.page.nextCursor === null) {
+    if (
+      balances.kind !== 'ready' ||
+      balances.loadingMore ||
+      balances.refreshing ||
+      balances.page.nextCursor === null
+    ) {
       return;
     }
     const branchId = balances.branchId;
@@ -407,6 +466,8 @@ export function InventoryPanel({
             branchId,
             page: { rows: [...current.page.rows, ...page.rows], nextCursor: page.nextCursor },
             loadingMore: false,
+            refreshing: false,
+            generation: current.generation,
             loadFailure: null,
           };
         });
@@ -425,16 +486,38 @@ export function InventoryPanel({
       });
   }, [api, balances]);
 
+  const loadedBranches = branches.kind === 'ready' ? branches.page.rows : [];
+  const selectedBranch = loadedBranches.find((branch) => branch.id === selectedBranchId);
+  const operations =
+    selectedBranch !== undefined &&
+    balances.kind === 'ready' &&
+    balances.branchId === selectedBranch.id ? (
+      <InventoryOperations
+        key={selectedBranch.id}
+        api={api}
+        branch={selectedBranch}
+        branches={loadedBranches}
+        balances={balances.page.rows}
+        refreshing={balances.refreshing}
+        balanceGeneration={balances.generation}
+        permissions={permissions}
+        onRefreshBalances={() => setBalanceReload((current) => current + 1)}
+        onCommandLockChange={setCommandLock}
+      />
+    ) : null;
+
   return (
     <InventoryPanelView
       branches={branches}
       balances={balances}
       selectedBranchId={selectedBranchId}
-      onSelectBranch={setSelectedBranchId}
+      onSelectBranch={selectBranch}
       onRetryBranches={() => setBranchReload((current) => current + 1)}
       onLoadMoreBranches={loadMoreBranches}
       onRetryBalances={() => setBalanceReload((current) => current + 1)}
       onLoadMoreBalances={loadMoreBalances}
+      branchSelectionDisabled={commandLocked}
+      operations={operations}
     />
   );
 }

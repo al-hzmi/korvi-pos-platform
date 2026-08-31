@@ -63,31 +63,46 @@ export interface ControlNavProps {
   readonly active: ControlSection;
   readonly onSelect: (section: ControlSection) => void;
   readonly permissions?: readonly string[];
+  /** Keeps an ambiguous stock command mounted until its identity is resolved. */
+  readonly locked?: boolean;
 }
 
-export function ControlNav({ active, onSelect, permissions = [] }: ControlNavProps): JSX.Element {
+export function ControlNav({
+  active,
+  onSelect,
+  permissions = [],
+  locked = false,
+}: ControlNavProps): JSX.Element {
   return (
     <nav aria-label="أقسام لوحة التحكم" className="flex flex-col gap-1">
       {CONTROL_ENTRIES.map((entry) => {
         const built = entry.section !== null;
         const authorized =
           built && entry.permission !== undefined && permissions.includes(entry.permission);
-        const badge = !built ? 'قريباً' : authorized ? null : 'غير مصرح';
+        const navigationLocked = locked && authorized && entry.section !== active;
+        const badge = !built
+          ? 'قريباً'
+          : !authorized
+            ? 'غير مصرح'
+            : navigationLocked
+              ? 'عملية معلقة'
+              : null;
 
         return (
           <button
             key={entry.key}
             type="button"
-            disabled={!authorized}
+            disabled={!authorized || navigationLocked}
             aria-current={authorized && entry.section === active ? 'page' : undefined}
             onClick={() => {
-              if (authorized && entry.section !== null) onSelect(entry.section);
+              if (authorized && !navigationLocked && entry.section !== null)
+                onSelect(entry.section);
             }}
             className={cn(
               'flex h-touch items-center justify-between rounded-md px-3 text-sm transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              authorized
+              authorized && !navigationLocked
                 ? 'text-foreground hover:bg-accent'
                 : 'cursor-not-allowed text-muted-foreground',
               authorized && entry.section === active

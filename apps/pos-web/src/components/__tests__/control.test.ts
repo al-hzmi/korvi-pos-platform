@@ -11,6 +11,7 @@ import {
 } from '../control/control-nav';
 import { ControlSurface } from '../control/control-app';
 import { DashboardPanel } from '../control/dashboard-panel';
+import { InventoryOperations } from '../control/inventory-operations';
 import {
   describeInventoryReadFailure,
   InventoryPanel,
@@ -148,6 +149,19 @@ describe('control navigation', () => {
     );
     expect(markup.match(/aria-current="page"/g) ?? []).toHaveLength(1);
   });
+
+  it('keeps an unresolved stock command mounted by locking other sections', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ControlNav, {
+        active: 'inventory',
+        permissions: ['report.read', 'product.read', 'inventory.read'],
+        locked: true,
+        onSelect: () => undefined,
+      }),
+    );
+    expect(markup.match(/عملية معلقة/g) ?? []).toHaveLength(2);
+    expect(markup).toMatch(/aria-current="page"/);
+  });
 });
 
 describe('control centre first paint', () => {
@@ -197,7 +211,11 @@ describe('control centre first paint', () => {
 
   it('does not claim an empty stock ledger before branches have loaded', () => {
     const markup = renderToStaticMarkup(
-      createElement(InventoryPanel, { api: idleApi, preferredBranchId: 'b-1' }),
+      createElement(InventoryPanel, {
+        api: idleApi,
+        preferredBranchId: 'b-1',
+        permissions: ['inventory.read'],
+      }),
     );
     expect(markup).toContain('جارٍ تحميل فروع المخزون');
     expect(markup).not.toContain('لا توجد فروع');
@@ -294,6 +312,8 @@ describe('inventory balance presentation', () => {
                 nameEn: 'Fresh Milk',
                 productType: 'unit',
                 unitLabel: 'each',
+                isActive: true,
+                trackInventory: true,
                 quantityScaled: '1250',
                 revision: '9007199254740993',
               },
@@ -301,6 +321,8 @@ describe('inventory balance presentation', () => {
             nextCursor: null,
           },
           loadingMore: false,
+          refreshing: false,
+          generation: 1,
           loadFailure: null,
         },
       }),
@@ -314,6 +336,125 @@ describe('inventory balance presentation', () => {
     expect(markup).toContain('h-touch');
   });
 
+  it('shows only stock commands granted by the session permissions', () => {
+    const branch = branches.page.rows[0]!;
+    const row = {
+      branchId,
+      productId: '018fb000-0000-7000-8000-0000000000a5',
+      sku: 'MILK-1L',
+      nameAr: 'حليب طازج',
+      nameEn: 'Fresh Milk',
+      productType: 'unit',
+      unitLabel: 'each',
+      isActive: true,
+      trackInventory: true,
+      quantityScaled: '1250',
+      revision: '9',
+    } as const;
+
+    const adjustment = renderToStaticMarkup(
+      createElement(InventoryOperations, {
+        api: idleApi,
+        branch,
+        branches: branches.page.rows,
+        balances: [row],
+        refreshing: false,
+        balanceGeneration: 1,
+        permissions: ['inventory.adjust'],
+        onRefreshBalances: () => undefined,
+        onCommandLockChange: () => undefined,
+      }),
+    );
+    expect(adjustment).toContain('تسوية زيادة أو نقص');
+    expect(adjustment).toContain('جرد فعلي');
+    expect(adjustment).not.toContain('تحويل إلى فرع');
+    expect(adjustment).toContain('الخادم');
+
+    const transfer = renderToStaticMarkup(
+      createElement(InventoryOperations, {
+        api: idleApi,
+        branch,
+        branches: [
+          branch,
+          { ...branch, id: '018fb000-0000-7000-8000-0000000000a2', nameAr: 'فرع ثانٍ' },
+        ],
+        balances: [row],
+        refreshing: false,
+        balanceGeneration: 1,
+        permissions: ['inventory.transfer'],
+        onRefreshBalances: () => undefined,
+        onCommandLockChange: () => undefined,
+      }),
+    );
+    expect(transfer).toContain('تحويل إلى فرع');
+    expect(transfer).not.toContain('تسوية زيادة أو نقص');
+    expect(transfer).not.toContain('جرد فعلي');
+
+    const readOnly = renderToStaticMarkup(
+      createElement(InventoryOperations, {
+        api: idleApi,
+        branch,
+        branches: branches.page.rows,
+        balances: [row],
+        refreshing: false,
+        balanceGeneration: 1,
+        permissions: ['inventory.read'],
+        onRefreshBalances: () => undefined,
+        onCommandLockChange: () => undefined,
+      }),
+    );
+    expect(readOnly).toBe('');
+  });
+
+  it('keeps historical branches read-only and locks commands during a balance refresh', () => {
+    const branch = branches.page.rows[0]!;
+    const row = {
+      branchId,
+      productId: '018fb000-0000-7000-8000-0000000000a5',
+      sku: 'MILK-1L',
+      nameAr: 'حليب',
+      nameEn: null,
+      productType: 'unit',
+      unitLabel: 'each',
+      isActive: true,
+      trackInventory: true,
+      quantityScaled: '1000',
+      revision: '1',
+    } as const;
+
+    const historical = renderToStaticMarkup(
+      createElement(InventoryOperations, {
+        api: idleApi,
+        branch: { ...branch, isActive: false },
+        branches: branches.page.rows,
+        balances: [row],
+        refreshing: false,
+        balanceGeneration: 1,
+        permissions: ['inventory.adjust', 'inventory.transfer'],
+        onRefreshBalances: () => undefined,
+        onCommandLockChange: () => undefined,
+      }),
+    );
+    expect(historical).toContain('للقراءة التاريخية فقط');
+    expect(historical).not.toContain('<form');
+
+    const refreshing = renderToStaticMarkup(
+      createElement(InventoryOperations, {
+        api: idleApi,
+        branch,
+        branches: branches.page.rows,
+        balances: [row],
+        refreshing: true,
+        balanceGeneration: 1,
+        permissions: ['inventory.adjust'],
+        onRefreshBalances: () => undefined,
+        onCommandLockChange: () => undefined,
+      }),
+    );
+    expect(refreshing).toContain('انتظر اكتمال تحديث الرصيد');
+    expect(refreshing).toContain('<fieldset class="grid gap-3 md:grid-cols-3" disabled=""');
+  });
+
   it('shows an empty balance only after a selected branch answered', () => {
     const markup = renderToStaticMarkup(
       createElement(InventoryPanelView, {
@@ -325,6 +466,8 @@ describe('inventory balance presentation', () => {
           branchId,
           page: { rows: [], nextCursor: null },
           loadingMore: false,
+          refreshing: false,
+          generation: 1,
           loadFailure: null,
         },
       }),

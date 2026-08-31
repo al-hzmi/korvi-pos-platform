@@ -77,6 +77,7 @@ const T = {
   scale: '018f5a00-0000-7000-8000-0000000000aa',
   untracked: '018f5a00-0000-7000-8000-0000000000ab',
   inactive: '018f5a00-0000-7000-8000-0000000000ac',
+  zero: '018f5a00-0000-7000-8000-0000000000af',
   customRole: '018f5a00-0000-7000-8000-0000000000ad',
   costSale: '018f5a00-0000-7000-8000-0000000000b0',
   costTransfer: '018f5a00-0000-7000-8000-0000000000b1',
@@ -307,6 +308,7 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
         [T.scale, 'TOMATO', 'weighted', true, true],
         [T.untracked, 'SERVICE', 'unit', false, true],
         [T.inactive, 'OLD-SKU', 'unit', true, false],
+        [T.zero, 'ZERO-SKU', 'unit', true, true],
         [T.costSale, 'COST-SALE', 'unit', true, true],
         [T.costTransfer, 'COST-TRANSFER', 'unit', true, true],
       ] as const) {
@@ -2324,6 +2326,8 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
       nameAr: 'MILK-1L',
       productType: 'unit',
       unitLabel: 'each',
+      isActive: true,
+      trackInventory: true,
     });
 
     const second_ = await listBalancePage(prisma, T.tenant, T.branchA, 1, first.nextCursor);
@@ -2338,6 +2342,18 @@ describe.skipIf(url === '')('inventory stock ledger, live', () => {
     expect(withInactive.rows).toContainEqual(
       expect.objectContaining({ productId: T.inactive, sku: 'OLD-SKU' }),
     );
+    expect(withInactive.rows).toContainEqual(
+      expect.objectContaining({
+        productId: T.zero,
+        sku: 'ZERO-SKU',
+        quantityScaled: '0',
+        revision: '0',
+      }),
+    );
+    expect(await balanceOf(T.branchA, T.zero)).toBeNull();
+
+    const historicalBranch = await listBalancePage(prisma, T.tenant, T.branchClosed, 50, null);
+    expect(historicalBranch.rows.some((row) => row.productId === T.zero)).toBe(false);
   }, 60_000);
 
   it('lists bounded operational branch identity under tenant scope', async () => {

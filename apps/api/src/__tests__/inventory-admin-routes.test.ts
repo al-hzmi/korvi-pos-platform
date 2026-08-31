@@ -132,6 +132,8 @@ function recordingInventory(): MerchantInventoryService {
             nameEn: 'Milk',
             productType: 'unit',
             unitLabel: 'each',
+            isActive: true,
+            trackInventory: true,
             quantityScaled: '9007199254740993000',
             revision: '12',
           },
@@ -575,6 +577,8 @@ describe('request shape', () => {
           nameAr: 'حليب',
           productType: 'unit',
           unitLabel: 'each',
+          isActive: true,
+          trackInventory: true,
         },
       ],
     });

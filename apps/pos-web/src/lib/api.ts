@@ -14,7 +14,13 @@ import type {
   DashboardSummary,
   CheckoutResponse,
   InventoryBalancePage,
+  InventoryAdjustmentRequest,
+  InventoryAdjustmentResult,
   InventoryBranchPage,
+  InventoryCountRequest,
+  InventoryCountResult,
+  InventoryTransferRequest,
+  InventoryTransferResult,
   OnboardingReadiness,
   Principal,
   ProductSummary,
@@ -48,6 +54,7 @@ import type {
  * id, and is retried unchanged (ADR-0013).
  */
 export const CHECKOUT_TIMEOUT_MS = 20_000;
+export const INVENTORY_COMMAND_TIMEOUT_MS = 20_000;
 
 export type ApiFailureKind = 'network' | 'http';
 
@@ -114,6 +121,9 @@ export interface ApiClient {
     query: { readonly branchId: string; readonly limit?: number; readonly cursor?: string },
     options?: RequestOptions,
   ): Promise<InventoryBalancePage>;
+  inventoryAdjust(request: InventoryAdjustmentRequest): Promise<InventoryAdjustmentResult>;
+  inventoryCount(request: InventoryCountRequest): Promise<InventoryCountResult>;
+  inventoryTransfer(request: InventoryTransferRequest): Promise<InventoryTransferResult>;
   createAdminProduct(input: AdminProductCreateInput): Promise<AdminProductBootstrap>;
   adminSettings(options?: RequestOptions): Promise<AdminTenantSettings>;
   updateAdminSettings(patch: AdminSettingsPatch): Promise<AdminTenantSettings>;
@@ -227,6 +237,24 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     body: JSON.stringify(payload),
   });
 
+  const inventoryCommand = async <T>(path: string, payload: unknown): Promise<T> => {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, INVENTORY_COMMAND_TIMEOUT_MS);
+
+    try {
+      return (await call(path, json(payload), { signal: controller.signal })) as T;
+    } catch (error) {
+      if (timedOut) throw new ApiError(0, 'timeout', null);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   return {
     async me(options) {
       return (await call('/v1/auth/me', { method: 'GET' }, options)) as Principal;
@@ -333,6 +361,44 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         { method: 'GET' },
         options,
       )) as InventoryBalancePage;
+    },
+
+    async inventoryAdjust(request) {
+      return inventoryCommand<InventoryAdjustmentResult>('/v1/admin/inventory/adjustments', {
+        operationId: request.operationId,
+        branchId: request.branchId,
+        reason: request.reason,
+        lines: request.lines.map((line) => ({
+          productId: line.productId,
+          deltaQuantityScaled: line.deltaQuantityScaled,
+        })),
+      });
+    },
+
+    async inventoryCount(request) {
+      return inventoryCommand<InventoryCountResult>('/v1/admin/inventory/counts', {
+        operationId: request.operationId,
+        branchId: request.branchId,
+        reason: request.reason,
+        lines: request.lines.map((line) => ({
+          productId: line.productId,
+          countedQuantityScaled: line.countedQuantityScaled,
+          expectedRevision: line.expectedRevision,
+        })),
+      });
+    },
+
+    async inventoryTransfer(request) {
+      return inventoryCommand<InventoryTransferResult>('/v1/admin/inventory/transfers', {
+        operationId: request.operationId,
+        fromBranchId: request.fromBranchId,
+        toBranchId: request.toBranchId,
+        reason: request.reason,
+        lines: request.lines.map((line) => ({
+          productId: line.productId,
+          quantityScaled: line.quantityScaled,
+        })),
+      });
     },
 
     async createAdminProduct(input) {
