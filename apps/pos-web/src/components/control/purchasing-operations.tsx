@@ -131,6 +131,7 @@ export function ReceiptLineEditor({
           <label className="flex min-h-touch items-center gap-2 font-medium">
             <input
               type="checkbox"
+              aria-label={`تسجيل قيمة اقتناء ${label}`}
               checked={inventoryValue.enabled}
               disabled={disabled}
               onChange={(event) => onCostEnabledChange(event.target.checked)}
@@ -287,6 +288,7 @@ function OrdersTable({
                   type="button"
                   variant={selectedOrderId === order.id ? 'primary' : 'outline'}
                   disabled={disabled}
+                  aria-pressed={selectedOrderId === order.id}
                   aria-label={`تفاصيل أمر الشراء ${isolateLtrText(order.reference ?? order.id)}`}
                   onClick={() => onSelect(order.id)}
                 >
@@ -704,6 +706,7 @@ export function PurchasingOperations({
           type="button"
           variant={workspace === 'suppliers' ? 'primary' : 'outline'}
           disabled={commandLocked}
+          aria-pressed={workspace === 'suppliers'}
           onClick={() => clearDecision('suppliers')}
         >
           الموردون
@@ -712,6 +715,7 @@ export function PurchasingOperations({
           type="button"
           variant={workspace === 'orders' ? 'primary' : 'outline'}
           disabled={commandLocked}
+          aria-pressed={workspace === 'orders'}
           onClick={() => clearDecision('orders')}
         >
           أوامر الشراء
@@ -720,6 +724,7 @@ export function PurchasingOperations({
           type="button"
           variant={workspace === 'receiving' ? 'primary' : 'outline'}
           disabled={commandLocked}
+          aria-pressed={workspace === 'receiving'}
           onClick={() => clearDecision('receiving')}
         >
           الاستلامات
@@ -967,6 +972,7 @@ export function PurchasingOperations({
                   <Button
                     type="button"
                     variant="ghost"
+                    aria-label={`حذف بند أمر الشراء ${String(index + 1)}`}
                     disabled={formLocked || orderLines.length === 1}
                     onClick={() =>
                       setOrderLines((current) => current.filter((item) => item.key !== line.key))

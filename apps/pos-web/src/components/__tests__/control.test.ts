@@ -801,6 +801,7 @@ describe('purchasing presentation', () => {
     expect(costManager).toContain('إجمالي قيمة اقتناء الكمية المستلمة');
     expect(costManager).toContain('value="0.00"');
     expect(costManager).toContain('type="checkbox"');
+    expect(costManager).toContain('aria-label="تسجيل قيمة اقتناء حليب — MILK-1L"');
     expect(costManager).toContain('h-touch');
   });
 
@@ -814,6 +815,8 @@ describe('purchasing presentation', () => {
     expect(manager).toContain('إضافة مورد');
     expect(manager).toContain('تعديل أو تعطيل مورد');
     expect(manager).toContain('أوامر الشراء');
+    expect(manager.match(/aria-pressed="true"/g) ?? []).toHaveLength(1);
+    expect(manager.match(/aria-pressed="false"/g) ?? []).toHaveLength(2);
 
     const reader = renderToStaticMarkup(
       createElement(PurchasingOperations, {
@@ -838,6 +841,7 @@ describe('purchasing presentation', () => {
     expect(markup).toContain('PO-1');
     expect(markup).not.toMatch(/قيمة المخزون|تكلفة الوحدة|inventoryValueMinor/);
     expect(markup).toContain('\u2066PO-1\u2069');
+    expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('h-touch');
   });
 
