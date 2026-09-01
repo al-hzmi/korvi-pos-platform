@@ -28,6 +28,7 @@ import { MembersPanel } from '../control/members-panel';
 import { ProductsPanel } from '../control/products-panel';
 import {
   OrderDetail,
+  orderLineFieldLabel,
   PurchasingOperations,
   ReceiptLineEditor,
   resolveOrderLineProduct,
@@ -771,6 +772,12 @@ describe('purchasing presentation', () => {
     expect(resolveOrderLineProduct(products, '', 1)?.id).toBe('product-2');
   });
 
+  it('gives repeated order-line fields distinct accessible names', () => {
+    expect(orderLineFieldLabel('product', 0)).toBe('الصنف في بند أمر الشراء 1');
+    expect(orderLineFieldLabel('product', 1)).toBe('الصنف في بند أمر الشراء 2');
+    expect(orderLineFieldLabel('quantity', 1)).toBe('الكمية المطلوبة في بند أمر الشراء 2');
+  });
+
   it('renders receipt value input only for independent cost management authority', () => {
     const line = {
       id: 'line-1',
@@ -841,6 +848,7 @@ describe('purchasing presentation', () => {
     expect(markup).toContain('PO-1');
     expect(markup).not.toMatch(/قيمة المخزون|تكلفة الوحدة|inventoryValueMinor/);
     expect(markup).toContain('\u2066PO-1\u2069');
+    expect(markup).toContain('aria-label="تفاصيل أمر الشراء 1، المرجع \u2066PO-1\u2069"');
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('h-touch');
   });

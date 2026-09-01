@@ -85,6 +85,11 @@ export function resolveOrderLineProduct(
   return products.find((product) => product.id === productId) ?? products[index] ?? products[0];
 }
 
+export function orderLineFieldLabel(field: 'product' | 'quantity', index: number): string {
+  const label = field === 'product' ? 'الصنف' : 'الكمية المطلوبة';
+  return `${label} في بند أمر الشراء ${String(index + 1)}`;
+}
+
 export function ReceiptLineEditor({
   line,
   label,
@@ -270,7 +275,7 @@ function OrdersTable({
           </tr>
         </thead>
         <tbody>
-          {pages.orders.rows.map((order) => (
+          {pages.orders.rows.map((order, index) => (
             <tr key={order.id} className="border-b border-border last:border-b-0">
               <td className="px-3 py-3">
                 <BidiIsolate>{order.reference ?? order.id}</BidiIsolate>
@@ -289,7 +294,7 @@ function OrdersTable({
                   variant={selectedOrderId === order.id ? 'primary' : 'outline'}
                   disabled={disabled}
                   aria-pressed={selectedOrderId === order.id}
-                  aria-label={`تفاصيل أمر الشراء ${isolateLtrText(order.reference ?? order.id)}`}
+                  aria-label={`تفاصيل أمر الشراء ${String(index + 1)}، المرجع ${isolateLtrText(order.reference ?? order.id)}`}
                   onClick={() => onSelect(order.id)}
                 >
                   التفاصيل
@@ -926,6 +931,7 @@ export function PurchasingOperations({
                   <label className="flex flex-col gap-2 text-sm font-medium">
                     الصنف
                     <select
+                      aria-label={orderLineFieldLabel('product', index)}
                       className="h-touch rounded-md border border-input bg-background px-3"
                       disabled={formLocked || activeProducts.length === 0}
                       value={selected?.id ?? ''}
@@ -951,6 +957,7 @@ export function PurchasingOperations({
                   <label className="flex flex-col gap-2 text-sm font-medium">
                     الكمية المطلوبة
                     <input
+                      aria-label={orderLineFieldLabel('quantity', index)}
                       className="h-touch rounded-md border border-input bg-background px-3 font-mono"
                       dir="ltr"
                       inputMode="decimal"
