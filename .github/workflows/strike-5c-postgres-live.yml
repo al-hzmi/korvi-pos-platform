@@ -1,0 +1,176 @@
+name: Strike 5C PostgreSQL Live Proof
+
+on:
+  push:
+    branches:
+      - strike/5c-costing-authority
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-live:
+    name: PostgreSQL 17 / migrations / RLS / live suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c?schema=public
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_app:korvi_app_ci_5c@localhost:5432/korvi_5c
+      PROOF_LOG: artifacts/strike-5c-postgres-proof.txt
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_5c
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_5c"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Record PostgreSQL authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          server_major="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align \
+            --command "SELECT current_setting('server_version_num')::integer / 10000")"
+          if [ "$server_major" != '17' ]; then
+            echo "Expected PostgreSQL major 17, got $server_major" >&2
+            exit 1
+          fi
+
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "postgres_major=$server_major"
+            echo "migration_directories=$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          } | tee "$PROOF_LOG"
+
+      - name: Create non-bypass migration and application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_app
+            LOGIN PASSWORD 'korvi_app_ci_5c'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_5c TO korvi_app;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_app;
+          SQL
+
+          role_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = 'korvi_app'")"
+          if [ "$role_flags" != 'f|f|f|f|f|f' ]; then
+            echo "Application role has unsafe authority: $role_flags" >&2
+            exit 1
+          fi
+          echo "app_role_flags=$role_flags" | tee -a "$PROOF_LOG"
+
+      - name: Apply exactly twelve migrations
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          migration_directories="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          if [ "$migration_directories" -ne 12 ]; then
+            echo "Expected exactly 12 migration directories, got $migration_directories" >&2
+            exit 1
+          fi
+
+          npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
+          npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
+
+          applied="$(psql "$KORVI_TEST_DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FILTER (WHERE \"finished_at\" IS NOT NULL AND \"rolled_back_at\" IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
+          if [ "$applied" != '12|12' ]; then
+            echo "Expected 12 successful migration ledger rows and no others, got $applied" >&2
+            exit 1
+          fi
+          echo "migration_ledger=$applied" | tee -a "$PROOF_LOG"
+
+          table_ownership="$(psql "$KORVI_TEST_DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname = 'public'")"
+          if [ "$table_ownership" != '1|korvi_app' ]; then
+            echo "Expected the non-bypass application role to own every public table, got $table_ownership" >&2
+            exit 1
+          fi
+          echo "public_table_ownership=$table_ownership" | tee -a "$PROOF_LOG"
+
+      - name: Prove schema has no drift
+        shell: bash
+        working-directory: packages/database
+        env:
+          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          npx --no-install prisma migrate diff \
+            --from-config-datasource \
+            --to-schema prisma/schema.prisma \
+            --exit-code 2>&1 | tee -a "../../$PROOF_LOG"
+
+      - name: Build live test runtime
+        run: |
+          npm run db:generate
+          npm run build
+
+      - name: Run every live proof as the application role
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          mapfile -t live_tests < <(find apps packages -path '*/src/__tests__/*-live.test.ts' -type f | sort)
+          if [ "${#live_tests[@]}" -eq 0 ]; then
+            echo 'No live test files were discovered' >&2
+            exit 1
+          fi
+
+          {
+            echo "live_test_files=${#live_tests[@]}"
+            printf 'live_test=%s\n' "${live_tests[@]}"
+          } | tee -a "$PROOF_LOG"
+          npx --no-install vitest run "${live_tests[@]}" 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run full verification against PostgreSQL
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          npm run verify 2>&1 | tee -a "$PROOF_LOG"
+          git diff --check
+
+      - name: Preserve PostgreSQL proof log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: strike-5c-postgres-proof-${{ github.sha }}
+          path: artifacts/strike-5c-postgres-proof.txt
+          if-no-files-found: error
+          retention-days: 14

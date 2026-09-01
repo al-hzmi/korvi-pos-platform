@@ -225,6 +225,311 @@ export interface AdminBranch {
   readonly createdAt: string;
 }
 
+/** Read-only branch identity exposed under inventory.read, not settings.manage. */
+export interface InventoryBranch {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly isActive: boolean;
+}
+
+export interface InventoryBalanceRow {
+  readonly branchId: string;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  readonly isActive: boolean;
+  readonly trackInventory: boolean;
+  /** Exact quantity scaled by 1000. */
+  readonly quantityScaled: string;
+  /** Exact server revision a later absolute count must observe. */
+  readonly revision: string;
+}
+
+export interface InventoryBranchPage {
+  readonly rows: readonly InventoryBranch[];
+  readonly nextCursor: string | null;
+}
+
+export interface InventoryBalancePage {
+  readonly rows: readonly InventoryBalanceRow[];
+  readonly nextCursor: string | null;
+}
+
+/** Current valuation facts; no average/unit-cost figure is derived here. */
+export interface InventoryCostBalanceRow {
+  readonly branchId: string;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  readonly isActive: boolean;
+  readonly trackInventory: boolean;
+  readonly quantityScaled: string;
+  readonly knownQuantityScaled: string;
+  readonly unknownPositiveQuantityScaled: string;
+  readonly knownValueMinor: string;
+  readonly stockRevision: string;
+  readonly costRevision: string;
+}
+
+export interface InventoryCostBalancePage {
+  readonly rows: readonly InventoryCostBalanceRow[];
+  readonly nextCursor: string | null;
+}
+
+export interface InventoryCostBootstrapRequest {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly productId: string;
+  /** Exact total value for the server-derived unknown positive quantity. */
+  readonly totalValueMinor: string;
+  /** Frozen observations; the server compares them under lock before deriving the result. */
+  readonly expectedStockRevision: string;
+  readonly expectedCostRevision: string;
+  readonly expectedUnknownPositiveQuantityScaled: string;
+}
+
+export interface InventoryCostBootstrapResult {
+  readonly id: string;
+  readonly branchId: string;
+  readonly productId: string;
+  readonly valuedQuantityScaled: string;
+  readonly stockRevision: string;
+  readonly costRevision: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+}
+
+export interface InventoryAdjustmentRequest {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly reason: string;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly deltaQuantityScaled: string;
+  }[];
+}
+
+export interface InventoryCountRequest {
+  readonly operationId: string;
+  readonly branchId: string;
+  readonly reason: string | null;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly countedQuantityScaled: string;
+    readonly expectedRevision: string;
+  }[];
+}
+
+export interface InventoryTransferRequest {
+  readonly operationId: string;
+  readonly fromBranchId: string;
+  readonly toBranchId: string;
+  readonly reason: string | null;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly quantityScaled: string;
+  }[];
+}
+
+export interface InventoryStockLineResult {
+  readonly productId: string;
+  readonly beforeQuantityScaled: string;
+  readonly afterQuantityScaled: string;
+  readonly deltaQuantityScaled: string;
+  readonly resultRevision: string;
+}
+
+export interface InventoryAdjustmentResult {
+  readonly id: string;
+  readonly branchId: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly InventoryStockLineResult[];
+}
+
+export interface InventoryCountLineResult extends InventoryStockLineResult {
+  readonly countedQuantityScaled: string;
+  readonly expectedRevision: string;
+}
+
+export interface InventoryCountResult {
+  readonly id: string;
+  readonly branchId: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly InventoryCountLineResult[];
+}
+
+export interface InventoryTransferLineResult {
+  readonly productId: string;
+  readonly quantityScaled: string;
+  readonly sourceBeforeQuantityScaled: string;
+  readonly sourceAfterQuantityScaled: string;
+  readonly destinationBeforeQuantityScaled: string;
+  readonly destinationAfterQuantityScaled: string;
+  readonly sourceResultRevision: string;
+  readonly destinationResultRevision: string;
+}
+
+export interface InventoryTransferResult {
+  readonly id: string;
+  readonly fromBranchId: string;
+  readonly toBranchId: string;
+  readonly occurredAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly InventoryTransferLineResult[];
+}
+
+export interface PurchasingBranch {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly isActive: boolean;
+}
+
+export interface PurchasingProduct {
+  readonly id: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  readonly isActive: boolean;
+  readonly trackInventory: boolean;
+}
+
+export interface PurchasingSupplier {
+  readonly id: string;
+  readonly name: string;
+  readonly isActive: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PurchasingPage<T> {
+  readonly rows: readonly T[];
+  readonly nextCursor: string | null;
+}
+
+export type PurchaseOrderStatus = 'open' | 'partially_received' | 'received';
+
+export interface PurchaseOrderLine {
+  readonly id: string;
+  readonly productId: string;
+  readonly orderedQuantityScaled: string;
+  readonly receivedQuantityScaled: string;
+  readonly remainingQuantityScaled: string;
+}
+
+export interface PurchaseOrder {
+  readonly id: string;
+  readonly supplierId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly status: PurchaseOrderStatus;
+  readonly orderedAt: string;
+  readonly lines: readonly PurchaseOrderLine[];
+}
+
+export interface PurchaseOrderSummary {
+  readonly id: string;
+  readonly supplierId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly status: PurchaseOrderStatus;
+  readonly orderedAt: string;
+  readonly lineCount: number;
+}
+
+export interface SupplierCreateRequest {
+  readonly operationId: string;
+  readonly name: string;
+}
+
+export interface SupplierUpdateRequest {
+  readonly operationId: string;
+  readonly supplierId: string;
+  readonly name?: string;
+  readonly isActive?: boolean;
+}
+
+export interface SupplierMutationResult {
+  readonly supplier: PurchasingSupplier;
+  readonly replayed: boolean;
+}
+
+export interface PurchaseOrderCreateRequest {
+  readonly operationId: string;
+  readonly supplierId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly orderedQuantityScaled: string;
+  }[];
+}
+
+export interface PurchaseOrderCreateResult {
+  readonly order: PurchaseOrder;
+  readonly replayed: boolean;
+}
+
+export interface PurchaseReceiptCreateRequest {
+  readonly operationId: string;
+  readonly purchaseOrderId: string;
+  readonly reference: string | null;
+  readonly lines: readonly {
+    readonly purchaseOrderLineId: string;
+    readonly acceptedQuantityScaled: string;
+    /** Omission is unknown cost; present zero is known zero-value acquisition. */
+    readonly inventoryValueMinor?: string;
+  }[];
+}
+
+export interface PurchaseReceiptLineResult {
+  readonly id: string;
+  readonly purchaseOrderLineId: string;
+  readonly productId: string;
+  readonly acceptedQuantityScaled: string;
+  readonly orderedQuantityScaled: string;
+  readonly beforeReceivedQuantityScaled: string;
+  readonly afterReceivedQuantityScaled: string;
+  readonly beforeQuantityScaled: string;
+  readonly afterQuantityScaled: string;
+  readonly resultRevision: string;
+}
+
+export interface PurchaseReceiptResult {
+  readonly id: string;
+  readonly purchaseOrderId: string;
+  readonly branchId: string;
+  readonly supplierId: string;
+  readonly reference: string | null;
+  readonly purchaseOrderStatus: PurchaseOrderStatus;
+  readonly receivedAt: string;
+  readonly replayed: boolean;
+  readonly lines: readonly PurchaseReceiptLineResult[];
+}
+
+export interface PurchaseReceiptSummary {
+  readonly id: string;
+  readonly purchaseOrderId: string;
+  readonly branchId: string;
+  readonly supplierId: string;
+  readonly reference: string | null;
+  readonly receivedAt: string;
+  readonly lines: readonly PurchaseReceiptLineResult[];
+}
+
 export interface AdminTerminal {
   readonly id: string;
   readonly branchId: string;

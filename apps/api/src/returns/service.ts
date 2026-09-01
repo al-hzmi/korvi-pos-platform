@@ -1,4 +1,5 @@
 import {
+  CostingCapacityError,
   DuplicateReturnLineError,
   InvalidRefundError,
   InvalidReturnQuantityError,
@@ -467,6 +468,7 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
         if (error instanceof ProrationError || error instanceof ProrationMismatchError) {
           return fail('return-not-allowed');
         }
+        if (error instanceof CostingCapacityError) return fail('return-not-allowed');
         if (error instanceof ReturnNotAllowedError) {
           return fail(error.detail === 'unknown-sale' ? 'sale-not-found' : 'return-not-allowed');
         }

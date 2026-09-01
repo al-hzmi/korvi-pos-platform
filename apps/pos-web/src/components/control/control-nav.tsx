@@ -10,7 +10,8 @@ import type { JSX } from 'react';
  * that are not built say so. Built sections can still be unavailable to this
  * principal; that is a UI courtesy only, while the API remains the authority.
  */
-export type ControlSection = 'home' | 'products' | 'branches' | 'staff' | 'settings';
+export type ControlSection =
+  'home' | 'products' | 'inventory' | 'purchasing' | 'branches' | 'staff' | 'settings';
 
 export interface ControlEntry {
   readonly key: string;
@@ -20,10 +21,16 @@ export interface ControlEntry {
 }
 
 export const CONTROL_ENTRIES: readonly ControlEntry[] = [
-  { key: 'home', label: 'الرئيسية', section: 'home' },
+  { key: 'home', label: 'الرئيسية', section: 'home', permission: 'report.read' },
   { key: 'sales', label: 'المبيعات', section: null },
-  { key: 'products', label: 'المنتجات', section: 'products' },
-  { key: 'inventory', label: 'المخزون', section: null },
+  { key: 'products', label: 'المنتجات', section: 'products', permission: 'product.read' },
+  { key: 'inventory', label: 'المخزون', section: 'inventory', permission: 'inventory.read' },
+  {
+    key: 'purchasing',
+    label: 'المشتريات',
+    section: 'purchasing',
+    permission: 'purchasing.read',
+  },
   { key: 'customers', label: 'العملاء', section: null },
   {
     key: 'branches',
@@ -37,35 +44,72 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'zatca', label: 'ZATCA', section: null },
 ];
 
+export function canAccessControlSection(
+  section: ControlSection,
+  permissions: readonly string[],
+): boolean {
+  const entry = CONTROL_ENTRIES.find((candidate) => candidate.section === section);
+  return entry?.permission !== undefined && permissions.includes(entry.permission);
+}
+
+export function firstAuthorizedSection(permissions: readonly string[]): ControlSection | null {
+  const entry = CONTROL_ENTRIES.find(
+    (candidate) =>
+      candidate.section !== null &&
+      candidate.permission !== undefined &&
+      permissions.includes(candidate.permission),
+  );
+  return entry?.section ?? null;
+}
+
+export function canOpenControlCentre(permissions: readonly string[]): boolean {
+  return firstAuthorizedSection(permissions) !== null;
+}
+
 export interface ControlNavProps {
   readonly active: ControlSection;
   readonly onSelect: (section: ControlSection) => void;
   readonly permissions?: readonly string[];
+  /** Keeps an ambiguous stock or purchasing command mounted until its identity is resolved. */
+  readonly locked?: boolean;
 }
 
-export function ControlNav({ active, onSelect, permissions = [] }: ControlNavProps): JSX.Element {
+export function ControlNav({
+  active,
+  onSelect,
+  permissions = [],
+  locked = false,
+}: ControlNavProps): JSX.Element {
   return (
     <nav aria-label="أقسام لوحة التحكم" className="flex flex-col gap-1">
       {CONTROL_ENTRIES.map((entry) => {
         const built = entry.section !== null;
         const authorized =
-          built && (entry.permission === undefined || permissions.includes(entry.permission));
-        const badge = !built ? 'قريباً' : authorized ? null : 'غير مصرح';
+          built && entry.permission !== undefined && permissions.includes(entry.permission);
+        const navigationLocked = locked && authorized && entry.section !== active;
+        const badge = !built
+          ? 'قريباً'
+          : !authorized
+            ? 'غير مصرح'
+            : navigationLocked
+              ? 'عملية معلقة'
+              : null;
 
         return (
           <button
             key={entry.key}
             type="button"
-            disabled={!authorized}
+            disabled={!authorized || navigationLocked}
             aria-current={authorized && entry.section === active ? 'page' : undefined}
             onClick={() => {
-              if (authorized && entry.section !== null) onSelect(entry.section);
+              if (authorized && !navigationLocked && entry.section !== null)
+                onSelect(entry.section);
             }}
             className={cn(
               'flex h-touch items-center justify-between rounded-md px-3 text-sm transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              authorized
+              authorized && !navigationLocked
                 ? 'text-foreground hover:bg-accent'
                 : 'cursor-not-allowed text-muted-foreground',
               authorized && entry.section === active
