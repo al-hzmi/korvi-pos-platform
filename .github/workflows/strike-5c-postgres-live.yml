@@ -49,6 +49,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
       - name: Install
         run: npm ci --registry=https://registry.npmjs.org
 

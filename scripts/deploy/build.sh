@@ -17,6 +17,9 @@ case "${1:-}" in
   *) echo 'Usage: bash scripts/deploy/build.sh api|web' >&2; exit 1 ;;
 esac
 
+# Render chooses the npm bundled with its Node image unless we prove otherwise.
+# The repo's packageManager declaration is the authority for install semantics.
+node scripts/verify-package-manager.mjs
 npm ci --include=dev --registry=https://registry.npmjs.org
 # Generate reads the schema only; the web build never receives database secrets.
 DATABASE_URL='postgresql://localhost/korvi_generate_only' npm run db:generate

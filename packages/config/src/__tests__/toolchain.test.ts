@@ -155,3 +155,29 @@ describe('supply-chain posture', () => {
     expect(read('.github/workflows/ci.yml')).toMatch(/permissions:\s+contents: read/);
   });
 });
+
+describe('npm package-manager authority', () => {
+  const guard = 'node scripts/verify-package-manager.mjs';
+
+  it('declares one exact npm binary version', () => {
+    expect(json('package.json').packageManager).toMatch(/^npm@\d+\.\d+\.\d+$/);
+  });
+
+  it('guards every shipping install before npm ci can run', () => {
+    for (const path of [
+      '.github/workflows/ci.yml',
+      '.github/workflows/strike-5c-postgres-live.yml',
+      'scripts/deploy/build.sh',
+    ]) {
+      const text = read(path);
+      expect(text, path).toContain(guard);
+      expect(text.indexOf(guard), path).toBeLessThan(text.indexOf('npm ci'));
+    }
+  });
+
+  it('makes the local verify gate reject package-manager drift before npm tasks', () => {
+    const verify = read('scripts/verify.sh');
+    expect(verify).toContain(guard);
+    expect(verify.indexOf(guard)).toBeLessThan(verify.indexOf('npm run'));
+  });
+});
