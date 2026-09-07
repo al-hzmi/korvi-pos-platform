@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - strike/5c-costing-authority
+      - review/pg-query-concurrency-trace
   workflow_dispatch:
 
 concurrency:
@@ -23,6 +24,7 @@ jobs:
       POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c
       KORVI_TEST_DATABASE_URL: postgresql://korvi_app:korvi_app_ci_5c@localhost:5432/korvi_5c
       PROOF_LOG: artifacts/strike-5c-postgres-proof.txt
+      NODE_OPTIONS: --trace-deprecation
 
     services:
       postgres:
