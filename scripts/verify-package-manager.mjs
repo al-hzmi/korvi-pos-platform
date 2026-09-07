@@ -13,7 +13,9 @@ if (typeof declaration !== 'string') {
 
 const match = /^npm@(\d+\.\d+\.\d+)$/.exec(declaration);
 if (match === null) {
-  console.error(`[fail] packageManager must be an exact npm version, got ${JSON.stringify(declaration)}`);
+  console.error(
+    `[fail] packageManager must be an exact npm version, got ${JSON.stringify(declaration)}`,
+  );
   process.exit(1);
 }
 
