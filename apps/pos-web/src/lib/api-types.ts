@@ -85,6 +85,7 @@ export type OnboardingCheckKey =
   | 'active-branch'
   | 'active-terminal'
   | 'viable-administrator'
+  | 'pos-operator'
   | 'active-product';
 
 export type OnboardingRemediation =

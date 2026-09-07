@@ -6,6 +6,7 @@ export const ONBOARDING_CHECK_KEYS = [
   'active-branch',
   'active-terminal',
   'viable-administrator',
+  'pos-operator',
   'active-product',
 ] as const;
 
@@ -17,6 +18,7 @@ export type OnboardingBlocker =
   | 'no-active-branch'
   | 'no-active-terminal'
   | 'no-viable-administrator'
+  | 'no-viable-pos-operator'
   | 'no-active-product';
 
 export type OnboardingRemediation =
@@ -32,6 +34,7 @@ export interface OnboardingReadinessFacts {
   readonly activeBranchPresent: boolean;
   readonly activeTerminalPresent: boolean;
   readonly viableAdministratorPresent: boolean;
+  readonly viablePosOperatorPresent: boolean;
   readonly activeProductPresent: boolean;
 }
 
@@ -88,6 +91,12 @@ export function evaluateOnboardingReadiness(facts: OnboardingReadinessFacts): On
       'viable-administrator',
       facts.viableAdministratorPresent,
       'no-viable-administrator',
+      'member-role-admin',
+    ),
+    check(
+      'pos-operator',
+      facts.viablePosOperatorPresent,
+      'no-viable-pos-operator',
       'member-role-admin',
     ),
     check('active-product', facts.activeProductPresent, 'no-active-product', 'product-catalogue'),
