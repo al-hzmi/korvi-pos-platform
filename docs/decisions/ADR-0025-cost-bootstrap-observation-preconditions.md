@@ -38,6 +38,15 @@ observations with current truth. Any mismatch raises the dedicated
 idempotency reservation and any cost-row materialization. No cost-pool update,
 valuation event or bootstrap audit may survive that refusal.
 
+The conflict name above is the internal database/service reason. The existing
+inventory HTTP failure serializer converts hyphens to underscores: the bootstrap
+route returns HTTP 409 with `error: "cost_state_changed"`. The web client must
+classify that wire code as `refresh-cost`. Contract tests must pass the actual
+bootstrap route response through the JSON client and failure classifier;
+constructing an `ApiError` with the internal hyphenated reason does not prove
+what the API sends. This clarifies the existing serialization, not a new code
+or a change to the recovery decision.
+
 The three preconditions are part of the canonical idempotency fingerprint and
 the browser's synchronously frozen command. A same-intent retry after an
 ambiguous transport outcome must retain them byte-for-byte. A typed stale
