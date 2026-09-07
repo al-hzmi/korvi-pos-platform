@@ -101,6 +101,34 @@ describe('dependency pins', () => {
     const ci = read('.github/workflows/ci.yml');
     expect(ci).toContain('registry.npmjs.org');
   });
+
+  it('keeps the Vitest runner and V8 coverage provider aligned in the lockfile', () => {
+    const lock = json('package-lock.json') as {
+      packages: Record<string, { version?: string }>;
+    };
+    const version = devDeps.vitest;
+    expect(version).toBeDefined();
+    expect(devDeps['@vitest/coverage-v8']).toBe(version);
+    expect(lock.packages['node_modules/vitest']?.version).toBe(version);
+    expect(lock.packages['node_modules/@vitest/coverage-v8']?.version).toBe(version);
+  });
+
+  it('resolves every MySQL2 copy to the exact security override', () => {
+    const overrides = rootPkg.overrides as { mysql2?: string };
+    const version = overrides.mysql2;
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const lock = json('package-lock.json') as {
+      packages: Record<string, { version?: string }>;
+    };
+    const copies = Object.entries(lock.packages).filter(([path]) =>
+      path.endsWith('node_modules/mysql2'),
+    );
+    expect(copies.length).toBeGreaterThan(0);
+    for (const [path, entry] of copies) {
+      expect(entry.version, path).toBe(version);
+      expect(json(`${path}/package.json`).version, `${path} installed`).toBe(version);
+    }
+  });
 });
 
 describe('supply-chain posture', () => {

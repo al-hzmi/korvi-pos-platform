@@ -33,11 +33,15 @@ all compatibility gates stay green. An override is temporary architecture debt,
 not a silent bypass: it must name the advisory here and is removed when upstream
 accepts the patched range.
 
-Current reviewed override:
+Reviewed override at revision 2:
 
 | Package        | Forced version | Advisory            | Upstream reason                    | Removal condition                                                                                                 |
 | -------------- | -------------- | ------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `deepmerge-ts` | 8.0.2          | GHSA-ggr8-5vv4-36mx | `@prisma/config@7.10.0` pins 7.1.5 | remove when Prisma's config dependency accepts a patched 8.x release and audit remains green without the override |
+
+ADR-0026 supplements this register with the exact `mysql2: 3.24.3` override for
+GHSA-3f6p-5ww8-9rcr and GHSA-rgwj-5xj2-c3m3, including its removal condition
+and compatibility gates. The override policy above is unchanged.
 
 **`npm ci`, never a fallback.** `npm ci || npm install` looks defensive and is
 the opposite: when the lockfile is missing or stale the fallback resolves fresh
