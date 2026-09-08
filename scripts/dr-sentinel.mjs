@@ -11,7 +11,9 @@ import {
 
 const [mode, evidencePath] = process.argv.slice(2);
 if (mode !== 'seed' && mode !== 'verify') {
-  throw new Error('Usage: node scripts/dr-sentinel.mjs <seed|verify> <evidence-path>');
+  throw new Error(
+    'Usage: node scripts/dr-sentinel.mjs <seed|verify> <evidence-path>',
+  );
 }
 if (evidencePath === undefined || evidencePath.trim() === '') {
   throw new Error('An evidence path is required.');
@@ -45,7 +47,11 @@ async function readSentinel(prisma, tenantId) {
         activatedAt: true,
       },
     });
-    assert.notEqual(tenant, null, 'DR sentinel tenant is missing under its own RLS context.');
+    assert.notEqual(
+      tenant,
+      null,
+      'DR sentinel tenant is missing under its own RLS context.',
+    );
 
     const settings = await tx.tenantSettings.findFirst({
       where: { tenantId },
@@ -130,7 +136,11 @@ try {
       },
       () => PROVISIONED_AT,
     );
-    assert.equal(tenant.created, true, 'Fresh DR source database unexpectedly replayed a tenant.');
+    assert.equal(
+      tenant.created,
+      true,
+      'Fresh DR source database unexpectedly replayed a tenant.',
+    );
 
     const activation = await activateTenant(
       prisma,
@@ -141,19 +151,31 @@ try {
       },
       () => ACTIVATED_AT,
     );
-    assert.equal(activation.changed, true, 'Fresh DR sentinel activation did not change state.');
+    assert.equal(
+      activation.changed,
+      true,
+      'Fresh DR sentinel activation did not change state.',
+    );
     assert.equal(activation.status, 'active');
 
     const evidence = {
       permissionCount,
       sentinel: await readSentinel(prisma, tenant.id),
     };
-    await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
-    console.log(`[ok] DR sentinel created through application authorities: ${tenant.id}`);
+    await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    console.log(
+      `[ok] DR sentinel created through application authorities: ${tenant.id}`,
+    );
   } else {
     const expected = JSON.parse(await readFile(evidencePath, 'utf8'));
     const tenantId = expected?.sentinel?.tenant?.id;
-    assert.equal(typeof tenantId, 'string', 'Expected evidence does not contain a tenant id.');
+    assert.equal(
+      typeof tenantId,
+      'string',
+      'Expected evidence does not contain a tenant id.',
+    );
 
     const permissionCount = await prisma.permission.count();
     const actual = {
@@ -161,7 +183,9 @@ try {
       sentinel: await readSentinel(prisma, tenantId),
     };
     assert.deepStrictEqual(actual, expected);
-    console.log(`[ok] restored DR sentinel is byte-semantically identical through application reads: ${tenantId}`);
+    console.log(
+      `[ok] restored DR sentinel is byte-semantically identical through application reads: ${tenantId}`,
+    );
   }
 } finally {
   await prisma.$disconnect();

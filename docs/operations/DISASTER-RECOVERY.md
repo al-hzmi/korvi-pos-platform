@@ -47,26 +47,31 @@ recovery database.
 
 1. Verify PostgreSQL major and recovery-source identity. Never restore a backup
    whose origin or timestamp is ambiguous.
-2. Create the target runtime role with
+2. Verify the logical backup/restore tool major before capture. Korvi does not
+   rely on an ambient workstation or CI-runner `pg_dump`: the selected client
+   must be explicitly compatible with the source server, and the automated
+   PostgreSQL 17 rehearsal requires PostgreSQL 17 `pg_dump` and `pg_restore`.
+3. Create the target runtime role with
    `NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`.
    No application test is allowed to run as the backup/restore operator.
-3. Restore the backup without importing provider/admin credentials or ACLs into
+4. Restore the backup without importing provider/admin credentials or ACLs into
    the application role. Ownership of the restored Korvi schema must resolve to
    the intended restricted runtime/migration identity for that topology.
-4. Verify the complete `_prisma_migrations` ledger. Failed, rolled-back or
+5. Verify the complete `_prisma_migrations` ledger. Failed, rolled-back or
    unexpected migration entries are a stop condition.
-5. Run `prisma migrate status` and the schema diff gate. Any drift is a stop
+6. Run `prisma migrate status` and the schema diff gate. Any drift is a stop
    condition; do not use `db push` to make the restore match source code.
-6. Verify ENABLE/FORCE RLS and policy behavior through the normal restricted-role
+7. Verify ENABLE/FORCE RLS and policy behavior through the normal restricted-role
    live suite. Never disable RLS for restore verification.
-7. Verify representative restored data through Korvi's own tenant-scoped
+8. Verify representative restored data through Korvi's own tenant-scoped
    application authority. Administrative SQL row counts alone are not sufficient.
-8. Run the full repository verification against the restored database.
-9. Record the exact application SHA, database backup digest, elapsed restore time
-   and all gate results. Preserve proof logs; do not preserve the database dump in
-   a public artifact.
-10. Only after these gates pass may a recovery decision point customer traffic at
-    the restored target. DNS/service promotion remains an explicit operator act.
+9. Run the full repository verification against the restored database.
+10. Record the exact application SHA, database backup digest, elapsed restore
+    time and all gate results. Preserve proof logs; do not preserve the database
+    dump in a public artifact.
+11. Only after these gates pass may a recovery decision point customer traffic
+    at the restored target. DNS/service promotion remains an explicit operator
+    act.
 
 ## Automated PostgreSQL 17 rehearsal
 
@@ -83,6 +88,12 @@ evidence includes tenant settings, default roles/permissions, lifecycle
 idempotency evidence and audit events. After restore, the same application-level
 read is deep-compared to the pre-backup evidence, then migration drift and the
 full verification suite run against the restored database.
+
+The workflow executes `pg_dump` and `pg_restore` from an explicit PostgreSQL 17
+container and records both client versions. This is deliberate: the CI runner's
+ambient PostgreSQL client is not a dependency of the recovery procedure, and an
+older `pg_dump` must not be allowed to fail only when the production server has
+already moved to a newer major.
 
 The workflow's PostgreSQL administrator exists only inside the ephemeral GitHub
 Actions service and represents the operations plane. The generated dump is

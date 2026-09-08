@@ -31,6 +31,7 @@ jobs:
       SOURCE_URL: postgresql://korvi_dr_source:korvi_dr_source_ci@localhost:5432/korvi_dr_source
       RESTORE_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_dr_restore
       RESTORE_URL: postgresql://korvi_dr_restore:korvi_dr_restore_ci@localhost:5432/korvi_dr_restore
+      POSTGRES_TOOL_IMAGE: postgres:17
       PROOF_LOG: artifacts/operations-dr-proof.txt
 
     services:
@@ -113,14 +114,29 @@ jobs:
         run: |
           set -euo pipefail
           echo 'backup_authority=ephemeral_ci_operations_admin_not_runtime' | tee -a "$PROOF_LOG"
-          pg_dump "$SOURCE_ADMIN_URL" \
+
+          dump_client="$(docker run --rm "$POSTGRES_TOOL_IMAGE" pg_dump --version)"
+          restore_client="$(docker run --rm "$POSTGRES_TOOL_IMAGE" pg_restore --version)"
+          case "$dump_client" in
+            'pg_dump (PostgreSQL) 17.'*) ;;
+            *) echo "Expected PostgreSQL 17 pg_dump, got: $dump_client" >&2; exit 1 ;;
+          esac
+          case "$restore_client" in
+            'pg_restore (PostgreSQL) 17.'*) ;;
+            *) echo "Expected PostgreSQL 17 pg_restore, got: $restore_client" >&2; exit 1 ;;
+          esac
+          echo "backup_client=$dump_client" | tee -a "$PROOF_LOG"
+          echo "restore_client=$restore_client" | tee -a "$PROOF_LOG"
+
+          docker run --rm --network host "$POSTGRES_TOOL_IMAGE" \
+            pg_dump "$SOURCE_ADMIN_URL" \
             --format=custom \
             --compress=6 \
             --no-owner \
-            --no-privileges \
-            --file=artifacts/korvi-dr.dump
+            --no-privileges > artifacts/korvi-dr.dump
           test -s artifacts/korvi-dr.dump
-          pg_restore --list artifacts/korvi-dr.dump > artifacts/korvi-dr.list
+          docker run --rm -i "$POSTGRES_TOOL_IMAGE" \
+            pg_restore --list < artifacts/korvi-dr.dump > artifacts/korvi-dr.list
           grep -q 'TABLE.*tenants' artifacts/korvi-dr.list
           grep -q 'TABLE DATA.*tenants' artifacts/korvi-dr.list
           backup_sha256="$(sha256sum artifacts/korvi-dr.dump | awk '{print $1}')"
@@ -151,12 +167,12 @@ jobs:
           echo "restore_app_role_flags=$restore_flags" | tee -a "$PROOF_LOG"
 
           restore_started="$(date +%s)"
-          pg_restore \
+          docker run --rm --network host -i "$POSTGRES_TOOL_IMAGE" \
+            pg_restore \
             --exit-on-error \
             --no-owner \
             --no-privileges \
-            --dbname="$RESTORE_URL" \
-            artifacts/korvi-dr.dump
+            --dbname="$RESTORE_URL" < artifacts/korvi-dr.dump
           restore_finished="$(date +%s)"
           echo "restore_elapsed_seconds=$((restore_finished - restore_started))" | tee -a "$PROOF_LOG"
 
