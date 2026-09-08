@@ -244,13 +244,7 @@ export function PurchasingPanel({
 
   const loadMore = useCallback(
     (kind: PageKind): void => {
-      if (
-        !canStartPurchasingPage(
-          state,
-          pageFlight.current,
-          refreshFlight.current !== null,
-        )
-      ) {
+      if (!canStartPurchasingPage(state, pageFlight.current, refreshFlight.current !== null)) {
         return;
       }
       if (state.kind !== 'ready') return;
