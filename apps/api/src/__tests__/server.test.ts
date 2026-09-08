@@ -21,9 +21,9 @@ describe('api', () => {
     expect(response.json()).toEqual({ status: 'ok' });
   });
 
-  it('reports the phase', async () => {
+  it('reports the active delivery phase', async () => {
     const response = await app.inject({ method: 'GET', url: '/version' });
-    expect(response.json()).toMatchObject({ phase: 'foundation' });
+    expect(response.json()).toMatchObject({ phase: 'stage-5d-closure' });
   });
 });
 
