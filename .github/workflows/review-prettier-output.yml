@@ -1,0 +1,27 @@
+name: Review Prettier Output
+
+on:
+  push:
+    branches:
+      - review/5d-purchasing-refresh-pagination-race
+
+permissions:
+  contents: read
+
+jobs:
+  format-output:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: node scripts/verify-package-manager.mjs
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Emit canonical file
+        run: |
+          echo 'BEGIN_FORMATTED_BASE64'
+          npx --no-install prettier apps/pos-web/src/components/control/purchasing-panel.tsx | base64 -w0
+          echo
+          echo 'END_FORMATTED_BASE64'
