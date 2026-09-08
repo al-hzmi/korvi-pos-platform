@@ -1,0 +1,153 @@
+name: Review Cost Explicit Selection 290 V3
+
+on:
+  push:
+    branches:
+      - review/5d-cost-explicit-selection-290-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git reset --hard 290de782a3e9896e957a4c4216d627615fc4c548
+          test "$(git rev-parse HEAD)" = "290de782a3e9896e957a4c4216d627615fc4c548"
+      - name: Apply bounded cost-selection remediation
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/pos-web/src/components/control/inventory-cost-panel.tsx')
+          lines = path.read_text(encoding='utf-8').splitlines()
+
+          describe_indices = [i for i, line in enumerate(lines) if line.startswith('export function describeCostReadFailure(')]
+          if len(describe_indices) != 1:
+              raise SystemExit('describeCostReadFailure anchor mismatch')
+          i = describe_indices[0]
+          helper = """/**
+           * The first eligible row is a deliberate initial default only. Once the
+           * operator explicitly chooses a product, a refresh must not silently move
+           * the drafted valuation to another product if that identity disappears.
+           */
+          export function resolveCostProduct(
+            eligible: readonly InventoryCostBalanceRow[],
+            productId: string,
+          ): InventoryCostBalanceRow | undefined {
+            return productId === '' ? eligible[0] : eligible.find((row) => row.productId === productId);
+          }
+          """.splitlines()
+          lines[i:i] = helper + ['']
+
+          selected = [i for i, line in enumerate(lines) if 'const selected = eligible.find((row) => row.productId === productId) ?? eligible[0];' in line]
+          if len(selected) != 1:
+              raise SystemExit('selected cost product anchor mismatch')
+          indent = lines[selected[0]][:len(lines[selected[0]]) - len(lines[selected[0]].lstrip())]
+          lines[selected[0]] = indent + 'const selected = resolveCostProduct(eligible, productId);'
+
+          submit_indices = [i for i, line in enumerate(lines) if line.strip() == 'const submit = (event: FormEvent<HTMLFormElement>): void => {']
+          if len(submit_indices) != 1:
+              raise SystemExit('submit anchor mismatch')
+          start = submit_indices[0]
+          candidates = [i for i in range(start, min(start + 30, len(lines))) if lines[i].strip() == 'if (selected === undefined) {']
+          if len(candidates) != 1:
+              raise SystemExit('selected undefined block anchor mismatch')
+          i = candidates[0]
+          indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+          replacement = [
+              indent + 'if (selected === undefined) {',
+              indent + '  setValidation(',
+              indent + "    productId === ''",
+              indent + "      ? 'لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.'",
+              indent + "      : 'الصنف المحدد لم يعد مؤهلًا للتقييم في القراءة الحالية. اختر الصنف من جديد.',",
+              indent + '  );',
+              indent + '  return;',
+              indent + '}',
+          ]
+          if [line.strip() for line in lines[i:i+4]] != [
+              'if (selected === undefined) {',
+              "setValidation('لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.');",
+              'return;',
+              '}',
+          ]:
+              raise SystemExit('unexpected selected undefined block shape')
+          lines[i:i+4] = replacement
+
+          option_indices = [i for i, line in enumerate(lines) if line.strip() == '{eligible.map((row) => (']
+          if len(option_indices) != 1:
+              raise SystemExit('eligible options anchor mismatch')
+          i = option_indices[0]
+          indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+          lines[i:i] = [
+              indent + "{productId !== '' && selected === undefined ? (",
+              indent + '  <option value="">اختر الصنف من جديد</option>',
+              indent + ') : null}',
+          ]
+
+          disabled_indices = [i for i, line in enumerate(lines) if line.strip() == 'disabled={locked || eligible.length === 0}']
+          if len(disabled_indices) != 1:
+              raise SystemExit('submit disabled anchor mismatch')
+          i = disabled_indices[0]
+          indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+          lines[i] = indent + 'disabled={locked || eligible.length === 0 || selected === undefined}'
+
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          test = Path('apps/pos-web/src/components/__tests__/cost-selection.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';
+          import { resolveCostProduct } from '../control/inventory-cost-panel';
+          import type { InventoryCostBalanceRow } from '../../lib/api-types';
+
+          const products = [
+            { productId: 'product-1' },
+            { productId: 'product-2' },
+          ] as InventoryCostBalanceRow[];
+
+          describe('cost explicit selection identity', () => {
+            it('uses the first eligible row only before an explicit choice', () => {
+              expect(resolveCostProduct(products, '')?.productId).toBe('product-1');
+            });
+
+            it('keeps an explicit choice bound to its exact product identity', () => {
+              expect(resolveCostProduct(products, 'product-2')?.productId).toBe('product-2');
+            });
+
+            it('fails closed when a refreshed cost read removes the explicit product', () => {
+              expect(resolveCostProduct(products, 'removed-product')).toBeUndefined();
+            });
+          });
+          """, encoding='utf-8')
+          PY
+      - name: Install exact dependencies
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+      - name: Build test dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
+      - name: Format and verify bounded change
+        run: |
+          npx --no-install prettier --write \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/__tests__/cost-selection.test.ts
+          npx --no-install vitest run apps/pos-web/src/components/__tests__/cost-selection.test.ts
+          git diff --check
+      - name: Create clean child commit
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add apps/pos-web/src/components/control/inventory-cost-panel.tsx apps/pos-web/src/components/__tests__/cost-selection.test.ts
+          git commit -m 'fix(costing): preserve explicit valuation selection'
+          test "$(git rev-parse HEAD^)" = "290de782a3e9896e957a4c4216d627615fc4c548"
+          git push origin HEAD:refs/heads/review/5d-cost-explicit-selection-290-clean
