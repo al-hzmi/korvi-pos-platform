@@ -31,7 +31,7 @@
   },
   "overrides": {
     "deepmerge-ts": "8.0.2",
-    "mysql2": "3.24.3"
+    "mysql2": "3.24.4"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

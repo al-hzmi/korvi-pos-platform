@@ -47,17 +47,17 @@ npm run dev -w @korvi/api       # http://localhost:3001/health
 
 ## Layout
 
-| Path                | Contents                                                   |
-| ------------------- | ---------------------------------------------------------- |
+| Path                | Contents                                                  |
+| ------------------- | --------------------------------------------------------- |
 | `packages/domain`   | Pure financial and compliance core — no framework         |
-| `packages/database` | Prisma schema and adapters for the domain's ports          |
-| `packages/printing` | ESC/POS construction for 80mm thermal printers             |
-| `packages/ui`       | Design-system tokens and components                        |
-| `packages/config`   | Shared configuration and Tailwind authority                |
-| `packages/testing`  | Determinism helpers                                        |
-| `apps/pos-web`      | Next.js cashier and merchant control-centre web app        |
-| `apps/api`          | Fastify service and the server-owned business authorities  |
-| `docs/`             | Architecture, ADRs, design system and governance           |
+| `packages/database` | Prisma schema and adapters for the domain's ports         |
+| `packages/printing` | ESC/POS construction for 80mm thermal printers            |
+| `packages/ui`       | Design-system tokens and components                       |
+| `packages/config`   | Shared configuration and Tailwind authority               |
+| `packages/testing`  | Determinism helpers                                       |
+| `apps/pos-web`      | Next.js cashier and merchant control-centre web app       |
+| `apps/api`          | Fastify service and the server-owned business authorities |
+| `docs/`             | Architecture, ADRs, design system and governance          |
 
 ## Commands
 
