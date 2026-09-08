@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  beginCostBalanceRefresh,
+  failCostBalanceRefresh,
+} from '../control/inventory-cost-panel';
+import {
   beginInventoryBalanceRefresh,
   failInventoryBalanceRefresh,
 } from '../control/inventory-panel';
@@ -7,6 +11,7 @@ import {
   beginPurchasingRefresh,
   failPurchasingRefresh,
 } from '../control/purchasing-panel';
+import type { CostBalancesState } from '../control/inventory-cost-panel';
 import type { InventoryBalancesState } from '../control/inventory-panel';
 import type { PurchasingPages, PurchasingState } from '../control/purchasing-panel';
 import type { Failure } from '../../lib/failures';
@@ -91,6 +96,37 @@ describe('inventory balance refresh pagination ownership', () => {
     const refreshing = beginInventoryBalanceRefresh(current, branchId);
 
     expect(failInventoryBalanceRefresh(refreshing, branchId, networkFailure)).toEqual({
+      ...current,
+      loadingMore: false,
+      refreshing: false,
+      loadFailure: networkFailure,
+    });
+  });
+});
+
+describe('cost balance refresh pagination ownership', () => {
+  const current: CostBalancesState = {
+    kind: 'ready',
+    page: { rows: [], nextCursor: 'cost-next' },
+    loadingMore: true,
+    refreshing: false,
+    generation: 7,
+    loadFailure: null,
+  };
+
+  it('retires an in-flight cost page when first-page cost facts supersede it', () => {
+    expect(beginCostBalanceRefresh(current)).toEqual({
+      ...current,
+      loadingMore: false,
+      refreshing: true,
+      loadFailure: null,
+    });
+  });
+
+  it('keeps cost pagination retired if the replacement cost read fails', () => {
+    const refreshing = beginCostBalanceRefresh(current);
+
+    expect(failCostBalanceRefresh(refreshing, networkFailure)).toEqual({
       ...current,
       loadingMore: false,
       refreshing: false,
