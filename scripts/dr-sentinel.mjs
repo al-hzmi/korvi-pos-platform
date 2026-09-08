@@ -30,6 +30,10 @@ const CONTROL_PLANE_ACTOR = 'github-actions-dr-rehearsal';
 const PROVISION_OPERATION = 'dr-provision-20260908';
 const ACTIVATE_OPERATION = 'dr-activate-20260908';
 
+function normalizeEvidence(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 async function readSentinel(prisma, tenantId) {
   return withTenant(prisma, tenantId, async (tx) => {
     const tenant = await tx.tenant.findFirst({
@@ -144,10 +148,10 @@ try {
     assert.equal(activation.changed, true, 'Fresh DR sentinel activation did not change state.');
     assert.equal(activation.status, 'active');
 
-    const evidence = {
+    const evidence = normalizeEvidence({
       permissionCount,
       sentinel: await readSentinel(prisma, tenant.id),
-    };
+    });
     await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
     console.log(`[ok] DR sentinel created through application authorities: ${tenant.id}`);
   } else {
@@ -156,13 +160,13 @@ try {
     assert.equal(typeof tenantId, 'string', 'Expected evidence does not contain a tenant id.');
 
     const permissionCount = await prisma.permission.count();
-    const actual = {
+    const actual = normalizeEvidence({
       permissionCount,
       sentinel: await readSentinel(prisma, tenantId),
-    };
+    });
     assert.deepStrictEqual(actual, expected);
     console.log(
-      `[ok] restored DR sentinel is byte-semantically identical through application reads: ${tenantId}`,
+      `[ok] restored DR sentinel is JSON-semantically identical through application reads: ${tenantId}`,
     );
   }
 } finally {
