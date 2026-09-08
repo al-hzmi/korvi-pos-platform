@@ -25,9 +25,9 @@ export interface PurchasingPages {
   readonly orders: PurchasingPage<PurchaseOrderSummary>;
 }
 
-type PageKind = keyof PurchasingPages;
+export type PageKind = keyof PurchasingPages;
 
-type PurchasingState =
+export type PurchasingState =
   | { readonly kind: 'loading' }
   | { readonly kind: 'failed'; readonly failure: Failure }
   | {
@@ -49,6 +49,26 @@ function purchasingFailure(error: unknown): Failure {
 
 function appendPage<T>(current: PurchasingPage<T>, next: PurchasingPage<T>): PurchasingPage<T> {
   return { rows: [...current.rows, ...next.rows], nextCursor: next.nextCursor };
+}
+
+/**
+ * A first-page refresh supersedes every in-flight pagination decision.
+ * Clearing the pagination state matters when that replacement refresh itself
+ * fails: the aborted request will not clear UI state after an AbortError.
+ */
+export function beginPurchasingRefresh(current: PurchasingState): PurchasingState {
+  return current.kind === 'ready'
+    ? { ...current, refreshing: true, loadingMore: null, failure: null }
+    : current;
+}
+
+export function failPurchasingRefresh(
+  current: PurchasingState,
+  failure: Failure,
+): PurchasingState {
+  return current.kind === 'ready'
+    ? { ...current, refreshing: false, loadingMore: null, failure }
+    : { kind: 'failed', failure };
 }
 
 export function PurchasingPanel({
@@ -83,6 +103,7 @@ export function PurchasingPanel({
   useEffect(() => {
     const controller = new AbortController();
     pageController.current?.abort();
+    pageController.current = null;
     pageFlight.current = false;
     setState({ kind: 'loading' });
     void loadFirstPages(controller.signal)
@@ -96,6 +117,7 @@ export function PurchasingPanel({
     return () => {
       controller.abort();
       pageController.current?.abort();
+      pageController.current = null;
       pageFlight.current = false;
     };
   }, [loadFirstPages, reload]);
@@ -103,21 +125,17 @@ export function PurchasingPanel({
   const refresh = useCallback((): Promise<boolean> => {
     if (refreshFlight.current !== null) return refreshFlight.current;
     pageController.current?.abort();
+    pageController.current = null;
     pageFlight.current = false;
-    setState((current) =>
-      current.kind === 'ready' ? { ...current, refreshing: true, failure: null } : current,
-    );
+    setState(beginPurchasingRefresh);
     const request = loadFirstPages()
       .then((pages) => {
         setState({ kind: 'ready', pages, refreshing: false, loadingMore: null, failure: null });
         return true;
       })
       .catch((error: unknown) => {
-        setState((current) =>
-          current.kind === 'ready'
-            ? { ...current, refreshing: false, failure: purchasingFailure(error) }
-            : { kind: 'failed', failure: purchasingFailure(error) },
-        );
+        const failure = purchasingFailure(error);
+        setState((current) => failPurchasingRefresh(current, failure));
         return false;
       })
       .finally(() => {
