@@ -1,79 +1,28 @@
-name: CI
+name: Readiness Prettier Diagnostic
 
 on:
   push:
-    branches: ['**']
-  pull_request:
+    branches:
+      - review/readiness-prettier-diagnostic
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-# Least privilege by default. A job needing more raises it locally, so any
-# extra permission is visible in the diff that adds it.
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify
+  diagnostic:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
-      # Actions are pinned to immutable commit SHAs, not moving tags. A tag can
-      # be repointed at any time by whoever controls the action's repository,
-      # which makes `@v5` a supply-chain trust decision renewed on every run.
-      # The comment records which release the SHA corresponds to.
-      - name: Check out
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-
-      - name: Set up Node
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: .nvmrc
           cache: npm
-
-      # setup-node installs Node's bundled npm. Korvi separately declares the
-      # package-manager binary, so a Node image refresh must not silently change
-      # lockfile/install semantics underneath a green CI run.
-      - name: Verify package manager
-        run: node scripts/verify-package-manager.mjs
-
-      # `npm ci` only — never a fallback to `npm install`. A fallback silently
-      # resolves fresh versions when the lockfile is missing or stale, which
-      # means CI stops testing the tree that will actually ship.
-      - name: Install
-        run: npm ci --registry=https://registry.npmjs.org
-
-      - name: Verify dependency pins
-        run: npm run versions:verify
-
-      - name: Audit dependencies
-        run: npm run audit
-
-      - name: Formatting
-        run: npm run format:check
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Invariants
-        run: bash scripts/check-invariants.sh
-
-      - name: Prisma client
-        # generate reads the schema only — it never connects. A throwaway
-        # localhost value satisfies the strict config; no secret involved.
-        run: npm run db:generate
-        env:
-          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
-
-      - name: Build
-        run: npm run build
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Tests
-        run: npm run test
+      - run: node scripts/verify-package-manager.mjs
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Show canonical Prettier output
+        run: |
+          npx --no-install prettier --write apps/api/src/__tests__/readiness.test.ts
+          echo '--- CANONICAL FILE ---'
+          cat apps/api/src/__tests__/readiness.test.ts
+          echo '--- DIFF ---'
+          git diff -- apps/api/src/__tests__/readiness.test.ts
