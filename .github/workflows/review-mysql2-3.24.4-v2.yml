@@ -1,0 +1,48 @@
+name: Review MySQL2 Patch Builder V2
+
+on:
+  push:
+    branches:
+      - review/mysql2-3.24.4-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to reviewed parent
+        run: |
+          git reset --hard 3e37b2cc51b1231e7148bd2d0e3bc39858a67cba
+          test "$(git rev-parse HEAD)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+      - name: Advance MySQL2 override
+        run: |
+          python -c "from pathlib import Path; p=Path('package.json'); s=p.read_text(); assert s.count('\\\"mysql2\\\": \\\"3.24.3\\\"') == 1; p.write_text(s.replace('\\\"mysql2\\\": \\\"3.24.3\\\"','\\\"mysql2\\\": \\\"3.24.4\\\"'))"
+          rm -rf node_modules
+          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          node -e "const l=require('./package-lock.json'); const c=Object.entries(l.packages||{}).filter(([p])=>p.endsWith('node_modules/mysql2')); if(!c.length||c.some(([,m])=>m.version!=='3.24.4')) throw new Error(JSON.stringify(c)); console.log('[ok] mysql2 lock entries:',c.length)"
+      - name: Install and verify
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+          npm run versions:verify
+          npm run audit
+          npx --no-install prettier --write package.json package-lock.json README.md docs/governance/PRODUCT-READINESS-SCORECARD.md
+          git diff --check
+          npm run verify
+      - name: Publish clean child
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add package.json package-lock.json README.md docs/governance/PRODUCT-READINESS-SCORECARD.md
+          git commit -m 'chore(deps): advance mysql2 remediation to 3.24.4'
+          test "$(git rev-parse HEAD^)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+          git push origin HEAD:refs/heads/review/product-readiness-scorecard-74
