@@ -1,0 +1,48 @@
+name: Review MySQL2 Patch Builder V3
+
+on:
+  push:
+    branches:
+      - review/mysql2-3.24.4-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to reviewed parent
+        run: |
+          git reset --hard 3e37b2cc51b1231e7148bd2d0e3bc39858a67cba
+          test "$(git rev-parse HEAD)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+      - name: Advance override and invalidate only old lock entry
+        run: |
+          node -e "const fs=require('node:fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); if(p.overrides?.mysql2!=='3.24.3') throw new Error('unexpected mysql2 override'); p.overrides.mysql2='3.24.4'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n'); const l=JSON.parse(fs.readFileSync('package-lock.json','utf8')); if(l.packages?.['node_modules/mysql2']?.version!=='3.24.3') throw new Error('unexpected mysql2 lock entry'); delete l.packages['node_modules/mysql2']; fs.writeFileSync('package-lock.json',JSON.stringify(l,null,2)+'\n');"
+          rm -rf node_modules
+          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          node -e "const l=require('./package-lock.json'); const c=Object.entries(l.packages||{}).filter(([p])=>p.endsWith('node_modules/mysql2')); if(c.length!==1||c[0][1].version!=='3.24.4') throw new Error(JSON.stringify(c)); console.log('[ok] mysql2 lock resolved to 3.24.4')"
+      - name: Install and verify
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+          npm run versions:verify
+          npm run audit
+          npx --no-install prettier --write package.json package-lock.json README.md docs/governance/PRODUCT-READINESS-SCORECARD.md
+          git diff --check
+          npm run verify
+      - name: Publish clean child
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add package.json package-lock.json README.md docs/governance/PRODUCT-READINESS-SCORECARD.md
+          git commit -m 'chore(deps): advance mysql2 remediation to 3.24.4'
+          test "$(git rev-parse HEAD^)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+          git push origin HEAD:refs/heads/review/product-readiness-scorecard-74
