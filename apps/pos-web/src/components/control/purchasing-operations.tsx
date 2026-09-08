@@ -37,6 +37,7 @@ import type { PurchasingPages } from './purchasing-panel';
 
 type Workspace = 'suppliers' | 'orders' | 'receiving';
 type SupplierMode = 'create' | 'update';
+type PostWriteRefresh = 'ready' | 'pending' | 'failed';
 
 type SubmissionState =
   | { readonly kind: 'idle' }
@@ -88,6 +89,14 @@ export function resolveOrderLineProduct(
 export function orderLineFieldLabel(field: 'product' | 'quantity', index: number): string {
   const label = field === 'product' ? 'الصنف' : 'الكمية المطلوبة';
   return `${label} في بند أمر الشراء ${String(index + 1)}`;
+}
+
+export function purchasingPostWriteReady(
+  kind: PurchasingCommandResult['kind'],
+  listsReady: boolean,
+  detailReady: boolean,
+): boolean {
+  return listsReady && (kind !== 'receipt' || detailReady);
 }
 
 export function ReceiptLineEditor({
@@ -459,6 +468,7 @@ export function PurchasingOperations({
   >({});
   const [validation, setValidation] = useState<string | null>(null);
   const [submission, setSubmission] = useState<SubmissionState>({ kind: 'idle' });
+  const [postWriteRefresh, setPostWriteRefresh] = useState<PostWriteRefresh>('ready');
   const flight = useRef(createPurchasingCommandFlight());
   const nextLine = useRef(2);
   const detailController = useRef<AbortController | null>(null);
@@ -539,6 +549,24 @@ export function PurchasingOperations({
     };
   }, [api, selectedOrderId, workspace]);
 
+  const refreshAfterSuccess = useCallback(
+    async (result: PurchasingCommandResult): Promise<void> => {
+      setPostWriteRefresh('pending');
+      try {
+        const [listsReady, detailReady] = await Promise.all([
+          onRefresh(),
+          result.kind === 'receipt' ? loadDetail() : Promise.resolve(true),
+        ]);
+        setPostWriteRefresh(
+          purchasingPostWriteReady(result.kind, listsReady, detailReady) ? 'ready' : 'failed',
+        );
+      } catch {
+        setPostWriteRefresh('failed');
+      }
+    },
+    [loadDetail, onRefresh],
+  );
+
   const commandLocked =
     submission.kind === 'running' ||
     submission.kind === 'succeeded' ||
@@ -549,6 +577,7 @@ export function PurchasingOperations({
   const formLocked = refreshing || commandLocked;
 
   const clearDecision = (nextWorkspace: Workspace = workspace): void => {
+    if (submission.kind === 'succeeded' && (postWriteRefresh !== 'ready' || refreshing)) return;
     if (submission.kind === 'succeeded') {
       if (submission.result.kind === 'supplier-create') {
         setSupplierDraft('');
@@ -567,6 +596,7 @@ export function PurchasingOperations({
     setWorkspace(nextWorkspace);
     setValidation(null);
     setSubmission({ kind: 'idle' });
+    setPostWriteRefresh('ready');
     setReceiptQuantities({});
     setReceiptInventoryValues({});
     setReceiptReference('');
@@ -585,6 +615,7 @@ export function PurchasingOperations({
         setReceiptReference('');
         setReceiptInventoryValues({});
         setSubmission({ kind: 'idle' });
+        setPostWriteRefresh('ready');
         setValidation('تم تحديث سجل المشتريات. أعد إدخال القرار على البيانات الجديدة.');
         onCommandLockChange(false);
       }
@@ -605,8 +636,7 @@ export function PurchasingOperations({
           setSelectedOrderId(result.value.order.id);
           setDetail({ kind: 'ready', order: result.value.order, receipts: [] });
         }
-        void onRefresh();
-        if (result.kind === 'receipt') void loadDetail();
+        void refreshAfterSuccess(result);
       })
       .catch((error: unknown) => {
         const failure = describePurchasingCommandFailure(error);
@@ -1227,8 +1257,35 @@ export function PurchasingOperations({
       {submission.kind === 'succeeded' ? (
         <>
           <ResultSummary result={submission.result} />
-          <Button type="button" variant="outline" onClick={() => clearDecision()}>
-            بدء عملية جديدة
+          {postWriteRefresh === 'pending' ? (
+            <StatusNote tone="info" live>
+              تم حفظ العملية. جارٍ التحقق من سجل المشتريات المحدث قبل السماح بقرار جديد.
+            </StatusNote>
+          ) : null}
+          {postWriteRefresh === 'failed' ? (
+            <>
+              <StatusNote tone="danger" live>
+                تم حفظ العملية، لكن لم تكتمل قراءة الحقائق المحدثة من الخادم. ستبقى مساحة العمل
+                مقفلة حتى تنجح المزامنة، لمنع قرار جديد على بيانات قديمة.
+              </StatusNote>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void refreshAfterSuccess(submission.result)}
+              >
+                إعادة مزامنة سجل المشتريات
+              </Button>
+            </>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={postWriteRefresh !== 'ready' || refreshing}
+            onClick={() => clearDecision()}
+          >
+            {postWriteRefresh === 'ready' && !refreshing
+              ? 'بدء عملية جديدة'
+              : 'بانتظار مزامنة سجل المشتريات'}
           </Button>
         </>
       ) : null}
