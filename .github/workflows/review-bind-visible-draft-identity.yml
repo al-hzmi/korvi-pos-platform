@@ -1,0 +1,278 @@
+name: Review Visible Draft Identity Binding
+
+on:
+  push:
+    branches:
+      - review/5d-bind-visible-draft-identity-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git reset --hard 698e5b4d7fb5fab7e12c3d7ee00b1f62d81a4b1f
+          test "$(git rev-parse HEAD)" = "698e5b4d7fb5fab7e12c3d7ee00b1f62d81a4b1f"
+      - name: Apply bounded draft-identity remediation
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label} anchor mismatch: {text.count(old)}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          helper = Path('apps/pos-web/src/lib/draft-identity.ts')
+          helper.write_text("""/**
+           * Bind a browser-visible default to the draft as soon as the operator starts
+           * entering decision data. Once bound, refreshes must never substitute another
+           * entity silently; a missing bound id remains stale and must fail closed.
+           */
+          export function bindVisibleSelectionId(
+            currentId: string,
+            visibleId: string | undefined,
+          ): string {
+            return currentId === '' ? (visibleId ?? '') : currentId;
+          }
+          """, encoding='utf-8')
+
+          test = Path('apps/pos-web/src/components/__tests__/draft-identity.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';
+          import { bindVisibleSelectionId } from '../../lib/draft-identity';
+
+          describe('visible draft identity binding', () => {
+            it('materializes the visible default when decision input begins', () => {
+              expect(bindVisibleSelectionId('', 'product-1')).toBe('product-1');
+            });
+
+            it('never replaces an already-bound identity after refresh', () => {
+              expect(bindVisibleSelectionId('product-1', 'product-2')).toBe('product-1');
+              expect(bindVisibleSelectionId('removed-product', undefined)).toBe('removed-product');
+            });
+
+            it('stays unbound when there is no visible entity to bind', () => {
+              expect(bindVisibleSelectionId('', undefined)).toBe('');
+            });
+          });
+          """, encoding='utf-8')
+
+          inventory = Path('apps/pos-web/src/components/control/inventory-operations.tsx')
+          replace_once(
+              inventory,
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\n",
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\nimport { bindVisibleSelectionId } from '../../lib/draft-identity';\n",
+              'inventory import',
+          )
+          replace_once(
+              inventory,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setQuantity(event.target.value);
+                    setValidation(null);
+                    setSubmission({ kind: 'idle' });
+                  }}
+          """,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selectedProduct?.productId),
+                    );
+                    if (operation === 'transfer') {
+                      setDestinationBranchId((current) =>
+                        bindVisibleSelectionId(current, selectedDestination?.id),
+                      );
+                    }
+                    setQuantity(event.target.value);
+                    setValidation(null);
+                    setSubmission({ kind: 'idle' });
+                  }}
+          """,
+              'inventory quantity binding',
+          )
+          replace_once(
+              inventory,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setReason(event.target.value);
+                    setValidation(null);
+                    setSubmission({ kind: 'idle' });
+                  }}
+          """,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selectedProduct?.productId),
+                    );
+                    if (operation === 'transfer') {
+                      setDestinationBranchId((current) =>
+                        bindVisibleSelectionId(current, selectedDestination?.id),
+                      );
+                    }
+                    setReason(event.target.value);
+                    setValidation(null);
+                    setSubmission({ kind: 'idle' });
+                  }}
+          """,
+              'inventory reason binding',
+          )
+
+          costing = Path('apps/pos-web/src/components/control/inventory-cost-panel.tsx')
+          replace_once(
+              costing,
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\n",
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\nimport { bindVisibleSelectionId } from '../../lib/draft-identity';\n",
+              'cost import',
+          )
+          replace_once(
+              costing,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setTotalValue(event.target.value);
+                    setValidation(null);
+                    setSubmission({ kind: 'idle' });
+                  }}
+          """,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selected?.productId),
+                    );
+                    setTotalValue(event.target.value);
+                    setValidation(null);
+                    setSubmission({ kind: 'idle' });
+                  }}
+          """,
+              'cost value binding',
+          )
+
+          purchasing = Path('apps/pos-web/src/components/control/purchasing-operations.tsx')
+          replace_once(
+              purchasing,
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\n",
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\nimport { bindVisibleSelectionId } from '../../lib/draft-identity';\n",
+              'purchasing import',
+          )
+          replace_once(
+              purchasing,
+              """                  onChange={() => {
+                    flight.current.reset();
+                    setSupplierMode('update');
+                    setSupplierDraft(selectedSupplier?.name ?? '');
+                    setSupplierActive(selectedSupplier?.isActive ?? true);
+                    setValidation(null);
+                  }}
+          """,
+              """                  onChange={() => {
+                    flight.current.reset();
+                    setSupplierMode('update');
+                    setSupplierId((current) =>
+                      bindVisibleSelectionId(current, selectedSupplier?.id),
+                    );
+                    setSupplierDraft(selectedSupplier?.name ?? '');
+                    setSupplierActive(selectedSupplier?.isActive ?? true);
+                    setValidation(null);
+                  }}
+          """,
+              'supplier update binding',
+          )
+          replace_once(
+              purchasing,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setOrderReference(event.target.value);
+                    setValidation(null);
+                  }}
+          """,
+              """                  onChange={(event) => {
+                    flight.current.reset();
+                    setOrderSupplierId((current) =>
+                      bindVisibleSelectionId(current, selectedOrderSupplier?.id),
+                    );
+                    setOrderBranchId((current) =>
+                      bindVisibleSelectionId(current, selectedOrderBranch?.id),
+                    );
+                    setOrderReference(event.target.value);
+                    setValidation(null);
+                  }}
+          """,
+              'order reference binding',
+          )
+          replace_once(
+              purchasing,
+              """                      onChange={(event) => {
+                        flight.current.reset();
+                        setOrderLines((current) =>
+                          current.map((item) =>
+                            item.key === line.key
+                              ? { ...item, quantity: event.target.value }
+                              : item,
+                          ),
+                        );
+                        setValidation(null);
+                      }}
+          """,
+              """                      onChange={(event) => {
+                        flight.current.reset();
+                        setOrderSupplierId((current) =>
+                          bindVisibleSelectionId(current, selectedOrderSupplier?.id),
+                        );
+                        setOrderBranchId((current) =>
+                          bindVisibleSelectionId(current, selectedOrderBranch?.id),
+                        );
+                        setOrderLines((current) =>
+                          current.map((item) =>
+                            item.key === line.key
+                              ? {
+                                  ...item,
+                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
+                                  quantity: event.target.value,
+                                }
+                              : item,
+                          ),
+                        );
+                        setValidation(null);
+                      }}
+          """,
+              'order line quantity binding',
+          )
+          PY
+      - name: Install exact dependencies
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+      - name: Format bounded change
+        run: |
+          npx --no-install prettier --write \
+            apps/pos-web/src/lib/draft-identity.ts \
+            apps/pos-web/src/components/__tests__/draft-identity.test.ts \
+            apps/pos-web/src/components/control/inventory-operations.tsx \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/control/purchasing-operations.tsx
+          git diff --check
+      - name: Full verification
+        run: npm run verify
+      - name: Create clean child commit
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add \
+            apps/pos-web/src/lib/draft-identity.ts \
+            apps/pos-web/src/components/__tests__/draft-identity.test.ts \
+            apps/pos-web/src/components/control/inventory-operations.tsx \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/control/purchasing-operations.tsx
+          git commit -m 'fix(control): bind visible defaults before drafting'
+          test "$(git rev-parse HEAD^)" = "698e5b4d7fb5fab7e12c3d7ee00b1f62d81a4b1f"
+          git push origin HEAD:refs/heads/review/5d-bind-visible-draft-identity-clean
