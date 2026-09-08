@@ -1,5 +1,6 @@
 import { createPrismaClient } from '@korvi/database';
 import { buildServer } from './server.js';
+import { installGracefulShutdown } from './runtime/shutdown.js';
 import { loadStagingConfig } from './staging/config.js';
 import { verifyStagingDatabase } from './staging/preflight.js';
 
@@ -14,19 +15,7 @@ async function start(): Promise<void> {
   }
   const app = buildServer(config);
   await app.listen({ host: '0.0.0.0', port: config.API_PORT });
-  let stopping = false;
-  const stop = () => {
-    if (stopping) return;
-    stopping = true;
-    const deadline = setTimeout(() => process.exit(1), 25_000);
-    deadline.unref();
-    void app.close().then(
-      () => process.exit(0),
-      () => process.exit(1),
-    );
-  };
-  process.once('SIGTERM', stop);
-  process.once('SIGINT', stop);
+  installGracefulShutdown(app);
 }
 
 void start().catch(() => {
