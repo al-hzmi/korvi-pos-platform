@@ -1,0 +1,32 @@
+name: Format Helper
+
+on:
+  push:
+    branches:
+      - review/ops-readiness-lifecycle-scratch
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: node scripts/verify-package-manager.mjs
+      - run: npm ci --registry=https://registry.npmjs.org
+      - run: npx --no-install prettier --write apps/api/src/server.ts apps/api/src/__tests__/operational-readiness-live.test.ts
+      - name: Emit formatted files
+        run: |
+          echo 'SERVER_BASE64_BEGIN'
+          base64 -w0 apps/api/src/server.ts
+          echo
+          echo 'SERVER_BASE64_END'
+          echo 'LIVE_BASE64_BEGIN'
+          base64 -w0 apps/api/src/__tests__/operational-readiness-live.test.ts
+          echo
+          echo 'LIVE_BASE64_END'
