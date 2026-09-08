@@ -65,39 +65,33 @@ jobs:
               raise SystemExit('selected cost product anchor mismatch')
           text = text.replace(old, new, 1)
 
-          old = """    if (selected === undefined) {
+          old = """if (selected === undefined) {
               setValidation('لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.');
               return;
-            }
-          """
-          new = """    if (selected === undefined) {
+            }"""
+          new = """if (selected === undefined) {
               setValidation(
                 productId === ''
                   ? 'لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.'
                   : 'الصنف المحدد لم يعد مؤهلًا للتقييم في القراءة الحالية. اختر الصنف من جديد.',
               );
               return;
-            }
-          """
+            }"""
           if text.count(old) != 1:
               raise SystemExit('cost submit anchor mismatch')
           text = text.replace(old, new, 1)
 
-          old = """                >
-                      {eligible.map((row) => (
-          """
-          new = """                >
-                      {productId !== '' && selected === undefined ? (
+          old = "{eligible.map((row) => ("
+          new = """{productId !== '' && selected === undefined ? (
                         <option value="">اختر الصنف من جديد</option>
                       ) : null}
-                      {eligible.map((row) => (
-          """
+                      {eligible.map((row) => ("""
           if text.count(old) != 1:
               raise SystemExit('cost select options anchor mismatch')
           text = text.replace(old, new, 1)
 
-          old = "                  disabled={locked || eligible.length === 0}\n"
-          new = "                  disabled={locked || eligible.length === 0 || selected === undefined}\n"
+          old = "disabled={locked || eligible.length === 0}"
+          new = "disabled={locked || eligible.length === 0 || selected === undefined}"
           if text.count(old) != 1:
               raise SystemExit('cost submit button anchor mismatch')
           text = text.replace(old, new, 1)
