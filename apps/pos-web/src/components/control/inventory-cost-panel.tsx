@@ -54,6 +54,22 @@ export type CostBalancesState =
       readonly loadFailure: Failure | null;
     };
 
+/** A first-page cost read supersedes any in-flight cost pagination request. */
+export function beginCostBalanceRefresh(current: CostBalancesState): CostBalancesState {
+  return current.kind === 'ready'
+    ? { ...current, loadingMore: false, refreshing: true, loadFailure: null }
+    : { kind: 'loading' };
+}
+
+export function failCostBalanceRefresh(
+  current: CostBalancesState,
+  failure: Failure,
+): CostBalancesState {
+  return current.kind === 'ready'
+    ? { ...current, loadingMore: false, refreshing: false, loadFailure: failure }
+    : { kind: 'failed', failure };
+}
+
 function failureTone(failure: Failure): 'warning' | 'danger' {
   return failure.action === 'permission' ? 'warning' : 'danger';
 }
@@ -561,12 +577,9 @@ export function InventoryCostPanel({
 
   useEffect(() => {
     more.current?.abort();
+    more.current = null;
     const controller = new AbortController();
-    setState((current) =>
-      current.kind === 'ready'
-        ? { ...current, refreshing: true, loadFailure: null }
-        : { kind: 'loading' },
-    );
+    setState(beginCostBalanceRefresh);
     void api
       .inventoryCostBalances(
         { branchId: branch.id, limit: PAGE_SIZE },
@@ -585,11 +598,7 @@ export function InventoryCostPanel({
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         const failure = describeCostReadFailure(error);
-        setState((current) =>
-          current.kind === 'ready'
-            ? { ...current, refreshing: false, loadFailure: failure }
-            : { kind: 'failed', failure },
-        );
+        setState((current) => failCostBalanceRefresh(current, failure));
       });
     return () => controller.abort();
   }, [api, branch.id, refreshToken, reload]);
@@ -597,6 +606,7 @@ export function InventoryCostPanel({
   useEffect(
     () => () => {
       more.current?.abort();
+      more.current = null;
     },
     [],
   );
@@ -642,6 +652,9 @@ export function InventoryCostPanel({
               }
             : current,
         );
+      })
+      .finally(() => {
+        if (more.current === controller) more.current = null;
       });
   }, [api, branch.id, state]);
 
