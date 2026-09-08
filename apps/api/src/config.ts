@@ -10,7 +10,7 @@ import { z } from 'zod';
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    API_PORT: z.coerce.number().int().positive().default(3001),
+    API_PORT: z.coerce.number().int().positive().max(65_535).default(3001),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
     /**
@@ -29,7 +29,10 @@ const schema = z
       .max(24 * 30)
       .default(12),
 
-    /** Absent is legal: a server with no database still answers /health. */
+    /**
+     * Development/test may be liveness-only. Production must have a database
+     * and is rejected in the refinement below if this is absent.
+     */
     DATABASE_URL: z.string().min(1).optional(),
 
     /**
@@ -58,6 +61,13 @@ const schema = z
     BOOTSTRAP_SIGNING_KEY: z.string().min(32).max(512).optional(),
   })
   .superRefine((value, context) => {
+    if (value.NODE_ENV === 'production' && (value.DATABASE_URL ?? '').trim() === '') {
+      context.addIssue({
+        code: 'custom',
+        path: ['DATABASE_URL'],
+        message: 'is required in production; refusing to advertise an unusable API as healthy',
+      });
+    }
     if (value.NODE_ENV === 'production' && (value.BOOTSTRAP_SIGNING_KEY ?? '').trim() === '') {
       context.addIssue({
         code: 'custom',
