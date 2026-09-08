@@ -1,4 +1,4 @@
-import { createPrismaClient, type PrismaClient } from '@korvi/database';
+import { createPrismaClient } from '@korvi/database';
 import type { ApiConfig } from '../config.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -9,67 +9,106 @@ export interface ReadinessProbe {
 
 export interface OperationalReadinessOptions {
   readonly probe?: ReadinessProbe;
+  /**
+   * Maximum time a request may wait for dependency readiness.
+   *
+   * The underlying probe is deliberately not cancelled when this expires:
+   * database drivers do not provide a safe generic cancellation primitive at
+   * this boundary. The single-flight guard below keeps that one unresolved
+   * probe from becoming a thundering herd of additional database work.
+   */
+  readonly timeoutMs?: number;
 }
 
-/**
- * Database reachability for orchestration readiness, not liveness.
- *
- * The client is lazy so boot and `/health` stay independent from PostgreSQL.
- * A missing DATABASE_URL is a deterministic not-ready state rather than an
- * exception. Query failures are collapsed to `false`: driver text may include
- * connection details and a public readiness endpoint must never echo it.
- */
-export function createDatabaseReadinessProbe(connectionString: string | undefined): ReadinessProbe {
-  let client: PrismaClient | null = null;
+const DEFAULT_READINESS_TIMEOUT_MS = 2_500;
 
-  const resolve = (): PrismaClient | null => {
+function databaseProbe(connectionString: string | undefined): ReadinessProbe {
+  let prisma: ReturnType<typeof createPrismaClient> | null = null;
+
+  const resolve = () => {
     if (connectionString === undefined) return null;
-    client ??= createPrismaClient(connectionString);
-    return client;
+    if (prisma !== null) return prisma;
+    prisma = createPrismaClient(connectionString);
+    return prisma;
   };
 
   return {
-    async check(): Promise<boolean> {
-      const prisma = resolve();
-      if (prisma === null) return false;
+    check: async () => {
+      const client = resolve();
+      if (client === null) return false;
       try {
-        await prisma.$queryRaw`SELECT 1`;
+        await client.$queryRaw`SELECT 1`;
         return true;
       } catch {
         return false;
       }
     },
-    async close(): Promise<void> {
-      if (client === null) return;
-      const current = client;
-      client = null;
-      await current.$disconnect();
+    close: async () => {
+      if (prisma === null) return;
+      await prisma.$disconnect();
+      prisma = null;
     },
   };
 }
 
 /**
- * Register readiness separately from the server's liveness endpoint.
+ * Dependency readiness, deliberately separate from `/health` liveness.
  *
- * `/health` answers whether the process event loop can serve HTTP. `/ready`
- * answers whether this instance should receive business traffic. Conflating
- * the two would make a brief database outage trigger process restart storms.
+ * Liveness answers whether this process/event loop is alive. Readiness answers
+ * whether it can currently reach the authoritative database and should receive
+ * new traffic. A dependency outage must therefore yield 503 without causing an
+ * orchestrator restart storm.
  */
 export function registerOperationalReadiness(
   app: FastifyInstance,
   config: ApiConfig,
   options: OperationalReadinessOptions = {},
 ): void {
-  const probe = options.probe ?? createDatabaseReadinessProbe(config.DATABASE_URL);
+  const probe = options.probe ?? databaseProbe(config.DATABASE_URL);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS;
+
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('readiness timeoutMs must be a positive safe integer');
+  }
+
+  // One dependency operation at a time per process. If PostgreSQL or the
+  // driver stalls beyond the public deadline, later probes reuse the same
+  // pending operation rather than multiplying work and connection pressure.
+  let inFlight: Promise<boolean> | null = null;
+
+  const checkDependency = (): Promise<boolean> => {
+    if (inFlight !== null) return inFlight;
+
+    const operation = (async () => {
+      try {
+        return await probe.check();
+      } catch {
+        return false;
+      }
+    })();
+    inFlight = operation;
+    void operation.finally(() => {
+      if (inFlight === operation) inFlight = null;
+    });
+    return operation;
+  };
+
+  const checkWithinDeadline = async (): Promise<boolean> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs);
+      timer.unref?.();
+    });
+
+    try {
+      return await Promise.race([checkDependency(), deadline]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
 
   app.get('/ready', async (_request, reply) => {
-    let ready: boolean;
-    try {
-      ready = await probe.check();
-    } catch {
-      ready = false;
-    }
-
+    const ready = await checkWithinDeadline();
     if (!ready) {
       return reply.code(503).send({ status: 'not_ready' });
     }
@@ -77,6 +116,13 @@ export function registerOperationalReadiness(
   });
 
   app.addHook('onClose', async () => {
-    await probe.close();
+    try {
+      await probe.close();
+    } catch (error) {
+      app.log.error(
+        { error: error instanceof Error ? error.name : 'unknown' },
+        'readiness probe cleanup failed',
+      );
+    }
   });
 }
