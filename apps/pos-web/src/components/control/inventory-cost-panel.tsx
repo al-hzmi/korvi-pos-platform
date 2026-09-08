@@ -5,6 +5,7 @@ import { newId } from '@korvi/domain';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';
+import { bindVisibleSelectionId } from '../../lib/draft-identity';
 import {
   buildCostBootstrapIntent,
   costFlightOutcomeFor,
@@ -506,6 +507,7 @@ export function CostBootstrapForm({
                   disabled={locked}
                   onChange={(event) => {
                     flight.current.reset();
+                    setProductId((current) => bindVisibleSelectionId(current, selected?.productId));
                     setTotalValue(event.target.value);
                     setValidation(null);
                     setSubmission({ kind: 'idle' });

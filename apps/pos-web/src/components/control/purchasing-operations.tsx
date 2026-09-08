@@ -5,6 +5,7 @@ import { MAX_PURCHASING_LINES, newId } from '@korvi/domain';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';
+import { bindVisibleSelectionId } from '../../lib/draft-identity';
 import {
   buildPurchaseOrderIntent,
   buildPurchaseReceiptIntent,
@@ -807,6 +808,9 @@ export function PurchasingOperations({
                   onChange={() => {
                     flight.current.reset();
                     setSupplierMode('update');
+                    setSupplierId((current) =>
+                      bindVisibleSelectionId(current, selectedSupplier?.id),
+                    );
                     setSupplierDraft(selectedSupplier?.name ?? '');
                     setSupplierActive(selectedSupplier?.isActive ?? true);
                     setValidation(null);
@@ -960,6 +964,12 @@ export function PurchasingOperations({
                   value={orderReference}
                   onChange={(event) => {
                     flight.current.reset();
+                    setOrderSupplierId((current) =>
+                      bindVisibleSelectionId(current, selectedOrderSupplier?.id),
+                    );
+                    setOrderBranchId((current) =>
+                      bindVisibleSelectionId(current, selectedOrderBranch?.id),
+                    );
                     setOrderReference(event.target.value);
                     setValidation(null);
                   }}
@@ -1020,10 +1030,20 @@ export function PurchasingOperations({
                       value={line.quantity}
                       onChange={(event) => {
                         flight.current.reset();
+                        setOrderSupplierId((current) =>
+                          bindVisibleSelectionId(current, selectedOrderSupplier?.id),
+                        );
+                        setOrderBranchId((current) =>
+                          bindVisibleSelectionId(current, selectedOrderBranch?.id),
+                        );
                         setOrderLines((current) =>
                           current.map((item) =>
                             item.key === line.key
-                              ? { ...item, quantity: event.target.value }
+                              ? {
+                                  ...item,
+                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
+                                  quantity: event.target.value,
+                                }
                               : item,
                           ),
                         );

@@ -5,6 +5,7 @@ import { newId } from '@korvi/domain';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';
+import { bindVisibleSelectionId } from '../../lib/draft-identity';
 import {
   buildInventoryCommandIntent,
   describeInventoryCommandFailure,
@@ -405,6 +406,14 @@ export function InventoryOperations({
                   value={quantity}
                   onChange={(event) => {
                     flight.current.reset();
+                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selectedProduct?.productId),
+                    );
+                    if (operation === 'transfer') {
+                      setDestinationBranchId((current) =>
+                        bindVisibleSelectionId(current, selectedDestination?.id),
+                      );
+                    }
                     setQuantity(event.target.value);
                     setValidation(null);
                     setSubmission({ kind: 'idle' });
@@ -423,6 +432,14 @@ export function InventoryOperations({
                   value={reason}
                   onChange={(event) => {
                     flight.current.reset();
+                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selectedProduct?.productId),
+                    );
+                    if (operation === 'transfer') {
+                      setDestinationBranchId((current) =>
+                        bindVisibleSelectionId(current, selectedDestination?.id),
+                      );
+                    }
                     setReason(event.target.value);
                     setValidation(null);
                     setSubmission({ kind: 'idle' });
