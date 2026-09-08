@@ -11,15 +11,18 @@ function probe(check: ReadinessProbe['check']): ReadinessProbe {
 }
 
 describe('operational readiness', () => {
-  it('keeps a missing database configuration out of rotation without affecting process liveness', async () => {
-    const app = Fastify({ logger: false });
-    registerOperationalReadiness(app, loadConfig({ NODE_ENV: 'test' }));
+  it(
+    'keeps a missing database configuration out of rotation without affecting process liveness',
+    async () => {
+      const app = Fastify({ logger: false });
+      registerOperationalReadiness(app, loadConfig({ NODE_ENV: 'test' }));
 
-    const response = await app.inject({ method: 'GET', url: '/ready' });
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toEqual({ status: 'not_ready' });
-    await app.close();
-  });
+      const response = await app.inject({ method: 'GET', url: '/ready' });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ status: 'not_ready' });
+      await app.close();
+    },
+  );
 
   it('returns ready only after the dependency probe succeeds', async () => {
     const app = Fastify({ logger: false });
