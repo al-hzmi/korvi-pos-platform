@@ -59,6 +59,26 @@ export type InventoryBalancesState =
       readonly loadFailure: Failure | null;
     };
 
+/** A first-page balance read owns the branch and supersedes any page request for it. */
+export function beginInventoryBalanceRefresh(
+  current: InventoryBalancesState,
+  branchId: string,
+): InventoryBalancesState {
+  return current.kind === 'ready' && current.branchId === branchId
+    ? { ...current, loadingMore: false, refreshing: true, loadFailure: null }
+    : { kind: 'loading', branchId };
+}
+
+export function failInventoryBalanceRefresh(
+  current: InventoryBalancesState,
+  branchId: string,
+  failure: Failure,
+): InventoryBalancesState {
+  return current.kind === 'ready' && current.branchId === branchId
+    ? { ...current, loadingMore: false, refreshing: false, loadFailure: failure }
+    : { kind: 'failed', branchId, failure };
+}
+
 interface InventoryPanelViewProps {
   readonly branches: InventoryBranchesState;
   readonly balances: InventoryBalancesState;
@@ -344,6 +364,7 @@ export function InventoryPanel({
   useEffect(() => {
     const controller = new AbortController();
     branchMore.current?.abort();
+    branchMore.current = null;
     setBranches({ kind: 'loading' });
 
     void api
@@ -367,6 +388,7 @@ export function InventoryPanel({
 
   useEffect(() => {
     balanceMore.current?.abort();
+    balanceMore.current = null;
     if (selectedBranchId === null) {
       setBalances({ kind: 'idle' });
       return undefined;
@@ -374,11 +396,7 @@ export function InventoryPanel({
 
     const controller = new AbortController();
     const branchId = selectedBranchId;
-    setBalances((current) =>
-      current.kind === 'ready' && current.branchId === branchId
-        ? { ...current, refreshing: true, loadFailure: null }
-        : { kind: 'loading', branchId },
-    );
+    setBalances((current) => beginInventoryBalanceRefresh(current, branchId));
     void api
       .inventoryBalances({ branchId, limit: PAGE_SIZE }, { signal: controller.signal })
       .then((page) =>
@@ -396,11 +414,7 @@ export function InventoryPanel({
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         const failure = describeInventoryReadFailure(error);
-        setBalances((current) =>
-          current.kind === 'ready' && current.branchId === branchId
-            ? { ...current, refreshing: false, loadFailure: failure }
-            : { kind: 'failed', branchId, failure },
-        );
+        setBalances((current) => failInventoryBalanceRefresh(current, branchId, failure));
       });
 
     return () => controller.abort();
@@ -410,6 +424,8 @@ export function InventoryPanel({
     () => () => {
       branchMore.current?.abort();
       balanceMore.current?.abort();
+      branchMore.current = null;
+      balanceMore.current = null;
     },
     [],
   );
