@@ -7,6 +7,7 @@ import {
 } from '../control/inventory-panel';
 import { purchasingPostWriteReady } from '../control/purchasing-operations';
 import { beginPurchasingRefresh, failPurchasingRefresh } from '../control/purchasing-panel';
+import { ownsAbortController } from '../../lib/request-ownership';
 import type { CostBalancesState } from '../control/inventory-cost-panel';
 import type { InventoryBalancesState } from '../control/inventory-panel';
 import type { PurchasingPages, PurchasingState } from '../control/purchasing-panel';
@@ -24,6 +25,20 @@ const networkFailure: Failure = {
   message: 'تعذر التحديث.',
   action: 'retry-same',
 };
+
+describe('pagination request ownership', () => {
+  it('accepts only the still-current, non-aborted request', () => {
+    const first = new AbortController();
+    const replacement = new AbortController();
+
+    expect(ownsAbortController(first, first)).toBe(true);
+    expect(ownsAbortController(replacement, first)).toBe(false);
+    expect(ownsAbortController(null, first)).toBe(false);
+
+    first.abort();
+    expect(ownsAbortController(first, first)).toBe(false);
+  });
+});
 
 describe('purchasing refresh pagination ownership', () => {
   it('retires an in-flight page marker when first-page refresh supersedes it', () => {
