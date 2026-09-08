@@ -1,0 +1,32 @@
+name: Review Promote Readiness Candidate
+
+on:
+  push:
+    branches:
+      - review/mysql2-3.24.4-builder
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Verify exact promotion preconditions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin strike/5c-costing-authority review/product-readiness-scorecard-74
+          active="$(git rev-parse origin/strike/5c-costing-authority)"
+          candidate="$(git rev-parse origin/review/product-readiness-scorecard-74)"
+          test "$active" = "6e23f6bddb4ff72d20dcb64a4ec20300284e3509"
+          test "$candidate" = "dfe5c846c90ae9552645fb9678d39363aa3daee1"
+          git merge-base --is-ancestor "$active" "$candidate"
+      - name: Promote exact reviewed candidate by fast-forward only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin dfe5c846c90ae9552645fb9678d39363aa3daee1:refs/heads/strike/5c-costing-authority
