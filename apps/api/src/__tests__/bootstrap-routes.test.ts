@@ -18,6 +18,7 @@ import type { FastifyInstance } from 'fastify';
 const ORIGIN = 'http://localhost:3000';
 const TOKEN = 'v1.cGF5bG9hZA.c2lnbmF0dXJl';
 const PASSWORD = 'a-real-password-9!';
+const PRODUCTION_DATABASE_URL = 'postgresql://korvi.example.invalid/korvi';
 
 let app: FastifyInstance;
 let seen: { token: string; password: string }[];
@@ -151,13 +152,22 @@ describe('the signing key as configuration', () => {
       key,
     );
 
-    // Production without one refuses to boot, rather than serving the route
-    // unsigned or discovering the gap on the first invitation.
-    expect(() => loadConfig({ NODE_ENV: 'production', APP_ORIGINS: ORIGIN })).toThrow(
-      /BOOTSTRAP_SIGNING_KEY/,
-    );
+    // Keep the database and origin prerequisites satisfied here so this test
+    // proves only the signing-key requirement.
     expect(() =>
-      loadConfig({ NODE_ENV: 'production', APP_ORIGINS: ORIGIN, BOOTSTRAP_SIGNING_KEY: key }),
+      loadConfig({
+        NODE_ENV: 'production',
+        APP_ORIGINS: ORIGIN,
+        DATABASE_URL: PRODUCTION_DATABASE_URL,
+      }),
+    ).toThrow(/BOOTSTRAP_SIGNING_KEY/);
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        APP_ORIGINS: ORIGIN,
+        DATABASE_URL: PRODUCTION_DATABASE_URL,
+        BOOTSTRAP_SIGNING_KEY: key,
+      }),
     ).not.toThrow();
   });
 
