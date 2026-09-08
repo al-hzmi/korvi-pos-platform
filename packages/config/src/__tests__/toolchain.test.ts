@@ -181,3 +181,37 @@ describe('npm package-manager authority', () => {
     expect(verify.indexOf(guard)).toBeLessThan(verify.indexOf('npm run'));
   });
 });
+
+describe('Prisma / pg transaction-driver compatibility', () => {
+  const databasePkg = json('packages/database/package.json') as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const deps = databasePkg.dependencies ?? {};
+  const devDeps = databasePkg.devDependencies ?? {};
+
+  it('keeps the Prisma CLI, client and PostgreSQL adapter exactly aligned', () => {
+    const versions = [devDeps.prisma, deps['@prisma/client'], deps['@prisma/adapter-pg']];
+    for (const version of versions) {
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    }
+    expect(new Set(versions).size).toBe(1);
+  });
+
+  it('holds pg on major 8 until ADR-0027 compatibility evidence permits pg 9', () => {
+    const pg = deps.pg ?? '';
+    expect(pg).toMatch(/^8\.\d+\.\d+$/);
+    expect(read('docs/decisions/ADR-0027-prisma-pg-transaction-driver-compatibility.md')).toContain(
+      'pg 9',
+    );
+  });
+
+  it('locks the installed pg copy to the same direct pin', () => {
+    const pg = deps.pg;
+    const lock = json('package-lock.json') as {
+      packages: Record<string, { version?: string }>;
+    };
+    expect(pg).toBeDefined();
+    expect(lock.packages['node_modules/pg']?.version).toBe(pg);
+  });
+});
