@@ -166,7 +166,14 @@ jobs:
           )
           replace_once(
               purchasing,
-              "                        setOrderLines((current) =>\n",
+              """                        setOrderLines((current) =>
+                          current.map((item) =>
+                            item.key === line.key
+                              ? {
+                                  ...item,
+                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
+                                  quantity: event.target.value,
+          """,
               """                        setOrderSupplierId((current) =>
                           bindVisibleSelectionId(current, selectedOrderSupplier?.id),
                         );
@@ -174,6 +181,12 @@ jobs:
                           bindVisibleSelectionId(current, selectedOrderBranch?.id),
                         );
                         setOrderLines((current) =>
+                          current.map((item) =>
+                            item.key === line.key
+                              ? {
+                                  ...item,
+                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
+                                  quantity: event.target.value,
           """,
               'order line parent binding',
           )
