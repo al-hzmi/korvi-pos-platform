@@ -1,0 +1,84 @@
+name: Review MySQL2 Patch Builder V4
+
+on:
+  push:
+    branches:
+      - review/mysql2-3.24.4-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git reset --hard 3e37b2cc51b1231e7148bd2d0e3bc39858a67cba
+          test "$(git rev-parse HEAD)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+      - name: Regenerate lock from authoritative manifests
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (p.overrides?.mysql2 !== '3.24.3') throw new Error('unexpected mysql2 override');
+          p.overrides.mysql2 = '3.24.4';
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+          cp package-lock.json /tmp/korvi-lock-before.json
+          rm -rf node_modules package-lock.json
+          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+      - name: Audit lock regeneration scope
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const before = JSON.parse(fs.readFileSync('/tmp/korvi-lock-before.json', 'utf8'));
+          const after = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (pkg.overrides?.mysql2 !== '3.24.4') throw new Error('root mysql2 override is not 3.24.4');
+          const mysql = Object.entries(after.packages ?? {}).filter(([path]) => path.endsWith('node_modules/mysql2'));
+          if (mysql.length === 0 || mysql.some(([, meta]) => meta.version !== '3.24.4')) {
+            throw new Error(`mysql2 lock resolution failed: ${JSON.stringify(mysql)}`);
+          }
+          const b = before.packages ?? {};
+          const a = after.packages ?? {};
+          const paths = new Set([...Object.keys(b), ...Object.keys(a)]);
+          const changes = [];
+          for (const path of [...paths].sort()) {
+            const bv = b[path]?.version ?? null;
+            const av = a[path]?.version ?? null;
+            if (bv !== av) changes.push({ path, before: bv, after: av });
+          }
+          console.log(JSON.stringify({ changedPackageVersions: changes }, null, 2));
+          const unrelated = changes.filter(({ path }) => !path.endsWith('node_modules/mysql2'));
+          if (unrelated.length > 0) {
+            throw new Error(`clean lock regeneration changed unrelated package versions: ${JSON.stringify(unrelated)}`);
+          }
+          console.log('[ok] lock regeneration changed only mysql2 package version(s)');
+          NODE
+          git diff --stat -- package.json package-lock.json
+          git diff --check
+      - name: Install and verify all unchanged gates
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+          npm run versions:verify
+          npm run audit
+          npx --no-install prettier --write package.json package-lock.json README.md docs/governance/PRODUCT-READINESS-SCORECARD.md
+          git diff --check
+          npm run verify
+      - name: Publish clean child
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add package.json package-lock.json README.md docs/governance/PRODUCT-READINESS-SCORECARD.md
+          git commit -m 'chore(deps): advance mysql2 remediation to 3.24.4'
+          test "$(git rev-parse HEAD^)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+          git push origin HEAD:refs/heads/review/product-readiness-scorecard-74
