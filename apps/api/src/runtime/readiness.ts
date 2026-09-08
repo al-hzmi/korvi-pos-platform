@@ -63,7 +63,7 @@ export function registerOperationalReadiness(
   const probe = options.probe ?? createDatabaseReadinessProbe(config.DATABASE_URL);
 
   app.get('/ready', async (_request, reply) => {
-    let ready = false;
+    let ready: boolean;
     try {
       ready = await probe.check();
     } catch {
