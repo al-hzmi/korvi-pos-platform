@@ -1,16 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import {
-  beginCostBalanceRefresh,
-  failCostBalanceRefresh,
-} from '../control/inventory-cost-panel';
+import { beginCostBalanceRefresh, failCostBalanceRefresh } from '../control/inventory-cost-panel';
 import {
   beginInventoryBalanceRefresh,
   failInventoryBalanceRefresh,
 } from '../control/inventory-panel';
-import {
-  beginPurchasingRefresh,
-  failPurchasingRefresh,
-} from '../control/purchasing-panel';
+import { beginPurchasingRefresh, failPurchasingRefresh } from '../control/purchasing-panel';
 import type { CostBalancesState } from '../control/inventory-cost-panel';
 import type { InventoryBalancesState } from '../control/inventory-panel';
 import type { PurchasingPages, PurchasingState } from '../control/purchasing-panel';
