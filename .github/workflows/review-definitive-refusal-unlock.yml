@@ -1,0 +1,125 @@
+name: Review Definitive Refusal Unlock
+
+on:
+  push:
+    branches:
+      - review/5d-definitive-refusal-unlock
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git fetch origin strike/5c-costing-authority
+          git reset --hard 59947b98867bffb788a914cf6ff1fc598e968132
+          test "$(git rev-parse HEAD)" = "59947b98867bffb788a914cf6ff1fc598e968132"
+      - name: Apply bounded workspace-unlock remediation
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          helper = Path('apps/pos-web/src/lib/command-workspace.ts')
+          helper.write_text("""/**
+           * A 401/403 response is a definitive server refusal, not an ambiguous commit.
+           * The failed form remains locally blocked, but the control-centre workspace
+           * must be released so the operator can leave the section or sign in again.
+           * Editable validation failures are definitive for the same reason.
+           */
+          export function commandFailureReleasesWorkspace(action: string): boolean {
+            return action === 'edit-command' || action === 'permission' || action === 'reauthenticate';
+          }
+          """, encoding='utf-8')
+
+          files = [
+              Path('apps/pos-web/src/components/control/inventory-operations.tsx'),
+              Path('apps/pos-web/src/components/control/inventory-cost-panel.tsx'),
+              Path('apps/pos-web/src/components/control/purchasing-operations.tsx'),
+          ]
+          for path in files:
+              text = path.read_text(encoding='utf-8')
+              anchor = "import { StatusNote } from '../status-note';\n"
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'{path}: status-note import anchor count != 1')
+              text = text.replace(
+                  anchor,
+                  anchor + "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\n",
+                  1,
+              )
+              if path.name == 'purchasing-operations.tsx':
+                  old = """        } else if (failure.action === 'edit-command') {
+                    onCommandLockChange(false);
+                  }
+          """
+                  new = """        } else if (commandFailureReleasesWorkspace(failure.action)) {
+                    onCommandLockChange(false);
+                  }
+          """
+              else:
+                  old = """        } else if (failure.action === 'edit-command') {
+                    releaseWorkspace();
+                  }
+          """
+                  new = """        } else if (commandFailureReleasesWorkspace(failure.action)) {
+                    releaseWorkspace();
+                  }
+          """
+              if text.count(old) != 1:
+                  raise SystemExit(f'{path}: failure-release anchor count != 1')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('apps/pos-web/src/lib/__tests__/command-workspace.test.ts')
+          test.parent.mkdir(parents=True, exist_ok=True)
+          test.write_text("""import { describe, expect, it } from 'vitest';
+          import { commandFailureReleasesWorkspace } from '../command-workspace';
+
+          describe('command workspace release policy', () => {
+            it.each(['edit-command', 'permission', 'reauthenticate'])(
+              'releases the global workspace after definitive refusal %s',
+              (action) => expect(commandFailureReleasesWorkspace(action)).toBe(true),
+            );
+
+            it.each(['retry-same', 'refresh-stock', 'refresh-cost', 'refresh-purchasing', 'blocking'])(
+              'keeps the workspace frozen when outcome/reconciliation still requires protection: %s',
+              (action) => expect(commandFailureReleasesWorkspace(action)).toBe(false),
+            );
+          });
+          """, encoding='utf-8')
+          PY
+      - name: Install exact dependencies
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+      - name: Format and targeted proof
+        run: |
+          npx --no-install prettier --write \
+            apps/pos-web/src/lib/command-workspace.ts \
+            apps/pos-web/src/lib/__tests__/command-workspace.test.ts \
+            apps/pos-web/src/components/control/inventory-operations.tsx \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/control/purchasing-operations.tsx
+          npx --no-install vitest run apps/pos-web/src/lib/__tests__/command-workspace.test.ts
+          git diff --check
+      - name: Create clean candidate directly on reviewed parent
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add \
+            apps/pos-web/src/lib/command-workspace.ts \
+            apps/pos-web/src/lib/__tests__/command-workspace.test.ts \
+            apps/pos-web/src/components/control/inventory-operations.tsx \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/control/purchasing-operations.tsx
+          git commit -m 'fix(control): release workspace after definitive refusal'
+          test "$(git rev-parse HEAD^)" = "59947b98867bffb788a914cf6ff1fc598e968132"
+          git push origin HEAD:refs/heads/review/5d-definitive-refusal-unlock-clean
