@@ -384,11 +384,7 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
     logger: {
       level: config.LOG_LEVEL,
       redact: {
-        paths: [
-          'req.headers.authorization',
-          'req.headers.cookie',
-          'res.headers["set-cookie"]',
-        ],
+        paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
         censor: '[REDACTED]',
       },
     },
@@ -438,8 +434,7 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
     guards,
   });
   registerBootstrapRoutes(app, {
-    service:
-      deps.bootstrap === undefined ? bootstrapServiceFor(config, database) : deps.bootstrap,
+    service: deps.bootstrap === undefined ? bootstrapServiceFor(config, database) : deps.bootstrap,
   });
   registerOnboardingRoutes(app, {
     service: deps.onboarding ?? lazyOnboardingService(database),
