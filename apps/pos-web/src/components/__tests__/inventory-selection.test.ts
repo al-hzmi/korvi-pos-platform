@@ -5,10 +5,7 @@ import {
 } from '../control/inventory-operations';
 import type { InventoryBalanceRow, InventoryBranch } from '../../lib/api-types';
 
-const products = [
-  { productId: 'product-1' },
-  { productId: 'product-2' },
-] as InventoryBalanceRow[];
+const products = [{ productId: 'product-1' }, { productId: 'product-2' }] as InventoryBalanceRow[];
 
 const destinations = [{ id: 'branch-1' }, { id: 'branch-2' }] as InventoryBranch[];
 
