@@ -62,10 +62,7 @@ export function beginPurchasingRefresh(current: PurchasingState): PurchasingStat
     : current;
 }
 
-export function failPurchasingRefresh(
-  current: PurchasingState,
-  failure: Failure,
-): PurchasingState {
+export function failPurchasingRefresh(current: PurchasingState, failure: Failure): PurchasingState {
   return current.kind === 'ready'
     ? { ...current, refreshing: false, loadingMore: null, failure }
     : { kind: 'failed', failure };
