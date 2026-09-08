@@ -1,10 +1,7 @@
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../config.js';
-import {
-  registerOperationalReadiness,
-  type ReadinessProbe,
-} from '../runtime/readiness.js';
+import { registerOperationalReadiness, type ReadinessProbe } from '../runtime/readiness.js';
 
 function probe(check: ReadinessProbe['check']): ReadinessProbe {
   return { check, close: vi.fn(async () => undefined) };
