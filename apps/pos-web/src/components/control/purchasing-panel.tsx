@@ -5,6 +5,7 @@ import { Button, CardSurface } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { PurchasingOperations } from './purchasing-operations';
 import { describeFailure } from '../../lib/failures';
+import { ownsAbortController } from '../../lib/request-ownership';
 import type { JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type {
@@ -169,6 +170,7 @@ export function PurchasingPanel({
 
       void request
         .then((next) => {
+          if (!ownsAbortController(pageController.current, controller)) return;
           setState((latest) => {
             if (latest.kind !== 'ready') return latest;
             if (kind === 'branches') {
@@ -224,7 +226,7 @@ export function PurchasingPanel({
           });
         })
         .catch((error: unknown) => {
-          if (error instanceof DOMException && error.name === 'AbortError') return;
+          if (!ownsAbortController(pageController.current, controller)) return;
           setState((latest) =>
             latest.kind === 'ready'
               ? { ...latest, loadingMore: null, failure: purchasingFailure(error) }
