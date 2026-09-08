@@ -140,10 +140,7 @@ export function InventoryOperations({
   );
   const selectedDestination =
     destinations.find((candidate) => candidate.id === destinationBranchId) ?? destinations[0];
-  const awaitingFreshBalance = inventoryRefreshPending(
-    requiredFreshGeneration,
-    balanceGeneration,
-  );
+  const awaitingFreshBalance = inventoryRefreshPending(requiredFreshGeneration, balanceGeneration);
 
   useEffect(() => {
     if (requiredFreshGeneration !== null && balanceGeneration >= requiredFreshGeneration) {
