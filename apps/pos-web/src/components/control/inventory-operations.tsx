@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { newId } from '@korvi/domain';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
+import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';
 import {
   buildInventoryCommandIntent,
   describeInventoryCommandFailure,
@@ -202,7 +203,7 @@ export function InventoryOperations({
           setRequiredFreshGeneration(balanceGeneration + 1);
           setQuantity('');
           onRefreshBalances();
-        } else if (failure.action === 'edit-command') {
+        } else if (commandFailureReleasesWorkspace(failure.action)) {
           releaseWorkspace();
         }
       });

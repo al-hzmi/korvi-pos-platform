@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { newId } from '@korvi/domain';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
+import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';
 import {
   buildCostBootstrapIntent,
   costFlightOutcomeFor,
@@ -395,7 +396,7 @@ export function CostBootstrapForm({
           setRequiredGeneration(generation + 1);
           setTotalValue('');
           onRefresh();
-        } else if (failure.action === 'edit-command') {
+        } else if (commandFailureReleasesWorkspace(failure.action)) {
           releaseWorkspace();
         }
       });

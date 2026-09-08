@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MAX_PURCHASING_LINES, newId } from '@korvi/domain';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
 import { StatusNote } from '../status-note';
+import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';
 import {
   buildPurchaseOrderIntent,
   buildPurchaseReceiptIntent,
@@ -658,7 +659,7 @@ export function PurchasingOperations({
           setReceiptQuantities({});
           setReceiptInventoryValues({});
           reconcile();
-        } else if (failure.action === 'edit-command') {
+        } else if (commandFailureReleasesWorkspace(failure.action)) {
           onCommandLockChange(false);
         }
       });
