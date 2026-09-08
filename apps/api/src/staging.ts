@@ -1,5 +1,6 @@
 import { createPrismaClient } from '@korvi/database';
 import { buildServer } from './server.js';
+import { registerOperationalReadiness } from './runtime/readiness.js';
 import { installGracefulShutdown } from './runtime/shutdown.js';
 import { loadStagingConfig } from './staging/config.js';
 import { verifyStagingDatabase } from './staging/preflight.js';
@@ -14,6 +15,7 @@ async function start(): Promise<void> {
     await prisma.$disconnect();
   }
   const app = buildServer(config);
+  registerOperationalReadiness(app, config);
   await app.listen({ host: '0.0.0.0', port: config.API_PORT });
   installGracefulShutdown(app);
 }
