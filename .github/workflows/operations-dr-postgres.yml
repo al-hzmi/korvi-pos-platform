@@ -1,0 +1,253 @@
+name: Operations DR PostgreSQL Restore Proof
+
+on:
+  push:
+    branches:
+      - strike/5c-costing-authority
+      - review/ops-dr-rehearsal
+    paths:
+      - '.github/workflows/operations-dr-postgres.yml'
+      - 'scripts/dr-sentinel.mjs'
+      - 'packages/database/**'
+      - 'packages/domain/**'
+      - 'docs/decisions/ADR-0029-database-backup-restore-authority.md'
+      - 'docs/operations/DISASTER-RECOVERY.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  restore-proof:
+    name: PostgreSQL 17 / logical backup / isolated restore / application proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      SOURCE_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_dr_source
+      SOURCE_URL: postgresql://korvi_dr_source:korvi_dr_source_ci@localhost:5432/korvi_dr_source
+      RESTORE_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_dr_restore
+      RESTORE_URL: postgresql://korvi_dr_restore:korvi_dr_restore_ci@localhost:5432/korvi_dr_restore
+      POSTGRES_TOOL_IMAGE: postgres:17
+      PROOF_LOG: artifacts/operations-dr-proof.txt
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_dr_source
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_dr_source"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager and install
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+          printf 'commit=%s\n' "$GITHUB_SHA" | tee "$PROOF_LOG"
+
+      - name: Create restricted source role and migrate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          server_major="$(psql "$SOURCE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT current_setting('server_version_num')::integer / 10000")"
+          test "$server_major" = '17'
+          echo "postgres_major=$server_major" | tee -a "$PROOF_LOG"
+
+          psql "$SOURCE_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_dr_source
+            LOGIN PASSWORD 'korvi_dr_source_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_dr_source TO korvi_dr_source;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_dr_source;
+          SQL
+
+          source_flags="$(psql "$SOURCE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname='korvi_dr_source'")"
+          test "$source_flags" = 'f|f|f|f|f|f'
+          echo "source_app_role_flags=$source_flags" | tee -a "$PROOF_LOG"
+
+          migration_directories="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          test "$migration_directories" -eq 12
+          echo "migration_directories=$migration_directories" | tee -a "$PROOF_LOG"
+
+          DATABASE_URL="$SOURCE_URL" npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
+          DATABASE_URL="$SOURCE_URL" npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
+
+          source_ledger="$(psql "$SOURCE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE \"finished_at\" IS NOT NULL AND \"rolled_back_at\" IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
+          test "$source_ledger" = '12|12'
+          echo "source_migration_ledger=$source_ledger" | tee -a "$PROOF_LOG"
+
+      - name: Build runtime and create application-owned sentinel
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.SOURCE_URL }}
+        run: |
+          set -euo pipefail
+          npm run db:generate
+          npm run build
+          node scripts/dr-sentinel.mjs seed artifacts/dr-sentinel.json 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Capture logical backup under separate operations authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'backup_authority=ephemeral_ci_operations_admin_not_runtime' | tee -a "$PROOF_LOG"
+
+          dump_client="$(docker run --rm "$POSTGRES_TOOL_IMAGE" pg_dump --version)"
+          restore_client="$(docker run --rm "$POSTGRES_TOOL_IMAGE" pg_restore --version)"
+          case "$dump_client" in
+            'pg_dump (PostgreSQL) 17.'*) ;;
+            *) echo "Expected PostgreSQL 17 pg_dump, got: $dump_client" >&2; exit 1 ;;
+          esac
+          case "$restore_client" in
+            'pg_restore (PostgreSQL) 17.'*) ;;
+            *) echo "Expected PostgreSQL 17 pg_restore, got: $restore_client" >&2; exit 1 ;;
+          esac
+          echo "backup_client=$dump_client" | tee -a "$PROOF_LOG"
+          echo "restore_client=$restore_client" | tee -a "$PROOF_LOG"
+
+          docker run --rm --network host "$POSTGRES_TOOL_IMAGE" \
+            pg_dump "$SOURCE_ADMIN_URL" \
+            --format=custom \
+            --compress=6 \
+            --no-owner \
+            --no-privileges > artifacts/korvi-dr.dump
+          test -s artifacts/korvi-dr.dump
+          docker run --rm -i "$POSTGRES_TOOL_IMAGE" \
+            pg_restore --list < artifacts/korvi-dr.dump > artifacts/korvi-dr.list
+          grep -q 'TABLE.*tenants' artifacts/korvi-dr.list
+          grep -q 'TABLE DATA.*tenants' artifacts/korvi-dr.list
+          backup_sha256="$(sha256sum artifacts/korvi-dr.dump | awk '{print $1}')"
+          echo "backup_sha256=$backup_sha256" | tee -a "$PROOF_LOG"
+
+          source_rls="$(psql "$SOURCE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*)::text || '|' || count(*) FILTER (WHERE c.relrowsecurity)::text || '|' || count(*) FILTER (WHERE c.relforcerowsecurity)::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r'")"
+          source_policies="$(psql "$SOURCE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*)::text || '|' || md5(COALESCE(string_agg(tablename || ':' || policyname || ':' || cmd || ':' || COALESCE(qual,'') || ':' || COALESCE(with_check,''), '|' ORDER BY tablename, policyname), '')) FROM pg_policies WHERE schemaname='public'")"
+          echo "source_rls_fingerprint=$source_rls" | tee -a "$PROOF_LOG"
+          echo "source_policy_fingerprint=$source_policies" | tee -a "$PROOF_LOG"
+          printf '%s\n' "$source_rls" > artifacts/source-rls.txt
+          printf '%s\n' "$source_policies" > artifacts/source-policies.txt
+
+      - name: Create isolated restore target and restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql postgresql://postgres:postgres@localhost:5432/postgres --no-psqlrc --set=ON_ERROR_STOP=1 --command 'CREATE DATABASE korvi_dr_restore'
+          psql "$RESTORE_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_dr_restore
+            LOGIN PASSWORD 'korvi_dr_restore_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_dr_restore TO korvi_dr_restore;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_dr_restore;
+          SQL
+
+          restore_flags="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname='korvi_dr_restore'")"
+          test "$restore_flags" = 'f|f|f|f|f|f'
+          echo "restore_app_role_flags=$restore_flags" | tee -a "$PROOF_LOG"
+
+          restore_started="$(date +%s)"
+          docker run --rm --network host -i "$POSTGRES_TOOL_IMAGE" \
+            pg_restore \
+            --exit-on-error \
+            --no-owner \
+            --no-privileges \
+            --dbname="$RESTORE_URL" < artifacts/korvi-dr.dump
+          restore_finished="$(date +%s)"
+          echo "restore_elapsed_seconds=$((restore_finished - restore_started))" | tee -a "$PROOF_LOG"
+
+      - name: Verify restored schema, RLS and application data
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.RESTORE_URL }}
+        run: |
+          set -euo pipefail
+          restored_ledger="$(psql "$RESTORE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE \"finished_at\" IS NOT NULL AND \"rolled_back_at\" IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
+          test "$restored_ledger" = '12|12'
+          echo "restored_migration_ledger=$restored_ledger" | tee -a "$PROOF_LOG"
+
+          restored_ownership="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname='public'")"
+          test "$restored_ownership" = '1|korvi_dr_restore'
+          echo "restored_public_table_ownership=$restored_ownership" | tee -a "$PROOF_LOG"
+
+          restored_rls="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*)::text || '|' || count(*) FILTER (WHERE c.relrowsecurity)::text || '|' || count(*) FILTER (WHERE c.relforcerowsecurity)::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r'")"
+          restored_policies="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*)::text || '|' || md5(COALESCE(string_agg(tablename || ':' || policyname || ':' || cmd || ':' || COALESCE(qual,'') || ':' || COALESCE(with_check,''), '|' ORDER BY tablename, policyname), '')) FROM pg_policies WHERE schemaname='public'")"
+          test "$restored_rls" = "$(cat artifacts/source-rls.txt)"
+          test "$restored_policies" = "$(cat artifacts/source-policies.txt)"
+          echo "restored_rls_fingerprint=$restored_rls" | tee -a "$PROOF_LOG"
+          echo "restored_policy_fingerprint=$restored_policies" | tee -a "$PROOF_LOG"
+
+          npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
+          (
+            cd packages/database
+            npx --no-install prisma migrate diff \
+              --from-config-datasource \
+              --to-schema prisma/schema.prisma \
+              --exit-code
+          ) 2>&1 | tee -a "$PROOF_LOG"
+
+          node scripts/dr-sentinel.mjs verify artifacts/dr-sentinel.json 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run every live proof against restored database
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.RESTORE_URL }}
+          KORVI_TEST_DATABASE_URL: ${{ env.RESTORE_URL }}
+        run: |
+          set -euo pipefail
+          mapfile -t live_tests < <(find apps packages -path '*/src/__tests__/*-live.test.ts' -type f | sort)
+          if [ "${#live_tests[@]}" -eq 0 ]; then
+            echo 'No live test files were discovered' >&2
+            exit 1
+          fi
+          {
+            echo "restored_live_test_files=${#live_tests[@]}"
+            printf 'restored_live_test=%s\n' "${live_tests[@]}"
+          } | tee -a "$PROOF_LOG"
+          npx --no-install vitest run "${live_tests[@]}" 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run full verification against restored database
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.RESTORE_URL }}
+          KORVI_TEST_DATABASE_URL: ${{ env.RESTORE_URL }}
+        run: |
+          set -euo pipefail
+          npm run verify 2>&1 | tee -a "$PROOF_LOG"
+          git diff --check
+
+      - name: Remove data-bearing rehearsal material
+        if: always()
+        shell: bash
+        run: |
+          rm -f artifacts/korvi-dr.dump artifacts/korvi-dr.list artifacts/dr-sentinel.json \
+            artifacts/source-rls.txt artifacts/source-policies.txt
+
+      - name: Preserve DR proof log only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: operations-dr-proof-${{ github.sha }}
+          path: artifacts/operations-dr-proof.txt
+          if-no-files-found: error
+          retention-days: 14
