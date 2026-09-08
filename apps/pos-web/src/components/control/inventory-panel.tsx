@@ -7,6 +7,7 @@ import { InventoryOperations } from './inventory-operations';
 import { InventoryCostPanel } from './inventory-cost-panel';
 import { describeFailure } from '../../lib/failures';
 import { formatScaled } from '../../lib/quantity';
+import { ownsAbortController } from '../../lib/request-ownership';
 import type { JSX, ReactNode } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type {
@@ -370,6 +371,7 @@ export function InventoryPanel({
     void api
       .inventoryBranches({ limit: PAGE_SIZE }, { signal: controller.signal })
       .then((page) => {
+        if (controller.signal.aborted) return;
         const preferred = page.rows.find((branch) => branch.id === preferredBranchId);
         const firstActive = page.rows.find((branch) => branch.isActive);
         setBranches({ kind: 'ready', page, loadingMore: false, loadFailure: null });
@@ -379,7 +381,7 @@ export function InventoryPanel({
         });
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (controller.signal.aborted) return;
         setBranches({ kind: 'failed', failure: describeInventoryReadFailure(error) });
       });
 
@@ -399,7 +401,8 @@ export function InventoryPanel({
     setBalances((current) => beginInventoryBalanceRefresh(current, branchId));
     void api
       .inventoryBalances({ branchId, limit: PAGE_SIZE }, { signal: controller.signal })
-      .then((page) =>
+      .then((page) => {
+        if (controller.signal.aborted) return;
         setBalances((current) => ({
           kind: 'ready',
           branchId,
@@ -409,10 +412,10 @@ export function InventoryPanel({
           generation:
             current.kind === 'ready' && current.branchId === branchId ? current.generation + 1 : 1,
           loadFailure: null,
-        })),
-      )
+        }));
+      })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (controller.signal.aborted) return;
         const failure = describeInventoryReadFailure(error);
         setBalances((current) => failInventoryBalanceRefresh(current, branchId, failure));
       });
@@ -443,6 +446,7 @@ export function InventoryPanel({
     void api
       .inventoryBranches({ limit: PAGE_SIZE, cursor }, { signal: controller.signal })
       .then((page) => {
+        if (!ownsAbortController(branchMore.current, controller)) return;
         setBranches((current) => {
           if (current.kind !== 'ready' || current.page.nextCursor !== cursor) return current;
           return {
@@ -454,7 +458,7 @@ export function InventoryPanel({
         });
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (!ownsAbortController(branchMore.current, controller)) return;
         setBranches((current) =>
           current.kind === 'ready'
             ? {
@@ -464,6 +468,9 @@ export function InventoryPanel({
               }
             : current,
         );
+      })
+      .finally(() => {
+        if (branchMore.current === controller) branchMore.current = null;
       });
   }, [api, branches]);
 
@@ -486,6 +493,7 @@ export function InventoryPanel({
     void api
       .inventoryBalances({ branchId, limit: PAGE_SIZE, cursor }, { signal: controller.signal })
       .then((page) => {
+        if (!ownsAbortController(balanceMore.current, controller)) return;
         setBalances((current) => {
           if (
             current.kind !== 'ready' ||
@@ -506,7 +514,7 @@ export function InventoryPanel({
         });
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (!ownsAbortController(balanceMore.current, controller)) return;
         setBalances((current) =>
           current.kind === 'ready' && current.branchId === branchId
             ? {
@@ -516,6 +524,9 @@ export function InventoryPanel({
               }
             : current,
         );
+      })
+      .finally(() => {
+        if (balanceMore.current === controller) balanceMore.current = null;
       });
   }, [api, balances]);
 
