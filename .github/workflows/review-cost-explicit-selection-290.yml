@@ -1,0 +1,154 @@
+name: Review Cost Explicit Selection 290
+
+on:
+  push:
+    branches:
+      - review/5d-cost-explicit-selection-290-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git reset --hard 290de782a3e9896e957a4c4216d627615fc4c548
+          test "$(git rev-parse HEAD)" = "290de782a3e9896e957a4c4216d627615fc4c548"
+      - name: Apply bounded cost-selection remediation
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/pos-web/src/components/control/inventory-cost-panel.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old = """export function costRefreshPending(requiredGeneration: number | null, generation: number): boolean {
+            return requiredGeneration !== null && generation < requiredGeneration;
+          }
+
+          export function describeCostReadFailure(error: unknown): Failure {
+          """
+          new = """export function costRefreshPending(requiredGeneration: number | null, generation: number): boolean {
+            return requiredGeneration !== null && generation < requiredGeneration;
+          }
+
+          /**
+           * The first eligible row is a deliberate initial default only. Once the
+           * operator explicitly chooses a product, a refresh must not silently move
+           * the drafted valuation to another product if that identity disappears.
+           */
+          export function resolveCostProduct(
+            eligible: readonly InventoryCostBalanceRow[],
+            productId: string,
+          ): InventoryCostBalanceRow | undefined {
+            return productId === '' ? eligible[0] : eligible.find((row) => row.productId === productId);
+          }
+
+          export function describeCostReadFailure(error: unknown): Failure {
+          """
+          if text.count(old) != 1:
+              raise SystemExit('cost helper anchor mismatch')
+          text = text.replace(old, new, 1)
+
+          old = "  const selected = eligible.find((row) => row.productId === productId) ?? eligible[0];\n"
+          new = "  const selected = resolveCostProduct(eligible, productId);\n"
+          if text.count(old) != 1:
+              raise SystemExit('selected cost product anchor mismatch')
+          text = text.replace(old, new, 1)
+
+          old = """    if (selected === undefined) {
+              setValidation('لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.');
+              return;
+            }
+          """
+          new = """    if (selected === undefined) {
+              setValidation(
+                productId === ''
+                  ? 'لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.'
+                  : 'الصنف المحدد لم يعد مؤهلًا للتقييم في القراءة الحالية. اختر الصنف من جديد.',
+              );
+              return;
+            }
+          """
+          if text.count(old) != 1:
+              raise SystemExit('cost submit anchor mismatch')
+          text = text.replace(old, new, 1)
+
+          old = """                >
+                      {eligible.map((row) => (
+          """
+          new = """                >
+                      {productId !== '' && selected === undefined ? (
+                        <option value="">اختر الصنف من جديد</option>
+                      ) : null}
+                      {eligible.map((row) => (
+          """
+          if text.count(old) != 1:
+              raise SystemExit('cost select options anchor mismatch')
+          text = text.replace(old, new, 1)
+
+          old = "                  disabled={locked || eligible.length === 0}\n"
+          new = "                  disabled={locked || eligible.length === 0 || selected === undefined}\n"
+          if text.count(old) != 1:
+              raise SystemExit('cost submit button anchor mismatch')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+
+          test = Path('apps/pos-web/src/components/__tests__/cost-selection.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';
+          import { resolveCostProduct } from '../control/inventory-cost-panel';
+          import type { InventoryCostBalanceRow } from '../../lib/api-types';
+
+          const products = [
+            { productId: 'product-1' },
+            { productId: 'product-2' },
+          ] as InventoryCostBalanceRow[];
+
+          describe('cost explicit selection identity', () => {
+            it('uses the first eligible row only before an explicit choice', () => {
+              expect(resolveCostProduct(products, '')?.productId).toBe('product-1');
+            });
+
+            it('keeps an explicit choice bound to its exact product identity', () => {
+              expect(resolveCostProduct(products, 'product-2')?.productId).toBe('product-2');
+            });
+
+            it('fails closed when a refreshed cost read removes the explicit product', () => {
+              expect(resolveCostProduct(products, 'removed-product')).toBeUndefined();
+            });
+          });
+          """, encoding='utf-8')
+          PY
+      - name: Install exact dependencies
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+      - name: Build test dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
+      - name: Format and verify bounded change
+        run: |
+          npx --no-install prettier --write \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/__tests__/cost-selection.test.ts
+          npx --no-install vitest run apps/pos-web/src/components/__tests__/cost-selection.test.ts
+          git diff --check
+      - name: Create clean child commit
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add apps/pos-web/src/components/control/inventory-cost-panel.tsx apps/pos-web/src/components/__tests__/cost-selection.test.ts
+          git commit -m 'fix(costing): preserve explicit valuation selection'
+          test "$(git rev-parse HEAD^)" = "290de782a3e9896e957a4c4216d627615fc4c548"
+          git push origin HEAD:refs/heads/review/5d-cost-explicit-selection-290-clean
