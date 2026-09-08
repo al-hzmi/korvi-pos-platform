@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { beginCostBalanceRefresh, failCostBalanceRefresh } from '../control/inventory-cost-panel';
+import { inventoryRefreshPending } from '../control/inventory-operations';
 import {
   beginInventoryBalanceRefresh,
   failInventoryBalanceRefresh,
@@ -76,6 +77,12 @@ describe('inventory balance refresh pagination ownership', () => {
     generation: 4,
     loadFailure: null,
   };
+
+  it('requires a newer server balance generation after a stock mutation', () => {
+    expect(inventoryRefreshPending(5, 4)).toBe(true);
+    expect(inventoryRefreshPending(5, 5)).toBe(false);
+    expect(inventoryRefreshPending(null, 4)).toBe(false);
+  });
 
   it('retires an in-flight balance page when a first-page read supersedes it', () => {
     expect(beginInventoryBalanceRefresh(current, branchId)).toEqual({
