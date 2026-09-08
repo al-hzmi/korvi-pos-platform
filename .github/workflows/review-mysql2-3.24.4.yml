@@ -1,0 +1,135 @@
+name: Review MySQL2 3.24.4 Remediation
+
+on:
+  push:
+    branches:
+      - review/mysql2-3.24.4-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git reset --hard 3e37b2cc51b1231e7148bd2d0e3bc39858a67cba
+          test "$(git rev-parse HEAD)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+      - name: Apply bounded dependency remediation
+        run: |
+          python <<'PY'
+          import json
+          from pathlib import Path
+
+          package = Path('package.json')
+          data = json.loads(package.read_text(encoding='utf-8'))
+          current = data.get('overrides', {}).get('mysql2')
+          if current != '3.24.3':
+              raise SystemExit(f'unexpected mysql2 override: {current!r}')
+          data['overrides']['mysql2'] = '3.24.4'
+          package.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          adr = Path('docs/decisions/ADR-0028-mysql2-3.24.4-patch-refresh.md')
+          adr.write_text('''# ADR-0028 — MySQL2 3.24.4 Patch Refresh
+
+- **Status:** Accepted
+- **Date:** 2026-09-08
+- **Scope:** transitive validation dependency only; no MySQL application path, schema or financial change
+
+## Context
+
+ADR-0026 remediated Prisma 7.10.0's transitive `mysql2@3.15.3` by using the
+root override `mysql2: 3.24.3`. Korvi itself uses PostgreSQL; MySQL2 is present
+only inside Prisma's dependency tree.
+
+On 2026-09-08 the fail-closed production-stable version gate discovered that
+`mysql2@3.24.4` had become the newest published stable patch. Keeping 3.24.3
+without a new justification would make `versions:verify` fail and would violate
+ADR-0009's supply-chain policy. There is no product reason to hold the older
+patch.
+
+## Decision
+
+Advance the existing root override from `mysql2@3.24.3` to exactly
+`mysql2@3.24.4` and regenerate the lockfile with the repository-declared npm
+version. Keep Prisma, `@prisma/client` and `@prisma/adapter-pg` aligned at
+7.10.0. Do not add MySQL application code, weaken the audit threshold, suppress
+`versions:verify`, or add an `ALLOWED_BEHIND` exception merely to preserve the
+old patch.
+
+This supersedes only ADR-0026's selected MySQL2 patch value. All other decisions
+and the reason for the transitive override remain in force.
+
+## Verification
+
+The delivered commit must prove all of the following from a clean installation:
+
+- every lockfile MySQL2 package entry resolves to exactly 3.24.4;
+- the root override is exactly 3.24.4;
+- `versions:verify` accepts 3.24.4 as the newest published stable release;
+- dependency audit remains green at the existing threshold;
+- Prisma generation, build, typecheck, unit/integration suites and invariants
+  remain green;
+- the exact active-branch commit passes normal CI and the existing PostgreSQL 17
+  restricted-role live proof before deployment.
+
+The existing `npm ls mysql2 --all` caveat from ADR-0026 remains applicable while
+Prisma itself retains its older exact dependency declaration; that diagnostic
+must not be falsely recorded as passing.
+''', encoding='utf-8')
+          PY
+      - name: Regenerate exact lockfile
+        run: |
+          rm -rf node_modules
+          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          if (pkg.overrides?.mysql2 !== '3.24.4') throw new Error('root mysql2 override is not 3.24.4');
+          const copies = Object.entries(lock.packages ?? {}).filter(([path]) => path.endsWith('node_modules/mysql2'));
+          if (copies.length === 0) throw new Error('no mysql2 lockfile package entry found');
+          const wrong = copies.filter(([, meta]) => meta.version !== '3.24.4');
+          if (wrong.length > 0) throw new Error(`non-3.24.4 mysql2 lock entries: ${JSON.stringify(wrong)}`);
+          console.log(`[ok] ${copies.length} mysql2 lockfile package entr${copies.length === 1 ? 'y' : 'ies'} pinned to 3.24.4`);
+          NODE
+      - name: Install exact dependencies
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+      - name: Verify new stable pin and audit
+        run: |
+          npm run versions:verify
+          npm run audit
+      - name: Format bounded change
+        run: |
+          npx --no-install prettier --write \
+            package.json \
+            package-lock.json \
+            README.md \
+            docs/governance/PRODUCT-READINESS-SCORECARD.md \
+            docs/decisions/ADR-0028-mysql2-3.24.4-patch-refresh.md
+          git diff --check
+      - name: Full verification
+        run: npm run verify
+      - name: Create clean child commit
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add \
+            package.json \
+            package-lock.json \
+            README.md \
+            docs/governance/PRODUCT-READINESS-SCORECARD.md \
+            docs/decisions/ADR-0028-mysql2-3.24.4-patch-refresh.md
+          git commit -m 'chore(deps): advance mysql2 remediation to 3.24.4'
+          test "$(git rev-parse HEAD^)" = "3e37b2cc51b1231e7148bd2d0e3bc39858a67cba"
+          git push origin HEAD:refs/heads/review/product-readiness-scorecard-74
