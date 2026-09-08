@@ -35,6 +35,18 @@ export function costRefreshPending(requiredGeneration: number | null, generation
   return requiredGeneration !== null && generation < requiredGeneration;
 }
 
+/**
+ * The first eligible row is a deliberate initial default only. Once the
+ * operator explicitly chooses a product, a refresh must not silently move
+ * the drafted valuation to another product if that identity disappears.
+ */
+export function resolveCostProduct(
+  eligible: readonly InventoryCostBalanceRow[],
+  productId: string,
+): InventoryCostBalanceRow | undefined {
+  return productId === '' ? eligible[0] : eligible.find((row) => row.productId === productId);
+}
+
 export function describeCostReadFailure(error: unknown): Failure {
   const failure = describeFailure(error);
   if (failure.code !== 'network') return failure;
@@ -333,7 +345,7 @@ export function CostBootstrapForm({
   const [requiredGeneration, setRequiredGeneration] = useState<number | null>(null);
   const flight = useRef(createCostCommandFlight());
   const workspaceOwned = useRef(false);
-  const selected = eligible.find((row) => row.productId === productId) ?? eligible[0];
+  const selected = resolveCostProduct(eligible, productId);
   const awaitingRefresh = costRefreshPending(requiredGeneration, generation);
 
   const releaseWorkspace = useCallback((): void => {
@@ -405,7 +417,11 @@ export function CostBootstrapForm({
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (selected === undefined) {
-      setValidation('لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.');
+      setValidation(
+        productId === ''
+          ? 'لا توجد كمية موجبة مجهولة التكلفة ضمن الصفوف المحملة.'
+          : 'الصنف المحدد لم يعد مؤهلًا للتقييم في القراءة الحالية. اختر الصنف من جديد.',
+      );
       return;
     }
     const built = buildCostBootstrapIntent(
@@ -469,6 +485,9 @@ export function CostBootstrapForm({
                     setSubmission({ kind: 'idle' });
                   }}
                 >
+                  {productId !== '' && selected === undefined ? (
+                    <option value="">اختر الصنف من جديد</option>
+                  ) : null}
                   {eligible.map((row) => (
                     <option key={row.productId} value={row.productId}>
                       {row.nameAr} — {isolateLtrText(row.sku)}
@@ -535,7 +554,7 @@ export function CostBootstrapForm({
               <Button
                 type="submit"
                 loading={submission.kind === 'running'}
-                disabled={locked || eligible.length === 0}
+                disabled={locked || eligible.length === 0 || selected === undefined}
               >
                 تسجيل التقييم
               </Button>
