@@ -35,6 +35,27 @@ export function inventoryRefreshPending(
   return requiredGeneration !== null && generation < requiredGeneration;
 }
 
+/**
+ * Before a human makes an explicit choice, the first visible row is the form's
+ * deliberate default. Once an id is chosen, refreshing the source list must
+ * never silently move the decision to another product or branch.
+ */
+export function resolveInventoryProduct(
+  products: readonly InventoryBalanceRow[],
+  productId: string,
+): InventoryBalanceRow | undefined {
+  return productId === '' ? products[0] : products.find((row) => row.productId === productId);
+}
+
+export function resolveInventoryDestination(
+  destinations: readonly InventoryBranch[],
+  destinationBranchId: string,
+): InventoryBranch | undefined {
+  return destinationBranchId === ''
+    ? destinations[0]
+    : destinations.find((branch) => branch.id === destinationBranchId);
+}
+
 function ResultQuantities({
   result,
 }: {
@@ -135,12 +156,11 @@ export function InventoryOperations({
   }, [onCommandLockChange]);
 
   const products = balances.filter((row) => row.isActive && row.trackInventory);
-  const selectedProduct = products.find((row) => row.productId === productId) ?? products[0];
+  const selectedProduct = resolveInventoryProduct(products, productId);
   const destinations = branches.filter(
     (candidate) => candidate.isActive && candidate.id !== branch.id,
   );
-  const selectedDestination =
-    destinations.find((candidate) => candidate.id === destinationBranchId) ?? destinations[0];
+  const selectedDestination = resolveInventoryDestination(destinations, destinationBranchId);
   const awaitingFreshBalance = inventoryRefreshPending(requiredFreshGeneration, balanceGeneration);
 
   useEffect(() => {
@@ -212,7 +232,19 @@ export function InventoryOperations({
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (selectedProduct === undefined) {
-      setValidation('لا يوجد صنف نشط متتبع ضمن الأرصدة المحملة.');
+      setValidation(
+        productId === ''
+          ? 'لا يوجد صنف نشط متتبع ضمن الأرصدة المحملة.'
+          : 'الصنف المحدد لم يعد متاحًا في القراءة الحالية. اختر الصنف من جديد.',
+      );
+      return;
+    }
+    if (operation === 'transfer' && selectedDestination === undefined) {
+      setValidation(
+        destinationBranchId === ''
+          ? 'لا يوجد فرع وجهة مفعّل ضمن الفروع المحملة.'
+          : 'فرع الوجهة المحدد لم يعد متاحًا. اختر فرع الوجهة من جديد.',
+      );
       return;
     }
     const built = buildInventoryCommandIntent(
@@ -326,6 +358,9 @@ export function InventoryOperations({
                     setSubmission({ kind: 'idle' });
                   }}
                 >
+                  {productId !== '' && selectedProduct === undefined ? (
+                    <option value="">اختر الصنف من جديد</option>
+                  ) : null}
                   {products.map((product) => (
                     <option key={product.productId} value={product.productId}>
                       {product.nameAr} — {isolateLtrText(product.sku)}
@@ -348,6 +383,9 @@ export function InventoryOperations({
                       setSubmission({ kind: 'idle' });
                     }}
                   >
+                    {destinationBranchId !== '' && selectedDestination === undefined ? (
+                      <option value="">اختر فرع الوجهة من جديد</option>
+                    ) : null}
                     {destinations.map((destination) => (
                       <option key={destination.id} value={destination.id}>
                         {destination.nameAr} — {isolateLtrText(destination.code)}
@@ -438,8 +476,10 @@ export function InventoryOperations({
                 loading={submission.kind === 'running'}
                 disabled={
                   locked ||
+                  selectedProduct === undefined ||
                   products.length === 0 ||
-                  (operation === 'transfer' && destinations.length === 0)
+                  (operation === 'transfer' &&
+                    (destinations.length === 0 || selectedDestination === undefined))
                 }
               >
                 {operation === 'adjustment'
