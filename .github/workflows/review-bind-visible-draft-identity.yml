@@ -30,13 +30,13 @@ jobs:
 
           def replace_once(path: Path, old: str, new: str, label: str) -> None:
               text = path.read_text(encoding='utf-8')
-              if text.count(old) != 1:
-                  raise SystemExit(f'{label} anchor mismatch: {text.count(old)}')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} anchor mismatch: {count}')
               path.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          helper = Path('apps/pos-web/src/lib/draft-identity.ts')
-          helper.write_text("""/**
-           * Bind a browser-visible default to the draft as soon as the operator starts
+          Path('apps/pos-web/src/lib/draft-identity.ts').write_text("""/**
+           * Bind a browser-visible default to a draft as soon as the operator starts
            * entering decision data. Once bound, refreshes must never substitute another
            * entity silently; a missing bound id remains stale and must fail closed.
            */
@@ -48,8 +48,7 @@ jobs:
           }
           """, encoding='utf-8')
 
-          test = Path('apps/pos-web/src/components/__tests__/draft-identity.test.ts')
-          test.write_text("""import { describe, expect, it } from 'vitest';
+          Path('apps/pos-web/src/components/__tests__/draft-identity.test.ts').write_text("""import { describe, expect, it } from 'vitest';
           import { bindVisibleSelectionId } from '../../lib/draft-identity';
 
           describe('visible draft identity binding', () => {
@@ -77,16 +76,8 @@ jobs:
           )
           replace_once(
               inventory,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setQuantity(event.target.value);
-                    setValidation(null);
-                    setSubmission({ kind: 'idle' });
-                  }}
-          """,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setProductId((current) =>
+              "                    setQuantity(event.target.value);\n",
+              """                    setProductId((current) =>
                       bindVisibleSelectionId(current, selectedProduct?.productId),
                     );
                     if (operation === 'transfer') {
@@ -95,24 +86,13 @@ jobs:
                       );
                     }
                     setQuantity(event.target.value);
-                    setValidation(null);
-                    setSubmission({ kind: 'idle' });
-                  }}
           """,
               'inventory quantity binding',
           )
           replace_once(
               inventory,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setReason(event.target.value);
-                    setValidation(null);
-                    setSubmission({ kind: 'idle' });
-                  }}
-          """,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setProductId((current) =>
+              "                    setReason(event.target.value);\n",
+              """                    setProductId((current) =>
                       bindVisibleSelectionId(current, selectedProduct?.productId),
                     );
                     if (operation === 'transfer') {
@@ -121,9 +101,6 @@ jobs:
                       );
                     }
                     setReason(event.target.value);
-                    setValidation(null);
-                    setSubmission({ kind: 'idle' });
-                  }}
           """,
               'inventory reason binding',
           )
@@ -137,22 +114,11 @@ jobs:
           )
           replace_once(
               costing,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setTotalValue(event.target.value);
-                    setValidation(null);
-                    setSubmission({ kind: 'idle' });
-                  }}
-          """,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setProductId((current) =>
+              "                    setTotalValue(event.target.value);\n",
+              """                    setProductId((current) =>
                       bindVisibleSelectionId(current, selected?.productId),
                     );
                     setTotalValue(event.target.value);
-                    setValidation(null);
-                    setSubmission({ kind: 'idle' });
-                  }}
           """,
               'cost value binding',
           )
@@ -166,86 +132,50 @@ jobs:
           )
           replace_once(
               purchasing,
-              """                  onChange={() => {
-                    flight.current.reset();
-                    setSupplierMode('update');
-                    setSupplierDraft(selectedSupplier?.name ?? '');
-                    setSupplierActive(selectedSupplier?.isActive ?? true);
-                    setValidation(null);
-                  }}
-          """,
-              """                  onChange={() => {
-                    flight.current.reset();
-                    setSupplierMode('update');
+              "                    setSupplierMode('update');\n",
+              """                    setSupplierMode('update');
                     setSupplierId((current) =>
                       bindVisibleSelectionId(current, selectedSupplier?.id),
                     );
-                    setSupplierDraft(selectedSupplier?.name ?? '');
-                    setSupplierActive(selectedSupplier?.isActive ?? true);
-                    setValidation(null);
-                  }}
           """,
               'supplier update binding',
           )
           replace_once(
               purchasing,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setOrderReference(event.target.value);
-                    setValidation(null);
-                  }}
-          """,
-              """                  onChange={(event) => {
-                    flight.current.reset();
-                    setOrderSupplierId((current) =>
+              "                    setOrderReference(event.target.value);\n",
+              """                    setOrderSupplierId((current) =>
                       bindVisibleSelectionId(current, selectedOrderSupplier?.id),
                     );
                     setOrderBranchId((current) =>
                       bindVisibleSelectionId(current, selectedOrderBranch?.id),
                     );
                     setOrderReference(event.target.value);
-                    setValidation(null);
-                  }}
           """,
               'order reference binding',
           )
           replace_once(
               purchasing,
-              """                      onChange={(event) => {
-                        flight.current.reset();
-                        setOrderLines((current) =>
-                          current.map((item) =>
-                            item.key === line.key
-                              ? { ...item, quantity: event.target.value }
-                              : item,
-                          ),
-                        );
-                        setValidation(null);
-                      }}
+              "                              ? { ...item, quantity: event.target.value }\n",
+              """                              ? {
+                                  ...item,
+                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
+                                  quantity: event.target.value,
+                                }
           """,
-              """                      onChange={(event) => {
-                        flight.current.reset();
-                        setOrderSupplierId((current) =>
+              'order line product binding',
+          )
+          replace_once(
+              purchasing,
+              "                        setOrderLines((current) =>\n",
+              """                        setOrderSupplierId((current) =>
                           bindVisibleSelectionId(current, selectedOrderSupplier?.id),
                         );
                         setOrderBranchId((current) =>
                           bindVisibleSelectionId(current, selectedOrderBranch?.id),
                         );
                         setOrderLines((current) =>
-                          current.map((item) =>
-                            item.key === line.key
-                              ? {
-                                  ...item,
-                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
-                                  quantity: event.target.value,
-                                }
-                              : item,
-                          ),
-                        );
-                        setValidation(null);
-                      }}
           """,
-              'order line quantity binding',
+              'order line parent binding',
           )
           PY
       - name: Install exact dependencies
