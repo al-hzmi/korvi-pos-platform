@@ -28,6 +28,10 @@ export interface PurchasingPages {
 
 export type PageKind = keyof PurchasingPages;
 
+type PurchasingPageUnion = PurchasingPage<
+  PurchasingBranch | PurchasingProduct | PurchasingSupplier | PurchaseOrderSummary
+>;
+
 export type PurchasingState =
   | { readonly kind: 'loading' }
   | { readonly kind: 'failed'; readonly failure: Failure }
@@ -69,6 +73,86 @@ export function failPurchasingRefresh(current: PurchasingState, failure: Failure
     : { kind: 'failed', failure };
 }
 
+/**
+ * Pagination is a decision against the exact first-page cursor currently on
+ * screen. A refresh in flight owns that read boundary, even before React has
+ * rendered `refreshing: true`, so stale component state cannot start a page
+ * request behind a replacement first-page read.
+ */
+export function canStartPurchasingPage(
+  current: PurchasingState,
+  pageFlightActive: boolean,
+  refreshFlightActive: boolean,
+): boolean {
+  return (
+    current.kind === 'ready' &&
+    !current.refreshing &&
+    current.loadingMore === null &&
+    !pageFlightActive &&
+    !refreshFlightActive
+  );
+}
+
+/**
+ * A page response is accepted only while it still owns the exact cursor that
+ * created it. This prevents an old page from being appended to a newer
+ * first-page snapshot after a refresh or other replacement read.
+ */
+export function appendPurchasingPageIfCurrent(
+  latest: PurchasingState,
+  kind: PageKind,
+  cursor: string,
+  next: PurchasingPageUnion,
+): PurchasingState {
+  if (
+    latest.kind !== 'ready' ||
+    latest.refreshing ||
+    latest.loadingMore !== kind ||
+    latest.pages[kind].nextCursor !== cursor
+  ) {
+    return latest;
+  }
+
+  if (kind === 'branches') {
+    return {
+      ...latest,
+      pages: {
+        ...latest.pages,
+        branches: appendPage(latest.pages.branches, next as PurchasingPage<PurchasingBranch>),
+      },
+      loadingMore: null,
+    };
+  }
+  if (kind === 'products') {
+    return {
+      ...latest,
+      pages: {
+        ...latest.pages,
+        products: appendPage(latest.pages.products, next as PurchasingPage<PurchasingProduct>),
+      },
+      loadingMore: null,
+    };
+  }
+  if (kind === 'suppliers') {
+    return {
+      ...latest,
+      pages: {
+        ...latest.pages,
+        suppliers: appendPage(latest.pages.suppliers, next as PurchasingPage<PurchasingSupplier>),
+      },
+      loadingMore: null,
+    };
+  }
+  return {
+    ...latest,
+    pages: {
+      ...latest.pages,
+      orders: appendPage(latest.pages.orders, next as PurchasingPage<PurchaseOrderSummary>),
+    },
+    loadingMore: null,
+  };
+}
+
 export function PurchasingPanel({
   api,
   permissions,
@@ -81,6 +165,7 @@ export function PurchasingPanel({
   const [state, setState] = useState<PurchasingState>({ kind: 'loading' });
   const [reload, setReload] = useState(0);
   const refreshFlight = useRef<Promise<boolean> | null>(null);
+  const refreshController = useRef<AbortController | null>(null);
   const pageFlight = useRef(false);
   const pageController = useRef<AbortController | null>(null);
 
@@ -100,20 +185,27 @@ export function PurchasingPanel({
 
   useEffect(() => {
     const controller = new AbortController();
+    refreshController.current?.abort();
+    refreshController.current = null;
+    refreshFlight.current = null;
     pageController.current?.abort();
     pageController.current = null;
     pageFlight.current = false;
     setState({ kind: 'loading' });
     void loadFirstPages(controller.signal)
       .then((pages) => {
+        if (controller.signal.aborted) return;
         setState({ kind: 'ready', pages, refreshing: false, loadingMore: null, failure: null });
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (controller.signal.aborted) return;
         setState({ kind: 'failed', failure: purchasingFailure(error) });
       });
     return () => {
       controller.abort();
+      refreshController.current?.abort();
+      refreshController.current = null;
+      refreshFlight.current = null;
       pageController.current?.abort();
       pageController.current = null;
       pageFlight.current = false;
@@ -125,19 +217,26 @@ export function PurchasingPanel({
     pageController.current?.abort();
     pageController.current = null;
     pageFlight.current = false;
+    const controller = new AbortController();
+    refreshController.current = controller;
     setState(beginPurchasingRefresh);
-    const request = loadFirstPages()
+    const request = loadFirstPages(controller.signal)
       .then((pages) => {
+        if (!ownsAbortController(refreshController.current, controller)) return false;
         setState({ kind: 'ready', pages, refreshing: false, loadingMore: null, failure: null });
         return true;
       })
       .catch((error: unknown) => {
+        if (!ownsAbortController(refreshController.current, controller)) return false;
         const failure = purchasingFailure(error);
         setState((current) => failPurchasingRefresh(current, failure));
         return false;
       })
       .finally(() => {
-        refreshFlight.current = null;
+        if (refreshController.current === controller) {
+          refreshController.current = null;
+          refreshFlight.current = null;
+        }
       });
     refreshFlight.current = request;
     return request;
@@ -145,17 +244,30 @@ export function PurchasingPanel({
 
   const loadMore = useCallback(
     (kind: PageKind): void => {
-      if (state.kind !== 'ready' || state.loadingMore !== null || pageFlight.current) return;
+      if (
+        !canStartPurchasingPage(
+          state,
+          pageFlight.current,
+          refreshFlight.current !== null,
+        )
+      ) {
+        return;
+      }
+      if (state.kind !== 'ready') return;
       const current = state.pages[kind];
       if (current.nextCursor === null) return;
+      const cursor = current.nextCursor;
       pageFlight.current = true;
-      setState((current) =>
-        current.kind === 'ready' && current.loadingMore === null
-          ? { ...current, loadingMore: kind, failure: null }
-          : current,
+      setState((latest) =>
+        latest.kind === 'ready' &&
+        !latest.refreshing &&
+        latest.loadingMore === null &&
+        latest.pages[kind].nextCursor === cursor
+          ? { ...latest, loadingMore: kind, failure: null }
+          : latest,
       );
 
-      const query = { limit: PAGE_SIZE, cursor: current.nextCursor };
+      const query = { limit: PAGE_SIZE, cursor };
       const controller = new AbortController();
       pageController.current = controller;
       const options = { signal: controller.signal };
@@ -171,64 +283,17 @@ export function PurchasingPanel({
       void request
         .then((next) => {
           if (!ownsAbortController(pageController.current, controller)) return;
-          setState((latest) => {
-            if (latest.kind !== 'ready') return latest;
-            if (kind === 'branches') {
-              return {
-                ...latest,
-                pages: {
-                  ...latest.pages,
-                  branches: appendPage(
-                    latest.pages.branches,
-                    next as PurchasingPage<PurchasingBranch>,
-                  ),
-                },
-                loadingMore: null,
-              };
-            }
-            if (kind === 'products') {
-              return {
-                ...latest,
-                pages: {
-                  ...latest.pages,
-                  products: appendPage(
-                    latest.pages.products,
-                    next as PurchasingPage<PurchasingProduct>,
-                  ),
-                },
-                loadingMore: null,
-              };
-            }
-            if (kind === 'suppliers') {
-              return {
-                ...latest,
-                pages: {
-                  ...latest.pages,
-                  suppliers: appendPage(
-                    latest.pages.suppliers,
-                    next as PurchasingPage<PurchasingSupplier>,
-                  ),
-                },
-                loadingMore: null,
-              };
-            }
-            return {
-              ...latest,
-              pages: {
-                ...latest.pages,
-                orders: appendPage(
-                  latest.pages.orders,
-                  next as PurchasingPage<PurchaseOrderSummary>,
-                ),
-              },
-              loadingMore: null,
-            };
-          });
+          setState((latest) =>
+            appendPurchasingPageIfCurrent(latest, kind, cursor, next as PurchasingPageUnion),
+          );
         })
         .catch((error: unknown) => {
           if (!ownsAbortController(pageController.current, controller)) return;
           setState((latest) =>
-            latest.kind === 'ready'
+            latest.kind === 'ready' &&
+            !latest.refreshing &&
+            latest.loadingMore === kind &&
+            latest.pages[kind].nextCursor === cursor
               ? { ...latest, loadingMore: null, failure: purchasingFailure(error) }
               : latest,
           );
