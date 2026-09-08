@@ -27,6 +27,13 @@ type SubmissionState =
   | { readonly kind: 'failed'; readonly failure: InventoryCommandFailure }
   | { readonly kind: 'succeeded'; readonly result: InventoryCommandResult };
 
+export function inventoryRefreshPending(
+  requiredGeneration: number | null,
+  generation: number,
+): boolean {
+  return requiredGeneration !== null && generation < requiredGeneration;
+}
+
 function ResultQuantities({
   result,
 }: {
@@ -133,8 +140,10 @@ export function InventoryOperations({
   );
   const selectedDestination =
     destinations.find((candidate) => candidate.id === destinationBranchId) ?? destinations[0];
-  const awaitingFreshBalance =
-    requiredFreshGeneration !== null && balanceGeneration < requiredFreshGeneration;
+  const awaitingFreshBalance = inventoryRefreshPending(
+    requiredFreshGeneration,
+    balanceGeneration,
+  );
 
   useEffect(() => {
     if (requiredFreshGeneration !== null && balanceGeneration >= requiredFreshGeneration) {
@@ -157,6 +166,10 @@ export function InventoryOperations({
       ));
 
   const clearDecision = (nextOperation: OperationKind = operation): void => {
+    // A committed stock mutation invalidates the balance/revision used to make
+    // the next decision. Never let acknowledgement of the success card bypass
+    // the first-page refresh that proves the new stock truth was observed.
+    if (awaitingFreshBalance || refreshing) return;
     flight.current.reset();
     setOperation(nextOperation);
     setQuantity('');
@@ -180,7 +193,7 @@ export function InventoryOperations({
     void executeInventoryCommand(api, intent)
       .then((result) => {
         flight.current.settle('succeeded');
-        setRequiredFreshGeneration(null);
+        setRequiredFreshGeneration(balanceGeneration + 1);
         setSubmission({ kind: 'succeeded', result });
         onRefreshBalances();
       })
@@ -413,8 +426,13 @@ export function InventoryOperations({
                 إعادة إرسال نفس العملية
               </Button>
             ) : submission.kind === 'succeeded' ? (
-              <Button type="button" variant="outline" onClick={() => clearDecision()}>
-                بدء حركة جديدة
+              <Button
+                type="button"
+                variant="outline"
+                disabled={awaitingFreshBalance || refreshing}
+                onClick={() => clearDecision()}
+              >
+                {awaitingFreshBalance || refreshing ? 'بانتظار تحديث الرصيد' : 'بدء حركة جديدة'}
               </Button>
             ) : (
               <Button
