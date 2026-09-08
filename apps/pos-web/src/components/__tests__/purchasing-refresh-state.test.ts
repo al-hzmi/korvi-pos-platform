@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  beginInventoryBalanceRefresh,
+  failInventoryBalanceRefresh,
+} from '../control/inventory-panel';
+import {
   beginPurchasingRefresh,
   failPurchasingRefresh,
 } from '../control/purchasing-panel';
+import type { InventoryBalancesState } from '../control/inventory-panel';
 import type { PurchasingPages, PurchasingState } from '../control/purchasing-panel';
 import type { Failure } from '../../lib/failures';
 
@@ -57,6 +62,39 @@ describe('purchasing refresh pagination ownership', () => {
       refreshing: false,
       loadingMore: null,
       failure: networkFailure,
+    });
+  });
+});
+
+describe('inventory balance refresh pagination ownership', () => {
+  const branchId = '018fb000-0000-7000-8000-0000000000a1';
+  const current: InventoryBalancesState = {
+    kind: 'ready',
+    branchId,
+    page: { rows: [], nextCursor: 'balance-next' },
+    loadingMore: true,
+    refreshing: false,
+    generation: 4,
+    loadFailure: null,
+  };
+
+  it('retires an in-flight balance page when a first-page read supersedes it', () => {
+    expect(beginInventoryBalanceRefresh(current, branchId)).toEqual({
+      ...current,
+      loadingMore: false,
+      refreshing: true,
+      loadFailure: null,
+    });
+  });
+
+  it('keeps pagination retired if the replacement balance read fails', () => {
+    const refreshing = beginInventoryBalanceRefresh(current, branchId);
+
+    expect(failInventoryBalanceRefresh(refreshing, branchId, networkFailure)).toEqual({
+      ...current,
+      loadingMore: false,
+      refreshing: false,
+      loadFailure: networkFailure,
     });
   });
 });
