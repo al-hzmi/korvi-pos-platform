@@ -5,6 +5,7 @@ import {
   beginInventoryBalanceRefresh,
   failInventoryBalanceRefresh,
 } from '../control/inventory-panel';
+import { purchasingPostWriteReady } from '../control/purchasing-operations';
 import { beginPurchasingRefresh, failPurchasingRefresh } from '../control/purchasing-panel';
 import type { CostBalancesState } from '../control/inventory-cost-panel';
 import type { InventoryBalancesState } from '../control/inventory-panel';
@@ -63,6 +64,19 @@ describe('purchasing refresh pagination ownership', () => {
       loadingMore: null,
       failure: networkFailure,
     });
+  });
+
+  it('requires both list truth and refreshed order detail after a committed receipt', () => {
+    expect(purchasingPostWriteReady('receipt', true, true)).toBe(true);
+    expect(purchasingPostWriteReady('receipt', false, true)).toBe(false);
+    expect(purchasingPostWriteReady('receipt', true, false)).toBe(false);
+  });
+
+  it('does not make unrelated order detail a gate for non-receipt purchasing writes', () => {
+    expect(purchasingPostWriteReady('supplier-create', true, false)).toBe(true);
+    expect(purchasingPostWriteReady('supplier-update', true, false)).toBe(true);
+    expect(purchasingPostWriteReady('order-create', true, false)).toBe(true);
+    expect(purchasingPostWriteReady('order-create', false, true)).toBe(false);
   });
 });
 
