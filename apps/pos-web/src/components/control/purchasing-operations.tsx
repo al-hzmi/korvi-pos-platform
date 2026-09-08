@@ -78,12 +78,27 @@ function productName(products: readonly PurchasingProduct[], id: string): string
     : `${product.nameAr} — ${isolateLtrText(product.sku)}`;
 }
 
+/**
+ * An empty selection means the browser is still showing its deliberate first
+ * default. Once a human has selected an id, however, that exact identity must
+ * survive every refresh or the decision becomes invalid. Never substitute a
+ * different supplier/branch after the selected row is deactivated or removed.
+ */
+export function resolvePurchasingSelection<T extends { readonly id: string }>(
+  rows: readonly T[],
+  selectedId: string,
+): T | undefined {
+  return selectedId === '' ? rows[0] : rows.find((row) => row.id === selectedId);
+}
+
 export function resolveOrderLineProduct(
   products: readonly PurchasingProduct[],
   productId: string,
   index: number,
 ): PurchasingProduct | undefined {
-  return products.find((product) => product.id === productId) ?? products[index] ?? products[0];
+  return productId === ''
+    ? (products[index] ?? products[0])
+    : products.find((product) => product.id === productId);
 }
 
 export function orderLineFieldLabel(field: 'product' | 'quantity', index: number): string {
@@ -478,12 +493,9 @@ export function PurchasingOperations({
   const activeProducts = pages.products.rows.filter(
     (product) => product.isActive && product.trackInventory,
   );
-  const selectedSupplier =
-    pages.suppliers.rows.find((supplier) => supplier.id === supplierId) ?? pages.suppliers.rows[0];
-  const selectedOrderSupplier =
-    activeSuppliers.find((supplier) => supplier.id === orderSupplierId) ?? activeSuppliers[0];
-  const selectedOrderBranch =
-    activeBranches.find((branch) => branch.id === orderBranchId) ?? activeBranches[0];
+  const selectedSupplier = resolvePurchasingSelection(pages.suppliers.rows, supplierId);
+  const selectedOrderSupplier = resolvePurchasingSelection(activeSuppliers, orderSupplierId);
+  const selectedOrderBranch = resolvePurchasingSelection(activeBranches, orderBranchId);
 
   const loadDetail = useCallback(async (): Promise<boolean> => {
     if (workspace === 'suppliers' || selectedOrderId === '') {
@@ -820,6 +832,9 @@ export function PurchasingOperations({
                     setValidation(null);
                   }}
                 >
+                  {supplierId !== '' && selectedSupplier === undefined ? (
+                    <option value="">اختر المورد من جديد</option>
+                  ) : null}
                   {pages.suppliers.rows.map((supplier) => (
                     <option key={supplier.id} value={supplier.id}>
                       {supplier.name}
@@ -903,6 +918,9 @@ export function PurchasingOperations({
                     setValidation(null);
                   }}
                 >
+                  {orderSupplierId !== '' && selectedOrderSupplier === undefined ? (
+                    <option value="">اختر المورد من جديد</option>
+                  ) : null}
                   {activeSuppliers.map((supplier) => (
                     <option key={supplier.id} value={supplier.id}>
                       {supplier.name}
@@ -922,6 +940,9 @@ export function PurchasingOperations({
                     setValidation(null);
                   }}
                 >
+                  {orderBranchId !== '' && selectedOrderBranch === undefined ? (
+                    <option value="">اختر فرع الاستلام من جديد</option>
+                  ) : null}
                   {activeBranches.map((branch) => (
                     <option key={branch.id} value={branch.id}>
                       {branch.nameAr} — {isolateLtrText(branch.code)}
@@ -977,6 +998,9 @@ export function PurchasingOperations({
                         setValidation(null);
                       }}
                     >
+                      {line.productId !== '' && selected === undefined ? (
+                        <option value="">اختر الصنف من جديد</option>
+                      ) : null}
                       {activeProducts.map((product) => (
                         <option key={product.id} value={product.id}>
                           {product.nameAr} — {isolateLtrText(product.sku)}
