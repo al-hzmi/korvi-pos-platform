@@ -34,15 +34,14 @@ describe('operational readiness', () => {
   it('fails closed and does not expose a dependency exception', async () => {
     const app = Fastify({ logger: false });
     const readiness = probe(async () => {
-      throw new Error('postgres://operator:secret@example.invalid/korvi');
+      throw new Error('sensitive-adapter-detail-should-not-escape');
     });
     registerOperationalReadiness(app, loadConfig({ NODE_ENV: 'test' }), { probe: readiness });
 
     const response = await app.inject({ method: 'GET', url: '/ready' });
     expect(response.statusCode).toBe(503);
     expect(response.body).toBe('{"status":"not_ready"}');
-    expect(response.body).not.toContain('secret');
-    expect(response.body).not.toContain('postgres://');
+    expect(response.body).not.toContain('sensitive-adapter-detail');
 
     await app.close();
   });
