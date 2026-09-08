@@ -191,7 +191,7 @@ jobs:
           echo "restored_public_table_ownership=$restored_ownership" | tee -a "$PROOF_LOG"
 
           restored_rls="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*)::text || '|' || count(*) FILTER (WHERE c.relrowsecurity)::text || '|' || count(*) FILTER (WHERE c.relforcerowsecurity)::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r'")"
-          restored_policies="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*)::text || '|' || md5(COALESCE(string_agg(tablename || ':' || policyname || ':' || cmd || ':' || COALESCE(qual,''), '|' ORDER BY tablename, policyname), '')) FROM pg_policies WHERE schemaname='public'")"
+          restored_policies="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*)::text || '|' || md5(COALESCE(string_agg(tablename || ':' || policyname || ':' || cmd || ':' || COALESCE(qual,'') || ':' || COALESCE(with_check,''), '|' ORDER BY tablename, policyname), '')) FROM pg_policies WHERE schemaname='public'")"
           test "$restored_rls" = "$(cat artifacts/source-rls.txt)"
           test "$restored_policies" = "$(cat artifacts/source-policies.txt)"
           echo "restored_rls_fingerprint=$restored_rls" | tee -a "$PROOF_LOG"
