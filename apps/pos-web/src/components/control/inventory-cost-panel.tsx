@@ -15,6 +15,7 @@ import { isolateLtrText } from '../../lib/bidi';
 import { describeFailure } from '../../lib/failures';
 import { formatMinor } from '../../lib/money';
 import { formatScaled } from '../../lib/quantity';
+import { ownsAbortController } from '../../lib/request-ownership';
 import type { FormEvent, JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type {
@@ -361,10 +362,6 @@ export function CostBootstrapForm({
       ));
 
   const clearDecision = (): void => {
-    // A successful valuation changed the row the next decision would use.
-    // Keep both the result and the global command lock until a fresh read has
-    // actually arrived; a failed refresh must never turn stale guidance into a
-    // second valuation decision.
     if (awaitingRefresh || refreshing) return;
     flight.current.reset();
     setTotalValue('');
@@ -585,7 +582,8 @@ export function InventoryCostPanel({
         { branchId: branch.id, limit: PAGE_SIZE },
         { signal: controller.signal },
       )
-      .then((page) =>
+      .then((page) => {
+        if (controller.signal.aborted) return;
         setState((current) => ({
           kind: 'ready',
           page,
@@ -593,10 +591,10 @@ export function InventoryCostPanel({
           refreshing: false,
           generation: current.kind === 'ready' ? current.generation + 1 : 1,
           loadFailure: null,
-        })),
-      )
+        }));
+      })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (controller.signal.aborted) return;
         const failure = describeCostReadFailure(error);
         setState((current) => failCostBalanceRefresh(current, failure));
       });
@@ -631,6 +629,7 @@ export function InventoryCostPanel({
         { signal: controller.signal },
       )
       .then((page) => {
+        if (!ownsAbortController(more.current, controller)) return;
         setState((current) => {
           if (current.kind !== 'ready' || current.page.nextCursor !== cursor) return current;
           return {
@@ -642,7 +641,7 @@ export function InventoryCostPanel({
         });
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (!ownsAbortController(more.current, controller)) return;
         setState((current) =>
           current.kind === 'ready'
             ? {
