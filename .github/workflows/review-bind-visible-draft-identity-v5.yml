@@ -1,0 +1,207 @@
+name: Review Visible Draft Identity Binding V5
+
+on:
+  push:
+    branches:
+      - review/5d-bind-visible-draft-identity-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git reset --hard 698e5b4d7fb5fab7e12c3d7ee00b1f62d81a4b1f
+          test "$(git rev-parse HEAD)" = "698e5b4d7fb5fab7e12c3d7ee00b1f62d81a4b1f"
+      - name: Apply bounded draft-identity remediation
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} anchor mismatch: {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          Path('apps/pos-web/src/lib/draft-identity.ts').write_text("""/**
+           * Bind a browser-visible default to a draft as soon as the operator starts
+           * entering decision data. Once bound, refreshes must never substitute another
+           * entity silently; a missing bound id remains stale and must fail closed.
+           */
+          export function bindVisibleSelectionId(
+            currentId: string,
+            visibleId: string | undefined,
+          ): string {
+            return currentId === '' ? (visibleId ?? '') : currentId;
+          }
+          """, encoding='utf-8')
+
+          Path('apps/pos-web/src/components/__tests__/draft-identity.test.ts').write_text("""import { describe, expect, it } from 'vitest';
+          import { bindVisibleSelectionId } from '../../lib/draft-identity';
+
+          describe('visible draft identity binding', () => {
+            it('materializes the visible default when decision input begins', () => {
+              expect(bindVisibleSelectionId('', 'product-1')).toBe('product-1');
+            });
+
+            it('never replaces an already-bound identity after refresh', () => {
+              expect(bindVisibleSelectionId('product-1', 'product-2')).toBe('product-1');
+              expect(bindVisibleSelectionId('removed-product', undefined)).toBe('removed-product');
+            });
+
+            it('stays unbound when there is no visible entity to bind', () => {
+              expect(bindVisibleSelectionId('', undefined)).toBe('');
+            });
+          });
+          """, encoding='utf-8')
+
+          inventory = Path('apps/pos-web/src/components/control/inventory-operations.tsx')
+          replace_once(inventory,
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\n",
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\nimport { bindVisibleSelectionId } from '../../lib/draft-identity';\n",
+              'inventory import')
+          replace_once(inventory,
+              "                    setQuantity(event.target.value);\n",
+              """                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selectedProduct?.productId),
+                    );
+                    if (operation === 'transfer') {
+                      setDestinationBranchId((current) =>
+                        bindVisibleSelectionId(current, selectedDestination?.id),
+                      );
+                    }
+                    setQuantity(event.target.value);
+          """,
+              'inventory quantity')
+          replace_once(inventory,
+              "                    setReason(event.target.value);\n",
+              """                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selectedProduct?.productId),
+                    );
+                    if (operation === 'transfer') {
+                      setDestinationBranchId((current) =>
+                        bindVisibleSelectionId(current, selectedDestination?.id),
+                      );
+                    }
+                    setReason(event.target.value);
+          """,
+              'inventory reason')
+
+          costing = Path('apps/pos-web/src/components/control/inventory-cost-panel.tsx')
+          replace_once(costing,
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\n",
+              "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\nimport { bindVisibleSelectionId } from '../../lib/draft-identity';\n",
+              'cost import')
+          replace_once(costing,
+              "                    setTotalValue(event.target.value);\n",
+              """                    setProductId((current) =>
+                      bindVisibleSelectionId(current, selected?.productId),
+                    );
+                    setTotalValue(event.target.value);
+          """,
+              'cost value')
+
+          purchasing = Path('apps/pos-web/src/components/control/purchasing-operations.tsx')
+          text = purchasing.read_text(encoding='utf-8')
+          old_import = "import { commandFailureReleasesWorkspace } from '../../lib/command-workspace';\n"
+          if text.count(old_import) != 1:
+              raise SystemExit('purchasing import anchor mismatch')
+          text = text.replace(old_import, old_import + "import { bindVisibleSelectionId } from '../../lib/draft-identity';\n", 1)
+
+          old = "                    setSupplierMode('update');\n"
+          if text.count(old) != 1:
+              raise SystemExit('supplier update anchor mismatch')
+          text = text.replace(old, """                    setSupplierMode('update');
+                    setSupplierId((current) =>
+                      bindVisibleSelectionId(current, selectedSupplier?.id),
+                    );
+          """, 1)
+
+          old = "                    setOrderReference(event.target.value);\n"
+          if text.count(old) != 1:
+              raise SystemExit('order reference anchor mismatch')
+          text = text.replace(old, """                    setOrderSupplierId((current) =>
+                      bindVisibleSelectionId(current, selectedOrderSupplier?.id),
+                    );
+                    setOrderBranchId((current) =>
+                      bindVisibleSelectionId(current, selectedOrderBranch?.id),
+                    );
+                    setOrderReference(event.target.value);
+          """, 1)
+
+          marker = "aria-label={orderLineFieldLabel('quantity', index)}"
+          marker_pos = text.find(marker)
+          if marker_pos < 0:
+              raise SystemExit('order quantity marker missing')
+          handler_start = text.find('onChange={(event) => {', marker_pos)
+          handler_end = text.find('                      }}', handler_start)
+          if handler_start < 0 or handler_end < 0:
+              raise SystemExit('order quantity handler bounds missing')
+          handler_end += len('                      }}')
+          old_handler = text[handler_start:handler_end]
+          if 'setOrderLines((current) =>' not in old_handler or 'quantity: event.target.value' not in old_handler:
+              raise SystemExit('unexpected order quantity handler')
+          new_handler = """onChange={(event) => {
+                        flight.current.reset();
+                        setOrderSupplierId((current) =>
+                          bindVisibleSelectionId(current, selectedOrderSupplier?.id),
+                        );
+                        setOrderBranchId((current) =>
+                          bindVisibleSelectionId(current, selectedOrderBranch?.id),
+                        );
+                        setOrderLines((current) =>
+                          current.map((item) =>
+                            item.key === line.key
+                              ? {
+                                  ...item,
+                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
+                                  quantity: event.target.value,
+                                }
+                              : item,
+                          ),
+                        );
+                        setValidation(null);
+                      }}"""
+          text = text[:handler_start] + new_handler + text[handler_end:]
+          purchasing.write_text(text, encoding='utf-8')
+          PY
+      - name: Install exact dependencies
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+      - name: Format bounded change
+        run: |
+          npx --no-install prettier --write \
+            apps/pos-web/src/lib/draft-identity.ts \
+            apps/pos-web/src/components/__tests__/draft-identity.test.ts \
+            apps/pos-web/src/components/control/inventory-operations.tsx \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/control/purchasing-operations.tsx
+          git diff --check
+      - name: Full verification
+        run: npm run verify
+      - name: Create clean child commit
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add \
+            apps/pos-web/src/lib/draft-identity.ts \
+            apps/pos-web/src/components/__tests__/draft-identity.test.ts \
+            apps/pos-web/src/components/control/inventory-operations.tsx \
+            apps/pos-web/src/components/control/inventory-cost-panel.tsx \
+            apps/pos-web/src/components/control/purchasing-operations.tsx
+          git commit -m 'fix(control): bind visible defaults before drafting'
+          test "$(git rev-parse HEAD^)" = "698e5b4d7fb5fab7e12c3d7ee00b1f62d81a4b1f"
+          git push --force-with-lease origin HEAD:refs/heads/review/5d-bind-visible-draft-identity-clean
