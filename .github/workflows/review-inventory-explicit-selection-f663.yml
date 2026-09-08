@@ -1,0 +1,50 @@
+name: Review Inventory Explicit Selection F663
+
+on:
+  push:
+    branches:
+      - review/5d-inventory-explicit-selection-f663-builder
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-clean-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Reset to exact reviewed parent
+        run: |
+          git reset --hard f6637a366b5d690318247319f0c90b53fe05d1ae
+          test "$(git rev-parse HEAD)" = "f6637a366b5d690318247319f0c90b53fe05d1ae"
+      - name: Apply previously reviewed bounded selection fix
+        run: |
+          git cherry-pick --no-commit \
+            8a3abbdefe7c235b98ff8d65e382ca46c69fb532 \
+            35d4e916036b5313b4c10931d4e21fe4d4b52d0a \
+            fb3fef049d5f0a215c58273ff0cccaa9fe6c3567
+      - name: Install exact dependencies
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+      - name: Verify bounded change
+        run: |
+          npx --no-install prettier --check \
+            apps/pos-web/src/components/control/inventory-operations.tsx \
+            apps/pos-web/src/components/__tests__/inventory-selection.test.ts
+          npx --no-install vitest run apps/pos-web/src/components/__tests__/inventory-selection.test.ts
+          git diff --check
+      - name: Create clean child commit
+        run: |
+          git config user.name 'Korvi CI Review'
+          git config user.email 'korvi-ci-review@users.noreply.github.com'
+          git add apps/pos-web/src/components/control/inventory-operations.tsx apps/pos-web/src/components/__tests__/inventory-selection.test.ts
+          git commit -m 'fix(inventory): preserve explicit stock selections'
+          test "$(git rev-parse HEAD^)" = "f6637a366b5d690318247319f0c90b53fe05d1ae"
+          git push origin HEAD:refs/heads/review/5d-inventory-explicit-selection-f663-clean
