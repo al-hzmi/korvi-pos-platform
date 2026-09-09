@@ -1,0 +1,107 @@
+name: ZATCA 38 Line Tax Fix
+
+on:
+  push:
+    branches:
+      - review/zatca-38-ubl-hash
+    paths:
+      - .github/workflows/zatca-38-line-tax-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-prove:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Add mandatory per-line KSA tax facts and regressions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('packages/domain/src/zatca/phase2.ts')
+          text = source.read_text()
+          old = """    moneyElement('cbc:LineExtensionAmount', projected.netMinor),
+              allowance,
+              '<cac:Item>',"""
+          new = """    moneyElement('cbc:LineExtensionAmount', projected.netMinor),
+              allowance,
+              renderLineTaxTotal(projected.vatMinor, projected.totalMinor),
+              '<cac:Item>',"""
+          if old not in text:
+              raise SystemExit('renderLine insertion point not found; refusing blind patch')
+          text = text.replace(old, new, 1)
+
+          marker = """function moneyElement(name: string, minor: bigint): string {
+          """
+          helper = """function renderLineTaxTotal(vatMinor: bigint, totalMinor: bigint): string {
+            return [
+              '<cac:TaxTotal>',
+              moneyElement('cbc:TaxAmount', vatMinor),
+              moneyElement('cbc:RoundingAmount', totalMinor),
+              '</cac:TaxTotal>',
+            ].join('');
+          }
+
+          function moneyElement(name: string, minor: bigint): string {
+          """
+          if marker not in text:
+              raise SystemExit('moneyElement marker not found; refusing blind patch')
+          source.write_text(text.replace(marker, helper, 1))
+
+          test = Path('packages/domain/src/zatca/__tests__/phase2.test.ts')
+          t = test.read_text()
+          old_standard = """    expect(first.canonicalXml).toContain('<cbc:PayableAmount currencyID=\"SAR\">115.00</cbc:PayableAmount>');
+              expect(first.canonicalXml).toContain('<cbc:InvoicedQuantity unitCode=\"PCE\">1.000</cbc:InvoicedQuantity>');"""
+          new_standard = """    expect(first.canonicalXml).toContain('<cbc:PayableAmount currencyID=\"SAR\">115.00</cbc:PayableAmount>');
+              expect(first.canonicalXml).toContain(
+                '<cac:TaxTotal><cbc:TaxAmount currencyID=\"SAR\">15.00</cbc:TaxAmount><cbc:RoundingAmount currencyID=\"SAR\">115.00</cbc:RoundingAmount></cac:TaxTotal>',
+              );
+              expect(first.canonicalXml).toContain('<cbc:InvoicedQuantity unitCode=\"PCE\">1.000</cbc:InvoicedQuantity>');"""
+          if old_standard not in t:
+              raise SystemExit('standard line-tax assertion point not found')
+          t = t.replace(old_standard, new_standard, 1)
+
+          old_discount = """    expect(canonicalXml).toContain('<cbc:PriceAmount currencyID=\"SAR\">100.00</cbc:PriceAmount>');
+              expect(canonicalXml).toContain('<cbc:LineExtensionAmount currencyID=\"SAR\">90.00</cbc:LineExtensionAmount>');"""
+          new_discount = """    expect(canonicalXml).toContain('<cbc:PriceAmount currencyID=\"SAR\">100.00</cbc:PriceAmount>');
+              expect(canonicalXml).toContain(
+                '<cac:TaxTotal><cbc:TaxAmount currencyID=\"SAR\">13.50</cbc:TaxAmount><cbc:RoundingAmount currencyID=\"SAR\">103.50</cbc:RoundingAmount></cac:TaxTotal>',
+              );
+              expect(canonicalXml).toContain('<cbc:LineExtensionAmount currencyID=\"SAR\">90.00</cbc:LineExtensionAmount>');"""
+          if old_discount not in t:
+              raise SystemExit('discount line-tax assertion point not found')
+          test.write_text(t.replace(old_discount, new_discount, 1))
+          PY
+
+      - name: Format exact candidate files
+        run: npx prettier@3.9.6 --write packages/domain/src/zatca/phase2.ts packages/domain/src/zatca/__tests__/phase2.test.ts
+
+      - name: Build and run targeted regression
+        run: |
+          npm run build -w @korvi/domain
+          npx vitest run packages/domain/src/zatca/__tests__/phase2.test.ts
+
+      - name: Publish without helper
+        run: |
+          rm .github/workflows/zatca-38-line-tax-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/domain/src/zatca/phase2.ts packages/domain/src/zatca/__tests__/phase2.test.ts .github/workflows/zatca-38-line-tax-fix.yml
+          git diff --cached --check
+          git commit -m "fix(zatca): emit mandatory line VAT totals"
+          git push origin HEAD:review/zatca-38-ubl-hash
