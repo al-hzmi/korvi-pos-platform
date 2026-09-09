@@ -1,0 +1,71 @@
+name: Review Browser Input Authority Patch
+
+on:
+  push:
+    branches:
+      - review/browser-input-authority
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'chore(review): apply CDP input authority patch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact review head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/browser-input-authority
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Apply protocol-correct trusted mouse sequence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('scripts/browser-stage5d-proof.mjs'): (
+                  """async function mouseClickPoint(point) {\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mousePressed',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    clickCount: 1,\n  });\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mouseReleased',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    clickCount: 1,\n  });\n}\n""",
+                  """async function mouseClickPoint(point) {\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mouseMoved',\n    x: point.x,\n    y: point.y,\n    button: 'none',\n    buttons: 0,\n    pointerType: 'mouse',\n  });\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mousePressed',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    buttons: 1,\n    clickCount: 1,\n    pointerType: 'mouse',\n  });\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mouseReleased',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    buttons: 0,\n    clickCount: 1,\n    pointerType: 'mouse',\n  });\n}\n""",
+              ),
+              Path('scripts/browser-cashier-sale-proof.mjs'): (
+                  """  const point = await pointForButton(text);\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mousePressed',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    clickCount: 1,\n  });\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mouseReleased',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    clickCount: 1,\n  });\n""",
+                  """  const point = await pointForButton(text);\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mouseMoved',\n    x: point.x,\n    y: point.y,\n    button: 'none',\n    buttons: 0,\n    pointerType: 'mouse',\n  });\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mousePressed',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    buttons: 1,\n    clickCount: 1,\n    pointerType: 'mouse',\n  });\n  await cdp.send('Input.dispatchMouseEvent', {\n    type: 'mouseReleased',\n    x: point.x,\n    y: point.y,\n    button: 'left',\n    buttons: 0,\n    clickCount: 1,\n    pointerType: 'mouse',\n  });\n""",
+              ),
+          }
+
+          for path, (old, new) in replacements.items():
+              source = path.read_text()
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one mouse sequence, found {count}')
+              path.write_text(source.replace(old, new))
+          PY
+          npx --no-install prettier --write scripts/browser-stage5d-proof.mjs scripts/browser-cashier-sale-proof.mjs
+          npx --no-install prettier --check scripts/browser-stage5d-proof.mjs scripts/browser-cashier-sale-proof.mjs
+          node --check scripts/browser-stage5d-proof.mjs
+          node --check scripts/browser-cashier-sale-proof.mjs
+          git diff --check
+
+      - name: Commit review-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-review-bot'
+          git config user.email 'korvi-review-bot@users.noreply.github.com'
+          git add scripts/browser-stage5d-proof.mjs scripts/browser-cashier-sale-proof.mjs
+          git diff --cached --quiet && { echo 'Expected browser input diff is empty.' >&2; exit 1; }
+          git commit -m 'chore(review): apply CDP input authority patch'
+          git push origin HEAD:review/browser-input-authority
