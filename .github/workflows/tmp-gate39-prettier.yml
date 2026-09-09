@@ -1,0 +1,45 @@
+name: Temporary Gate39 Prettier
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/tmp-gate39-prettier.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: review/zatca-39-csid-lifecycle
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format exact Gate39 files
+        run: npx prettier@3.9.6 --write packages/domain/src/zatca/csid-lifecycle.ts packages/domain/src/zatca/__tests__/csid-lifecycle.test.ts
+
+      - name: Commit formatter output only
+        run: |
+          git diff --check
+          git add packages/domain/src/zatca/csid-lifecycle.ts packages/domain/src/zatca/__tests__/csid-lifecycle.test.ts
+          if git diff --cached --quiet; then
+            echo '[gate39] files already formatted'
+            exit 0
+          fi
+          git config user.name 'korvi-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'style(zatca): format CSID lifecycle'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
