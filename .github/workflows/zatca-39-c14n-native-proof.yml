@@ -13,6 +13,7 @@ on:
       - apps/api/package.json
       - package-lock.json
       - scripts/zatca-39-c14n-crosscheck.mjs
+      - scripts/zatca-39-native-c14n.c
       - .github/workflows/zatca-39-c14n-native-proof.yml
   workflow_dispatch:
 
@@ -69,32 +70,38 @@ jobs:
       - name: Generate production-adapter canonical bytes
         run: node scripts/zatca-39-c14n-crosscheck.mjs "$PROOF_DIR"
 
-      - name: Install native xmllint proof authority
+      - name: Install native libxml2 build authority
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          candidate="$(apt-cache policy libxml2-utils | awk '/Candidate:/ {print $2}')"
+          candidate="$(apt-cache policy libxml2-dev | awk '/Candidate:/ {print $2}')"
           if [ -z "$candidate" ] || [ "$candidate" = '(none)' ]; then
-            echo 'No libxml2-utils candidate is available from the pinned Ubuntu runner repositories.' >&2
+            echo 'No libxml2-dev candidate is available from the Ubuntu runner repositories.' >&2
             exit 1
           fi
-          echo "libxml2-utils-candidate=$candidate" | tee "$PROOF_DIR/native-package.txt"
-          sudo apt-get install -y --no-install-recommends "libxml2-utils=$candidate"
-          command -v xmllint
-          xmllint --version 2>&1 | tee "$PROOF_DIR/xmllint-version.txt"
-          dpkg-query -W -f='${Package}=${Version}\n' libxml2-utils libxml2 > "$PROOF_DIR/native-packages.txt"
+          echo "libxml2-dev-candidate=$candidate" | tee "$PROOF_DIR/native-package.txt"
+          sudo apt-get install -y --no-install-recommends "libxml2-dev=$candidate"
+          dpkg-query -W -f='${Package}=${Version}\n' libxml2-dev libxml2 > "$PROOF_DIR/native-packages.txt"
+          pkg-config --modversion libxml-2.0 | tee "$PROOF_DIR/libxml2-pkgconfig-version.txt"
           cat "$PROOF_DIR/native-packages.txt"
-          if ! xmllint --help 2>&1 | grep -q -- '--c14n11'; then
-            echo 'Installed xmllint does not expose Canonical XML 1.1.' >&2
-            exit 1
-          fi
+
+      - name: Build native Canonical XML 1.1 oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror \
+            scripts/zatca-39-native-c14n.c \
+            $(pkg-config --cflags --libs libxml-2.0) \
+            -o "$RUNNER_TEMP/zatca39-native-c14n"
+          "$RUNNER_TEMP/zatca39-native-c14n" \
+            "$PROOF_DIR/business-source.xml" \
+            "$PROOF_DIR/native-c14n11.xml"
 
       - name: Crosscheck C14N 1.1 bytes and digest
         shell: bash
         run: |
           set -euo pipefail
-          xmllint --c14n11 "$PROOF_DIR/business-source.xml" > "$PROOF_DIR/native-c14n11.xml"
           cmp --silent "$PROOF_DIR/wasm-c14n11.xml" "$PROOF_DIR/native-c14n11.xml" || {
             echo 'WASM/native Canonical XML 1.1 byte mismatch.' >&2
             diff -u "$PROOF_DIR/native-c14n11.xml" "$PROOF_DIR/wasm-c14n11.xml" >&2 || true
@@ -117,9 +124,9 @@ jobs:
           name: zatca-39-c14n-${{ github.sha }}
           path: |
             artifacts/zatca-39-c14n/proof.txt
-            artifacts/zatca-39-c14n/xmllint-version.txt
             artifacts/zatca-39-c14n/native-package.txt
             artifacts/zatca-39-c14n/native-packages.txt
+            artifacts/zatca-39-c14n/libxml2-pkgconfig-version.txt
             artifacts/zatca-39-c14n/wasm-c14n11.sha256
             artifacts/zatca-39-c14n/native-c14n11.sha256
           if-no-files-found: error
