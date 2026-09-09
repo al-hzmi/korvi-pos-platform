@@ -3,7 +3,7 @@ name: Review Browser Input Authority Patch
 on:
   push:
     branches:
-      - review/browser-input-authority
+      - review/5d-browser-proof
 
 permissions:
   contents: write
@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out exact review head
+      - name: Check out exact Stage 5D review head
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: review/browser-input-authority
+          ref: review/5d-browser-proof
 
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -68,4 +68,4 @@ jobs:
           git add scripts/browser-stage5d-proof.mjs scripts/browser-cashier-sale-proof.mjs
           git diff --cached --quiet && { echo 'Expected browser input diff is empty.' >&2; exit 1; }
           git commit -m 'chore(review): apply CDP input authority patch'
-          git push origin HEAD:review/browser-input-authority
+          git push origin HEAD:review/5d-browser-proof
