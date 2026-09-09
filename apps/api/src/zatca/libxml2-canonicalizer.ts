@@ -22,9 +22,7 @@ const NAMESPACES = {
 } as const;
 
 const SECURE_PARSE_OPTIONS =
-  ParseOption.XML_PARSE_NO_XXE |
-  ParseOption.XML_PARSE_NONET |
-  ParseOption.XML_PARSE_NO_SYS_CATALOG;
+  ParseOption.XML_PARSE_NO_XXE | ParseOption.XML_PARSE_NONET | ParseOption.XML_PARSE_NO_SYS_CATALOG;
 
 const INVOICE_EXCLUSION_XPATH =
   "//ext:UBLExtensions | //cac:Signature | //cac:AdditionalDocumentReference[cbc:ID='QR']";

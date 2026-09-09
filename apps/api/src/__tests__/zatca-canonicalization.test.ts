@@ -35,8 +35,11 @@ function withExcludedSignatureMaterial(id = 'INV-1'): string {
   ].join('');
 }
 
-function signatureDocument(options: { duplicateSignedInfo?: boolean; duplicateProperties?: boolean } = {}): string {
-  const signedInfo = '<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="urn:test"></ds:CanonicalizationMethod></ds:SignedInfo>';
+function signatureDocument(
+  options: { duplicateSignedInfo?: boolean; duplicateProperties?: boolean } = {},
+): string {
+  const signedInfo =
+    '<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="urn:test"></ds:CanonicalizationMethod></ds:SignedInfo>';
   const properties = [
     '<xades:SignedProperties Id="xadesSignedProperties">',
     '<xades:SignedSignatureProperties><xades:SigningTime>2026-09-10T00:00:00Z</xades:SigningTime></xades:SignedSignatureProperties>',
@@ -77,13 +80,19 @@ describe('libxml2 ZATCA Canonical XML 1.1 adapter', () => {
 
   it('proves excluded signature/QR material cannot change the invoice-reference bytes', async () => {
     const unsigned = await canonicalizer.canonicalizeInvoiceReference(businessOnly());
-    const sealedShape = await canonicalizer.canonicalizeInvoiceReference(withExcludedSignatureMaterial());
+    const sealedShape = await canonicalizer.canonicalizeInvoiceReference(
+      withExcludedSignatureMaterial(),
+    );
     expect(sealedShape).toEqual(unsigned);
   });
 
   it('proves a signed business-content mutation changes canonical bytes', async () => {
-    const original = await canonicalizer.canonicalizeInvoiceReference(withExcludedSignatureMaterial('INV-1'));
-    const mutated = await canonicalizer.canonicalizeInvoiceReference(withExcludedSignatureMaterial('INV-2'));
+    const original = await canonicalizer.canonicalizeInvoiceReference(
+      withExcludedSignatureMaterial('INV-1'),
+    );
+    const mutated = await canonicalizer.canonicalizeInvoiceReference(
+      withExcludedSignatureMaterial('INV-2'),
+    );
     expect(mutated).not.toEqual(original);
   });
 
@@ -106,9 +115,9 @@ describe('libxml2 ZATCA Canonical XML 1.1 adapter', () => {
     await expect(canonicalizer.canonicalizeSignedProperties(businessOnly())).rejects.toThrow(
       /one unambiguous xades:SignedProperties/,
     );
-    await expect(canonicalizer.canonicalizeSignedInfo(signatureDocument({ duplicateSignedInfo: true }))).rejects.toThrow(
-      /one unambiguous ds:SignedInfo/,
-    );
+    await expect(
+      canonicalizer.canonicalizeSignedInfo(signatureDocument({ duplicateSignedInfo: true })),
+    ).rejects.toThrow(/one unambiguous ds:SignedInfo/);
     await expect(
       canonicalizer.canonicalizeSignedProperties(signatureDocument({ duplicateProperties: true })),
     ).rejects.toThrow(/one unambiguous xades:SignedProperties/);
