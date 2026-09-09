@@ -12,6 +12,9 @@ on:
       - scripts/zatca-38-c14n-proof.mjs
       - scripts/zatca-38-official-validator-assert.mjs
       - .github/workflows/zatca-38-official-validator-proof.yml
+      - docs/architecture/zatca.md
+      - docs/decisions/ADR-0032-zatca-gate38-official-validation-boundary.md
+      - docs/governance/PRODUCT-READINESS-SCORECARD.md
   workflow_dispatch:
 
 concurrency:
@@ -126,6 +129,31 @@ jobs:
           node scripts/zatca-38-official-validator-assert.mjs \
             "$RUNNER_TEMP/zatca-response.json" \
             "$PROOF_DIR/proof.txt"
+
+      - name: Prove unexpected ZATCA findings fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = `${process.env.RUNNER_TEMP}/zatca-response.json`;
+          const response = JSON.parse(readFileSync(path, 'utf8'));
+          response.warnings.push({
+            category: 'BR_KSA_WARNING',
+            code: 'BR-KSA-SYNTHETIC-UNEXPECTED',
+            message: 'Synthetic negative-control finding; never returned by ZATCA.',
+          });
+          writeFileSync(`${process.env.RUNNER_TEMP}/zatca-negative-control.json`, JSON.stringify(response), {
+            mode: 0o600,
+          });
+          NODE
+          if node scripts/zatca-38-official-validator-assert.mjs \
+            "$RUNNER_TEMP/zatca-negative-control.json" \
+            "$RUNNER_TEMP/negative-control-proof.txt"; then
+            echo 'Boundary assertion accepted an unexpected ZATCA finding.' >&2
+            exit 1
+          fi
+          echo '[zatca38] negative control rejected as required'
 
       - name: Preserve sanitized official acceptance proof
         if: always()
