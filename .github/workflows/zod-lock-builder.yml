@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   build-lock-diff:
-    if: github.event.head_commit.message != 'chore(deps): generate zod 4.6.1 lock'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out exact builder head
@@ -22,21 +21,19 @@ jobs:
           cache: npm
       - name: Verify package manager
         run: node scripts/verify-package-manager.mjs
-      - name: Regenerate only Zod manifest and lock metadata
-        run: npm install zod@4.6.1 -w @korvi/api --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
-      - name: Assert bounded diff
+      - name: Materialize bounded Zod lock update
         shell: bash
         run: |
           set -euo pipefail
+          npm install zod@4.6.1 -w @korvi/api --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
           changed="$(git diff --name-only)"
+          if [[ -z "$changed" ]]; then
+            echo '[ok] generated lock update already committed'
+            exit 0
+          fi
           printf '%s\n' "$changed"
           test "$changed" = $'apps/api/package.json\npackage-lock.json'
-      - name: Print exact review diff
-        run: git diff -- apps/api/package.json package-lock.json
-      - name: Commit exact generated files on isolated builder branch
-        shell: bash
-        run: |
-          set -euo pipefail
+          git diff -- apps/api/package.json package-lock.json
           git config user.name 'korvi-lock-builder'
           git config user.email 'noreply@korvi.invalid'
           git add -- apps/api/package.json package-lock.json
