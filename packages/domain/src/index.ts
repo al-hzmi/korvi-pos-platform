@@ -26,3 +26,4 @@ export * from './ports/persistence.js';
 export * from './ports/auth.js';
 export * from './ports/search.js';
 export * from './ports/offline.js';
+export * from './ports/zatca.js';
