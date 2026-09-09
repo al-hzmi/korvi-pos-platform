@@ -17,5 +17,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "libxml2-wasm": "0.7.2"
   }
 }
