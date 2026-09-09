@@ -9,8 +9,7 @@ if (outputDirectory === undefined) {
 }
 
 const invoiceNamespace = 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2';
-const cacNamespace =
-  'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
+const cacNamespace = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
 const cbcNamespace = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
 const extNamespace = 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2';
 
