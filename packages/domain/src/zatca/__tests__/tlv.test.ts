@@ -233,9 +233,9 @@ describe('Phase 2 simplified invoice QR foundation', () => {
     expect(() => phase2SimplifiedInvoiceQr({ ...input, ecdsaPublicKey: new Uint8Array() })).toThrow(
       TlvEncodingError,
     );
-    expect(() => phase2SimplifiedInvoiceQr({ ...input, zatcaCaSignature: new Uint8Array() })).toThrow(
-      TlvEncodingError,
-    );
+    expect(() =>
+      phase2SimplifiedInvoiceQr({ ...input, zatcaCaSignature: new Uint8Array() }),
+    ).toThrow(TlvEncodingError);
   });
 
   it('rejects a QR payload that exceeds the ZATCA 700-character Base64 limit', () => {

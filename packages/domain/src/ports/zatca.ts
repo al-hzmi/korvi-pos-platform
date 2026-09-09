@@ -86,7 +86,9 @@ export interface ZatcaSignInput {
  * handle that resolves to an exportable, wrong-curve or wrong-algorithm key.
  */
 export interface ZatcaSigningKeyPort {
-  generateNonExportableKey(input: GenerateZatcaSigningKeyInput): Promise<ZatcaSigningKeyDescription>;
+  generateNonExportableKey(
+    input: GenerateZatcaSigningKeyInput,
+  ): Promise<ZatcaSigningKeyDescription>;
 
   describePublicKey(
     scope: TenantScope,
