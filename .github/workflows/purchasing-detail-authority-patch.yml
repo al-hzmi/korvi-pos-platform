@@ -12,6 +12,8 @@ jobs:
   patch:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://korvi_review:korvi_review@127.0.0.1:5432/korvi_review?schema=public
     steps:
       - name: Check out exact review head
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
