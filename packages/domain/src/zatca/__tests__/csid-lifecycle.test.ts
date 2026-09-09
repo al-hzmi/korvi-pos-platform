@@ -18,6 +18,7 @@ const scope = { tenantId: tenantId('tenant-a') };
 const otherScope = { tenantId: tenantId('tenant-b') };
 const certificateDer = Uint8Array.from([0x30, 0x03, 0x02, 0x01, 0x01]);
 const issuerDer = Uint8Array.from([0x30, 0x03, 0x02, 0x01, 0x02]);
+const rootDer = Uint8Array.from([0x30, 0x03, 0x02, 0x01, 0x03]);
 const publicKeySpkiDer = Uint8Array.from([0x30, 0x02, 0x01, 0x01]);
 
 const key: ZatcaSigningKeyHandle = {
@@ -40,10 +41,11 @@ async function sha256Base64(bytes: Uint8Array): Promise<string> {
 }
 
 async function goodEvidence(
+  coveredCertificateDer: Uint8Array,
   overrides: Partial<ZatcaCertificateStatusEvidence> = {},
 ): Promise<ZatcaCertificateStatusEvidence> {
   return {
-    certificateSha256: await sha256Base64(certificateDer),
+    certificateSha256: await sha256Base64(coveredCertificateDer),
     status: 'good',
     source: 'crl',
     checkedAt: '2026-09-09T00:00:00Z',
@@ -71,10 +73,10 @@ async function validBinding(overrides: Partial<ZatcaCsidBinding> = {}): Promise<
         serialNumber: '987654321',
       },
     ],
+    certificateStatus: [await goodEvidence(certificateDer)],
     signingPublicKeySpkiDer: publicKeySpkiDer,
     notBefore: '2026-01-01T00:00:00Z',
     notAfter: '2027-01-01T00:00:00Z',
-    revocation: await goodEvidence(),
     fatooraSecret: { provider: 'vault', secretId: 'fatoora-1' },
     ...overrides,
   };
@@ -91,7 +93,7 @@ async function validate(overrides: Partial<ZatcaCsidBinding> = {}) {
 }
 
 describe('ZATCA CSID stamping lifecycle', () => {
-  it('accepts a tenant/terminal-bound active CSID with fresh good status evidence', async () => {
+  it('accepts a tenant/terminal-bound active CSID with fresh status evidence for every path certificate', async () => {
     const result = await validate();
     expect(result.credentialId).toBe('csid-1');
     expect(result.key).toEqual(key);
@@ -99,6 +101,32 @@ describe('ZATCA CSID stamping lifecycle', () => {
     expect(result.signingCertificate.serialNumber).toBe('123456789');
     expect(result.signingPublicKeySpkiDer).toEqual(publicKeySpkiDer);
     expect(result.fatooraSecret).toEqual({ provider: 'vault', secretId: 'fatoora-1' });
+  });
+
+  it('requires one fresh status record for every non-trust-anchor certificate', async () => {
+    await expect(validate({ certificateStatus: [] })).rejects.toThrow(/exactly 1 non-anchor/);
+
+    await expect(
+      validate({
+        certificatePath: [
+          { certificateDer, issuerName: 'CN=Intermediate', serialNumber: '1' },
+          { certificateDer: issuerDer, issuerName: 'CN=Root', serialNumber: '2' },
+          { certificateDer: rootDer, issuerName: 'CN=Root', serialNumber: '3' },
+        ],
+        certificateStatus: [await goodEvidence(certificateDer)],
+      }),
+    ).rejects.toThrow(/exactly 2 non-anchor/);
+
+    await expect(
+      validate({
+        certificatePath: [
+          { certificateDer, issuerName: 'CN=Intermediate', serialNumber: '1' },
+          { certificateDer: issuerDer, issuerName: 'CN=Root', serialNumber: '2' },
+          { certificateDer: rootDer, issuerName: 'CN=Root', serialNumber: '3' },
+        ],
+        certificateStatus: [await goodEvidence(certificateDer), await goodEvidence(issuerDer)],
+      }),
+    ).resolves.toBeDefined();
   });
 
   it('returns defensive copies of certificate/public-key bytes', async () => {
@@ -192,7 +220,7 @@ describe('ZATCA CSID stamping lifecycle', () => {
     ).rejects.toThrow(/different key/);
   });
 
-  it('refuses a certificate whose public key differs from the resolved non-exportable key', async () => {
+  it('refuses a certificate whose stored public key differs from the resolved non-exportable key', async () => {
     const binding = await validBinding();
     await expect(
       validateZatcaCsidForStamping({
@@ -206,55 +234,65 @@ describe('ZATCA CSID stamping lifecycle', () => {
   });
 
   it('refuses missing/invalid certificate path metadata', async () => {
-    await expect(validate({ certificatePath: [] })).rejects.toThrow(
-      /must include the signing certificate/,
+    await expect(validate({ certificatePath: [], certificateStatus: [] })).rejects.toThrow(
+      /signing certificate and trust anchor/,
     );
     await expect(
       validate({
         certificatePath: [
           { certificateDer: Uint8Array.of(), issuerName: 'CN=CA', serialNumber: '1' },
+          { certificateDer: issuerDer, issuerName: 'CN=Root', serialNumber: '2' },
         ],
       }),
     ).rejects.toThrow(/empty certificate/);
     await expect(
       validate({
-        certificatePath: [{ certificateDer, issuerName: 'CN=CA', serialNumber: '0' }],
+        certificatePath: [
+          { certificateDer, issuerName: 'CN=CA', serialNumber: '0' },
+          { certificateDer: issuerDer, issuerName: 'CN=Root', serialNumber: '2' },
+        ],
       }),
     ).rejects.toThrow(/positive decimal integer/);
   });
 
   it('refuses unknown or revoked status even while evidence is fresh', async () => {
     await expect(
-      validate({ revocation: await goodEvidence({ status: 'unknown' }) }),
+      validate({ certificateStatus: [await goodEvidence(certificateDer, { status: 'unknown' })] }),
     ).rejects.toThrow(/status is unknown/);
     await expect(
-      validate({ revocation: await goodEvidence({ status: 'revoked' }) }),
+      validate({ certificateStatus: [await goodEvidence(certificateDer, { status: 'revoked' })] }),
     ).rejects.toThrow(/status is revoked/);
   });
 
   it('refuses stale, future-dated and over-long CRL evidence', async () => {
     await expect(
       validate({
-        revocation: await goodEvidence({
-          checkedAt: '2026-09-01T00:00:00Z',
-          validUntil: '2026-09-08T00:00:00Z',
-        }),
+        certificateStatus: [
+          await goodEvidence(certificateDer, {
+            checkedAt: '2026-09-01T00:00:00Z',
+            validUntil: '2026-09-08T00:00:00Z',
+          }),
+        ],
       }),
     ).rejects.toThrow(/not fresh/);
     await expect(
       validate({
-        revocation: await goodEvidence({
-          checkedAt: '2026-09-11T00:00:00Z',
-          validUntil: '2026-09-12T00:00:00Z',
-        }),
+        certificateStatus: [
+          await goodEvidence(certificateDer, {
+            checkedAt: '2026-09-11T00:00:00Z',
+            validUntil: '2026-09-12T00:00:00Z',
+          }),
+        ],
       }),
     ).rejects.toThrow(/not fresh/);
     await expect(
       validate({
-        revocation: await goodEvidence({
-          checkedAt: '2026-09-02T23:59:59Z',
-          validUntil: '2026-09-10T00:00:00Z',
-        }),
+        certificateStatus: [
+          await goodEvidence(certificateDer, {
+            checkedAt: '2026-09-02T23:59:59Z',
+            validUntil: '2026-09-10T00:00:00Z',
+          }),
+        ],
       }),
     ).rejects.toThrow(/seven days/);
   });
@@ -262,21 +300,25 @@ describe('ZATCA CSID stamping lifecycle', () => {
   it('allows OCSP evidence to use its provider-defined freshness interval', async () => {
     await expect(
       validate({
-        revocation: await goodEvidence({
-          source: 'ocsp',
-          checkedAt: '2026-09-01T00:00:00Z',
-          validUntil: '2026-09-11T00:00:00Z',
-        }),
+        certificateStatus: [
+          await goodEvidence(certificateDer, {
+            source: 'ocsp',
+            checkedAt: '2026-09-01T00:00:00Z',
+            validUntil: '2026-09-11T00:00:00Z',
+          }),
+        ],
       }),
     ).resolves.toBeDefined();
   });
 
-  it('refuses status evidence whose certificate fingerprint is not the signing certificate', async () => {
+  it('refuses status evidence whose fingerprint does not match its path certificate', async () => {
     await expect(
       validate({
-        revocation: await goodEvidence({
-          certificateSha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-        }),
+        certificateStatus: [
+          await goodEvidence(certificateDer, {
+            certificateSha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+          }),
+        ],
       }),
     ).rejects.toThrow(/different certificate/);
   });
