@@ -13,8 +13,8 @@ const cacNamespace = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggrega
 const cbcNamespace = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
 const extNamespace = 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2';
 
-// Deliberately non-canonical namespace/attribute order. Native xmllint and the
-// production WASM adapter must independently normalize this to identical bytes.
+// Deliberately non-canonical namespace/attribute order. The independent native
+// libxml2 C oracle and production WASM adapter must normalize this to identical bytes.
 const businessXml = [
   `<Invoice xmlns:ext="${extNamespace}" xmlns:cbc="${cbcNamespace}" xmlns="${invoiceNamespace}" xmlns:cac="${cacNamespace}" z="last" a="first">`,
   '<cbc:ProfileID>reporting:1.0</cbc:ProfileID>',
