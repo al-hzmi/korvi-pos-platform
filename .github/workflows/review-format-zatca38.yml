@@ -1,0 +1,32 @@
+name: Review Format ZATCA 38
+
+on:
+  push:
+    branches: [review/zatca-38-official-boundary]
+    paths: [.github/workflows/review-format-zatca38.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+          npx --no-install prettier --write scripts/zatca-38-official-validator-assert.mjs
+          rm .github/workflows/review-format-zatca38.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/zatca-38-official-validator-assert.mjs .github/workflows/review-format-zatca38.yml
+          git commit -m 'chore(review): format ZATCA 38 boundary proof'
+          git push origin HEAD:review/zatca-38-official-boundary
