@@ -89,9 +89,10 @@ interface LineProjection {
  * requirements. Until that classification is persisted as historical sale
  * truth, issuing such an XML would be an invented tax fact and is refused.
  */
-export function renderZatcaSimplifiedInvoiceHashPayload(
-  input: ZatcaSimplifiedInvoiceHashInput,
-): { readonly canonicalXml: string; readonly issuedAt: string } {
+export function renderZatcaSimplifiedInvoiceHashPayload(input: ZatcaSimplifiedInvoiceHashInput): {
+  readonly canonicalXml: string;
+  readonly issuedAt: string;
+} {
   assertInput(input);
 
   const issue = normalizeIssueTime(input.sale.issuedAt);
@@ -217,7 +218,9 @@ function assertSeller(seller: ZatcaSellerFiscalProfile): void {
     throw new ZatcaInvoiceError('Seller postal code must contain exactly five digits.');
   }
   if (seller.countryCode !== 'SA') {
-    throw new ZatcaInvoiceError('This simplified invoice authority is restricted to Saudi sellers.');
+    throw new ZatcaInvoiceError(
+      'This simplified invoice authority is restricted to Saudi sellers.',
+    );
   }
 }
 
@@ -252,7 +255,9 @@ function projectLine(sale: SaleRecord, line: SaleLineRecord): LineProjection {
     );
   }
   if (netMinor + vatMinor !== totalMinor) {
-    throw new ZatcaInvoiceError(`Line ${String(line.lineNumber)} does not reconcile net + VAT = total.`);
+    throw new ZatcaInvoiceError(
+      `Line ${String(line.lineNumber)} does not reconcile net + VAT = total.`,
+    );
   }
 
   assertNonEmptyXml('line item name', line.nameAr);
@@ -305,7 +310,9 @@ function assertSaleArithmetic(
     nonNegativeInteger(bucket.netMinor, 'VAT bucket net') !== saleNet ||
     nonNegativeInteger(bucket.vatMinor, 'VAT bucket VAT') !== saleVat
   ) {
-    throw new ZatcaInvoiceError('Invoice VAT breakdown diverges from the standard-rated sale truth.');
+    throw new ZatcaInvoiceError(
+      'Invoice VAT breakdown diverges from the standard-rated sale truth.',
+    );
   }
 }
 
@@ -425,7 +432,14 @@ function normalizeIssueTime(value: string): NormalizedIssueTime {
   }
   const date = match[1];
   const clock = match[2];
-  if (date === undefined || clock === undefined || Number.isNaN(Date.parse(`${date}T${clock}Z`))) {
+  if (date === undefined || clock === undefined) {
+    throw new ZatcaInvoiceError('Invoice issue time is not a real UTC date/time.');
+  }
+  const candidate = new Date(`${date}T${clock}Z`);
+  if (
+    Number.isNaN(candidate.getTime()) ||
+    candidate.toISOString().slice(0, 19) !== `${date}T${clock}`
+  ) {
     throw new ZatcaInvoiceError('Invoice issue time is not a real UTC date/time.');
   }
   const time = `${clock}Z`;
@@ -451,7 +465,7 @@ function assertNonEmptyXml(field: string, value: string): void {
 }
 
 function assertXml10(value: string, field: string): void {
-  for (let index = 0; index < value.length; ) {
+  for (let index = 0; index < value.length;) {
     const codePoint = value.codePointAt(index);
     if (codePoint === undefined) break;
     const valid =
@@ -461,7 +475,8 @@ function assertXml10(value: string, field: string): void {
       (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
       (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
       (codePoint >= 0x10000 && codePoint <= 0x10ffff);
-    if (!valid) throw new ZatcaInvoiceError(`${field} contains a character XML 1.0 cannot represent.`);
+    if (!valid)
+      throw new ZatcaInvoiceError(`${field} contains a character XML 1.0 cannot represent.`);
     index += codePoint > 0xffff ? 2 : 1;
   }
 }
@@ -487,7 +502,11 @@ function escapeAttribute(value: string): string {
 }
 
 function isBase64(value: string): boolean {
-  return value.length > 0 && value.length % 4 === 0 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
+  return (
+    value.length > 0 &&
+    value.length % 4 === 0 &&
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
+  );
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

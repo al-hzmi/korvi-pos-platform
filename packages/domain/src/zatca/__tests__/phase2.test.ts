@@ -9,10 +9,7 @@ import {
   ZatcaInvoiceError,
 } from '../phase2.js';
 import type { InvoiceRecord, SaleRecord } from '../../ports/persistence.js';
-import type {
-  ZatcaSellerFiscalProfile,
-  ZatcaSimplifiedInvoiceHashInput,
-} from '../phase2.js';
+import type { ZatcaSellerFiscalProfile, ZatcaSimplifiedInvoiceHashInput } from '../phase2.js';
 
 const TENANT_ID = tenantId('018f2e20-7b7a-7c00-8000-000000000010');
 const SALE_ID = '018f2e20-7b7a-7c00-8000-000000000001';
@@ -102,7 +99,9 @@ function invoice(overrides: Partial<InvoiceRecord> = {}): InvoiceRecord {
   };
 }
 
-function input(overrides: Partial<ZatcaSimplifiedInvoiceHashInput> = {}): ZatcaSimplifiedInvoiceHashInput {
+function input(
+  overrides: Partial<ZatcaSimplifiedInvoiceHashInput> = {},
+): ZatcaSimplifiedInvoiceHashInput {
   return {
     sale: sale(),
     invoice: invoice(),
@@ -121,14 +120,22 @@ describe('ZATCA Phase 2 simplified invoice hash payload', () => {
     expect(first).toEqual(second);
     expect(first.issuedAt).toBe('2026-09-09T14:05:06Z');
     expect(first.canonicalXml).toContain('<cbc:ProfileID>reporting:1.0</cbc:ProfileID>');
-    expect(first.canonicalXml).toContain('<cbc:InvoiceTypeCode name="0200000">388</cbc:InvoiceTypeCode>');
+    expect(first.canonicalXml).toContain(
+      '<cbc:InvoiceTypeCode name="0200000">388</cbc:InvoiceTypeCode>',
+    );
     expect(first.canonicalXml).toContain('<cbc:TaxCurrencyCode>SAR</cbc:TaxCurrencyCode>');
     expect(first.canonicalXml).toContain('<cbc:ID>ICV</cbc:ID><cbc:UUID>42</cbc:UUID>');
     expect(first.canonicalXml).toContain('<cbc:ID>PIH</cbc:ID>');
-    expect(first.canonicalXml).toContain('<cbc:TaxableAmount currencyID="SAR">100.00</cbc:TaxableAmount>');
+    expect(first.canonicalXml).toContain(
+      '<cbc:TaxableAmount currencyID="SAR">100.00</cbc:TaxableAmount>',
+    );
     expect(first.canonicalXml).toContain('<cbc:TaxAmount currencyID="SAR">15.00</cbc:TaxAmount>');
-    expect(first.canonicalXml).toContain('<cbc:PayableAmount currencyID="SAR">115.00</cbc:PayableAmount>');
-    expect(first.canonicalXml).toContain('<cbc:InvoicedQuantity unitCode="PCE">1.000</cbc:InvoicedQuantity>');
+    expect(first.canonicalXml).toContain(
+      '<cbc:PayableAmount currencyID="SAR">115.00</cbc:PayableAmount>',
+    );
+    expect(first.canonicalXml).toContain(
+      '<cbc:InvoicedQuantity unitCode="PCE">1.000</cbc:InvoicedQuantity>',
+    );
     expect(first.canonicalXml).not.toContain('<?xml');
     expect(first.canonicalXml).not.toContain('<ext:UBLExtensions>');
     expect(first.canonicalXml).not.toContain('<cac:Signature>');
@@ -197,8 +204,12 @@ describe('ZATCA Phase 2 simplified invoice hash payload', () => {
 
     expect(canonicalXml).toContain('<cbc:Amount currencyID="SAR">10.00</cbc:Amount>');
     expect(canonicalXml).toContain('<cbc:PriceAmount currencyID="SAR">100.00</cbc:PriceAmount>');
-    expect(canonicalXml).toContain('<cbc:LineExtensionAmount currencyID="SAR">90.00</cbc:LineExtensionAmount>');
-    expect(canonicalXml).toContain('<cbc:PayableAmount currencyID="SAR">103.50</cbc:PayableAmount>');
+    expect(canonicalXml).toContain(
+      '<cbc:LineExtensionAmount currencyID="SAR">90.00</cbc:LineExtensionAmount>',
+    );
+    expect(canonicalXml).toContain(
+      '<cbc:PayableAmount currencyID="SAR">103.50</cbc:PayableAmount>',
+    );
   });
 
   it('uses KGM for immutable weighted-item snapshots', () => {
@@ -206,7 +217,9 @@ describe('ZATCA Phase 2 simplified invoice hash payload', () => {
       lines: [{ ...sale().lines[0]!, productType: 'weighted', quantityScaled: '1000' }],
     });
     const { canonicalXml } = renderZatcaSimplifiedInvoiceHashPayload(input({ sale: weightedSale }));
-    expect(canonicalXml).toContain('<cbc:InvoicedQuantity unitCode="KGM">1.000</cbc:InvoicedQuantity>');
+    expect(canonicalXml).toContain(
+      '<cbc:InvoicedQuantity unitCode="KGM">1.000</cbc:InvoicedQuantity>',
+    );
   });
 
   it('refuses to infer zero-rated, exempt or out-of-scope classification from a zero rate', () => {
@@ -261,12 +274,12 @@ describe('ZATCA Phase 2 simplified invoice hash payload', () => {
         input({ seller: { ...seller, vatRegistrationNumber: '310123456789023' } }),
       ),
     ).toThrow(/seller VAT number diverges/i);
-    expect(() => renderZatcaSimplifiedInvoiceHashPayload(input({ invoiceCounterValue: '42.0' }))).toThrow(
-      /digits only/i,
-    );
-    expect(() => renderZatcaSimplifiedInvoiceHashPayload(input({ previousInvoiceHash: 'not-base64' }))).toThrow(
-      /Base64/i,
-    );
+    expect(() =>
+      renderZatcaSimplifiedInvoiceHashPayload(input({ invoiceCounterValue: '42.0' })),
+    ).toThrow(/digits only/i);
+    expect(() =>
+      renderZatcaSimplifiedInvoiceHashPayload(input({ previousInvoiceHash: 'not-base64' })),
+    ).toThrow(/Base64/i);
   });
 
   it('refuses impossible calendar dates instead of allowing Date normalization', () => {
@@ -282,7 +295,10 @@ describe('ZATCA Phase 2 simplified invoice hash payload', () => {
     const invalidSeller = { ...seller, registrationName: `Korvi\u0001` };
     expect(() =>
       renderZatcaSimplifiedInvoiceHashPayload(
-        input({ seller: invalidSeller, invoice: invoice({ sellerName: invalidSeller.registrationName }) }),
+        input({
+          seller: invalidSeller,
+          invoice: invoice({ sellerName: invalidSeller.registrationName }),
+        }),
       ),
     ).toThrow(/XML 1\.0 cannot represent/i);
   });
