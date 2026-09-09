@@ -6,10 +6,11 @@ on:
       - review/zod-4.6.1-lock-builder
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-lock-diff:
+    if: github.event.head_commit.message != 'chore(deps): generate zod 4.6.1 lock'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out exact builder head
@@ -32,3 +33,13 @@ jobs:
           test "$changed" = $'apps/api/package.json\npackage-lock.json'
       - name: Print exact review diff
         run: git diff -- apps/api/package.json package-lock.json
+      - name: Commit exact generated files on isolated builder branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-lock-builder'
+          git config user.email 'noreply@korvi.invalid'
+          git add -- apps/api/package.json package-lock.json
+          git diff --cached --check
+          git commit -m 'chore(deps): generate zod 4.6.1 lock'
+          git push origin HEAD:review/zod-4.6.1-lock-builder
