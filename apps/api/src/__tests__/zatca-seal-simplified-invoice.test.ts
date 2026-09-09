@@ -1,4 +1,14 @@
-import { X509Certificate, createHash, createSign } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import {
+  X509Certificate,
+  createHash,
+  createPrivateKey,
+  createSign,
+  type KeyObject,
+} from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   VAT_STANDARD_BP,
@@ -18,32 +28,224 @@ import {
 import { Libxml2ZatcaCanonicalizer } from '../zatca/libxml2-canonicalizer.js';
 import { createZatcaSimplifiedInvoiceSealer } from '../zatca/seal-simplified-invoice.js';
 
-const LEAF_DER = Buffer.from(
-  'MIIB4zCCAYigAwIBAgIUAd/8P8r0vrwgyH30f9NxM0Dlr4EwCgYIKoZIzj0EAwIwRjEiMCAGA1UEAwwZS29ydmkgU2VhbGVyIEludGVybWVkaWF0ZTETMBEGA1UECgwKS29ydmkgVGVzdDELMAkGA1UEBhMCU0EwHhcNMjYwOTA5MjM0NTM0WhcNMjkwNjA1MjM0NTM0WjA9MRkwFwYDVQQDDBBLb3J2aSBTZWFsZXIgRUdTMRMwEQYDVQQKDApLb3J2aSBUZXN0MQswCQYDVQQGEwJTQTBWMBAGByqGSM49AgEGBSuBBAAKA0IABLzMJqyyf6+Ltv1429ZSDKCxp/IvoU3+Tuyyhq2lh6v83cZipEBC9Jq0vuTgZqcZYIHt6aammDCA3yDp7eQX1bGjYDBeMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMB0GA1UdDgQWBBQhSrWnDMPqiKKLcBiz4EZKE7edIjAfBgNVHSMEGDAWgBQJXJ3MeTNLwE/Fsayy+ymcUtjaZjAKBggqhkjOPQQDAgNJADBGAiEAiRXzzVIn/vR5yZtvUBuq3lBTPsH6YKNw/XEo1FkpYaMCIQCldoSFff4jO6Ip2iCw5Y19YMWlbs12s06wZySSg28edA==',
-  'base64',
-);
-const INTERMEDIATE_DER = Buffer.from(
-  'MIIB6TCCAY+gAwIBAgIUJCzX1lR60OABX9QbhN8m2en2KyYwCgYIKoZIzj0EAwIwPjEaMBgGA1UEAwwRS29ydmkgU2VhbGVyIFJvb3QxEzARBgNVBAoMCktvcnZpIFRlc3QxCzAJBgNVBAYTAlNBMB4XDTI2MDkwOTIzNDUzNFoXDTMyMDMwMTIzNDUzNFowRjEiMCAGA1UEAwwZS29ydmkgU2VhbGVyIEludGVybWVkaWF0ZTETMBEGA1UECgwKS29ydmkgVGVzdDELMAkGA1UEBhMCU0EwVjAQBgcqhkjOPQIBBgUrgQQACgNCAAQppDk+2G99qENha2+oQffgcVPGkp5uJADy3Sip+uB1Z1QBfFcr4QsbmmTiEwawO2Jf3e2eOOUpSLxKxhC1Ky7Lo2YwZDASBgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBBjAdBgNVHQ4EFgQUCVydzHkzS8BPxbGssvspnFLY2mYwHwYDVR0jBBgwFoAUseEL/CSXPEAqWDZ6l4xFAFjSJf0wCgYIKoZIzj0EAwIDSAAwRQIgEBrADvdhRIeFnGY6rdIUVeaqg2jl2Pg+6c9ExKul81ICIQCSDxebn7fCZ29iPbiqdpw59xcT/A3YPi92iCn1woiKJw==',
-  'base64',
-);
-const ROOT_DER = Buffer.from(
-  'MIIB3jCCAYSgAwIBAgIUTqb9s2SbD83A2JOar8QgXn8uo8EwCgYIKoZIzj0EAwIwPjEaMBgGA1UEAwwRS29ydmkgU2VhbGVyIFJvb3QxEzARBgNVBAoMCktvcnZpIFRlc3QxCzAJBgNVBAYTAlNBMB4XDTI2MDkwOTIzNDUzNFoXDTM2MDkwNjIzNDUzNFowPjEaMBgGA1UEAwwRS29ydmkgU2VhbGVyIFJvb3QxEzARBgNVBAoMCktvcnZpIFRlc3QxCzAJBgNVBAYTAlNBMFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAEh+hDXRVsGcE2HOv7NskHtkfSEyazop3QAbUhR27aHrqLghk7EQOKMKpe0HhdsHZjPhZVCvrxo/lqCKQfL0TvkaNjMGEwHQYDVR0OBBYEFLHhC/wklzxAKlg2epeMRQBY0iX9MB8GA1UdIwQYMBaAFLHhC/wklzxAKlg2epeMRQBY0iX9MA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCID0HpO1Ka1UgyytvN5IWtpKRJQ4tZwyZSGSa9iVzvDkPAiEA0cLqPWS5FXIz2kFkM/Qds4Z8Yq0aNp2dvCPRPEEpFhU=',
-  'base64',
-);
-const LEAF_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MIGEAgEAMBAGByqGSM49AgEGBSuBBAAKBG0wawIBAQQgTxaPjqKitQysygPm85a0
-nC9opoPgRy7E/hshzKmyTvChRANCAAS8zCassn+vi7b9eNvWUgygsafyL6FN/k7s
-soatpYer/N3GYqRAQvSatL7k4GanGWCB7emmppgwgN8g6e3kF9Wx
------END PRIVATE KEY-----
-`;
-const ROOT_SHA256 = '6ca8d850e4918d6b0cb7b8805177e37913fa8155938fc82f8ea2d96055ac2966';
+interface EphemeralTestPki {
+  readonly leafDer: Uint8Array;
+  readonly intermediateDer: Uint8Array;
+  readonly rootDer: Uint8Array;
+  readonly leafPrivateKey: KeyObject;
+  readonly leafCertificate: X509Certificate;
+  readonly intermediateCertificate: X509Certificate;
+  readonly rootCertificate: X509Certificate;
+  readonly rootSha256Hex: string;
+  readonly spkiDer: Uint8Array;
+}
+
+function runOpenSsl(cwd: string, args: readonly string[]): void {
+  execFileSync('openssl', args, {
+    cwd,
+    stdio: ['ignore', 'ignore', 'pipe'],
+    windowsHide: true,
+  });
+}
+
+function generateEphemeralTestPki(): EphemeralTestPki {
+  const directory = mkdtempSync(join(tmpdir(), 'korvi-zatca-sealer-'));
+  try {
+    writeFileSync(
+      join(directory, 'intermediate.ext'),
+      [
+        'basicConstraints=critical,CA:TRUE,pathlen:0',
+        'keyUsage=critical,keyCertSign,cRLSign',
+        'subjectKeyIdentifier=hash',
+        'authorityKeyIdentifier=keyid,issuer',
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+    writeFileSync(
+      join(directory, 'leaf.ext'),
+      [
+        'basicConstraints=critical,CA:FALSE',
+        'keyUsage=critical,digitalSignature',
+        'subjectKeyIdentifier=hash',
+        'authorityKeyIdentifier=keyid,issuer',
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+
+    runOpenSsl(directory, [
+      'genpkey',
+      '-algorithm',
+      'EC',
+      '-pkeyopt',
+      'ec_paramgen_curve:secp256k1',
+      '-out',
+      'root.key.pem',
+    ]);
+    runOpenSsl(directory, [
+      'req',
+      '-new',
+      '-x509',
+      '-key',
+      'root.key.pem',
+      '-sha256',
+      '-days',
+      '3650',
+      '-subj',
+      '/CN=Korvi Sealer Root/O=Korvi Test/C=SA',
+      '-addext',
+      'basicConstraints=critical,CA:TRUE',
+      '-addext',
+      'keyUsage=critical,keyCertSign,cRLSign',
+      '-out',
+      'root.cert.pem',
+    ]);
+
+    runOpenSsl(directory, [
+      'genpkey',
+      '-algorithm',
+      'EC',
+      '-pkeyopt',
+      'ec_paramgen_curve:secp256k1',
+      '-out',
+      'intermediate.key.pem',
+    ]);
+    runOpenSsl(directory, [
+      'req',
+      '-new',
+      '-key',
+      'intermediate.key.pem',
+      '-subj',
+      '/CN=Korvi Sealer Intermediate/O=Korvi Test/C=SA',
+      '-out',
+      'intermediate.csr.pem',
+    ]);
+    runOpenSsl(directory, [
+      'x509',
+      '-req',
+      '-in',
+      'intermediate.csr.pem',
+      '-CA',
+      'root.cert.pem',
+      '-CAkey',
+      'root.key.pem',
+      '-CAcreateserial',
+      '-sha256',
+      '-days',
+      '2000',
+      '-extfile',
+      'intermediate.ext',
+      '-out',
+      'intermediate.cert.pem',
+    ]);
+
+    runOpenSsl(directory, [
+      'genpkey',
+      '-algorithm',
+      'EC',
+      '-pkeyopt',
+      'ec_paramgen_curve:secp256k1',
+      '-out',
+      'leaf.key.pem',
+    ]);
+    runOpenSsl(directory, [
+      'req',
+      '-new',
+      '-key',
+      'leaf.key.pem',
+      '-subj',
+      '/CN=Korvi Sealer EGS/O=Korvi Test/C=SA',
+      '-out',
+      'leaf.csr.pem',
+    ]);
+    runOpenSsl(directory, [
+      'x509',
+      '-req',
+      '-in',
+      'leaf.csr.pem',
+      '-CA',
+      'intermediate.cert.pem',
+      '-CAkey',
+      'intermediate.key.pem',
+      '-CAcreateserial',
+      '-sha256',
+      '-days',
+      '1000',
+      '-extfile',
+      'leaf.ext',
+      '-out',
+      'leaf.cert.pem',
+    ]);
+
+    for (const name of ['root', 'intermediate', 'leaf']) {
+      runOpenSsl(directory, [
+        'x509',
+        '-in',
+        `${name}.cert.pem`,
+        '-outform',
+        'DER',
+        '-out',
+        `${name}.cert.der`,
+      ]);
+    }
+
+    const leafDer = Uint8Array.from(readFileSync(join(directory, 'leaf.cert.der')));
+    const intermediateDer = Uint8Array.from(readFileSync(join(directory, 'intermediate.cert.der')));
+    const rootDer = Uint8Array.from(readFileSync(join(directory, 'root.cert.der')));
+    const leafPrivateKey = createPrivateKey(readFileSync(join(directory, 'leaf.key.pem')));
+    const leafCertificate = new X509Certificate(leafDer);
+    const intermediateCertificate = new X509Certificate(intermediateDer);
+    const rootCertificate = new X509Certificate(rootDer);
+
+    return {
+      leafDer,
+      intermediateDer,
+      rootDer,
+      leafPrivateKey,
+      leafCertificate,
+      intermediateCertificate,
+      rootCertificate,
+      rootSha256Hex: createHash('sha256').update(rootDer).digest('hex'),
+      spkiDer: Uint8Array.from(
+        leafCertificate.publicKey.export({ type: 'spki', format: 'der' }),
+      ),
+    };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function utcSecond(milliseconds: number): string {
+  return new Date(Math.floor(milliseconds / 1000) * 1000).toISOString().replace('.000Z', 'Z');
+}
+
+function certificateInstant(value: string): number {
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error('OpenSSL produced an invalid certificate time.');
+  }
+  return milliseconds;
+}
+
+function decimalSerial(certificate: X509Certificate): string {
+  return BigInt(`0x${certificate.serialNumber}`).toString(10);
+}
+
+const TEST_PKI = generateEphemeralTestPki();
+const LEAF_DER = TEST_PKI.leafDer;
+const INTERMEDIATE_DER = TEST_PKI.intermediateDer;
+const ROOT_DER = TEST_PKI.rootDer;
+const ROOT_SHA256 = TEST_PKI.rootSha256Hex;
+const SPKI_DER = TEST_PKI.spkiDer;
+const LEAF_NOT_BEFORE = certificateInstant(TEST_PKI.leafCertificate.validFrom);
+const LEAF_NOT_AFTER = certificateInstant(TEST_PKI.leafCertificate.validTo);
+const ISSUED_AT = utcSecond(LEAF_NOT_BEFORE + 30_000);
+const STAMPING_TIME = utcSecond(LEAF_NOT_BEFORE + 60_000);
+const STATUS_CHECKED_AT = utcSecond(LEAF_NOT_BEFORE);
+const STATUS_VALID_UNTIL = utcSecond(LEAF_NOT_BEFORE + 6 * 24 * 60 * 60 * 1000);
 const SCOPE = { tenantId: tenantId('tenant-a') };
 const TERMINAL_ID = '018f2e20-7b7a-7c00-8000-000000000012';
-const ISSUED_AT = '2026-12-31T23:59:59Z';
-const STAMPING_TIME = '2027-01-01T00:00:00Z';
-const SPKI_DER = Uint8Array.from(
-  new X509Certificate(LEAF_DER).publicKey.export({ type: 'spki', format: 'der' }),
-);
 
 const KEY: ZatcaSigningKeyHandle = {
   provider: 'test-hsm',
@@ -62,8 +264,8 @@ function evidence(certificateDer: Uint8Array): ZatcaCertificateStatusEvidence {
     certificateSha256: sha256Base64(certificateDer),
     status: 'good',
     source: 'crl',
-    checkedAt: '2026-12-31T00:00:00Z',
-    validUntil: '2027-01-07T00:00:00Z',
+    checkedAt: STATUS_CHECKED_AT,
+    validUntil: STATUS_VALID_UNTIL,
   };
 }
 
@@ -77,24 +279,24 @@ function csid(overrides: Partial<ZatcaCsidBinding> = {}): ZatcaCsidBinding {
     certificatePath: [
       {
         certificateDer: Uint8Array.from(LEAF_DER),
-        issuerName: 'CN=Korvi Sealer Intermediate',
-        serialNumber: '10704030953714932230974407519112667291351101313',
+        issuerName: TEST_PKI.leafCertificate.issuer,
+        serialNumber: decimalSerial(TEST_PKI.leafCertificate),
       },
       {
         certificateDer: Uint8Array.from(INTERMEDIATE_DER),
-        issuerName: 'CN=Korvi Sealer Root',
-        serialNumber: '206523702612588268175886436154558785309413616422',
+        issuerName: TEST_PKI.intermediateCertificate.issuer,
+        serialNumber: decimalSerial(TEST_PKI.intermediateCertificate),
       },
       {
         certificateDer: Uint8Array.from(ROOT_DER),
-        issuerName: 'CN=Korvi Sealer Root',
-        serialNumber: '449025304279827906651231510168251346384099124161',
+        issuerName: TEST_PKI.rootCertificate.issuer,
+        serialNumber: decimalSerial(TEST_PKI.rootCertificate),
       },
     ],
     certificateStatus: [evidence(LEAF_DER), evidence(INTERMEDIATE_DER)],
     signingPublicKeySpkiDer: Uint8Array.from(SPKI_DER),
-    notBefore: '2026-09-09T23:45:34Z',
-    notAfter: '2029-06-05T23:45:34Z',
+    notBefore: utcSecond(LEAF_NOT_BEFORE),
+    notAfter: utcSecond(LEAF_NOT_AFTER),
     fatooraSecret: { provider: 'test-vault', secretId: 'fatoora-test-1' },
     ...overrides,
   };
@@ -189,7 +391,7 @@ function signingPort(options: { corruptSignature?: boolean; publicKey?: Uint8Arr
     const signer = createSign('SHA256');
     signer.update(Buffer.from(input.message));
     signer.end();
-    const raw = ecdsaDerToXmlDsigSignature(signer.sign(LEAF_PRIVATE_KEY));
+    const raw = ecdsaDerToXmlDsigSignature(signer.sign(TEST_PKI.leafPrivateKey));
     if (options.corruptSignature) raw[0] ^= 1;
     return raw;
   });
@@ -354,7 +556,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
       sealer.seal({
         scope: SCOPE,
         terminalId: TERMINAL_ID,
-        stampingTime: '2026-12-31T23:59:58Z',
+        stampingTime: utcSecond(Date.parse(ISSUED_AT) - 1000),
         csid: csid(),
         invoice: invoiceInput(),
       }),
