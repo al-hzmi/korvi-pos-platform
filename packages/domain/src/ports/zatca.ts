@@ -119,3 +119,22 @@ export interface ZatcaSigningKeyPort {
    */
   signSha256(input: ZatcaSignInput): Promise<Uint8Array>;
 }
+
+/**
+ * Canonical XML boundary for the ZATCA cryptographic-stamp pipeline.
+ *
+ * The domain names the three regulatory byte sequences it needs, but deliberately
+ * knows nothing about a DOM/parser/WASM implementation. Implementations MUST use
+ * Canonical XML 1.1 without comments and MUST fail closed on malformed or
+ * ambiguous signature structures.
+ */
+export interface ZatcaXmlCanonicalizationPort {
+  /** Apply the ZATCA invoice-reference exclusions, then Canonical XML 1.1. */
+  canonicalizeInvoiceReference(xml: string): Promise<Uint8Array>;
+
+  /** Canonicalize the unique xades:SignedProperties target in its final XML context. */
+  canonicalizeSignedProperties(xml: string): Promise<Uint8Array>;
+
+  /** Canonicalize the unique ds:SignedInfo target in its final XML context. */
+  canonicalizeSignedInfo(xml: string): Promise<Uint8Array>;
+}
