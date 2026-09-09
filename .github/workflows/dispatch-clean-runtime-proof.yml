@@ -1,0 +1,35 @@
+name: Dispatch Clean Runtime Proof
+
+on:
+  push:
+    branches:
+      - review/runtime-proof-dispatch
+    paths:
+      - .github/workflows/dispatch-clean-runtime-proof.yml
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch Stage 5D against clean React candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run stage-5d-browser-proof.yml --repo "$GITHUB_REPOSITORY" --ref review/react-19-3-compat
+
+      - name: Check out helper branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Remove dispatcher
+        run: |
+          rm .github/workflows/dispatch-clean-runtime-proof.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/dispatch-clean-runtime-proof.yml
+          git commit -m "chore(review): remove clean runtime dispatcher"
+          git push origin HEAD:review/runtime-proof-dispatch
