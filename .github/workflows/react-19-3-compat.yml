@@ -1,0 +1,63 @@
+name: React 19.3 Compatibility Proof
+
+on:
+  push:
+    branches:
+      - review/react-19-3-compat
+    paths:
+      - .github/workflows/react-19-3-compat.yml
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install locked baseline
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Upgrade React runtime and typings exactly
+        run: |
+          npm install --save-exact -w @korvi/pos-web react@19.3.0 react-dom@19.3.0 --registry=https://registry.npmjs.org
+          npm install --save-dev --save-exact -w @korvi/pos-web @types/react@19.3.0 @types/react-dom@19.3.0 --registry=https://registry.npmjs.org
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const manifest = JSON.parse(readFileSync('apps/pos-web/package.json', 'utf8'));
+          const expected = {
+            react: manifest.dependencies?.react,
+            'react-dom': manifest.dependencies?.['react-dom'],
+            '@types/react': manifest.devDependencies?.['@types/react'],
+            '@types/react-dom': manifest.devDependencies?.['@types/react-dom'],
+          };
+          for (const [name, version] of Object.entries(expected)) {
+            if (version !== '19.3.0') throw new Error(`${name} resolved to ${String(version)}`);
+          }
+          NODE
+
+      - name: Full production verification
+        run: npm run verify
+
+      - name: Publish clean compatibility candidate
+        run: |
+          rm .github/workflows/react-19-3-compat.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/pos-web/package.json package-lock.json .github/workflows/react-19-3-compat.yml
+          git diff --cached --check
+          git commit -m "chore(deps): upgrade React to 19.3.0"
+          git push origin HEAD:review/react-19-3-compat
