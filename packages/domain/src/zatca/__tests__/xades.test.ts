@@ -7,9 +7,11 @@ import {
   ZATCA_INVOICE_REFERENCE_ID,
   ZATCA_INVOICE_REFERENCE_TRANSFORMS,
   ZATCA_SIGNED_PROPERTIES_ID,
+  ZATCA_XADES_NAMESPACE,
   ZATCA_XADES_SIGNED_PROPERTIES_TYPE,
   ZATCA_XPATH_ALGORITHM,
   renderZatcaSignedInfoXml,
+  renderZatcaSignedPropertiesXml,
 } from '../xades.js';
 import { ZatcaInvoiceError } from '../phase2.js';
 
@@ -79,8 +81,12 @@ describe('ZATCA XAdES SignedInfo structure', () => {
       signedPropertiesDigest: digest(2),
     });
     expect(xml.match(new RegExp(XMLDSIG_SHA256_ALGORITHM, 'g'))).toHaveLength(2);
-    expect(xml).toContain('<ds:DigestValue>AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=</ds:DigestValue>');
-    expect(xml).toContain('<ds:DigestValue>AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=</ds:DigestValue>');
+    expect(xml).toContain(
+      '<ds:DigestValue>AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=</ds:DigestValue>',
+    );
+    expect(xml).toContain(
+      '<ds:DigestValue>AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=</ds:DigestValue>',
+    );
   });
 
   it('refuses non-SHA256 digest widths instead of padding or truncating them', () => {
@@ -108,5 +114,108 @@ describe('ZATCA XAdES SignedInfo structure', () => {
     expect(xml).not.toContain('SignatureValue');
     expect(xml).not.toContain('KeyInfo');
     expect(xml).not.toContain('X509Certificate');
+  });
+});
+
+describe('ZATCA XAdES SignedPropertiesV2', () => {
+  const certificatePathDer = [
+    Uint8Array.from([0x30, 0x01, 0x01]),
+    Uint8Array.from([0x30, 0x01, 0x02]),
+  ];
+
+  it('includes signing time, every certificate digest and the signing certificate first', async () => {
+    const xml = await renderZatcaSignedPropertiesXml({
+      signingTime: '2026-09-10T00:00:00Z',
+      certificatePathDer,
+      signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
+      signaturePolicyDigest: digest(3),
+    });
+
+    expect(xml).toContain(
+      `<xades:SignedProperties xmlns:xades="${ZATCA_XADES_NAMESPACE}" xmlns:ds="${XMLDSIG_NAMESPACE}" Id="${ZATCA_SIGNED_PROPERTIES_ID}">`,
+    );
+    expect(xml).toContain('<xades:SigningTime>2026-09-10T00:00:00Z</xades:SigningTime>');
+    expect(xml.match(/<xades:Cert>/g)).toHaveLength(2);
+    const signingCertificateDigest =
+      '<ds:DigestValue>nbCEfg++xGJt8cyFmiwGJhno5duPqxg8W/nZd5Va+00=</ds:DigestValue>';
+    const issuerDigest =
+      '<ds:DigestValue>PL5kcM/4Xfrd6pmPhX+jh3Lb9G90sDn+8KdfabxKjH0=</ds:DigestValue>';
+    expect(xml.indexOf(signingCertificateDigest)).toBeGreaterThan(-1);
+    expect(xml.indexOf(issuerDigest)).toBeGreaterThan(xml.indexOf(signingCertificateDigest));
+    expect(xml.match(new RegExp(XMLDSIG_SHA256_ALGORITHM, 'g'))).toHaveLength(3);
+    expect(xml).not.toContain('IssuerSerialV2');
+  });
+
+  it('binds an explicit policy identifier/hash and the data-object format into SignedProperties', async () => {
+    const xml = await renderZatcaSignedPropertiesXml({
+      signingTime: '2026-09-10T00:00:00Z',
+      certificatePathDer,
+      signaturePolicyIdentifier: 'https://example.invalid/policy?a=1&b=2',
+      signaturePolicyDigest: digest(3),
+    });
+
+    expect(xml).toContain(
+      '<xades:Identifier>https://example.invalid/policy?a=1&amp;b=2</xades:Identifier>',
+    );
+    expect(xml).toContain(
+      '<ds:DigestValue>AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=</ds:DigestValue>',
+    );
+    expect(xml).toContain(
+      `<xades:DataObjectFormat ObjectReference="#${ZATCA_INVOICE_REFERENCE_ID}">`,
+    );
+    expect(xml).toContain('<xades:MimeType>text/xml</xades:MimeType>');
+  });
+
+  it('refuses an absent or empty certificate path', async () => {
+    await expect(
+      renderZatcaSignedPropertiesXml({
+        signingTime: '2026-09-10T00:00:00Z',
+        certificatePathDer: [],
+        signaturePolicyIdentifier: 'urn:zatca:policy:test',
+        signaturePolicyDigest: digest(3),
+      }),
+    ).rejects.toThrow(/certificate path/);
+    await expect(
+      renderZatcaSignedPropertiesXml({
+        signingTime: '2026-09-10T00:00:00Z',
+        certificatePathDer: [new Uint8Array(0)],
+        signaturePolicyIdentifier: 'urn:zatca:policy:test',
+        signaturePolicyDigest: digest(3),
+      }),
+    ).rejects.toThrow(/empty certificate/);
+  });
+
+  it('refuses invented-looking relative/blank policy identifiers and wrong digest widths', async () => {
+    for (const identifier of ['', 'policy-v1', 'urn:zatca policy']) {
+      await expect(
+        renderZatcaSignedPropertiesXml({
+          signingTime: '2026-09-10T00:00:00Z',
+          certificatePathDer,
+          signaturePolicyIdentifier: identifier,
+          signaturePolicyDigest: digest(3),
+        }),
+      ).rejects.toThrow(/absolute identifier/);
+    }
+    await expect(
+      renderZatcaSignedPropertiesXml({
+        signingTime: '2026-09-10T00:00:00Z',
+        certificatePathDer,
+        signaturePolicyIdentifier: 'urn:zatca:policy:test',
+        signaturePolicyDigest: new Uint8Array(31),
+      }),
+    ).rejects.toThrow(/exactly 32 bytes/);
+  });
+
+  it('refuses non-UTC and impossible signing instants instead of normalizing them', async () => {
+    for (const signingTime of ['2026-09-10T03:00:00+03:00', '2026-02-30T00:00:00Z']) {
+      await expect(
+        renderZatcaSignedPropertiesXml({
+          signingTime,
+          certificatePathDer,
+          signaturePolicyIdentifier: 'urn:zatca:policy:test',
+          signaturePolicyDigest: digest(3),
+        }),
+      ).rejects.toThrow(ZatcaInvoiceError);
+    }
   });
 });
