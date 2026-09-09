@@ -1,0 +1,51 @@
+name: Temporary Gate39 Sealing Formatter
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/tmp-gate39-sealing-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: review/zatca-39-csid-lifecycle
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Format Gate39 sealing files only
+        run: |
+          npx prettier@3.9.6 --write \
+            apps/api/src/zatca/certificate-path-validator.ts \
+            apps/api/src/zatca/seal-simplified-invoice.ts \
+            packages/domain/src/zatca/__tests__/x509.test.ts \
+            packages/domain/src/zatca/__tests__/xades-envelope.test.ts \
+            packages/domain/src/zatca/x509.ts \
+            packages/domain/src/zatca/xades-envelope.ts
+          git diff --check
+      - name: Commit formatter output
+        run: |
+          git add \
+            apps/api/src/zatca/certificate-path-validator.ts \
+            apps/api/src/zatca/seal-simplified-invoice.ts \
+            packages/domain/src/zatca/__tests__/x509.test.ts \
+            packages/domain/src/zatca/__tests__/xades-envelope.test.ts \
+            packages/domain/src/zatca/x509.ts \
+            packages/domain/src/zatca/xades-envelope.ts
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'korvi-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'style(zatca): format sealing authority'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
