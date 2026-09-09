@@ -2,11 +2,11 @@
 
 Status: **ACTIVE GOVERNANCE DENOMINATOR (v1)**
 
-Evidence baseline: `e8d2f9189a21024d46fafd33c04fc450c95d1df5`
+Evidence baseline: `8324844e707b8302e23ebfa246ce6d1f198aea15`
 
-Snapshot date: 2026-09-09
+Snapshot date: 2026-09-10
 
-Current evidence-backed progress: **76 / 100** (`38 / 50` gates closed)
+Current evidence-backed progress: **78 / 100** (`39 / 50` gates closed)
 
 > This score measures implementation progress toward the current sellable Korvi
 > POS production target. It is not permission to ship. Critical release gates
@@ -131,14 +131,14 @@ saleable.
 | 34 | Cost read/bootstrap/valued receiving require separate cost authority and observation preconditions | CLOSED | ADR-0025; cost route/live/HTTP contract tests |
 | 35 | Purchasing and costing workflows are proven in actual browser and pass independent review/Human Gate | OPEN | Automated exact-head Chrome proof `34378535134` is stable after purchasing decision-authority fixes; required independent review/Human Gate remains open |
 
-### Pillar H — Fiscal compliance (4 / 10)
+### Pillar H — Fiscal compliance (6 / 10)
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
 | 36 | ZATCA Phase 1 simplified QR tags 1-5 are deterministic and UTF-8 byte-correct | CLOSED | `docs/architecture/zatca.md`; TLV tests |
 | 37 | Required QR is carried through the thermal receipt generation path | CLOSED | receipt renderer and printing suites |
-| 38 | Compliant UBL XML, canonicalisation and invoice hash are implemented for Phase 2 | OPEN | Explicitly deferred by `docs/architecture/zatca.md` |
-| 39 | CSID lifecycle, cryptographic stamp and QR tags 6-9 are implemented | OPEN | Explicitly deferred by `docs/architecture/zatca.md` |
+| 38 | Compliant UBL XML, canonicalisation and invoice hash are implemented for Phase 2 | CLOSED | Production UBL/hash authority on `95c64450...`; exact-head full CI `34405601428` and official ZATCA public-validator boundary proof `34405601489` succeeded on `8324844e...`; official response contained no UBL/XSD/EN16931/KSA content finding, only exact Gate 39 signature/QR residuals; ADR-0032 |
+| 39 | CSID lifecycle, cryptographic stamp and QR tags 6-9 are implemented | OPEN | ADR-0032 preserves this as a hard sealing boundary; real CSID/XAdES/QR 6-9 implementation and ZATCA validation remain required |
 | 40 | FATOORA reporting, retry and reconciliation are implemented and proven | OPEN | Architecture defined; production authority not yet implemented/proven |
 
 ### Pillar I — Offline-first resilience (0 / 10)
@@ -155,7 +155,7 @@ saleable.
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
-| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Push CI `34378535126` and PR CI `34378542051` succeeded on `e8d2f918...` |
+| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Push CI `34378535126` and PR CI `34378542051` succeeded on `e8d2f918...`; clean Gate 38 candidate CI `34405601428` also succeeded on `8324844e...` |
 | 47 | Restricted-role PostgreSQL 17 proof applies all migrations, detects drift and runs live/full verification | CLOSED | Exact-head PostgreSQL workflow `34378535285` succeeded on `e8d2f918...`; 12/12 migrations, no drift, live/full verification green |
 | 48 | Matching-SHA API/web staging deployment is live and health-checked | CLOSED | Render staging matching-sha deployment evidence retained from the active release track |
 | 49 | Current-head independent review and all required Human Gates are complete | OPEN | No fresh independent approval/Human Gate is claimed |
@@ -172,15 +172,15 @@ Closed gates by pillar:
 - E: 5
 - F: 4
 - G: 4
-- H: 2
+- H: 3
 - I: 0
 - J: 3
 
-Total: `38 / 50` gates.
+Total: `39 / 50` gates.
 
-`38 × 2 = 76`.
+`39 × 2 = 78`.
 
-**Canonical evidence-backed overall progress: 76 / 100.**
+**Canonical evidence-backed overall progress: 78 / 100.**
 
 This replaces the historical `58 / 100` baseline because the old number had no
 stable denominator. Progress now moves only when a named gate closes from the
@@ -191,13 +191,16 @@ evidence required by that gate.
 The score must move only when a named open gate closes. The nearest legitimate
 opportunities are:
 
-1. obtain the required independent current-head review and Human Gate for the
+1. implement and prove Gate 39: real CSID lifecycle, cryptographic stamp/XAdES
+   sealing and Phase 2 QR tags 6-9, then validate the sealed simplified invoice
+   through the official ZATCA acceptance path;
+2. implement and prove Gate 40 FATOORA reporting/retry/reconciliation after the
+   sealed-invoice authority is stable;
+3. obtain the required independent current-head review and Human Gate for the
    inventory/purchasing/costing browser workflows;
-2. implement and prove the remaining ZATCA Phase 2 fiscal gates in dependency
-   order, beginning with compliant UBL XML, canonicalisation and invoice hash;
-3. implement and prove the offline-first browser persistence, ordered queue,
+4. implement and prove the offline-first browser persistence, ordered queue,
    sync and reconciliation gates;
-4. complete independent release review plus production operations and controlled
+5. complete independent release review plus production operations and controlled
    merchant field validation.
 
 No direct SQL fixture, fake stock, weakened permission, fabricated browser
