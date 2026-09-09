@@ -248,7 +248,9 @@ describe('ZATCA simplified invoice sealing authority', () => {
     });
 
     expect(signing.signSha256).toHaveBeenCalledTimes(1);
-    expect(result.xml).toContain(`<ds:SignatureValue>${result.signatureValueBase64}</ds:SignatureValue>`);
+    expect(result.xml).toContain(
+      `<ds:SignatureValue>${result.signatureValueBase64}</ds:SignatureValue>`,
+    );
     expect(result.xml).toContain('<cbc:ID>QR</cbc:ID>');
     expect(result.xml).toContain('urn:oasis:names:specification:ubl:signature:Invoice');
     expect(result.invoiceHashBase64).toBe(bytesToBase64(result.invoiceHash));
