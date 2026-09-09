@@ -19,6 +19,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '../../../..');
 const doc = readFileSync(join(root, 'docs/architecture/zatca.md'), 'utf8');
 const tlv = readFileSync(join(root, 'packages/domain/src/zatca/tlv.ts'), 'utf8');
+const signingPort = readFileSync(join(root, 'packages/domain/src/ports/zatca.ts'), 'utf8');
+const signingDecision = readFileSync(
+  join(root, 'docs/decisions/ADR-0033-zatca-csid-and-signing-key-boundary.md'),
+  'utf8',
+);
 
 describe('Phase 2 simplified tax invoice QR', () => {
   it('is documented as carrying tags 1 to 9', () => {
@@ -46,6 +51,20 @@ describe('Phase 2 simplified tax invoice QR', () => {
   it('says the same thing in the TLV module', () => {
     expect(tlv).toContain('tags 1-9');
     expect(tlv).toMatch(/technical\s*\n?\s*\*?\s*CA signature|CA signature over that public key/i);
+  });
+});
+
+describe('ZATCA signing curve identity', () => {
+  it('pins the provider contract to secp256k1 instead of ambiguous generic P-256', () => {
+    expect(signingPort).toContain("ZATCA_SIGNING_CURVE = 'secp256k1'");
+    expect(signingPort).toContain("ZATCA_SIGNING_ALGORITHM = 'ECDSA_SECP256K1_SHA256'");
+    expect(signingPort).not.toContain("ZATCA_SIGNING_ALGORITHM = 'ECDSA_P256_SHA256'");
+  });
+
+  it('records ZATCA terminology and forbids substitution with the NIST curve', () => {
+    expect(signingDecision).toContain('P-256 (secp256k1)');
+    expect(signingDecision).toContain('MUST NOT substitute NIST P-256');
+    expect(signingDecision).toMatch(/secp256r1.*prime256v1/);
   });
 });
 

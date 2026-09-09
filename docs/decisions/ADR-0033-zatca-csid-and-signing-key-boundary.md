@@ -15,16 +15,19 @@ The currently published ZATCA Security Features Implementation Standards v1.2 re
 - signing keys to be marked non-exportable so they cannot leave the security module where they were generated;
 - hardware or software security modules to be acceptable only when those requirements are met;
 - PKCS#10 CSR generation including at least the certificate CN and public key, signed with the private key as proof-of-possession;
-- ECDSA using a P-256 key and SHA-256;
+- ECDSA with SHA-256 using the curve ZATCA's current Developer Portal manual explicitly labels **P-256 (secp256k1)**;
 - an enveloped XAdES signature at baseline level B-B for XML invoices;
 - certificate validity/revocation checking before a certificate is used for stamping;
 - a ZATCA-issued certificate/CSID associated with the signing key pair;
 - secure storage of the FATOORA API secret issued alongside the credential.
 
+ZATCA's use of the label `P-256` is not treated by Korvi as the generic/NIST curve name. The Developer Portal manual resolves it to **secp256k1**. An implementation MUST NOT substitute NIST P-256 / `secp256r1` / `prime256v1`; those are different curves.
+
 Official references:
 
 - ZATCA Security Requirements: https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/Pages/Security-Requirements.aspx
 - Security Features Implementation Standards v1.2 (19 May 2023): https://www.zatca.gov.sa/ar/E-Invoicing/SystemsDevelopers/Documents/20230519_ZATCA_Electronic_Invoice_Security_Features_Implementation_Standards_vF.pdf
+- Developer Portal User Manual: https://zatca.gov.sa/en/E-Invoicing/SystemsDevelopers/ComplianceEnablementToolbox/Documents/Developer%20Portal%20User%20Manual.pdf
 - Developer Portal: https://sandbox.zatca.gov.sa/
 
 The existing `terminals` table identifies an EGS-like Korvi device by tenant, branch, terminal code and optional device key. It has no private-key, CSID-secret or PEM fields. That is the correct starting point: relational persistence is not the security module.
@@ -60,7 +63,7 @@ Any future database model for CSID bindings must therefore reference the termina
 
 ### 4. Key generation and CSR are security-module operations
 
-`ZatcaSigningKeyPort.generateNonExportableKey` creates an ECDSA P-256 key in the provider and returns only public metadata plus an opaque handle.
+`ZatcaSigningKeyPort.generateNonExportableKey` creates an ECDSA **secp256k1** key in the provider and returns only public metadata plus an opaque handle. The API contract carries the curve identifier explicitly; the ambiguous generic `P-256` label is not accepted at the adapter boundary.
 
 `createPkcs10Csr` receives validated CSR identity facts and a key handle. The adapter constructs a PKCS#10 request and obtains proof-of-possession from the security module. The private key never crosses the port.
 
@@ -80,7 +83,9 @@ Provider-specific ASN.1 encoding remains the signing adapter's responsibility.
 
 ### 6. Signing is message-in/signature-out
 
-The domain supplies bytes to `signSha256`; the security module applies ECDSA P-256 with SHA-256 and returns the signature only. For XAdES, those input bytes are the canonicalised `ds:SignedInfo` bytes.
+The domain supplies bytes to `signSha256`; the security module applies ECDSA **secp256k1** with SHA-256 and returns the signature only. For XAdES, those input bytes are the canonicalised `ds:SignedInfo` bytes, whose references bind the invoice digest and the signed-properties digest.
+
+This follows the current Security Features Implementation Standards' XAdES/XMLDSIG structure. The older detailed signing walkthrough describes the operation more loosely as signing the generated invoice hash; Korvi does not collapse XMLDSIG `SignedInfo` signing into a raw-digest shortcut unless the current official validator proves that requirement.
 
 No caller may ask the provider to return the private key so it can sign locally.
 
@@ -108,5 +113,5 @@ This keeps receipt rendering and QR generation deterministic and prevents a prin
 - A database leak alone cannot disclose raw ZATCA private keys by design.
 - A browser compromise does not gain a private key merely because the cashier UI can print a QR code.
 - Key rotation/CSID renewal can preserve historical invoice evidence instead of overwriting device identity.
-- Provider choice remains replaceable behind the port, but only providers capable of enforcing non-exportability are eligible for production.
+- Provider choice remains replaceable behind the port, but only providers capable of enforcing non-exportability and the exact secp256k1 profile are eligible for production.
 - Gate 39 remains OPEN until the concrete provider, CSID lifecycle, XAdES B-B seal, QR tags 6-9 and official sealed-invoice validation are all proven.

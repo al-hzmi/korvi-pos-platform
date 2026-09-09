@@ -1,7 +1,15 @@
 import type { TenantScope } from './persistence.js';
 
+/**
+ * ZATCA's current developer material labels the required curve as
+ * "P-256 (secp256k1)". The explicit identifier prevents an adapter from
+ * substituting NIST P-256 / secp256r1 / prime256v1, which is a different curve.
+ */
+export const ZATCA_SIGNING_CURVE = 'secp256k1' as const;
+export type ZatcaSigningCurve = typeof ZATCA_SIGNING_CURVE;
+
 /** The only signing profile Korvi permits for the ZATCA cryptographic stamp. */
-export const ZATCA_SIGNING_ALGORITHM = 'ECDSA_P256_SHA256' as const;
+export const ZATCA_SIGNING_ALGORITHM = 'ECDSA_SECP256K1_SHA256' as const;
 export type ZatcaSigningAlgorithm = typeof ZATCA_SIGNING_ALGORITHM;
 
 /**
@@ -14,6 +22,7 @@ export type ZatcaSigningAlgorithm = typeof ZATCA_SIGNING_ALGORITHM;
 export interface ZatcaSigningKeyHandle {
   readonly provider: string;
   readonly keyId: string;
+  readonly curve: ZatcaSigningCurve;
   readonly algorithm: ZatcaSigningAlgorithm;
   readonly exportable: false;
 }
@@ -21,7 +30,7 @@ export interface ZatcaSigningKeyHandle {
 /** Public-only key description safe to cross the domain boundary. */
 export interface ZatcaSigningKeyDescription {
   readonly handle: ZatcaSigningKeyHandle;
-  /** DER SubjectPublicKeyInfo for the P-256 public key. Never private material. */
+  /** DER SubjectPublicKeyInfo for the secp256k1 public key. Never private material. */
   readonly publicKeySpkiDer: Uint8Array;
   readonly createdAt: string;
 }
@@ -70,7 +79,7 @@ export interface ZatcaSignInput {
   readonly terminalId: string;
   readonly key: ZatcaSigningKeyHandle;
   /**
-   * Bytes to be signed using ECDSA P-256 with SHA-256.
+   * Bytes to be signed using ECDSA secp256k1 with SHA-256.
    *
    * For XAdES this is the canonicalised `ds:SignedInfo` byte sequence. The
    * security-module adapter owns the algorithm invocation; callers never hash
@@ -82,8 +91,8 @@ export interface ZatcaSignInput {
 /**
  * Security-module boundary for ZATCA signing.
  *
- * Implementations MUST create the key as non-exportable and MUST reject a
- * handle that resolves to an exportable, wrong-curve or wrong-algorithm key.
+ * Implementations MUST create the key as non-exportable secp256k1 and MUST reject
+ * a handle that resolves to an exportable, wrong-curve or wrong-algorithm key.
  */
 export interface ZatcaSigningKeyPort {
   generateNonExportableKey(
