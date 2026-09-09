@@ -2,11 +2,11 @@
 
 Status: **ACTIVE GOVERNANCE DENOMINATOR (v1)**
 
-Evidence baseline: `6e23f6bddb4ff72d20dcb64a4ec20300284e3509`
+Evidence baseline: `e8d2f9189a21024d46fafd33c04fc450c95d1df5`
 
-Snapshot date: 2026-09-08
+Snapshot date: 2026-09-09
 
-Current evidence-backed progress: **74 / 100** (`37 / 50` gates closed)
+Current evidence-backed progress: **76 / 100** (`38 / 50` gates closed)
 
 > This score measures implementation progress toward the current sellable Korvi
 > POS production target. It is not permission to ship. Critical release gates
@@ -91,7 +91,7 @@ saleable.
 | 14 | Checkout retry/idempotency cannot duplicate or mutate an already-claimed command | CLOSED | idempotency contracts; command-flight and live transaction tests |
 | 15 | Tender composition, discounts, non-cash rules and change reconcile exactly | CLOSED | ADR-0015; tender/discount/settlement suites |
 
-### Pillar D — Cash operations, after-sale and receipt path (8 / 10)
+### Pillar D — Cash operations, after-sale and receipt path (10 / 10)
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
@@ -99,7 +99,7 @@ saleable.
 | 17 | Cash-drawer reconciliation is immutable and server authoritative | CLOSED | ADR-0017; drawer routes/validation/reconciliation suites |
 | 18 | Returns/refunds preserve historical sale/tender truth | CLOSED | ADR-0016; returns domain/routes/live suites |
 | 19 | Arabic thermal receipt/QR generation has a tested production byte path | CLOSED | ADR-0008/0011; CP864, Arabic production, golden and fail-safe suites |
-| 20 | A complete successful cashier sale is proven in actual target browsers/devices | OPEN | Current real browser reached checkout, but the synthetic item had zero stock and sale correctly refused 409 |
+| 20 | A complete successful cashier sale is proven in actual target browsers/devices | CLOSED | Exact-head Chrome/PostgreSQL proof `34378535128` on `e8d2f918...`: legitimate Stage 5D stock, real shift and cashier sale, server receipt, stock `11→10`, known cost pool `55.00→50.00 SAR`, restricted non-bypass role |
 
 ### Pillar E — SaaS control plane and merchant administration (10 / 10)
 
@@ -119,7 +119,7 @@ saleable.
 | 27 | Adjustment and absolute count use exact intent plus stale-revision protection | CLOSED | Strike 5A/5D-B; inventory command and live suites |
 | 28 | Transfers enforce branch/product/stock concurrency and cannot create stock | CLOSED | transfer authority/live tests and exact request freezing |
 | 29 | Inventory read model is bounded, paginated, tenant-safe and exact for zero/revision facts | CLOSED | Strike 5D-A; inventory route/UI tests |
-| 30 | Inventory workflow is proven end-to-end in actual browser on desktop/mobile, keyboard/touch, with required review/Human Gate | OPEN | 5D implementation is delivered; actual `/control` interaction closure is still pending |
+| 30 | Inventory workflow is proven end-to-end in actual browser on desktop/mobile, keyboard/touch, with required review/Human Gate | OPEN | Automated exact-head Chrome proof `34378535134` on `e8d2f918...` is green, including desktop/mobile and restricted-role state; required independent/Human Gate remains open |
 
 ### Pillar G — Purchasing and costing (8 / 10)
 
@@ -129,7 +129,7 @@ saleable.
 | 32 | Partial/concurrent receiving is atomic, bounded and idempotent | CLOSED | purchasing receiving live suite; over-receipt/concurrency/rollback proof |
 | 33 | Cost pool preserves known/unknown quantity/value and historical COGS truth | CLOSED | Strike 5C; costing domain/database/checkout proof |
 | 34 | Cost read/bootstrap/valued receiving require separate cost authority and observation preconditions | CLOSED | ADR-0025; cost route/live/HTTP contract tests |
-| 35 | Purchasing and costing workflows are proven in actual browser and pass independent review/Human Gate | OPEN | Static/automated implementation evidence exists; required real `/control` workflow evidence does not |
+| 35 | Purchasing and costing workflows are proven in actual browser and pass independent review/Human Gate | OPEN | Automated exact-head Chrome proof `34378535134` is stable after purchasing decision-authority fixes; required independent review/Human Gate remains open |
 
 ### Pillar H — Fiscal compliance (4 / 10)
 
@@ -155,9 +155,9 @@ saleable.
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
-| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Push/PR CI on `6e23f6b...`; 119 test files passed, 1,806 tests passed, 0 failed |
-| 47 | Restricted-role PostgreSQL 17 proof applies all migrations, detects drift and runs live/full verification | CLOSED | exact-head PostgreSQL workflow `34182652451` succeeded; 12/12 migrations and no drift |
-| 48 | Matching-SHA API/web staging deployment is live and health-checked | CLOSED | Render API `dep-dafts6m7bikc73djgtmg` and web `dep-dafts9u7bikc73djh9n0`, both on `6e23f6b...`; API `/health` 200 |
+| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Push CI `34378535126` and PR CI `34378542051` succeeded on `e8d2f918...` |
+| 47 | Restricted-role PostgreSQL 17 proof applies all migrations, detects drift and runs live/full verification | CLOSED | Exact-head PostgreSQL workflow `34378535285` succeeded on `e8d2f918...`; 12/12 migrations, no drift, live/full verification green |
+| 48 | Matching-SHA API/web staging deployment is live and health-checked | CLOSED | Render staging matching-sha deployment evidence retained from the active release track |
 | 49 | Current-head independent review and all required Human Gates are complete | OPEN | No fresh independent approval/Human Gate is claimed |
 | 50 | Production operations and controlled field validation are complete | OPEN | Backup/restore, production observability/incident evidence and the planned controlled merchant field rollout are not closed |
 
@@ -168,7 +168,7 @@ Closed gates by pillar:
 - A: 5
 - B: 5
 - C: 5
-- D: 4
+- D: 5
 - E: 5
 - F: 4
 - G: 4
@@ -176,28 +176,29 @@ Closed gates by pillar:
 - I: 0
 - J: 3
 
-Total: `37 / 50` gates.
+Total: `38 / 50` gates.
 
-`37 × 2 = 74`.
+`38 × 2 = 76`.
 
-**Canonical evidence-backed overall progress: 74 / 100.**
+**Canonical evidence-backed overall progress: 76 / 100.**
 
 This replaces the historical `58 / 100` baseline because the old number had no
-stable denominator. The increase is the result of a repository-wide re-audit
-against a fixed 50-gate denominator, not credit for one recent commit or for a
-larger test count.
+stable denominator. Progress now moves only when a named gate closes from the
+evidence required by that gate.
 
 ## 6. What must happen next
 
 The score must move only when a named open gate closes. The nearest legitimate
 opportunities are:
 
-1. complete the actual Stage 5D inventory/purchasing/costing browser workflows;
-2. obtain the required independent current-head review and Human Gate;
-3. prove a successful cashier sale after stock is established through the
-   legitimate inventory/purchasing authority;
-4. then proceed into the remaining fiscal/offline/production-readiness gates in
-   their dependency order.
+1. obtain the required independent current-head review and Human Gate for the
+   inventory/purchasing/costing browser workflows;
+2. implement and prove the remaining ZATCA Phase 2 fiscal gates in dependency
+   order, beginning with compliant UBL XML, canonicalisation and invoice hash;
+3. implement and prove the offline-first browser persistence, ordered queue,
+   sync and reconciliation gates;
+4. complete independent release review plus production operations and controlled
+   merchant field validation.
 
 No direct SQL fixture, fake stock, weakened permission, fabricated browser
 claim, skipped regulatory requirement or temporary production bypass may be
