@@ -13,9 +13,9 @@ import type { Money } from '../money/money.js';
  *
  * The May 2023 Security Features Implementation Standards are authoritative
  * for tag 6: the QR carries the raw 32-byte SHA-256 invoice hash. The official
- * technical guide maps tag 7 to the XML `ds:SignatureValue` (Base64 text) and
- * illustrates tags 8/9 as DER SubjectPublicKeyInfo / certificate-signature
- * material. Those representations are modelled separately below.
+ * technical guide maps tag 7 to the XML `ds:SignatureValue` (Base64 text),
+ * illustrates tag 8 as DER SubjectPublicKeyInfo, and tag 9 as the technical
+ * CA signature over that public key. Those representations are modelled separately below.
  *
  * Ordering matters as much as content: hashing, stamping and the tags 1-9 QR all
  * happen locally *before* the customer receives the document. Only reporting to
