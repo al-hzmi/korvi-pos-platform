@@ -246,7 +246,11 @@ async function sha256Base64(bytes: Uint8Array): Promise<string> {
   if (subtle === undefined) {
     throw new ZatcaInvoiceError('Web Crypto SHA-256 is unavailable in this runtime.');
   }
-  const digest = await subtle.digest('SHA-256', bytes);
+  // Own the backing ArrayBuffer before crossing the WebCrypto BufferSource boundary.
+  // A generic Uint8Array may legally wrap SharedArrayBuffer; certificate bytes must not.
+  const ownedBytes = new Uint8Array(bytes.length);
+  ownedBytes.set(bytes);
+  const digest = await subtle.digest('SHA-256', ownedBytes);
   const result = new Uint8Array(digest);
   if (result.length !== SHA256_BYTES) {
     throw new ZatcaInvoiceError('Unexpected SHA-256 digest length for ZATCA certificate.');

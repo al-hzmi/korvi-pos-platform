@@ -12,6 +12,9 @@ export type ZatcaSigningCurve = typeof ZATCA_SIGNING_CURVE;
 export const ZATCA_SIGNING_ALGORITHM = 'ECDSA_SECP256K1_SHA256' as const;
 export type ZatcaSigningAlgorithm = typeof ZATCA_SIGNING_ALGORITHM;
 
+/** XMLDSIG ECDSA SignatureValue is fixed-width r || s, not ASN.1 DER. */
+export const ZATCA_XMLDSIG_ECDSA_SIGNATURE_BYTES = 64 as const;
+
 /**
  * Opaque reference to a signing key held by a compliant security module.
  *
@@ -108,6 +111,11 @@ export interface ZatcaSigningKeyPort {
   /** Return a DER PKCS#10 CSR signed by the referenced private key. */
   createPkcs10Csr(input: CreateZatcaCsrInput): Promise<Uint8Array>;
 
-  /** Return only the ECDSA signature; never the private key or activation data. */
+  /**
+   * Return the XMLDSIG ECDSA SignatureValue bytes: exactly 64 bytes `r || s`,
+   * each integer encoded as a 32-byte unsigned I2OSP value. This is NOT ASN.1 DER.
+   * Provider adapters whose HSM returns DER must convert and validate it at the
+   * adapter boundary. The private key and activation data are never returned.
+   */
   signSha256(input: ZatcaSignInput): Promise<Uint8Array>;
 }
