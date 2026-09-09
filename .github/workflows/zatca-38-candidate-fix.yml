@@ -1,0 +1,74 @@
+name: ZATCA 38 Candidate Fix
+
+on:
+  push:
+    branches:
+      - review/zatca-38-ubl-hash
+    paths:
+      - .github/workflows/zatca-38-candidate-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-prove:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Tighten UTC calendar validation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('packages/domain/src/zatca/phase2.ts')
+          text = path.read_text()
+          old = """  if (date === undefined || clock === undefined || Number.isNaN(Date.parse(`${date}T${clock}Z`))) {
+              throw new ZatcaInvoiceError('Invoice issue time is not a real UTC date/time.');
+            }
+            const time = `${clock}Z`;"""
+          new = """  if (date === undefined || clock === undefined) {
+              throw new ZatcaInvoiceError('Invoice issue time is not a real UTC date/time.');
+            }
+            const candidate = new Date(`${date}T${clock}Z`);
+            if (
+              Number.isNaN(candidate.getTime()) ||
+              candidate.toISOString().slice(0, 19) !== `${date}T${clock}`
+            ) {
+              throw new ZatcaInvoiceError('Invoice issue time is not a real UTC date/time.');
+            }
+            const time = `${clock}Z`;"""
+          if old not in text:
+              raise SystemExit('expected UTC validation block not found; refusing blind rewrite')
+          path.write_text(text.replace(old, new))
+          PY
+
+      - name: Format exact candidate files
+        run: npx prettier@3.9.6 --write packages/domain/src/zatca/phase2.ts packages/domain/src/zatca/__tests__/phase2.test.ts packages/domain/src/index.ts
+
+      - name: Build domain
+        run: npm run build -w @korvi/domain
+
+      - name: Run ZATCA 38 regression tests
+        run: npx vitest run packages/domain/src/zatca/__tests__/phase2.test.ts
+
+      - name: Remove helper and publish candidate
+        run: |
+          rm .github/workflows/zatca-38-candidate-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/domain/src/zatca/phase2.ts packages/domain/src/zatca/__tests__/phase2.test.ts packages/domain/src/index.ts .github/workflows/zatca-38-candidate-fix.yml
+          git diff --cached --check
+          git commit -m "test(zatca): prove deterministic Phase 2 hash core"
+          git push origin HEAD:review/zatca-38-ubl-hash
