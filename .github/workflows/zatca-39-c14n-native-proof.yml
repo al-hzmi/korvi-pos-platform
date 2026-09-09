@@ -1,0 +1,108 @@
+name: ZATCA 39 C14N Native Crosscheck
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+      - strike/5c-costing-authority
+    paths:
+      - packages/domain/src/ports/zatca.ts
+      - packages/domain/src/zatca/xades.ts
+      - apps/api/src/zatca/libxml2-canonicalizer.ts
+      - apps/api/src/__tests__/zatca-canonicalization.test.ts
+      - apps/api/package.json
+      - package-lock.json
+      - scripts/zatca-39-c14n-crosscheck.mjs
+      - .github/workflows/zatca-39-c14n-native-proof.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-crosscheck:
+    name: libxml2 WASM / native C14N 1.1 byte proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PROOF_DIR: artifacts/zatca-39-c14n
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Verify dependency and security policy
+        run: |
+          npm run versions:verify
+          npm run audit
+
+      - name: Build production domain and API
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/api
+
+      - name: Run focused canonicalization regressions
+        run: npx vitest run apps/api/src/__tests__/zatca-canonicalization.test.ts packages/domain/src/zatca/__tests__/xades.test.ts
+
+      - name: Generate production-adapter canonical bytes
+        run: node scripts/zatca-39-c14n-crosscheck.mjs "$PROOF_DIR"
+
+      - name: Require native xmllint C14N 1.1 authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v xmllint
+          xmllint --version 2>&1 | tee "$PROOF_DIR/xmllint-version.txt"
+          if ! xmllint --help 2>&1 | grep -q -- '--c14n11'; then
+            echo 'Runner xmllint does not expose Canonical XML 1.1.' >&2
+            exit 1
+          fi
+
+      - name: Crosscheck C14N 1.1 bytes and digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          xmllint --c14n11 "$PROOF_DIR/business-source.xml" > "$PROOF_DIR/native-c14n11.xml"
+          cmp --silent "$PROOF_DIR/wasm-c14n11.xml" "$PROOF_DIR/native-c14n11.xml" || {
+            echo 'WASM/native Canonical XML 1.1 byte mismatch.' >&2
+            diff -u "$PROOF_DIR/native-c14n11.xml" "$PROOF_DIR/wasm-c14n11.xml" >&2 || true
+            exit 1
+          }
+          sha256sum "$PROOF_DIR/native-c14n11.xml" | awk '{print $1}' > "$PROOF_DIR/native-c14n11.sha256"
+          cmp --silent "$PROOF_DIR/wasm-c14n11.sha256" "$PROOF_DIR/native-c14n11.sha256"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo 'c14n11_native_match=PASS'
+            echo 'excluded_material_neutrality=PASS'
+            echo "canonical_sha256=$(cat "$PROOF_DIR/native-c14n11.sha256")"
+          } > "$PROOF_DIR/proof.txt"
+          cat "$PROOF_DIR/proof.txt"
+
+      - name: Preserve canonicalization proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zatca-39-c14n-${{ github.sha }}
+          path: |
+            artifacts/zatca-39-c14n/proof.txt
+            artifacts/zatca-39-c14n/xmllint-version.txt
+            artifacts/zatca-39-c14n/wasm-c14n11.sha256
+            artifacts/zatca-39-c14n/native-c14n11.sha256
+          if-no-files-found: error
+          retention-days: 30
