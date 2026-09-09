@@ -51,7 +51,9 @@ if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
   fail('response root is not an object');
 }
 if (parsed.valid !== false) {
-  fail(`expected unsigned Gate 38 payload to remain invalid until Gate 39 sealing; got valid=${String(parsed.valid)}`);
+  fail(
+    `expected unsigned Gate 38 payload to remain invalid until Gate 39 sealing; got valid=${String(parsed.valid)}`,
+  );
 }
 
 const actualErrors = normalizeFindings(parsed.errors, 'errors').sort();
