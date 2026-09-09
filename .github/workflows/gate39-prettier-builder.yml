@@ -1,0 +1,44 @@
+name: Gate39 Prettier Builder
+
+on:
+  push:
+    branches:
+      - review/gate39-prettier-builder
+
+permissions:
+  contents: write
+
+jobs:
+  format-one-file:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact builder head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+      - name: Install without package scripts
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      - name: Format and materialize bounded diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          target='packages/domain/src/zatca/__tests__/tlv.test.ts'
+          npx --no-install prettier --write "$target"
+          changed="$(git diff --name-only)"
+          if [[ -z "$changed" ]]; then
+            echo '[ok] formatting already committed'
+            exit 0
+          fi
+          printf '%s\n' "$changed"
+          test "$changed" = "$target"
+          git diff --check
+          git config user.name 'korvi-format-builder'
+          git config user.email 'noreply@korvi.invalid'
+          git add -- "$target"
+          git commit -m 'style(zatca): format phase 2 qr tests'
+          git push origin HEAD:review/gate39-prettier-builder
