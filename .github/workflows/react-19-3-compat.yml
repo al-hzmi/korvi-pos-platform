@@ -31,6 +31,22 @@ jobs:
       - name: Install locked baseline
         run: npm ci --registry=https://registry.npmjs.org
 
+      - name: Pin one React authority across the dependency graph
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = 'package.json';
+          const root = JSON.parse(readFileSync(path, 'utf8'));
+          root.overrides = {
+            ...(root.overrides ?? {}),
+            react: '19.3.0',
+            'react-dom': '19.3.0',
+            '@types/react': '19.3.0',
+            '@types/react-dom': '19.3.0',
+          };
+          writeFileSync(path, `${JSON.stringify(root, null, 2)}\n`);
+          NODE
+
       - name: Upgrade fresh stable runtime dependencies exactly
         run: |
           npm install --save-exact -w @korvi/pos-web react@19.3.0 react-dom@19.3.0 --registry=https://registry.npmjs.org
@@ -39,10 +55,15 @@ jobs:
           npm install --save-exact -w @korvi/api zod@4.6.0 --registry=https://registry.npmjs.org
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
+          const root = JSON.parse(readFileSync('package.json', 'utf8'));
           const pos = JSON.parse(readFileSync('apps/pos-web/package.json', 'utf8'));
           const ui = JSON.parse(readFileSync('packages/ui/package.json', 'utf8'));
           const api = JSON.parse(readFileSync('apps/api/package.json', 'utf8'));
           const expected = {
+            'override react': [root.overrides?.react, '19.3.0'],
+            'override react-dom': [root.overrides?.['react-dom'], '19.3.0'],
+            'override @types/react': [root.overrides?.['@types/react'], '19.3.0'],
+            'override @types/react-dom': [root.overrides?.['@types/react-dom'], '19.3.0'],
             'pos react': [pos.dependencies?.react, '19.3.0'],
             'pos react-dom': [pos.dependencies?.['react-dom'], '19.3.0'],
             'pos @types/react': [pos.devDependencies?.['@types/react'], '19.3.0'],
@@ -56,7 +77,12 @@ jobs:
             if (actual !== target) throw new Error(`${name} resolved to ${String(actual)}, expected ${target}`);
           }
           NODE
-          npm ls react react-dom @types/react @types/react-dom zod --all
+          npm ls react react-dom @types/react @types/react-dom zod --all > "$RUNNER_TEMP/dependency-tree.txt"
+          cat "$RUNNER_TEMP/dependency-tree.txt"
+          if grep -E '@types/react@19\.2\.|@types/react-dom@19\.2\.|react@19\.2\.|react-dom@19\.2\.' "$RUNNER_TEMP/dependency-tree.txt"; then
+            echo 'Mixed React 19.2/19.3 dependency graph remains after root overrides.' >&2
+            exit 1
+          fi
 
       - name: Full production verification
         run: npm run verify
@@ -66,7 +92,7 @@ jobs:
           rm .github/workflows/react-19-3-compat.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/pos-web/package.json apps/api/package.json packages/ui/package.json package-lock.json .github/workflows/react-19-3-compat.yml
+          git add package.json apps/pos-web/package.json apps/api/package.json packages/ui/package.json package-lock.json .github/workflows/react-19-3-compat.yml
           git diff --cached --check
           git commit -m "chore(deps): refresh React and Zod stable pins"
           git push origin HEAD:review/react-19-3-compat
