@@ -207,7 +207,9 @@ describe('Phase 2 simplified invoice QR foundation', () => {
   it('encodes tag 7 from the exact Base64 ds:SignatureValue text', () => {
     const fields = phase2SimplifiedInvoiceQrFields(input);
     const signature = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_SIGNATURE);
-    expect(Buffer.from(signature?.value ?? []).toString('utf8')).toBe(input.xmlSignatureValueBase64);
+    expect(Buffer.from(signature?.value ?? []).toString('utf8')).toBe(
+      input.xmlSignatureValueBase64,
+    );
   });
 
   it('preserves the DER public-key and technical-CA signature bytes in tags 8 and 9', () => {
