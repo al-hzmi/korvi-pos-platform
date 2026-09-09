@@ -537,7 +537,7 @@ export function InventoryPanel({
     balances.kind === 'ready' &&
     balances.branchId === selectedBranch.id ? (
       <InventoryOperations
-        key={selectedBranch.id}
+        key={`operations:${selectedBranch.id}`}
         api={api}
         branch={selectedBranch}
         branches={loadedBranches}
@@ -554,7 +554,7 @@ export function InventoryPanel({
   const costing =
     selectedBranch !== undefined && permissions.includes('inventory.cost.read') ? (
       <InventoryCostPanel
-        key={selectedBranch.id}
+        key={`costing:${selectedBranch.id}`}
         api={api}
         branch={selectedBranch}
         canManageCost={permissions.includes('inventory.cost.manage')}
