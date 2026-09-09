@@ -52,9 +52,15 @@ jobs:
           npm run versions:verify
           npm run audit
 
-      - name: Build production domain and API
+      - name: Generate Prisma client for API dependency graph
+        run: npm run db:generate
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+
+      - name: Build production dependency chain
         run: |
           npm run build -w @korvi/domain
+          npm run build -w @korvi/database
           npm run build -w @korvi/api
 
       - name: Run focused canonicalization regressions
@@ -95,7 +101,7 @@ jobs:
           cat "$PROOF_DIR/proof.txt"
 
       - name: Preserve canonicalization proof
-        if: always()
+        if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zatca-39-c14n-${{ github.sha }}
