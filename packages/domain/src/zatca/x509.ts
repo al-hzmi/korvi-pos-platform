@@ -56,8 +56,14 @@ export function extractZatcaSigningCertificateMaterial(
   const tbsCertificate = certificateChildren[0];
   const outerSignatureAlgorithm = certificateChildren[1];
   const signatureValue = certificateChildren[2];
-  if (tbsCertificate === undefined || outerSignatureAlgorithm === undefined || signatureValue === undefined) {
-    throw new ZatcaInvoiceError('ZATCA signing certificate is missing required Certificate fields.');
+  if (
+    tbsCertificate === undefined ||
+    outerSignatureAlgorithm === undefined ||
+    signatureValue === undefined
+  ) {
+    throw new ZatcaInvoiceError(
+      'ZATCA signing certificate is missing required Certificate fields.',
+    );
   }
   requireTag(tbsCertificate, DER_SEQUENCE, 'X.509 TBSCertificate must be a DER SEQUENCE.');
   requireTag(
@@ -67,7 +73,11 @@ export function extractZatcaSigningCertificateMaterial(
   );
   requireTag(signatureValue, DER_BIT_STRING, 'X.509 signatureValue must be a DER BIT STRING.');
 
-  const outerAlgorithmOid = readAlgorithmOid(bytes, outerSignatureAlgorithm, 'certificate signature');
+  const outerAlgorithmOid = readAlgorithmOid(
+    bytes,
+    outerSignatureAlgorithm,
+    'certificate signature',
+  );
   if (outerAlgorithmOid !== OID_ECDSA_WITH_SHA256) {
     throw new ZatcaInvoiceError(
       `ZATCA signing certificate must use ECDSA with SHA-256, got OID ${outerAlgorithmOid}.`,
@@ -92,7 +102,11 @@ export function extractZatcaSigningCertificateMaterial(
     );
   }
 
-  requireTag(subjectPublicKeyInfo, DER_SEQUENCE, 'X.509 SubjectPublicKeyInfo must be a DER SEQUENCE.');
+  requireTag(
+    subjectPublicKeyInfo,
+    DER_SEQUENCE,
+    'X.509 SubjectPublicKeyInfo must be a DER SEQUENCE.',
+  );
   validateSecp256k1Spki(bytes, subjectPublicKeyInfo);
   const spkiDer = bytes.slice(subjectPublicKeyInfo.start, subjectPublicKeyInfo.end);
 
@@ -114,7 +128,9 @@ export function extractZatcaSigningCertificateMaterial(
 function validateSecp256k1Spki(bytes: Uint8Array, spki: DerElement): void {
   const children = readChildren(bytes, spki, 'SubjectPublicKeyInfo');
   if (children.length !== 2) {
-    throw new ZatcaInvoiceError('ZATCA SubjectPublicKeyInfo must contain algorithm and public key.');
+    throw new ZatcaInvoiceError(
+      'ZATCA SubjectPublicKeyInfo must contain algorithm and public key.',
+    );
   }
   const algorithm = children[0];
   const publicKey = children[1];
@@ -162,7 +178,9 @@ function validateEcdsaSignatureDerShape(signatureDer: Uint8Array): void {
   }
   const scalars = readChildren(signatureDer, signature, 'certificate ECDSA signature');
   if (scalars.length !== 2) {
-    throw new ZatcaInvoiceError('Certificate ECDSA signature must contain exactly r and s INTEGERs.');
+    throw new ZatcaInvoiceError(
+      'Certificate ECDSA signature must contain exactly r and s INTEGERs.',
+    );
   }
   for (const [index, scalar] of scalars.entries()) {
     if (scalar === undefined) {

@@ -17,7 +17,10 @@ const INVOICE_NS = 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2';
 const CAC_NS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
 const CBC_NS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
 const EXT_NS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2';
-const certificatePathDer = [Uint8Array.from([0x30, 0x01, 0x01]), Uint8Array.from([0x30, 0x01, 0x02])];
+const certificatePathDer = [
+  Uint8Array.from([0x30, 0x01, 0x01]),
+  Uint8Array.from([0x30, 0x01, 0x02]),
+];
 
 function digest(fill: number): Uint8Array {
   return new Uint8Array(32).fill(fill);
@@ -62,9 +65,15 @@ describe('ZATCA UBL XAdES envelope', () => {
     expect(extension).toContain(
       `<sbc:ReferencedSignatureID>${ZATCA_UBL_REFERENCED_SIGNATURE_ID}</sbc:ReferencedSignatureID>`,
     );
-    expect(extension).toContain(`<ext:ExtensionURI>${ZATCA_UBL_SIGNATURE_METHOD}</ext:ExtensionURI>`);
-    expect(extension).toContain(`<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="${ZATCA_XML_SIGNATURE_ID}">`);
-    expect(extension).toContain(`<xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#${ZATCA_XML_SIGNATURE_ID}">`);
+    expect(extension).toContain(
+      `<ext:ExtensionURI>${ZATCA_UBL_SIGNATURE_METHOD}</ext:ExtensionURI>`,
+    );
+    expect(extension).toContain(
+      `<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="${ZATCA_XML_SIGNATURE_ID}">`,
+    );
+    expect(extension).toContain(
+      `<xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#${ZATCA_XML_SIGNATURE_ID}">`,
+    );
     expect(extension.match(/<ds:X509Certificate>/g)).toHaveLength(2);
     expect(extension.indexOf('MAEB')).toBeLessThan(extension.indexOf('MAEC'));
   });
@@ -132,7 +141,10 @@ describe('ZATCA UBL XAdES envelope', () => {
     ]) {
       const input = unsignedInvoice().replace('<cbc:ProfileID>', `${injected}<cbc:ProfileID>`);
       expect(() =>
-        assembleZatcaSimplifiedInvoice({ unsignedInvoiceXml: input, signatureExtensionXml: extension }),
+        assembleZatcaSimplifiedInvoice({
+          unsignedInvoiceXml: input,
+          signatureExtensionXml: extension,
+        }),
       ).toThrow(ZatcaInvoiceError);
     }
   });

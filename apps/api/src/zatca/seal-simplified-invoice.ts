@@ -233,7 +233,9 @@ function assertAuthorityBinding(input: SealZatcaSimplifiedInvoiceInput): void {
     throw new ZatcaInvoiceError('ZATCA sealing refuses cross-tenant sale or invoice authority.');
   }
   if (sale.terminalId !== input.terminalId) {
-    throw new ZatcaInvoiceError('ZATCA sealing terminal does not match the immutable sale terminal.');
+    throw new ZatcaInvoiceError(
+      'ZATCA sealing terminal does not match the immutable sale terminal.',
+    );
   }
 }
 
@@ -250,7 +252,10 @@ function parseUtcSecond(value: string, label: string): number {
     throw new ZatcaInvoiceError(`ZATCA ${label} must be an exact UTC second.`);
   }
   const instant = Date.parse(value);
-  if (!Number.isFinite(instant) || new Date(instant).toISOString().replace('.000Z', 'Z') !== value) {
+  if (
+    !Number.isFinite(instant) ||
+    new Date(instant).toISOString().replace('.000Z', 'Z') !== value
+  ) {
     throw new ZatcaInvoiceError(`ZATCA ${label} is not a real UTC calendar instant.`);
   }
   return instant;
@@ -308,7 +313,11 @@ async function assertFinalCryptographicInvariants(input: {
     finalProperties,
     input.signedPropertiesCanonical,
   );
-  assertSameBytes('final SignedInfo / signed SignedInfo', finalSignedInfo, input.signedInfoCanonical);
+  assertSameBytes(
+    'final SignedInfo / signed SignedInfo',
+    finalSignedInfo,
+    input.signedInfoCanonical,
+  );
 }
 
 function assertSameBytes(label: string, left: Uint8Array, right: Uint8Array): void {

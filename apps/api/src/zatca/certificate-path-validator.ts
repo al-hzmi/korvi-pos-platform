@@ -141,7 +141,9 @@ function assertCertificateValidity(certificate: X509Certificate, at: number, ind
 function parseUtcSecond(value: string): number {
   const match = UTC_SECOND.exec(value);
   if (match === null) {
-    throw new ZatcaInvoiceError('ZATCA certificate-path validation time must be an exact UTC second.');
+    throw new ZatcaInvoiceError(
+      'ZATCA certificate-path validation time must be an exact UTC second.',
+    );
   }
   const parts = match.slice(1).map(Number);
   const [year, month, day, hour, minute, second] = parts;
@@ -165,7 +167,9 @@ function parseUtcSecond(value: string): number {
     date.getUTCMinutes() !== minute ||
     date.getUTCSeconds() !== second
   ) {
-    throw new ZatcaInvoiceError('ZATCA certificate-path validation time is not a real UTC instant.');
+    throw new ZatcaInvoiceError(
+      'ZATCA certificate-path validation time is not a real UTC instant.',
+    );
   }
   return instant;
 }

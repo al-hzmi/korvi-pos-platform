@@ -169,7 +169,8 @@ export function assembleZatcaSimplifiedInvoice(input: AssembleZatcaSimplifiedInv
 
   const beforeSupplier = xml.slice(rootEnd + 1, supplierIndex);
   const afterSupplier = xml.slice(supplierIndex);
-  const qr = input.qrCodeBase64 === undefined ? '' : renderZatcaQrDocumentReference(input.qrCodeBase64);
+  const qr =
+    input.qrCodeBase64 === undefined ? '' : renderZatcaQrDocumentReference(input.qrCodeBase64);
   return [
     xml.slice(0, rootEnd + 1),
     input.signatureExtensionXml,

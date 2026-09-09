@@ -52,12 +52,14 @@ function ecdsaSignature(): Uint8Array {
   return der(0x30, der(0x02, Uint8Array.of(1)), der(0x02, Uint8Array.of(2)));
 }
 
-function certificate(options: {
-  curve?: Uint8Array;
-  outerSignatureAlgorithm?: Uint8Array;
-  tbsSignatureAlgorithm?: Uint8Array;
-  unusedSignatureBits?: number;
-} = {}): { certificateDer: Uint8Array; publicKeySpkiDer: Uint8Array; caSignatureDer: Uint8Array } {
+function certificate(
+  options: {
+    curve?: Uint8Array;
+    outerSignatureAlgorithm?: Uint8Array;
+    tbsSignatureAlgorithm?: Uint8Array;
+    unusedSignatureBits?: number;
+  } = {},
+): { certificateDer: Uint8Array; publicKeySpkiDer: Uint8Array; caSignatureDer: Uint8Array } {
   const publicKeySpkiDer = spki(options.curve);
   const tbsAlgorithm = algorithm(options.tbsSignatureAlgorithm ?? OID_ECDSA_SHA256);
   const outerAlgorithm = algorithm(options.outerSignatureAlgorithm ?? OID_ECDSA_SHA256);
