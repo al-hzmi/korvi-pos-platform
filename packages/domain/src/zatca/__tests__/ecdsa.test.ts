@@ -27,9 +27,7 @@ function derSignature(r: Uint8Array, s: Uint8Array): Uint8Array {
 
 describe('ECDSA DER -> XMLDSIG SignatureValue', () => {
   it('converts canonical DER integers to fixed-width 32-byte r || s', () => {
-    const converted = ecdsaDerToXmlDsigSignature(
-      derSignature(Uint8Array.of(1), Uint8Array.of(2)),
-    );
+    const converted = ecdsaDerToXmlDsigSignature(derSignature(Uint8Array.of(1), Uint8Array.of(2)));
     expect(converted).toHaveLength(64);
     expect(converted.slice(0, 31)).toEqual(new Uint8Array(31));
     expect(converted[31]).toBe(1);
@@ -49,19 +47,7 @@ describe('ECDSA DER -> XMLDSIG SignatureValue', () => {
       Uint8Array.from([0x31, 0x00]),
       Uint8Array.from([0x30, 0x07, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02]),
       Uint8Array.from([0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02, 0x00]),
-      Uint8Array.from([
-        0x30,
-        0x09,
-        0x02,
-        0x01,
-        0x01,
-        0x02,
-        0x01,
-        0x02,
-        0x02,
-        0x01,
-        0x03,
-      ]),
+      Uint8Array.from([0x30, 0x09, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02, 0x02, 0x01, 0x03]),
     ]) {
       expect(() => ecdsaDerToXmlDsigSignature(bad)).toThrow(ZatcaInvoiceError);
     }
@@ -102,12 +88,8 @@ describe('ECDSA DER -> XMLDSIG SignatureValue', () => {
   });
 
   it('accepts the largest valid scalar n-1', () => {
-    const nMinusOne = hexBytes(
-      'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140',
-    );
-    const converted = ecdsaDerToXmlDsigSignature(
-      derSignature(nMinusOne, nMinusOne),
-    );
+    const nMinusOne = hexBytes('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140');
+    const converted = ecdsaDerToXmlDsigSignature(derSignature(nMinusOne, nMinusOne));
     expect(converted.slice(0, 32)).toEqual(nMinusOne);
     expect(converted.slice(32)).toEqual(nMinusOne);
   });
