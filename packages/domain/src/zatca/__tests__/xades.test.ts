@@ -58,10 +58,7 @@ describe('ZATCA XAdES SignedInfo structure', () => {
     let cursor = xml.indexOf('<ds:Transforms>');
     expect(cursor).toBeGreaterThan(-1);
     for (const xpath of ZATCA_INVOICE_REFERENCE_TRANSFORMS) {
-      const algorithm = xml.indexOf(
-        `<ds:Transform Algorithm="${ZATCA_XPATH_ALGORITHM}">`,
-        cursor,
-      );
+      const algorithm = xml.indexOf(`<ds:Transform Algorithm="${ZATCA_XPATH_ALGORITHM}">`, cursor);
       const expression = xml.indexOf(`<ds:XPath>${xpath}</ds:XPath>`, algorithm);
       expect(algorithm).toBeGreaterThan(cursor);
       expect(expression).toBeGreaterThan(algorithm);

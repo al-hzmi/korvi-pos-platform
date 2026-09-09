@@ -15,7 +15,7 @@ export const ZATCA_INVOICE_REFERENCE_ID = 'invoiceSignedData' as const;
 export const ZATCA_SIGNED_PROPERTIES_ID = 'xadesSignedProperties' as const;
 
 export const ZATCA_INVOICE_REFERENCE_TRANSFORMS = [
-  "not(//ancestor-or-self::ext:UBLExtensions)",
+  'not(//ancestor-or-self::ext:UBLExtensions)',
   'not(//ancestor-or-self::cac:Signature)',
   "not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])",
 ] as const;
@@ -105,14 +105,18 @@ export async function renderZatcaSignedPropertiesXml(
     );
   }
   if (!ABSOLUTE_IDENTIFIER.test(input.signaturePolicyIdentifier)) {
-    throw new ZatcaInvoiceError('ZATCA XAdES signature policy identifier must be an absolute identifier.');
+    throw new ZatcaInvoiceError(
+      'ZATCA XAdES signature policy identifier must be an absolute identifier.',
+    );
   }
 
   const policyDigest = sha256DigestBase64(input.signaturePolicyDigest, 'signature policy');
   const certificates: string[] = [];
   for (const certificateDer of input.certificatePathDer) {
     if (certificateDer.length === 0) {
-      throw new ZatcaInvoiceError('ZATCA SigningCertificateV2 cannot reference an empty certificate.');
+      throw new ZatcaInvoiceError(
+        'ZATCA SigningCertificateV2 cannot reference an empty certificate.',
+      );
     }
     const certificateDigest = bytesToBase64(await sha256(certificateDer));
     certificates.push(
