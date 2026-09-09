@@ -23,18 +23,20 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - name: Install exact canonicalization dependency
-        run: npm install libxml2-wasm@0.7.2 -w @korvi/domain --save-exact --registry=https://registry.npmjs.org
+      - name: Keep canonicalizer out of shared domain
+        run: npm uninstall libxml2-wasm -w @korvi/domain --registry=https://registry.npmjs.org
+      - name: Install exact canonicalizer in API infrastructure
+        run: npm install libxml2-wasm@0.7.2 -w @korvi/api --save-exact --registry=https://registry.npmjs.org
       - name: Verify dependency policy
         run: |
           npm run versions:verify
           npm run audit
           git diff --check
-      - name: Commit lockfile change only
+      - name: Commit dependency boundary change only
         run: |
-          git add packages/domain/package.json package-lock.json
+          git add packages/domain/package.json apps/api/package.json package-lock.json
           if git diff --cached --quiet; then exit 0; fi
           git config user.name 'korvi-ci'
           git config user.email 'actions@users.noreply.github.com'
-          git commit -m 'build(zatca): pin libxml2 wasm canonicalizer'
+          git commit -m 'build(zatca): scope libxml2 canonicalizer to api'
           git push origin HEAD:review/zatca-39-csid-lifecycle
