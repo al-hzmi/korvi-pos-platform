@@ -1,0 +1,117 @@
+name: ZATCA Official Public Validator Proof
+
+on:
+  push:
+    branches: [review/zatca-official-validator-proof]
+    paths: [.github/workflows/zatca-official-validator-proof.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager and install
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+
+      - name: Build domain and generate synthetic Korvi XML
+        run: |
+          set -euo pipefail
+          npm run build -w @korvi/domain
+          umask 077
+          node scripts/zatca-38-c14n-proof.mjs "$RUNNER_TEMP/korvi-invoice.xml" "$RUNNER_TEMP/korvi-hash.txt"
+          test -s "$RUNNER_TEMP/korvi-invoice.xml"
+          base64 -w0 "$RUNNER_TEMP/korvi-invoice.xml" > "$RUNNER_TEMP/korvi-invoice.b64"
+          echo "synthetic_xml_bytes=$(wc -c < "$RUNNER_TEMP/korvi-invoice.xml")"
+          echo "synthetic_base64_bytes=$(wc -c < "$RUNNER_TEMP/korvi-invoice.b64")"
+
+      - name: Resolve official validator authority from live ZATCA portal configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          curl --fail --show-error --location --retry 3 --retry-all-errors -A "$ua" \
+            https://sandbox.zatca.gov.sa/env-config.js -o "$RUNNER_TEMP/zatca-env.js"
+          python - <<'PY'
+          import os,re
+          from pathlib import Path
+          p=Path(os.environ['RUNNER_TEMP'])/'zatca-env.js'
+          text=p.read_text('utf-8',errors='replace')
+          m=re.search(r'REACT_APP_API_URL\s*:\s*["\']([^"\']+)["\']',text)
+          if not m:
+              raise SystemExit('Official portal REACT_APP_API_URL was not found.')
+          url=m.group(1).rstrip('/')
+          if not url.startswith('https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal/validate-e-invoice/invoice/validate'):
+              raise SystemExit(f'Unexpected official validator authority: {url}')
+          out=Path(os.environ['RUNNER_TEMP'])/'validator-url.txt'
+          out.write_text(url,encoding='utf-8')
+          print('official_validator_authority='+url)
+          PY
+
+      - name: Submit synthetic Korvi XML through official Portal Validator contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(cat "$RUNNER_TEMP/validator-url.txt")"
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          set +e
+          http_code="$(curl --silent --show-error --location \
+            --connect-timeout 20 --max-time 180 \
+            -A "$ua" \
+            -H 'Content-Type: text/plain' \
+            -H 'accepted-language: en' \
+            -H 'Accept-Language: en' \
+            -H 'Origin: https://sandbox.zatca.gov.sa' \
+            -H 'Referer: https://sandbox.zatca.gov.sa/Compliance' \
+            --data-binary @"$RUNNER_TEMP/korvi-invoice.b64" \
+            --output "$RUNNER_TEMP/validator-response.txt" \
+            --write-out '%{http_code}' \
+            "$url")"
+          curl_status=$?
+          set -e
+          echo "validator_curl_status=$curl_status"
+          echo "validator_http_status=$http_code"
+          echo "validator_response_bytes=$(wc -c < "$RUNNER_TEMP/validator-response.txt" 2>/dev/null || echo 0)"
+          python - <<'PY'
+          import json,os,re
+          from pathlib import Path
+          p=Path(os.environ['RUNNER_TEMP'])/'validator-response.txt'
+          text=p.read_text('utf-8',errors='replace') if p.exists() else ''
+          print('--- official validator response ---')
+          try:
+              data=json.loads(text)
+              print(json.dumps(data,ensure_ascii=False,indent=2)[:120000])
+          except Exception:
+              safe=re.sub(r'(?i)(authorization|token|secret|password)\s*[:=]\s*[^\s<,;]+',r'\1=<redacted>',text)
+              print(safe[:120000])
+          PY
+          test "$curl_status" -eq 0
+          test "$http_code" -ge 200 -a "$http_code" -lt 500
+
+      - name: Remove transient proof workflow
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/zatca-official-validator-proof.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/zatca-official-validator-proof.yml
+          if git diff --cached --quiet; then exit 0; fi
+          git diff --cached --check
+          git commit -m 'chore(review): remove ZATCA public validator proof workflow'
+          git push origin HEAD:review/zatca-official-validator-proof
