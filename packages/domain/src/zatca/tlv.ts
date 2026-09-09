@@ -6,8 +6,8 @@ import type { Money } from '../money/money.js';
 /**
  * ZATCA e-invoicing QR payload — TLV, then Base64.
  *
- * Phase 1 values (tags 1-5) are UTF-8 text. Phase 2 adds cryptographic
- * material whose representations are intentionally explicit. Treating every
+ * Phase 1 values (tags 1-5) are UTF-8 text. Tags 1-5 alone are NOT ZATCA Phase 2 compliance.
+ * Phase 2 adds cryptographic material whose representations are intentionally explicit. Treating every
  * cryptographic field as either arbitrary text or arbitrary bytes can produce
  * a QR that parses while referring to different cryptographic material.
  *
@@ -17,7 +17,7 @@ import type { Money } from '../money/money.js';
  * illustrates tags 8/9 as DER SubjectPublicKeyInfo / certificate-signature
  * material. Those representations are modelled separately below.
  *
- * Ordering matters as much as content: hashing, stamping and the tag 1-9 QR all
+ * Ordering matters as much as content: hashing, stamping and the tags 1-9 QR all
  * happen locally *before* the customer receives the document. Only reporting to
  * the Authority may be queued and retried. See docs/architecture/zatca.md.
  */
