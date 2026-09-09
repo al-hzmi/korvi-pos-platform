@@ -67,7 +67,7 @@ jobs:
           PY
           npx --no-install prettier --write apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
           npx --no-install prettier --check apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
-          npm test -w @korvi/pos-web -- --run apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts apps/pos-web/src/__tests__/purchasing-refresh-commit.test.ts
+          npx --no-install vitest run apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts apps/pos-web/src/__tests__/purchasing-refresh-commit.test.ts
           npm run typecheck -w @korvi/pos-web
           git diff --check
 
