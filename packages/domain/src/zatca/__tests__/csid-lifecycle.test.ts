@@ -252,8 +252,8 @@ describe('ZATCA CSID stamping lifecycle', () => {
     await expect(
       validate({
         revocation: await goodEvidence({
-          checkedAt: '2026-09-01T00:00:00Z',
-          validUntil: '2026-09-09T00:00:01Z',
+          checkedAt: '2026-09-02T23:59:59Z',
+          validUntil: '2026-09-10T00:00:00Z',
         }),
       }),
     ).rejects.toThrow(/seven days/);
