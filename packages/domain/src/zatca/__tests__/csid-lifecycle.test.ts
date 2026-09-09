@@ -206,7 +206,9 @@ describe('ZATCA CSID stamping lifecycle', () => {
   });
 
   it('refuses missing/invalid certificate path metadata', async () => {
-    await expect(validate({ certificatePath: [] })).rejects.toThrow(/must include the signing certificate/);
+    await expect(validate({ certificatePath: [] })).rejects.toThrow(
+      /must include the signing certificate/,
+    );
     await expect(
       validate({
         certificatePath: [
@@ -216,20 +218,18 @@ describe('ZATCA CSID stamping lifecycle', () => {
     ).rejects.toThrow(/empty certificate/);
     await expect(
       validate({
-        certificatePath: [
-          { certificateDer, issuerName: 'CN=CA', serialNumber: '0' },
-        ],
+        certificatePath: [{ certificateDer, issuerName: 'CN=CA', serialNumber: '0' }],
       }),
     ).rejects.toThrow(/positive decimal integer/);
   });
 
   it('refuses unknown or revoked status even while evidence is fresh', async () => {
-    await expect(validate({ revocation: await goodEvidence({ status: 'unknown' }) })).rejects.toThrow(
-      /status is unknown/,
-    );
-    await expect(validate({ revocation: await goodEvidence({ status: 'revoked' }) })).rejects.toThrow(
-      /status is revoked/,
-    );
+    await expect(
+      validate({ revocation: await goodEvidence({ status: 'unknown' }) }),
+    ).rejects.toThrow(/status is unknown/);
+    await expect(
+      validate({ revocation: await goodEvidence({ status: 'revoked' }) }),
+    ).rejects.toThrow(/status is revoked/);
   });
 
   it('refuses stale, future-dated and over-long CRL evidence', async () => {
@@ -273,7 +273,11 @@ describe('ZATCA CSID stamping lifecycle', () => {
 
   it('refuses status evidence whose certificate fingerprint is not the signing certificate', async () => {
     await expect(
-      validate({ revocation: await goodEvidence({ certificateSha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }) }),
+      validate({
+        revocation: await goodEvidence({
+          certificateSha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+        }),
+      }),
     ).rejects.toThrow(/different certificate/);
   });
 

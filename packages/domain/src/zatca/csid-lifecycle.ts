@@ -127,11 +127,15 @@ export async function validateZatcaCsidForStamping(
   assertKeyHandle(binding.key, 'bound key');
   assertKeyHandle(input.keyDescription.handle, 'described key');
   if (!sameKeyHandle(binding.key, input.keyDescription.handle)) {
-    throw new ZatcaInvoiceError('ZATCA signing provider resolved a different key than the CSID binding.');
+    throw new ZatcaInvoiceError(
+      'ZATCA signing provider resolved a different key than the CSID binding.',
+    );
   }
 
   if (binding.certificatePath.length === 0) {
-    throw new ZatcaInvoiceError('ZATCA CSID certificate path must include the signing certificate.');
+    throw new ZatcaInvoiceError(
+      'ZATCA CSID certificate path must include the signing certificate.',
+    );
   }
   const signingCertificate = binding.certificatePath[0];
   if (signingCertificate === undefined) {
@@ -165,7 +169,9 @@ function assertKeyHandle(handle: ZatcaSigningKeyHandle, label: string): void {
     throw new ZatcaInvoiceError(`ZATCA ${label} must identify a signing provider key.`);
   }
   if (handle.curve !== ZATCA_SIGNING_CURVE || handle.algorithm !== ZATCA_SIGNING_ALGORITHM) {
-    throw new ZatcaInvoiceError(`ZATCA ${label} does not use the required secp256k1/SHA-256 profile.`);
+    throw new ZatcaInvoiceError(
+      `ZATCA ${label} does not use the required secp256k1/SHA-256 profile.`,
+    );
   }
   if (handle.exportable !== false) {
     throw new ZatcaInvoiceError(`ZATCA ${label} must be non-exportable.`);
@@ -190,7 +196,9 @@ function assertCertificatePathEntry(entry: ZatcaCertificatePathEntry): void {
     throw new ZatcaInvoiceError('ZATCA certificate path contains a blank issuer name.');
   }
   if (!/^[1-9]\d*$/.test(entry.serialNumber)) {
-    throw new ZatcaInvoiceError('ZATCA certificate serial number must be a positive decimal integer.');
+    throw new ZatcaInvoiceError(
+      'ZATCA certificate serial number must be a positive decimal integer.',
+    );
   }
 }
 
@@ -211,16 +219,22 @@ async function assertRevocationEvidence(
     throw new ZatcaInvoiceError('ZATCA certificate status evidence expires before it was checked.');
   }
   if (checkedAt > stampingTime || stampingTime > validUntil) {
-    throw new ZatcaInvoiceError('ZATCA certificate status evidence is not fresh for the stamping time.');
+    throw new ZatcaInvoiceError(
+      'ZATCA certificate status evidence is not fresh for the stamping time.',
+    );
   }
   if (evidence.source === 'crl' && validUntil - checkedAt > MAX_CRL_VALIDITY_MS) {
-    throw new ZatcaInvoiceError('ZATCA CRL evidence cannot authorize more than seven days offline.');
+    throw new ZatcaInvoiceError(
+      'ZATCA CRL evidence cannot authorize more than seven days offline.',
+    );
   }
   if (evidence.status !== 'good') {
     throw new ZatcaInvoiceError(`ZATCA certificate revocation status is ${evidence.status}.`);
   }
   if (evidence.certificateSha256 !== (await sha256Base64(certificateDer))) {
-    throw new ZatcaInvoiceError('ZATCA certificate status evidence refers to a different certificate.');
+    throw new ZatcaInvoiceError(
+      'ZATCA certificate status evidence refers to a different certificate.',
+    );
   }
 }
 
