@@ -1,0 +1,40 @@
+name: Dispatch ZATCA 38 Proof
+
+on:
+  push:
+    branches:
+      - review/zatca-38-proof-dispatch
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch Gate 38 proof on clean candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/zatca-38-ubl-hash-proof.yml/dispatches" \
+            -f ref='review/zatca-38-operational-candidate'
+
+      - name: Check out helper branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Remove dispatcher
+        run: |
+          set -euo pipefail
+          rm .github/workflows/dispatch-zatca38-proof.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/dispatch-zatca38-proof.yml
+          git diff --cached --check
+          git commit -m "chore(review): remove Gate 38 proof dispatcher"
+          git push origin HEAD:review/zatca-38-proof-dispatch
