@@ -58,6 +58,21 @@ export function validateXmlDsigEcdsaSignature(signature: Uint8Array): Uint8Array
   return copy;
 }
 
+/**
+ * Convert validated XMLDSIG `r || s` bytes back to canonical ASN.1 DER.
+ *
+ * Node/OpenSSL verification APIs use DER ECDSA signatures. Keeping this reverse
+ * conversion beside the strict DER->XMLDSIG parser gives the sealing authority a
+ * deterministic self-verification boundary without ever touching private-key bytes.
+ */
+export function xmlDsigEcdsaSignatureToDer(signature: Uint8Array): Uint8Array {
+  const validated = validateXmlDsigEcdsaSignature(signature);
+  const r = encodeDerInteger(validated.subarray(0, COMPONENT_BYTES));
+  const s = encodeDerInteger(validated.subarray(COMPONENT_BYTES));
+  const length = r.length + s.length;
+  return Uint8Array.from([0x30, length, ...r, ...s]);
+}
+
 /** Base64 text written inside `ds:SignatureValue`. */
 export function xmlDsigEcdsaSignatureBase64(signature: Uint8Array): string {
   return bytesToBase64(validateXmlDsigEcdsaSignature(signature));
@@ -143,4 +158,15 @@ function assertScalar(bytes: Uint8Array, label: 'r' | 's'): void {
   if (value >= SECP256K1_ORDER) {
     throw new ZatcaInvoiceError(`ECDSA ${label} scalar is outside the secp256k1 group order.`);
   }
+}
+
+function encodeDerInteger(component: Uint8Array): Uint8Array {
+  let firstNonZero = 0;
+  while (firstNonZero < component.length - 1 && component[firstNonZero] === 0) {
+    firstNonZero += 1;
+  }
+  const scalar = component.subarray(firstNonZero);
+  const needsSignPad = ((scalar[0] ?? 0) & 0x80) !== 0;
+  const payload = needsSignPad ? Uint8Array.from([0, ...scalar]) : Uint8Array.from(scalar);
+  return Uint8Array.from([0x02, payload.length, ...payload]);
 }
