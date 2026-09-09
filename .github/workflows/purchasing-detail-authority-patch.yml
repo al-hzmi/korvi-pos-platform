@@ -67,18 +67,23 @@ jobs:
           PY
           npx --no-install prettier --write apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
           npx --no-install prettier --check apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
+          npm run db:generate
           npm run build
           npx --no-install vitest run apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts apps/pos-web/src/__tests__/purchasing-refresh-commit.test.ts
           npm run typecheck -w @korvi/pos-web
           git diff --check
 
-      - name: Commit review-only patch
+      - name: Commit review-only patch and remove helper
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'korvi-review-bot'
           git config user.email 'korvi-review-bot@users.noreply.github.com'
           git add apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
-          git diff --cached --quiet && { echo 'Expected purchasing detail diff is empty.' >&2; exit 1; }
+          git rm .github/workflows/purchasing-detail-authority-patch.yml
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' '.github/workflows/purchasing-detail-authority-patch.yml' 'apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts' 'apps/pos-web/src/components/control/purchasing-operations.tsx' | sort)"
+          [ "$changed" = "$expected" ] || { printf 'Unexpected staged scope:\n%s\n' "$changed" >&2; exit 1; }
+          git diff --cached --check
           git commit -m 'fix(purchasing): invalidate stale detail at decision boundary'
           git push origin HEAD:review/purchasing-detail-authority
