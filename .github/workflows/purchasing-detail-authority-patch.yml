@@ -11,7 +11,7 @@ permissions:
 jobs:
   patch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Check out exact review head
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -67,6 +67,7 @@ jobs:
           PY
           npx --no-install prettier --write apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
           npx --no-install prettier --check apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
+          npm run build
           npx --no-install vitest run apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts apps/pos-web/src/__tests__/purchasing-refresh-commit.test.ts
           npm run typecheck -w @korvi/pos-web
           git diff --check
