@@ -6,11 +6,16 @@ import type { Money } from '../money/money.js';
 /**
  * ZATCA e-invoicing QR payload — TLV, then Base64.
  *
- * Phase 1 values (tags 1-5) are UTF-8 text. Phase 2 adds cryptographic byte
- * material (tags 6-9). Keeping those representations distinct is deliberate:
- * feeding a SHA-256 digest or ECDSA signature through TextEncoder changes the
- * bytes and produces a QR payload that can look plausible while being
- * cryptographically unrelated to the sealed invoice.
+ * Phase 1 values (tags 1-5) are UTF-8 text. Phase 2 adds cryptographic
+ * material whose representations are intentionally explicit. Treating every
+ * cryptographic field as either arbitrary text or arbitrary bytes can produce
+ * a QR that parses while referring to different cryptographic material.
+ *
+ * The May 2023 Security Features Implementation Standards are authoritative
+ * for tag 6: the QR carries the raw 32-byte SHA-256 invoice hash. The official
+ * technical guide maps tag 7 to the XML `ds:SignatureValue` (Base64 text) and
+ * illustrates tags 8/9 as DER SubjectPublicKeyInfo / certificate-signature
+ * material. Those representations are modelled separately below.
  *
  * Ordering matters as much as content: hashing, stamping and the tag 1-9 QR all
  * happen locally *before* the customer receives the document. Only reporting to
@@ -36,7 +41,7 @@ export interface TlvField {
   readonly value: string;
 }
 
-/** A byte-exact TLV field. Cryptographic QR values use this representation. */
+/** A byte-exact TLV field. */
 export interface BinaryTlvField {
   readonly tag: number;
   readonly value: Uint8Array;
@@ -46,6 +51,7 @@ const encoder = new TextEncoder();
 const MAX_TLV_VALUE_BYTES = 0xff;
 const MAX_QR_BASE64_CHARACTERS = 700;
 const SHA256_BYTES = 32;
+const BASE64_VALUE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function assertTagByte(tag: number): void {
   if (!Number.isInteger(tag) || tag < 0 || tag > 0xff) {
@@ -56,8 +62,7 @@ function assertTagByte(tag: number): void {
 /**
  * Encode one already-materialised byte field as tag, length, value.
  *
- * This is the primitive used for cryptographic fields. It never interprets or
- * re-encodes the value bytes.
+ * This primitive never interprets or re-encodes the value bytes.
  */
 export function encodeBinaryTlvField(field: BinaryTlvField): Uint8Array {
   assertTagByte(field.tag);
@@ -118,16 +123,18 @@ export interface SimplifiedInvoiceQrInput {
 /**
  * Cryptographic values needed by a Phase 2 simplified-invoice QR.
  *
- * The TLV layer deliberately does not decide how a signing implementation
- * obtains or serialises those values. The sealing authority must hand this
- * module the exact QR bytes required by its validated signing/CSID adapter.
+ * No private-key material belongs here. Every field is already public or a
+ * derived signature/hash produced by the validated sealing authority.
  */
 export interface Phase2SimplifiedInvoiceQrInput extends SimplifiedInvoiceQrInput {
-  /** Raw SHA-256 invoice-hash bytes; exactly 32 bytes by ZATCA specification. */
+  /** Raw SHA-256 invoice-hash bytes; exactly 32 bytes by the May 2023 standard. */
   readonly invoiceHash: Uint8Array;
-  readonly ecdsaSignature: Uint8Array;
-  readonly ecdsaPublicKey: Uint8Array;
-  readonly zatcaCaSignature: Uint8Array;
+  /** Exact Base64 text stored in XML `ds:SignatureValue`. */
+  readonly xmlSignatureValueBase64: string;
+  /** DER SubjectPublicKeyInfo for the ECDSA signing public key. */
+  readonly ecdsaPublicKeySpkiDer: Uint8Array;
+  /** DER ECDSA signature on the stamp public key from ZATCA's technical CA. */
+  readonly zatcaCaSignatureDer: Uint8Array;
 }
 
 /** Build the stable textual tags shared by Phase 1 and Phase 2. */
@@ -170,12 +177,52 @@ function requireNonEmptyCryptoField(tag: number, value: Uint8Array): Uint8Array 
   return Uint8Array.from(value);
 }
 
+function requireBase64SignatureValue(value: string): Uint8Array {
+  if (value.length === 0 || value.length % 4 !== 0 || !BASE64_VALUE.test(value)) {
+    throw new TlvEncodingError('ZATCA XML SignatureValue must be canonical non-empty Base64 text.');
+  }
+  return requireNonEmptyCryptoField(ZATCA_TAG.ECDSA_SIGNATURE, encoder.encode(value));
+}
+
+function requireDerSequence(tag: number, value: Uint8Array): Uint8Array {
+  const copy = requireNonEmptyCryptoField(tag, value);
+  if (copy.length < 2 || copy[0] !== 0x30) {
+    throw new TlvEncodingError(
+      `Cryptographic TLV value for tag ${String(tag)} must be one DER SEQUENCE.`,
+    );
+  }
+
+  const firstLength = copy[1] as number;
+  let contentLength: number;
+  let headerLength: number;
+  if (firstLength < 0x80) {
+    contentLength = firstLength;
+    headerLength = 2;
+  } else if (firstLength === 0x81) {
+    if (copy.length < 3 || (copy[2] as number) < 0x80) {
+      throw new TlvEncodingError(`Tag ${String(tag)} uses a non-canonical DER length.`);
+    }
+    contentLength = copy[2] as number;
+    headerLength = 3;
+  } else {
+    throw new TlvEncodingError(
+      `Tag ${String(tag)} DER length is unsupported by the one-byte TLV value limit.`,
+    );
+  }
+
+  if (headerLength + contentLength !== copy.length) {
+    throw new TlvEncodingError(`Tag ${String(tag)} DER SEQUENCE length does not match its bytes.`);
+  }
+  return copy;
+}
+
 /**
  * Build all nine Phase 2 QR fields in the normative order.
  *
- * Tags 1-5 are converted from the exact same textual field builder used by the
- * Phase 1 path. Tags 6-9 are copied as bytes so caller-owned buffers cannot be
- * mutated after the field set has been constructed.
+ * Tags 1-5 come from the exact Phase 1 builder. Tag 6 is raw SHA-256 bytes.
+ * Tag 7 is the Base64 XML SignatureValue encoded as UTF-8. Tags 8 and 9 are the
+ * DER values illustrated by ZATCA's technical guide. Caller-owned byte buffers
+ * are copied so they cannot mutate the QR after validation.
  */
 export function phase2SimplifiedInvoiceQrFields(
   input: Phase2SimplifiedInvoiceQrInput,
@@ -191,15 +238,15 @@ export function phase2SimplifiedInvoiceQrFields(
     { tag: ZATCA_TAG.XML_INVOICE_HASH, value: Uint8Array.from(input.invoiceHash) },
     {
       tag: ZATCA_TAG.ECDSA_SIGNATURE,
-      value: requireNonEmptyCryptoField(ZATCA_TAG.ECDSA_SIGNATURE, input.ecdsaSignature),
+      value: requireBase64SignatureValue(input.xmlSignatureValueBase64),
     },
     {
       tag: ZATCA_TAG.ECDSA_PUBLIC_KEY,
-      value: requireNonEmptyCryptoField(ZATCA_TAG.ECDSA_PUBLIC_KEY, input.ecdsaPublicKey),
+      value: requireDerSequence(ZATCA_TAG.ECDSA_PUBLIC_KEY, input.ecdsaPublicKeySpkiDer),
     },
     {
       tag: ZATCA_TAG.ZATCA_CA_SIGNATURE,
-      value: requireNonEmptyCryptoField(ZATCA_TAG.ZATCA_CA_SIGNATURE, input.zatcaCaSignature),
+      value: requireDerSequence(ZATCA_TAG.ZATCA_CA_SIGNATURE, input.zatcaCaSignatureDer),
     },
   );
   return fields;
@@ -221,7 +268,7 @@ export function simplifiedInvoiceQr(input: SimplifiedInvoiceQrInput): string {
   return encodeQrBase64(encodeTlv(simplifiedInvoiceQrFields(input)));
 }
 
-/** Phase 2 QR path. No signing or key access occurs in this pure function. */
+/** Phase 2 QR path. No signing or private-key access occurs in this pure function. */
 export function phase2SimplifiedInvoiceQr(input: Phase2SimplifiedInvoiceQrInput): string {
   return encodeQrBase64(encodeBinaryTlv(phase2SimplifiedInvoiceQrFields(input)));
 }
