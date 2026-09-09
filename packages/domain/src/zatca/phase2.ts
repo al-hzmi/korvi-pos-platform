@@ -389,6 +389,7 @@ function renderLine(projected: LineProjection): string {
     `<cbc:InvoicedQuantity unitCode="${projected.unitCode}">${projected.quantity}</cbc:InvoicedQuantity>`,
     moneyElement('cbc:LineExtensionAmount', projected.netMinor),
     allowance,
+    renderLineTaxTotal(projected.vatMinor, projected.totalMinor),
     '<cac:Item>',
     element('cbc:Name', line.nameAr),
     '<cac:ClassifiedTaxCategory>',
@@ -402,6 +403,15 @@ function renderLine(projected: LineProjection): string {
     `<cbc:BaseQuantity unitCode="${projected.unitCode}">${projected.quantity}</cbc:BaseQuantity>`,
     '</cac:Price>',
     '</cac:InvoiceLine>',
+  ].join('');
+}
+
+function renderLineTaxTotal(vatMinor: bigint, totalMinor: bigint): string {
+  return [
+    '<cac:TaxTotal>',
+    moneyElement('cbc:TaxAmount', vatMinor),
+    moneyElement('cbc:RoundingAmount', totalMinor),
+    '</cac:TaxTotal>',
   ].join('');
 }
 

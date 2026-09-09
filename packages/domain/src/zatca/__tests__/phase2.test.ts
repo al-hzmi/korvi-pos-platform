@@ -212,6 +212,49 @@ describe('ZATCA Phase 2 simplified invoice hash payload', () => {
     );
   });
 
+  it('emits mandatory KSA line VAT and VAT-inclusive totals from historical line truth', () => {
+    const standard = renderZatcaSimplifiedInvoiceHashPayload(input()).canonicalXml;
+    expect(standard).toContain(
+      '<cbc:LineExtensionAmount currencyID="SAR">100.00</cbc:LineExtensionAmount><cac:TaxTotal><cbc:TaxAmount currencyID="SAR">15.00</cbc:TaxAmount><cbc:RoundingAmount currencyID="SAR">115.00</cbc:RoundingAmount></cac:TaxTotal>',
+    );
+
+    const discountedSale = sale({
+      priceMode: 'tax-inclusive',
+      grossMinor: '11500',
+      lineDiscountMinor: '1150',
+      netMinor: '9000',
+      vatMinor: '1350',
+      totalMinor: '10350',
+      tenderedMinor: '10350',
+      lines: [
+        {
+          ...sale().lines[0]!,
+          unitPriceMinor: '11500',
+          grossMinor: '11500',
+          lineDiscountMinor: '1150',
+          netMinor: '9000',
+          vatMinor: '1350',
+          totalMinor: '10350',
+        },
+      ],
+    });
+    const discountedInvoice = invoice({
+      netMinor: '9000',
+      vatMinor: '1350',
+      totalMinor: '10350',
+      taxBreakdown: [{ vatBasisPoints: VAT_STANDARD_BP, netMinor: '9000', vatMinor: '1350' }],
+    });
+    const discounted = renderZatcaSimplifiedInvoiceHashPayload(
+      input({ sale: discountedSale, invoice: discountedInvoice }),
+    ).canonicalXml;
+    expect(discounted).toContain(
+      '<cbc:LineExtensionAmount currencyID="SAR">90.00</cbc:LineExtensionAmount><cac:AllowanceCharge>',
+    );
+    expect(discounted).toContain(
+      '</cac:AllowanceCharge><cac:TaxTotal><cbc:TaxAmount currencyID="SAR">13.50</cbc:TaxAmount><cbc:RoundingAmount currencyID="SAR">103.50</cbc:RoundingAmount></cac:TaxTotal><cac:Item>',
+    );
+  });
+
   it('uses KGM for immutable weighted-item snapshots', () => {
     const weightedSale = sale({
       lines: [{ ...sale().lines[0]!, productType: 'weighted', quantityScaled: '1000' }],
