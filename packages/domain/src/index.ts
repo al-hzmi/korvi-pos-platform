@@ -24,6 +24,7 @@ export * from './zatca/base64.js';
 export * from './zatca/phase2.js';
 export * from './zatca/csid.js';
 export * from './zatca/csid-lifecycle.js';
+export * from './zatca/ecdsa.js';
 export * from './ports/persistence.js';
 export * from './ports/auth.js';
 export * from './ports/search.js';
