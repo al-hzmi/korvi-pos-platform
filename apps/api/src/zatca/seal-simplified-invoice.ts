@@ -1,4 +1,4 @@
-import { createPublicKey, createVerify, timingSafeEqual } from 'node:crypto';
+import { createHash, createPublicKey, createVerify, timingSafeEqual } from 'node:crypto';
 import {
   ZatcaInvoiceError,
   assembleZatcaSimplifiedInvoice,
@@ -136,16 +136,18 @@ export function createZatcaSimplifiedInvoiceSealer(
         }),
       });
 
-      const signedPropertiesCanonical = await dependencies.canonicalizer.canonicalizeSignedProperties(
-        contextSkeleton,
-      );
+      const signedPropertiesCanonical =
+        await dependencies.canonicalizer.canonicalizeSignedProperties(contextSkeleton);
       const signedPropertiesDigest = sha256(signedPropertiesCanonical);
 
-      const invoiceCanonical = await dependencies.canonicalizer.canonicalizeInvoiceReference(
-        contextSkeleton,
-      );
+      const invoiceCanonical =
+        await dependencies.canonicalizer.canonicalizeInvoiceReference(contextSkeleton);
       const gate38Bytes = new TextEncoder().encode(rendered.canonicalXml);
-      assertSameBytes('Gate 38 canonical invoice / Gate 39 invoice reference', gate38Bytes, invoiceCanonical);
+      assertSameBytes(
+        'Gate 38 canonical invoice / Gate 39 invoice reference',
+        gate38Bytes,
+        invoiceCanonical,
+      );
       const invoiceDigest = sha256(invoiceCanonical);
 
       const signedInfoXml = renderZatcaSignedInfoXml({
@@ -161,7 +163,8 @@ export function createZatcaSimplifiedInvoiceSealer(
           signatureValueBase64: '',
         }),
       });
-      const signedInfoCanonical = await dependencies.canonicalizer.canonicalizeSignedInfo(signingSkeleton);
+      const signedInfoCanonical =
+        await dependencies.canonicalizer.canonicalizeSignedInfo(signingSkeleton);
 
       const signatureRaw = validateXmlDsigEcdsaSignature(
         await dependencies.signingKey.signSha256({
@@ -254,18 +257,7 @@ function parseUtcSecond(value: string, label: string): number {
 }
 
 function sha256(bytes: Uint8Array): Uint8Array {
-  return Uint8Array.from(createHashSha256(bytes));
-}
-
-function createHashSha256(bytes: Uint8Array): Buffer {
-  const verifier = createVerify('SHA256');
-  // createVerify cannot expose a digest; use WebCrypto-independent Node hashing via its sibling API lazily.
-  verifier.update(Buffer.alloc(0));
-  verifier.end();
-  // This branch exists only to keep the security primitive selection adjacent to signature verification.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createHash } = require('node:crypto') as typeof import('node:crypto');
-  return createHash('sha256').update(bytes).digest();
+  return Uint8Array.from(createHash('sha256').update(bytes).digest());
 }
 
 function verifyGeneratedSignature(
@@ -281,7 +273,9 @@ function verifyGeneratedSignature(
       type: 'spki',
     });
   } catch {
-    throw new ZatcaInvoiceError('ZATCA signing certificate SPKI cannot be loaded for self-verification.');
+    throw new ZatcaInvoiceError(
+      'ZATCA signing certificate SPKI cannot be loaded for self-verification.',
+    );
   }
 
   const verifier = createVerify('SHA256');
@@ -304,8 +298,16 @@ async function assertFinalCryptographicInvariants(input: {
   const finalInvoice = await input.canonicalizer.canonicalizeInvoiceReference(input.finalXml);
   const finalProperties = await input.canonicalizer.canonicalizeSignedProperties(input.finalXml);
   const finalSignedInfo = await input.canonicalizer.canonicalizeSignedInfo(input.finalXml);
-  assertSameBytes('final invoice reference / signed invoice reference', finalInvoice, input.invoiceCanonical);
-  assertSameBytes('final SignedProperties / hashed SignedProperties', finalProperties, input.signedPropertiesCanonical);
+  assertSameBytes(
+    'final invoice reference / signed invoice reference',
+    finalInvoice,
+    input.invoiceCanonical,
+  );
+  assertSameBytes(
+    'final SignedProperties / hashed SignedProperties',
+    finalProperties,
+    input.signedPropertiesCanonical,
+  );
   assertSameBytes('final SignedInfo / signed SignedInfo', finalSignedInfo, input.signedInfoCanonical);
 }
 
