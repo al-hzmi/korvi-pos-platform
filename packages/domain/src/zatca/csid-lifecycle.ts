@@ -42,7 +42,7 @@ export interface ZatcaFatooraSecretHandle {
 
 /** Fresh certificate-status evidence produced by a CRL/OCSP adapter. */
 export interface ZatcaCertificateStatusEvidence {
-  /** Base64 SHA-256 of the complete DER signing certificate. */
+  /** Base64 SHA-256 of the complete DER certificate this evidence covers. */
   readonly certificateSha256: string;
   readonly status: ZatcaRevocationStatus;
   readonly source: ZatcaRevocationSource;
@@ -64,12 +64,18 @@ export interface ZatcaCsidBinding {
   readonly terminalId: string;
   readonly state: ZatcaCredentialLifecycleState;
   readonly key: ZatcaSigningKeyHandle;
+  /** Signing certificate first, trust anchor last; at least two certificates. */
   readonly certificatePath: readonly ZatcaCertificatePathEntry[];
+  /**
+   * Fresh status evidence for every non-trust-anchor certificate, in the same
+   * order as certificatePath. The trust anchor itself is pinned separately by
+   * the server-side path validator and is not treated as a path certificate.
+   */
+  readonly certificateStatus: readonly ZatcaCertificateStatusEvidence[];
   /** SPKI extracted from the signing certificate by the certificate adapter. */
   readonly signingPublicKeySpkiDer: Uint8Array;
   readonly notBefore: string;
   readonly notAfter: string;
-  readonly revocation: ZatcaCertificateStatusEvidence;
   readonly fatooraSecret: ZatcaFatooraSecretHandle;
 }
 
@@ -94,11 +100,10 @@ export interface ValidatedZatcaCsid {
 /**
  * Fail closed unless the exact CSID/key/certificate status is usable *now*.
  *
- * ZATCA's current security standard requires certificate validity/revocation
- * checking before stamping and allows CRLs to cover at most seven days of
- * offline operation. This authority therefore refuses missing, stale, unknown,
- * revoked, superseded, tenant-mismatched or key-mismatched credentials before
- * the signing port can be invoked.
+ * ZATCA's current security standard requires certificate-path validation and
+ * revocation checking at the signing time. Korvi therefore requires fresh good
+ * CRL/OCSP evidence for every non-anchor certificate before the signing port can
+ * be invoked. CRL evidence may authorize at most seven days of offline use.
  */
 export async function validateZatcaCsidForStamping(
   input: ZatcaCsidStampingContext,
@@ -132,9 +137,9 @@ export async function validateZatcaCsidForStamping(
     );
   }
 
-  if (binding.certificatePath.length === 0) {
+  if (binding.certificatePath.length < 2) {
     throw new ZatcaInvoiceError(
-      'ZATCA CSID certificate path must include the signing certificate.',
+      'ZATCA CSID certificate path must include the signing certificate and trust anchor.',
     );
   }
   const signingCertificate = binding.certificatePath[0];
@@ -151,8 +156,22 @@ export async function validateZatcaCsidForStamping(
     throw new ZatcaInvoiceError('ZATCA CSID certificate is not bound to the resolved signing key.');
   }
 
+  const statusRequired = binding.certificatePath.length - 1;
+  if (binding.certificateStatus.length !== statusRequired) {
+    throw new ZatcaInvoiceError(
+      `ZATCA CSID requires fresh revocation evidence for exactly ${String(statusRequired)} non-anchor certificate(s).`,
+    );
+  }
+  for (let index = 0; index < statusRequired; index += 1) {
+    const evidence = binding.certificateStatus[index];
+    const certificate = binding.certificatePath[index];
+    if (evidence === undefined || certificate === undefined) {
+      throw new ZatcaInvoiceError('ZATCA certificate status path is incomplete.');
+    }
+    await assertRevocationEvidence(evidence, certificate.certificateDer, now);
+  }
+
   assertOpaqueSecretHandle(binding.fatooraSecret);
-  await assertRevocationEvidence(binding.revocation, signingCertificate.certificateDer, now);
 
   return {
     credentialId: binding.credentialId,
@@ -246,8 +265,6 @@ async function sha256Base64(bytes: Uint8Array): Promise<string> {
   if (subtle === undefined) {
     throw new ZatcaInvoiceError('Web Crypto SHA-256 is unavailable in this runtime.');
   }
-  // Own the backing ArrayBuffer before crossing the WebCrypto BufferSource boundary.
-  // A generic Uint8Array may legally wrap SharedArrayBuffer; certificate bytes must not.
   const ownedBytes = new Uint8Array(bytes.length);
   ownedBytes.set(bytes);
   const digest = await subtle.digest('SHA-256', ownedBytes);
