@@ -13,6 +13,16 @@ import {
 import { money, moneyFromMajorString } from '../../money/money.js';
 import { TlvEncodingError } from '../../errors.js';
 
+function derSequence(content: readonly number[]): Uint8Array {
+  if (content.length < 0x80) {
+    return Uint8Array.from([0x30, content.length, ...content]);
+  }
+  if (content.length <= 0xff) {
+    return Uint8Array.from([0x30, 0x81, content.length, ...content]);
+  }
+  throw new Error('Test DER helper supports at most 255 content bytes.');
+}
+
 describe('base64', () => {
   it('matches known vectors including every padding case', () => {
     const encode = (text: string): string => bytesToBase64(new TextEncoder().encode(text));
@@ -163,9 +173,9 @@ describe('Phase 2 simplified invoice QR foundation', () => {
   const input = {
     ...phase1,
     invoiceHash: Uint8Array.from({ length: 32 }, (_, index) => index),
-    ecdsaSignature: Uint8Array.from([0x00, 0x80, 0xff, 0x11]),
-    ecdsaPublicKey: Uint8Array.from([0x04, 0x22, 0x00, 0xfe]),
-    zatcaCaSignature: Uint8Array.from([0x33, 0x00, 0x99]),
+    xmlSignatureValueBase64: 'MAMCAQE=',
+    ecdsaPublicKeySpkiDer: derSequence([0x02, 0x01, 0x02]),
+    zatcaCaSignatureDer: derSequence([0x02, 0x01, 0x03]),
   };
 
   it('orders exactly tags 1 through 9 and preserves the Phase 1 prefix byte-for-byte', () => {
@@ -184,7 +194,7 @@ describe('Phase 2 simplified invoice QR foundation', () => {
     expect(tags).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
-  it('encodes tag 6 as the 32 raw hash bytes, never Base64 text', () => {
+  it('encodes tag 6 as the normative 32 raw hash bytes, never older Base64-text examples', () => {
     const fields = phase2SimplifiedInvoiceQrFields(input);
     const hash = fields.find((field) => field.tag === ZATCA_TAG.XML_INVOICE_HASH);
     expect(hash?.value).toEqual(input.invoiceHash);
@@ -194,27 +204,26 @@ describe('Phase 2 simplified invoice QR foundation', () => {
     );
   });
 
-  it('preserves zero and high-bit bytes in cryptographic tags 7 through 9', () => {
-    const raw = Buffer.from(phase2SimplifiedInvoiceQr(input), 'base64');
-    const values = new Map<number, Buffer>();
-    let offset = 0;
-    while (offset < raw.length) {
-      const tag = raw[offset] as number;
-      const length = raw[offset + 1] as number;
-      values.set(tag, raw.subarray(offset + 2, offset + 2 + length));
-      offset += 2 + length;
-    }
-    expect(values.get(7)).toEqual(Buffer.from(input.ecdsaSignature));
-    expect(values.get(8)).toEqual(Buffer.from(input.ecdsaPublicKey));
-    expect(values.get(9)).toEqual(Buffer.from(input.zatcaCaSignature));
+  it('encodes tag 7 from the exact Base64 ds:SignatureValue text', () => {
+    const fields = phase2SimplifiedInvoiceQrFields(input);
+    const signature = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_SIGNATURE);
+    expect(Buffer.from(signature?.value ?? []).toString('utf8')).toBe(input.xmlSignatureValueBase64);
   });
 
-  it('copies caller-owned crypto buffers when constructing fields', () => {
-    const signature = Uint8Array.from([1, 2, 3]);
-    const fields = phase2SimplifiedInvoiceQrFields({ ...input, ecdsaSignature: signature });
-    signature[0] = 99;
-    const captured = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_SIGNATURE);
-    expect(Array.from(captured?.value ?? [])).toEqual([1, 2, 3]);
+  it('preserves the DER public-key and technical-CA signature bytes in tags 8 and 9', () => {
+    const fields = phase2SimplifiedInvoiceQrFields(input);
+    const publicKey = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_PUBLIC_KEY);
+    const caSignature = fields.find((field) => field.tag === ZATCA_TAG.ZATCA_CA_SIGNATURE);
+    expect(publicKey?.value).toEqual(input.ecdsaPublicKeySpkiDer);
+    expect(caSignature?.value).toEqual(input.zatcaCaSignatureDer);
+  });
+
+  it('copies caller-owned DER buffers when constructing fields', () => {
+    const publicKey = derSequence([0x02, 0x01, 0x02]);
+    const fields = phase2SimplifiedInvoiceQrFields({ ...input, ecdsaPublicKeySpkiDer: publicKey });
+    publicKey[2] = 99;
+    const captured = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_PUBLIC_KEY);
+    expect(captured?.value[2]).toBe(0x02);
   });
 
   it('requires a real SHA-256-width invoice hash', () => {
@@ -226,26 +235,50 @@ describe('Phase 2 simplified invoice QR foundation', () => {
     );
   });
 
-  it('rejects missing cryptographic material rather than emitting placeholder tags', () => {
-    expect(() => phase2SimplifiedInvoiceQr({ ...input, ecdsaSignature: new Uint8Array() })).toThrow(
-      TlvEncodingError,
-    );
-    expect(() => phase2SimplifiedInvoiceQr({ ...input, ecdsaPublicKey: new Uint8Array() })).toThrow(
-      TlvEncodingError,
-    );
+  it('rejects malformed or non-canonical Base64 for tag 7', () => {
+    for (const bad of ['', 'abc', '!!!!', 'MAMCAQE=\n']) {
+      expect(() => phase2SimplifiedInvoiceQr({ ...input, xmlSignatureValueBase64: bad })).toThrow(
+        TlvEncodingError,
+      );
+    }
+  });
+
+  it('rejects raw EC points or raw P1363 bytes where tags 8 and 9 require DER values', () => {
     expect(() =>
-      phase2SimplifiedInvoiceQr({ ...input, zatcaCaSignature: new Uint8Array() }),
+      phase2SimplifiedInvoiceQr({
+        ...input,
+        ecdsaPublicKeySpkiDer: Uint8Array.from([0x04, ...new Uint8Array(64)]),
+      }),
+    ).toThrow(TlvEncodingError);
+    expect(() =>
+      phase2SimplifiedInvoiceQr({ ...input, zatcaCaSignatureDer: new Uint8Array(64) }),
+    ).toThrow(TlvEncodingError);
+  });
+
+  it('rejects malformed DER lengths instead of accepting truncated cryptographic values', () => {
+    expect(() =>
+      phase2SimplifiedInvoiceQr({
+        ...input,
+        ecdsaPublicKeySpkiDer: Uint8Array.from([0x30, 0x05, 0x02, 0x01, 0x01]),
+      }),
+    ).toThrow(TlvEncodingError);
+    expect(() =>
+      phase2SimplifiedInvoiceQr({
+        ...input,
+        zatcaCaSignatureDer: Uint8Array.from([0x30, 0x81, 0x03, 0x02, 0x01, 0x01]),
+      }),
     ).toThrow(TlvEncodingError);
   });
 
   it('rejects a QR payload that exceeds the ZATCA 700-character Base64 limit', () => {
+    const largeDer = derSequence(new Array(200).fill(1));
     expect(() =>
       phase2SimplifiedInvoiceQr({
         ...input,
         sellerName: 'س'.repeat(120),
-        ecdsaSignature: new Uint8Array(200).fill(1),
-        ecdsaPublicKey: new Uint8Array(200).fill(2),
-        zatcaCaSignature: new Uint8Array(200).fill(3),
+        xmlSignatureValueBase64: 'AAAA'.repeat(63),
+        ecdsaPublicKeySpkiDer: largeDer,
+        zatcaCaSignatureDer: largeDer,
       }),
     ).toThrow(TlvEncodingError);
   });
