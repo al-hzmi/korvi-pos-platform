@@ -37,7 +37,7 @@ import type {
 import type { PurchasingCommandIntent } from '../../lib/purchasing-command-flight';
 import type { PurchasingPages } from './purchasing-panel';
 
-type Workspace = 'suppliers' | 'orders' | 'receiving';
+export type Workspace = 'suppliers' | 'orders' | 'receiving';
 type SupplierMode = 'create' | 'update';
 type PostWriteRefresh = 'ready' | 'pending' | 'failed';
 
@@ -114,6 +114,24 @@ export function purchasingPostWriteReady(
   detailReady: boolean,
 ): boolean {
   return listsReady && (kind !== 'receipt' || detailReady);
+}
+
+/**
+ * A purchasing detail is authoritative only for the exact workspace/order
+ * identity that produced it. React effects run after render, so invalidating
+ * here prevents one paint of stale ready detail from exposing receipt controls
+ * for a decision boundary that has already changed.
+ */
+export function purchasingDetailAfterIdentityChange(
+  current: DetailState,
+  currentWorkspace: Workspace,
+  nextWorkspace: Workspace,
+  currentOrderId: string,
+  nextOrderId: string,
+): DetailState {
+  if (currentWorkspace === nextWorkspace && currentOrderId === nextOrderId) return current;
+  if (nextWorkspace === 'suppliers' || nextOrderId === '') return { kind: 'idle' };
+  return { kind: 'loading', orderId: nextOrderId };
 }
 
 export function ReceiptLineEditor({
@@ -605,6 +623,18 @@ export function PurchasingOperations({
         setOrderLines([{ key: 'line-1', productId: '', quantity: '' }]);
         nextLine.current = 2;
       }
+    }
+    if (nextWorkspace !== workspace) {
+      detailController.current?.abort();
+      setDetail((current) =>
+        purchasingDetailAfterIdentityChange(
+          current,
+          workspace,
+          nextWorkspace,
+          selectedOrderId,
+          selectedOrderId,
+        ),
+      );
     }
     flight.current.reset();
     setWorkspace(nextWorkspace);
@@ -1123,6 +1153,18 @@ export function PurchasingOperations({
             selectedOrderId={selectedOrderId}
             disabled={commandLocked}
             onSelect={(orderId) => {
+              if (orderId !== selectedOrderId) {
+                detailController.current?.abort();
+                setDetail((current) =>
+                  purchasingDetailAfterIdentityChange(
+                    current,
+                    workspace,
+                    workspace,
+                    selectedOrderId,
+                    orderId,
+                  ),
+                );
+              }
               setSelectedOrderId(orderId);
               setReceiptQuantities({});
               setReceiptInventoryValues({});

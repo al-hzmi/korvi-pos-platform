@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, CardSurface } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { PurchasingOperations } from './purchasing-operations';
@@ -31,6 +31,12 @@ export type PageKind = keyof PurchasingPages;
 type PurchasingPageUnion = PurchasingPage<
   PurchasingBranch | PurchasingProduct | PurchasingSupplier | PurchaseOrderSummary
 >;
+
+type PendingRefreshCommit = {
+  readonly controller: AbortController;
+  readonly pages: PurchasingPages;
+  readonly resolve: (committed: boolean) => void;
+};
 
 export type PurchasingState =
   | { readonly kind: 'loading' }
@@ -71,6 +77,19 @@ export function failPurchasingRefresh(current: PurchasingState, failure: Failure
   return current.kind === 'ready'
     ? { ...current, refreshing: false, loadingMore: null, failure }
     : { kind: 'failed', failure };
+}
+
+/**
+ * A post-write decision may unlock only after the exact refreshed page object
+ * has reached a React commit. Network completion alone is insufficient: a
+ * Promise can resolve after setState is queued but before the refreshed truth
+ * is actually present in the committed control UI.
+ */
+export function hasCommittedPurchasingRefresh(
+  current: PurchasingState,
+  expectedPages: PurchasingPages,
+): boolean {
+  return current.kind === 'ready' && !current.refreshing && current.pages === expectedPages;
 }
 
 /**
@@ -166,8 +185,16 @@ export function PurchasingPanel({
   const [reload, setReload] = useState(0);
   const refreshFlight = useRef<Promise<boolean> | null>(null);
   const refreshController = useRef<AbortController | null>(null);
+  const refreshCommit = useRef<PendingRefreshCommit | null>(null);
   const pageFlight = useRef(false);
   const pageController = useRef<AbortController | null>(null);
+
+  const cancelRefreshCommit = useCallback((committed = false): void => {
+    const pending = refreshCommit.current;
+    if (pending === null) return;
+    refreshCommit.current = null;
+    pending.resolve(committed);
+  }, []);
 
   const loadFirstPages = useCallback(
     async (signal?: AbortSignal): Promise<PurchasingPages> => {
@@ -183,9 +210,22 @@ export function PurchasingPanel({
     [api],
   );
 
+  useLayoutEffect(() => {
+    const pending = refreshCommit.current;
+    if (
+      pending !== null &&
+      ownsAbortController(refreshController.current, pending.controller) &&
+      hasCommittedPurchasingRefresh(state, pending.pages)
+    ) {
+      refreshCommit.current = null;
+      pending.resolve(true);
+    }
+  }, [state]);
+
   useEffect(() => {
     const controller = new AbortController();
     refreshController.current?.abort();
+    cancelRefreshCommit(false);
     refreshController.current = null;
     refreshFlight.current = null;
     pageController.current?.abort();
@@ -204,13 +244,14 @@ export function PurchasingPanel({
     return () => {
       controller.abort();
       refreshController.current?.abort();
+      cancelRefreshCommit(false);
       refreshController.current = null;
       refreshFlight.current = null;
       pageController.current?.abort();
       pageController.current = null;
       pageFlight.current = false;
     };
-  }, [loadFirstPages, reload]);
+  }, [cancelRefreshCommit, loadFirstPages, reload]);
 
   const refresh = useCallback((): Promise<boolean> => {
     if (refreshFlight.current !== null) return refreshFlight.current;
@@ -223,11 +264,15 @@ export function PurchasingPanel({
     const request = loadFirstPages(controller.signal)
       .then((pages) => {
         if (!ownsAbortController(refreshController.current, controller)) return false;
-        setState({ kind: 'ready', pages, refreshing: false, loadingMore: null, failure: null });
-        return true;
+        return new Promise<boolean>((resolve) => {
+          cancelRefreshCommit(false);
+          refreshCommit.current = { controller, pages, resolve };
+          setState({ kind: 'ready', pages, refreshing: false, loadingMore: null, failure: null });
+        });
       })
       .catch((error: unknown) => {
         if (!ownsAbortController(refreshController.current, controller)) return false;
+        cancelRefreshCommit(false);
         const failure = purchasingFailure(error);
         setState((current) => failPurchasingRefresh(current, failure));
         return false;
@@ -240,7 +285,7 @@ export function PurchasingPanel({
       });
     refreshFlight.current = request;
     return request;
-  }, [loadFirstPages]);
+  }, [cancelRefreshCommit, loadFirstPages]);
 
   const loadMore = useCallback(
     (kind: PageKind): void => {
