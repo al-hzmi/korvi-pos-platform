@@ -1,4 +1,4 @@
-name: React 19.3 Compatibility Proof
+name: React 19.3 and Zod 4.6 Compatibility Proof
 
 on:
   push:
@@ -31,21 +31,25 @@ jobs:
       - name: Install locked baseline
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Upgrade React runtime and typings exactly
+      - name: Upgrade fresh stable runtime dependencies exactly
         run: |
           npm install --save-exact -w @korvi/pos-web react@19.3.0 react-dom@19.3.0 --registry=https://registry.npmjs.org
           npm install --save-dev --save-exact -w @korvi/pos-web @types/react@19.3.0 @types/react-dom@19.3.0 --registry=https://registry.npmjs.org
+          npm install --save-exact -w @korvi/api zod@4.6.0 --registry=https://registry.npmjs.org
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
-          const manifest = JSON.parse(readFileSync('apps/pos-web/package.json', 'utf8'));
+          const pos = JSON.parse(readFileSync('apps/pos-web/package.json', 'utf8'));
+          const api = JSON.parse(readFileSync('apps/api/package.json', 'utf8'));
           const expected = {
-            react: manifest.dependencies?.react,
-            'react-dom': manifest.dependencies?.['react-dom'],
-            '@types/react': manifest.devDependencies?.['@types/react'],
-            '@types/react-dom': manifest.devDependencies?.['@types/react-dom'],
+            react: pos.dependencies?.react,
+            'react-dom': pos.dependencies?.['react-dom'],
+            '@types/react': pos.devDependencies?.['@types/react'],
+            '@types/react-dom': pos.devDependencies?.['@types/react-dom'],
+            zod: api.dependencies?.zod,
           };
           for (const [name, version] of Object.entries(expected)) {
-            if (version !== '19.3.0') throw new Error(`${name} resolved to ${String(version)}`);
+            const target = name === 'zod' ? '4.6.0' : '19.3.0';
+            if (version !== target) throw new Error(`${name} resolved to ${String(version)}, expected ${target}`);
           }
           NODE
 
@@ -57,7 +61,7 @@ jobs:
           rm .github/workflows/react-19-3-compat.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/pos-web/package.json package-lock.json .github/workflows/react-19-3-compat.yml
+          git add apps/pos-web/package.json apps/api/package.json package-lock.json .github/workflows/react-19-3-compat.yml
           git diff --cached --check
-          git commit -m "chore(deps): upgrade React to 19.3.0"
+          git commit -m "chore(deps): refresh React and Zod stable pins"
           git push origin HEAD:review/react-19-3-compat
