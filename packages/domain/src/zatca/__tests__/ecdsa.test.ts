@@ -3,6 +3,7 @@ import {
   ecdsaDerToXmlDsigSignature,
   validateXmlDsigEcdsaSignature,
   xmlDsigEcdsaSignatureBase64,
+  xmlDsigEcdsaSignatureToDer,
 } from '../ecdsa.js';
 import { ZatcaInvoiceError } from '../phase2.js';
 
@@ -124,5 +125,20 @@ describe('XMLDSIG ECDSA SignatureValue bytes', () => {
     expect(encoded).toMatch(/^[A-Za-z0-9+/]+={0,2}$/);
     expect(encoded.length).toBe(88);
     expect(() => xmlDsigEcdsaSignatureBase64(new Uint8Array(64))).toThrow(/non-zero/);
+  });
+
+  it('round-trips XMLDSIG bytes through canonical ASN.1 DER for external verification', () => {
+    const signature = new Uint8Array(64);
+    signature[0] = 0x80;
+    signature[31] = 1;
+    signature[32] = 0x7f;
+    signature[63] = 2;
+
+    const der = xmlDsigEcdsaSignatureToDer(signature);
+    expect(der[0]).toBe(0x30);
+    expect(der[2]).toBe(0x02);
+    expect(der[3]).toBe(33);
+    expect(der[4]).toBe(0);
+    expect(ecdsaDerToXmlDsigSignature(der)).toEqual(signature);
   });
 });
