@@ -1,0 +1,112 @@
+name: ZATCA Public Validator Discovery
+
+on:
+  push:
+    branches:
+      - review/zatca-public-validator-discovery
+    paths:
+      - .github/workflows/zatca-public-validator-discovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Fetch official public validator shell and discover frontend assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://sandbox.zatca.gov.sa'
+          page="$RUNNER_TEMP/compliance.html"
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          curl --fail --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 20 --max-time 120 \
+            -A "$ua" -H 'Accept: text/html,application/xhtml+xml' \
+            "$base/Compliance" -o "$page"
+          echo "validator_shell_bytes=$(wc -c < "$page")"
+          echo '--- script assets ---'
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("${RUNNER_TEMP}/compliance.html").read_text('utf-8', errors='replace')
+          refs = []
+          for pattern in (r'<script[^>]+src=["\']([^"\']+)["\']', r'<link[^>]+href=["\']([^"\']+\.js[^"\']*)["\']'):
+              refs.extend(re.findall(pattern, html, re.I))
+          seen = set()
+          for ref in refs:
+              if ref not in seen:
+                  seen.add(ref)
+                  print(ref)
+          Path("${RUNNER_TEMP}/asset-refs.txt").write_text('\n'.join(seen), encoding='utf-8')
+          PY
+
+      - name: Inspect official validator JavaScript for network authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://sandbox.zatca.gov.sa'
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          mkdir -p "$RUNNER_TEMP/zatca-js"
+          count=0
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            case "$ref" in
+              http://*|https://*) url="$ref" ;;
+              /*) url="$base$ref" ;;
+              *) url="$base/${ref#./}" ;;
+            esac
+            out="$RUNNER_TEMP/zatca-js/asset-$count.js"
+            if curl --fail --show-error --location --retry 2 --retry-all-errors \
+              --connect-timeout 20 --max-time 120 -A "$ua" "$url" -o "$out"; then
+              echo "asset[$count]_url=$url"
+              echo "asset[$count]_bytes=$(wc -c < "$out")"
+              count=$((count+1))
+            fi
+          done < "$RUNNER_TEMP/asset-refs.txt"
+          test "$count" -gt 0
+          echo '--- candidate endpoint strings ---'
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          needles = re.compile(r'(?i)(compliance|validat|invoice|xml|qr|upload|schematron|en16931|ksa|api)')
+          urlish = re.compile(r'(?:(?:https?:)?//[^"\'`\\ ]+|/[A-Za-z0-9_./?=&%-]{4,})')
+          found = set()
+          for p in Path("${RUNNER_TEMP}/zatca-js").glob('*.js'):
+              text = p.read_text('utf-8', errors='replace')
+              for m in urlish.finditer(text):
+                  s = m.group(0)
+                  if needles.search(s) and len(s) < 300:
+                      found.add(s)
+              for m in re.finditer(r'[^"\'`]{0,90}(?:Compliance|Validator|validate|Validate|schematron|EN16931|BR-KSA)[^"\'`]{0,140}', text):
+                  s = ' '.join(m.group(0).split())
+                  if 0 < len(s) < 300:
+                      found.add(s)
+          for s in sorted(found):
+              print(s)
+          if not found:
+              raise SystemExit('No validator/network candidates discovered in official frontend assets.')
+          PY
+
+      - name: Remove discovery workflow
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/zatca-public-validator-discovery.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/zatca-public-validator-discovery.yml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m 'chore(review): remove ZATCA validator discovery workflow'
+          git push origin HEAD:review/zatca-public-validator-discovery
