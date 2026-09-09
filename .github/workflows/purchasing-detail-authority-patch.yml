@@ -1,0 +1,83 @@
+name: Review Purchasing Detail Authority Patch
+
+on:
+  push:
+    branches:
+      - review/purchasing-detail-authority
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact review head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/purchasing-detail-authority
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Patch synchronous purchasing detail authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/pos-web/src/components/control/purchasing-operations.tsx')
+          source = path.read_text()
+
+          old = "type Workspace = 'suppliers' | 'orders' | 'receiving';"
+          new = "export type Workspace = 'suppliers' | 'orders' | 'receiving';"
+          if source.count(old) != 1:
+              raise SystemExit('Workspace type anchor mismatch')
+          source = source.replace(old, new)
+
+          anchor = """export function purchasingPostWriteReady(\n  kind: PurchasingCommandResult['kind'],\n  listsReady: boolean,\n  detailReady: boolean,\n): boolean {\n  return listsReady && (kind !== 'receipt' || detailReady);\n}\n"""
+          addition = anchor + """\n/**\n * A purchasing detail is authoritative only for the exact workspace/order\n * identity that produced it. React effects run after render, so invalidating\n * here prevents one paint of stale ready detail from exposing receipt controls\n * for a decision boundary that has already changed.\n */\nexport function purchasingDetailAfterIdentityChange(\n  current: DetailState,\n  currentWorkspace: Workspace,\n  nextWorkspace: Workspace,\n  currentOrderId: string,\n  nextOrderId: string,\n): DetailState {\n  if (currentWorkspace === nextWorkspace && currentOrderId === nextOrderId) return current;\n  if (nextWorkspace === 'suppliers' || nextOrderId === '') return { kind: 'idle' };\n  return { kind: 'loading', orderId: nextOrderId };\n}\n"""
+          if source.count(anchor) != 1:
+              raise SystemExit('post-write helper anchor mismatch')
+          source = source.replace(anchor, addition)
+
+          old_clear = """    flight.current.reset();\n    setWorkspace(nextWorkspace);\n    setValidation(null);\n"""
+          new_clear = """    if (nextWorkspace !== workspace) {\n      detailController.current?.abort();\n      setDetail((current) =>\n        purchasingDetailAfterIdentityChange(\n          current,\n          workspace,\n          nextWorkspace,\n          selectedOrderId,\n          selectedOrderId,\n        ),\n      );\n    }\n    flight.current.reset();\n    setWorkspace(nextWorkspace);\n    setValidation(null);\n"""
+          if source.count(old_clear) != 1:
+              raise SystemExit('clearDecision anchor mismatch')
+          source = source.replace(old_clear, new_clear)
+
+          old_select = """            onSelect={(orderId) => {\n              setSelectedOrderId(orderId);\n              setReceiptQuantities({});\n              setReceiptInventoryValues({});\n              setValidation(null);\n            }}\n"""
+          new_select = """            onSelect={(orderId) => {\n              if (orderId !== selectedOrderId) {\n                detailController.current?.abort();\n                setDetail((current) =>\n                  purchasingDetailAfterIdentityChange(\n                    current,\n                    workspace,\n                    workspace,\n                    selectedOrderId,\n                    orderId,\n                  ),\n                );\n              }\n              setSelectedOrderId(orderId);\n              setReceiptQuantities({});\n              setReceiptInventoryValues({});\n              setValidation(null);\n            }}\n"""
+          if source.count(old_select) != 1:
+              raise SystemExit('order selection anchor mismatch')
+          source = source.replace(old_select, new_select)
+          path.write_text(source)
+
+          test = Path('apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';\nimport {\n  purchasingDetailAfterIdentityChange,\n  type DetailState,\n} from '../components/control/purchasing-operations';\n\nfunction readyDetail(orderId = 'order-a'): DetailState {\n  return {\n    kind: 'ready',\n    order: {\n      id: orderId,\n      supplierId: 'supplier-a',\n      branchId: 'branch-a',\n      reference: 'PO-1',\n      status: 'open',\n      orderedAt: '2026-09-09T00:00:00.000Z',\n      lines: [\n        {\n          id: 'line-a',\n          productId: 'product-a',\n          orderedQuantityScaled: '4000',\n          receivedQuantityScaled: '0',\n          remainingQuantityScaled: '4000',\n        },\n      ],\n    },\n    receipts: [],\n  };\n}\n\ndescribe('purchasing detail identity authority', () => {\n  it('invalidates ready detail synchronously before entering receiving', () => {\n    const current = readyDetail();\n    expect(\n      purchasingDetailAfterIdentityChange(current, 'orders', 'receiving', 'order-a', 'order-a'),\n    ).toEqual({ kind: 'loading', orderId: 'order-a' });\n  });\n\n  it('invalidates ready detail synchronously when selecting another order', () => {\n    const current = readyDetail();\n    expect(\n      purchasingDetailAfterIdentityChange(current, 'receiving', 'receiving', 'order-a', 'order-b'),\n    ).toEqual({ kind: 'loading', orderId: 'order-b' });\n  });\n\n  it('preserves committed detail when neither workspace nor order identity changes', () => {\n    const current = readyDetail();\n    expect(\n      purchasingDetailAfterIdentityChange(current, 'receiving', 'receiving', 'order-a', 'order-a'),\n    ).toBe(current);\n  });\n\n  it('drops detail entirely when the next workspace cannot own an order detail', () => {\n    const current = readyDetail();\n    expect(\n      purchasingDetailAfterIdentityChange(current, 'orders', 'suppliers', 'order-a', 'order-a'),\n    ).toEqual({ kind: 'idle' });\n    expect(\n      purchasingDetailAfterIdentityChange(current, 'orders', 'receiving', 'order-a', ''),\n    ).toEqual({ kind: 'idle' });\n  });\n});\n""")
+          PY
+          npx --no-install prettier --write apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
+          npx --no-install prettier --check apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
+          npm test -w @korvi/pos-web -- --run apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts apps/pos-web/src/__tests__/purchasing-refresh-commit.test.ts
+          npm run typecheck -w @korvi/pos-web
+          git diff --check
+
+      - name: Commit review-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-review-bot'
+          git config user.email 'korvi-review-bot@users.noreply.github.com'
+          git add apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/__tests__/purchasing-detail-authority.test.ts
+          git diff --cached --quiet && { echo 'Expected purchasing detail diff is empty.' >&2; exit 1; }
+          git commit -m 'fix(purchasing): invalidate stale detail at decision boundary'
+          git push origin HEAD:review/purchasing-detail-authority
