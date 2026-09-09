@@ -72,6 +72,21 @@ jobs:
           test -n "$SCHEMA"
           xmllint --noout --schema "$SCHEMA" "$RUNNER_TEMP/korvi-invoice.xml"
 
+      - name: Prove mandatory KSA per-line VAT facts independently
+        run: |
+          XML="$RUNNER_TEMP/korvi-invoice.xml"
+          LINE_TAX_TOTAL_COUNT="$(xmllint --xpath "count(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal'])" "$XML")"
+          LINE_VAT="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='TaxAmount'])" "$XML")"
+          LINE_VAT_CURRENCY="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='TaxAmount']/@currencyID)" "$XML")"
+          LINE_TOTAL="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='RoundingAmount'])" "$XML")"
+          LINE_TOTAL_CURRENCY="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='RoundingAmount']/@currencyID)" "$XML")"
+          test "$LINE_TAX_TOTAL_COUNT" = "1"
+          test "$LINE_VAT" = "15.00"
+          test "$LINE_VAT_CURRENCY" = "SAR"
+          test "$LINE_TOTAL" = "115.00"
+          test "$LINE_TOTAL_CURRENCY" = "SAR"
+          echo '[zatca38] BR-KSA-51/52/53 line VAT facts proved independently'
+
       - name: Prove Korvi bytes are already Canonical XML 1.1
         run: |
           xmllint --c14n11 "$RUNNER_TEMP/korvi-invoice.xml" > "$RUNNER_TEMP/xmllint-c14n11.xml"
