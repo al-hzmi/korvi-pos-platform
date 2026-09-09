@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - review/zatca-38-official-boundary
+      - review/zatca-38-clean-promotion
       - strike/5c-costing-authority
     paths:
       - packages/domain/src/zatca/phase2.ts
