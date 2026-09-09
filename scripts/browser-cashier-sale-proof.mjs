@@ -175,18 +175,30 @@ async function clickButton(text) {
   );
   const point = await pointForButton(text);
   await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: point.x,
+    y: point.y,
+    button: 'none',
+    buttons: 0,
+    pointerType: 'mouse',
+  });
+  await cdp.send('Input.dispatchMouseEvent', {
     type: 'mousePressed',
     x: point.x,
     y: point.y,
     button: 'left',
+    buttons: 1,
     clickCount: 1,
+    pointerType: 'mouse',
   });
   await cdp.send('Input.dispatchMouseEvent', {
     type: 'mouseReleased',
     x: point.x,
     y: point.y,
     button: 'left',
+    buttons: 0,
     clickCount: 1,
+    pointerType: 'mouse',
   });
 }
 
