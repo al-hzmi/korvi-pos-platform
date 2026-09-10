@@ -11,6 +11,7 @@ import {
 import { Libxml2ZatcaCanonicalizer } from '../apps/api/dist/zatca/libxml2-canonicalizer.js';
 import { createZatcaSimplifiedInvoiceSealer } from '../apps/api/dist/zatca/seal-simplified-invoice.js';
 
+// Compatibility harness only: all fiscal XML and stamp construction is delegated to production code.
 const [outputDirectory, privateKeyPath, leafDerPath, intermediateDerPath, rootDerPath] =
   process.argv.slice(2);
 if (
