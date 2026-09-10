@@ -68,6 +68,9 @@ jobs:
           test -s "$PROOF_DIR/sealed-invoice.xml"
           test -s "$PROOF_DIR/invoice-hash.raw"
           test -s "$PROOF_DIR/signature.der"
+          test -s "$PROOF_DIR/certificate-path-0.der"
+          test -s "$PROOF_DIR/certificate-path-1.der"
+          test -s "$PROOF_DIR/certificate-path-2.der"
 
       - name: Install native libxml2 proof authority
         shell: bash
@@ -111,7 +114,7 @@ jobs:
             "$PROOF_DIR/native-signed-properties.c14n.xml" \
             > "$PROOF_DIR/native-c14n.sha256"
 
-      - name: Independently bind XML, certificate path and QR tags 6-9
+      - name: Independently bind XML, verified leaf and QR tags 6-9
         shell: bash
         run: |
           set -euo pipefail
@@ -196,33 +199,37 @@ jobs:
                   raise SystemExit(f'QR tag {tag} diverges from signed artifact')
 
           certificates = root.findall('.//ds:X509Certificate', ns)
-          if len(certificates) < 2:
-              raise SystemExit('X509Data does not contain the certificate path')
-          for index, certificate in enumerate(certificates):
-              if not certificate.text:
-                  raise SystemExit('empty X509Certificate element')
-              (proof / f'certificate-{index}.der').write_bytes(
-                  base64.b64decode(certificate.text.strip(), validate=True)
+          if len(certificates) != 1:
+              raise SystemExit(
+                  f'Fatoora X509Data must contain exactly one signing certificate, got {len(certificates)}'
               )
+          certificate = certificates[0]
+          if not certificate.text:
+              raise SystemExit('empty X509Certificate element')
+          xml_leaf = base64.b64decode(certificate.text.strip(), validate=True)
+          verified_leaf = (proof / 'certificate-path-0.der').read_bytes()
+          if xml_leaf != verified_leaf:
+              raise SystemExit('XML signing certificate diverges from verified path leaf')
+          (proof / 'xml-signing-certificate.der').write_bytes(xml_leaf)
 
           (proof / 'parser-proof.txt').write_text(
               'xml_signature_der_binding=PASS\n'
               'signed_info_invoice_hash_binding=PASS\n'
               'qr_tags_1_9_unique=PASS\n'
               'qr_tags_6_9_binding=PASS\n'
-              'x509_path_extracted=PASS\n',
+              'x509_xml_leaf_matches_verified_path=PASS\n',
               encoding='utf-8',
           )
           PY
 
-      - name: Verify certificate path and Fatoora stamp with OpenSSL
+      - name: Verify full certificate path and Fatoora stamp with OpenSSL
         shell: bash
         run: |
           set -euo pipefail
-          for der in "$PROOF_DIR"/certificate-*.der; do
+          for der in "$PROOF_DIR"/certificate-path-*.der; do
             openssl x509 -inform DER -in "$der" -out "${der%.der}.pem"
           done
-          cert_count="$(find "$PROOF_DIR" -maxdepth 1 -name 'certificate-*.der' | wc -l)"
+          cert_count="$(find "$PROOF_DIR" -maxdepth 1 -name 'certificate-path-*.der' | wc -l)"
           if [ "$cert_count" -lt 2 ]; then
             echo 'Certificate path is incomplete.' >&2
             exit 1
@@ -230,14 +237,17 @@ jobs:
           root_index=$((cert_count - 1))
           if [ "$cert_count" -eq 2 ]; then
             openssl verify \
-              -CAfile "$PROOF_DIR/certificate-${root_index}.pem" \
-              "$PROOF_DIR/certificate-0.pem" | tee "$PROOF_DIR/openssl-chain.txt"
+              -CAfile "$PROOF_DIR/certificate-path-${root_index}.pem" \
+              "$PROOF_DIR/certificate-path-0.pem" | tee "$PROOF_DIR/openssl-chain.txt"
           else
-            cat "$PROOF_DIR"/certificate-{1..$((root_index - 1))}.pem > "$RUNNER_TEMP/intermediates.pem"
+            : > "$RUNNER_TEMP/intermediates.pem"
+            for ((index = 1; index < root_index; index++)); do
+              cat "$PROOF_DIR/certificate-path-${index}.pem" >> "$RUNNER_TEMP/intermediates.pem"
+            done
             openssl verify \
-              -CAfile "$PROOF_DIR/certificate-${root_index}.pem" \
+              -CAfile "$PROOF_DIR/certificate-path-${root_index}.pem" \
               -untrusted "$RUNNER_TEMP/intermediates.pem" \
-              "$PROOF_DIR/certificate-0.pem" | tee "$PROOF_DIR/openssl-chain.txt"
+              "$PROOF_DIR/certificate-path-0.pem" | tee "$PROOF_DIR/openssl-chain.txt"
           fi
           openssl dgst -sha256 \
             -verify "$PROOF_DIR/signing-public-key.pem" \
@@ -262,13 +272,15 @@ jobs:
             echo 'openssl_certificate_path=PASS'
             echo 'openssl_fatoora_invoice_hash_signature=PASS'
             echo 'independent_xml_qr_binding=PASS'
+            echo 'x509_xml_leaf_matches_verified_path=PASS'
             echo 'private_key_artifact_absent=PASS'
             echo 'authority=EPHEMERAL_TEST_PKI_NOT_ZATCA_ACCEPTANCE'
             cat "$PROOF_DIR/proof-generator.txt"
             cat "$PROOF_DIR/parser-proof.txt"
           } > "$PROOF_DIR/proof.txt"
           sha256sum "$PROOF_DIR/sealed-invoice.xml" > "$PROOF_DIR/sealed-invoice.sha256"
-          rm -f "$PROOF_DIR"/certificate-*.der "$PROOF_DIR"/certificate-*.pem
+          rm -f "$PROOF_DIR"/certificate-path-*.der "$PROOF_DIR"/certificate-path-*.pem
+          rm -f "$PROOF_DIR/xml-signing-certificate.der"
           cat "$PROOF_DIR/proof.txt"
 
       - name: Upload sanitized cryptographic proof
