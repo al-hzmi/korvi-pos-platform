@@ -6,10 +6,10 @@ import type { Money } from '../money/money.js';
 /**
  * ZATCA e-invoicing QR payload — TLV, then Base64.
  *
- * Phase 1 values (tags 1-5) are UTF-8 text. Phase 2 adds the exact public
- * cryptographic values produced by the Fatoora stamping profile. The TLV value
- * representation is explicit per tag so a valid-looking QR cannot silently
- * refer to different bytes than the XML cryptographic stamp.
+ * Phase 1 values (tags 1-5) are UTF-8 text. Tags 1-5 alone are NOT ZATCA Phase 2 compliance.
+ * Phase 2 carries tags 1-9 and adds the exact public cryptographic values produced by the Fatoora
+ * stamping profile. The TLV value representation is explicit per tag so a valid-looking QR cannot
+ * silently refer to different bytes than the XML cryptographic stamp.
  */
 export const ZATCA_TAG = {
   SELLER_NAME: 1,
