@@ -1,0 +1,104 @@
+name: ZATCA 39 QR Cryptographic Material Recovery 2
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/zatca-39-qr-crypto-material-recovery2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: review/zatca-39-csid-lifecycle
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Reapply reviewed correction and align architecture wording
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_workflow='.github/workflows/zatca-39-qr-crypto-material-remediation.yml'
+          patch_script="$RUNNER_TEMP/korvi-zatca-qr-remediation.mjs"
+          awk '
+            /node --input-type=module <<'"'"'NODE'"'"'/ { capture=1; next }
+            capture && /^          NODE$/ { exit }
+            capture { sub(/^          /, ""); print }
+          ' "$source_workflow" > "$patch_script"
+          test -s "$patch_script"
+          node "$patch_script"
+
+          sed -i '/^const DER_INTEGER = 0x02;$/d' packages/domain/src/zatca/x509.ts
+
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = 'packages/domain/src/zatca/tlv.ts';
+          const before = " * Tag 9 carries ZATCA technical CA's ECDSA signature in IEEE P1363 r || s form.";
+          const after = ' * Tag 9 carries the ZATCA technical CA signature in IEEE P1363 r || s form.';
+          const input = readFileSync(path, 'utf8');
+          const first = input.indexOf(before);
+          if (first < 0 || input.indexOf(before, first + before.length) >= 0) {
+            throw new Error('Expected exactly one Tag 9 architecture wording target.');
+          }
+          writeFileSync(path, input.slice(0, first) + after + input.slice(first + before.length));
+          NODE
+
+          npx prettier --write \
+            packages/domain/src/zatca/x509.ts \
+            packages/domain/src/zatca/__tests__/x509.test.ts \
+            packages/domain/src/zatca/tlv.ts \
+            packages/domain/src/zatca/__tests__/tlv.test.ts \
+            apps/api/src/zatca/seal-simplified-invoice.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
+
+      - name: Build domain for targeted proof
+        run: npm run build -w @korvi/domain
+
+      - name: Targeted QR cryptographic regression proof
+        run: |
+          npx vitest run \
+            packages/domain/src/zatca/__tests__/ecdsa.test.ts \
+            packages/domain/src/zatca/__tests__/x509.test.ts \
+            packages/domain/src/zatca/__tests__/tlv.test.ts \
+            packages/config/src/__tests__/zatca-architecture.test.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
+
+      - name: Full verify before commit
+        run: npm run verify
+
+      - name: Commit verified correction and remove helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm \
+            .github/workflows/zatca-39-qr-crypto-material-remediation.yml \
+            .github/workflows/zatca-39-qr-crypto-material-recovery.yml \
+            .github/workflows/zatca-39-qr-crypto-material-recovery2.yml
+          git add \
+            packages/domain/src/zatca/x509.ts \
+            packages/domain/src/zatca/__tests__/x509.test.ts \
+            packages/domain/src/zatca/tlv.ts \
+            packages/domain/src/zatca/__tests__/tlv.test.ts \
+            apps/api/src/zatca/seal-simplified-invoice.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(zatca): encode QR cryptographic material canonically'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
