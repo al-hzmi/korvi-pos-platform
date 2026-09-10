@@ -144,6 +144,7 @@ describe('ZATCA Compliance CSID provisioner', () => {
     const repository = new MemoryProvisioningRepository();
     const issue = vi.fn<ZatcaComplianceCsidIssuerPort['issue']>(async (request) => {
       expect(repository.attempt.state).toBe('in-flight');
+      expect(request.environment).toBe('sandbox');
       expect(request.expectedPublicKeySpkiDer).toEqual(publicKeySpkiDer);
       return {
         kind: 'issued',
