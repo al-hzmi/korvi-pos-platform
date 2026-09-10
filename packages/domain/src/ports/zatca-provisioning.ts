@@ -1,5 +1,6 @@
 import type { TenantScope } from './persistence.js';
 import type {
+  ZatcaCsidEnvironment,
   ZatcaCsidProvisioningAttempt,
   ZatcaInFlightCsidProvisioning,
   ZatcaIssuedCsidProvisioning,
@@ -70,6 +71,12 @@ export interface IssueZatcaComplianceCsidInput {
   readonly scope: TenantScope;
   readonly terminalId: string;
   readonly operationId: string;
+  /**
+   * Immutable environment from the durable provisioning attempt.
+   * The issuer MUST derive its fixed ZATCA origin from this value, never from
+   * ambient/global configuration that could drift from the persisted request.
+   */
+  readonly environment: ZatcaCsidEnvironment;
   /** DER PKCS#10 CSR. */
   readonly csrDer: Uint8Array;
   /** DER SubjectPublicKeyInfo for the exact non-exportable key that signed the CSR. */
@@ -101,8 +108,9 @@ export type ZatcaComplianceCsidIssueResult =
  * Server-only credential issuer boundary.
  *
  * A concrete adapter owns HTTPS, Basic/OTP headers and the raw ZATCA secret. It
- * MUST prove the issued certificate carries `expectedPublicKeySpkiDer` and store
- * that secret in an approved secret manager before returning. Neither callers nor
+ * MUST select a fixed allowlisted ZATCA origin from `input.environment`, prove
+ * the issued certificate carries `expectedPublicKeySpkiDer`, and store that
+ * secret in an approved secret manager before returning. Neither callers nor
  * PostgreSQL ever receive the plaintext secret.
  */
 export interface ZatcaComplianceCsidIssuerPort {
