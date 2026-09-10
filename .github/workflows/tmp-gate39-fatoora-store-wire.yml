@@ -1,0 +1,129 @@
+name: TEMP Gate39 Fatoora Store Wire
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - '.github/workflows/tmp-gate39-fatoora-store-wire.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: review/zatca-39-csid-lifecycle
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Wire Prisma model, export and proof invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          schema = Path('packages/database/prisma/schema.prisma')
+          text = schema.read_text()
+          tenant_old = '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n'
+          tenant_new = tenant_old + '  zatcaFatooraCredentials          ZatcaFatooraCredential[]\n'
+          if text.count(tenant_old) != 2:
+              raise SystemExit(f'expected tenant/terminal relation marker twice, got {text.count(tenant_old)}')
+          text = text.replace(tenant_old, tenant_new)
+          model = '''
+
+/// AES-256-GCM ciphertext for the Fatoora Basic-Authentication credential.
+/// Plaintext token/secret and encryption keys deliberately have no columns.
+model ZatcaFatooraCredential {
+  tenantId     String @db.Uuid
+  terminalId   String @db.Uuid
+  credentialId String
+  keyId        String
+  nonce        Bytes
+  ciphertext   Bytes
+  authTag      Bytes
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+
+  @@id([tenantId, terminalId, credentialId], map: "zatca_fatoora_credentials_pkey")
+  @@unique([tenantId, credentialId], map: "zatca_fatoora_credentials_tenantId_credentialId_key")
+  @@index([tenantId, terminalId], map: "zatca_fatoora_credentials_tenantId_terminalId_idx")
+  @@map("zatca_fatoora_credentials")
+}
+'''
+          if 'model ZatcaFatooraCredential {' in text:
+              raise SystemExit('Fatoora model already present')
+          text = text.rstrip() + model
+          schema.write_text(text)
+
+          index = Path('packages/database/src/index.ts')
+          text = index.read_text()
+          marker = "export { createZatcaCsidProvisioningRepository } from './zatca/csid-provisioning-repository.js';\n"
+          addition = marker + "export { createZatcaFatooraCredentialRepository } from './zatca/fatoora-credential-repository.js';\nexport type {\n  ZatcaFatooraCiphertextRecord,\n  ZatcaFatooraCredentialRepository,\n} from './zatca/fatoora-credential-repository.js';\n"
+          if text.count(marker) != 1:
+              raise SystemExit('database export marker missing')
+          index.write_text(text.replace(marker, addition))
+
+          workflow = Path('.github/workflows/zatca-39-csid-postgres-proof.yml')
+          text = workflow.read_text()
+          text = text.replace('Apply all thirteen migrations as application role', 'Apply all fourteen migrations as application role')
+          text = text.replace('if [ "$count" -ne 13 ]; then', 'if [ "$count" -ne 14 ]; then')
+          text = text.replace('Expected exactly 13 migrations, got $count', 'Expected exactly 14 migrations, got $count')
+          text = text.replace("test \"$ledger\" = '13|13'", "test \"$ledger\" = '14|14'")
+          old = '''          trigger_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_csid_provisioning_attempts'::regclass AND tgname='zatca_csid_provisioning_transition_guard' AND NOT tgisinternal")"
+          test "$trigger_count" = '1'
+          printf 'rls=%s\\npolicy_count=%s\\nforbidden_secret_columns=%s\\ntransition_guard=%s\\n' "$rls" "$policies" "$forbidden" "$trigger_count" | tee -a "$PROOF_LOG"
+'''
+          new = '''          trigger_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_csid_provisioning_attempts'::regclass AND tgname='zatca_csid_provisioning_transition_guard' AND NOT tgisinternal")"
+          test "$trigger_count" = '1'
+          vault_rls="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT relrowsecurity::text || '|' || relforcerowsecurity::text FROM pg_class WHERE oid='zatca_fatoora_credentials'::regclass")"
+          test "$vault_rls" = 'true|true'
+          vault_policies="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='zatca_fatoora_credentials' AND policyname='zatca_fatoora_credentials_isolation'")"
+          test "$vault_policies" = '1'
+          vault_forbidden="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_fatoora_credentials' AND lower(column_name) IN ('otp','secret','fatoorasecret','fatoorasecretplaintext','rawsecret','binarysecuritytoken')")"
+          test "$vault_forbidden" = '0'
+          vault_shape="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE column_name IN ('nonce','ciphertext','authTag','keyId'))::text || '|' || count(*)::text FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_fatoora_credentials')"
+          test "$vault_shape" = '4|9'
+          vault_guard="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_fatoora_credentials'::regclass AND tgname='zatca_fatoora_credential_identity_guard' AND NOT tgisinternal")"
+          test "$vault_guard" = '1'
+          printf 'rls=%s\\npolicy_count=%s\\nforbidden_secret_columns=%s\\ntransition_guard=%s\\nvault_rls=%s\\nvault_policy_count=%s\\nvault_forbidden_plaintext_columns=%s\\nvault_shape=%s\\nvault_identity_guard=%s\\n' "$rls" "$policies" "$forbidden" "$trigger_count" "$vault_rls" "$vault_policies" "$vault_forbidden" "$vault_shape" "$vault_guard" | tee -a "$PROOF_LOG"
+'''
+          if old not in text:
+              raise SystemExit('PostgreSQL proof marker missing')
+          workflow.write_text(text.replace(old, new))
+          PY
+          npx --no-install prisma format --schema packages/database/prisma/schema.prisma
+          npx --no-install prettier --write \
+            packages/database/src/index.ts \
+            packages/database/src/zatca/fatoora-credential-repository.ts \
+            apps/api/src/zatca/encrypted-fatoora-credential-store.ts \
+            apps/api/src/__tests__/zatca-encrypted-fatoora-credential-store.test.ts \
+            .github/workflows/zatca-39-csid-postgres-proof.yml
+      - name: Verify no stale migration-count assertions remain
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'exactly 13 migrations|13 migrations|thirteen migrations|13\|13' packages apps scripts .github/workflows --exclude='tmp-gate39-fatoora-store-wire.yml'; then
+            echo 'Stale 13-migration assertion remains.' >&2
+            exit 1
+          fi
+      - name: Commit wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-ci'
+          git config user.email 'korvi-ci@users.noreply.github.com'
+          git add packages/database/prisma/schema.prisma packages/database/src/index.ts packages/database/src/zatca/fatoora-credential-repository.ts apps/api/src/zatca/encrypted-fatoora-credential-store.ts apps/api/src/__tests__/zatca-encrypted-fatoora-credential-store.test.ts .github/workflows/zatca-39-csid-postgres-proof.yml
+          git diff --cached --check
+          git commit -m 'feat(zatca): wire encrypted Fatoora credential vault'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
