@@ -1,0 +1,151 @@
+name: Temporary Gate39 Leaf Profile Repair
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/tmp-gate39-leaf-profile-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/zatca-39-csid-lifecycle
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Apply leaf-only Fatoora serialization and proof repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path_name: str, old: str, new: str) -> None:
+              path = Path(path_name)
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path_name}: expected one replacement target, found {count}')
+              path.write_text(text.replace(old, new))
+
+          # Fatoora serializes only the signing certificate in ds:X509Data. The full
+          # path remains an input so the sealer can verify leaf -> intermediates -> pinned root.
+          replace_once(
+              'packages/domain/src/zatca/xades-envelope.ts',
+              """ * The certificate path is signing certificate first through the trust anchor.\n * No private key or FATOORA secret can enter this renderer.\n""",
+              """ * The caller supplies the already-verified certificate path with the signing leaf first.\n * Fatoora ds:X509Data serializes only that signing certificate; intermediates and the\n * pinned trust anchor remain trust-validation inputs and are never duplicated into XML.\n * No private key or FATOORA secret can enter this renderer.\n""",
+          )
+          replace_once(
+              'packages/domain/src/zatca/xades-envelope.ts',
+              """  const certificates = input.certificatePathDer.map((certificateDer) => {\n    if (certificateDer.length === 0) {\n      throw new ZatcaInvoiceError('ZATCA X509Data cannot contain an empty certificate.');\n    }\n    return `<ds:X509Certificate>${bytesToBase64(Uint8Array.from(certificateDer))}</ds:X509Certificate>`;\n  });\n""",
+              """  const signingCertificateDer = input.certificatePathDer[0];\n  if (signingCertificateDer === undefined || signingCertificateDer.length === 0) {\n    throw new ZatcaInvoiceError('ZATCA X509Data requires a non-empty signing certificate.');\n  }\n  const signingCertificate = `<ds:X509Certificate>${bytesToBase64(\n    Uint8Array.from(signingCertificateDer),\n  )}</ds:X509Certificate>`;\n""",
+          )
+          replace_once(
+              'packages/domain/src/zatca/xades-envelope.ts',
+              """    '<ds:KeyInfo><ds:X509Data>',\n    ...certificates,\n    '</ds:X509Data></ds:KeyInfo>',\n""",
+              """    '<ds:KeyInfo><ds:X509Data>',\n    signingCertificate,\n    '</ds:X509Data></ds:KeyInfo>',\n""",
+          )
+
+          replace_once(
+              'packages/domain/src/zatca/__tests__/xades-envelope.test.ts',
+              """  it('pins BR-KSA-28/29/30 identifiers and emits the whole certificate path in order', async () => {\n""",
+              """  it('pins BR-KSA-28/29/30 identifiers and serializes only the signing leaf in X509Data', async () => {\n""",
+          )
+          replace_once(
+              'packages/domain/src/zatca/__tests__/xades-envelope.test.ts',
+              """    expect(extension.match(/<ds:X509Certificate>/g)).toHaveLength(2);\n    expect(extension.indexOf('MAEB')).toBeLessThan(extension.indexOf('MAEC'));\n""",
+              """    expect(extension.match(/<ds:X509Certificate>/g)).toHaveLength(1);\n    expect(extension).toContain('<ds:X509Certificate>MAEB</ds:X509Certificate>');\n    expect(extension).not.toContain('MAEC');\n""",
+          )
+          replace_once(
+              'packages/domain/src/zatca/__tests__/xades-envelope.test.ts',
+              """    ).toThrow(/empty certificate/);\n""",
+              """    ).toThrow(/non-empty signing certificate/);\n""",
+          )
+
+          replace_once(
+              'packages/domain/src/zatca/__tests__/xades.test.ts',
+              """    expect(hashInput).toEndWith('                                </xades:SignedProperties>');\n""",
+              """    expect(hashInput.endsWith('                                </xades:SignedProperties>')).toBe(\n      true,\n    );\n""",
+          )
+
+          replace_once(
+              'packages/domain/src/zatca/tlv.ts',
+              """ * Tag 7 carries the UTF-8 Base64 text of the ASN.1 DER ECDSA signature.\n * Tags 8 and 9 carry DER bytes directly. No private-key material belongs here.\n""",
+              """ * Tag 7 carries the UTF-8 Base64 text of the ASN.1 DER ECDSA signature.\n * Tag 8 carries the EGS public-key DER and tag 9 carries the technical CA signature\n * over that public key for simplified invoices. No private-key material belongs here.\n""",
+          )
+
+          replace_once(
+              'apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts',
+              """  write('technical-ca-signature.der', result.technicalCaSignatureDer);\n""",
+              """  write('technical-ca-signature.der', result.technicalCaSignatureDer);\n  write('certificate-path-0.der', LEAF_DER);\n  write('certificate-path-1.der', INTERMEDIATE_DER);\n  write('certificate-path-2.der', ROOT_DER);\n""",
+          )
+          replace_once(
+              'apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts',
+              """    expect(result.xml).toContain('<xades:IssuerSerial>');\n    expect(result.xml).toContain('<cbc:ID>QR</cbc:ID>');\n""",
+              """    expect(result.xml).toContain('<xades:IssuerSerial>');\n    expect(result.xml.match(/<ds:X509Certificate>/g)).toHaveLength(1);\n    expect(result.xml).toContain(bytesToBase64(LEAF_DER));\n    expect(result.xml).not.toContain(bytesToBase64(INTERMEDIATE_DER));\n    expect(result.xml).not.toContain(bytesToBase64(ROOT_DER));\n    expect(result.xml).toContain('<cbc:ID>QR</cbc:ID>');\n""",
+          )
+
+          replace_once(
+              '.github/workflows/zatca-39-sealing-cryptographic-proof.yml',
+              """          test -s \"$PROOF_DIR/signature.der\"\n""",
+              """          test -s \"$PROOF_DIR/signature.der\"\n          test -s \"$PROOF_DIR/certificate-path-0.der\"\n          test -s \"$PROOF_DIR/certificate-path-1.der\"\n          test -s \"$PROOF_DIR/certificate-path-2.der\"\n""",
+          )
+          replace_once(
+              '.github/workflows/zatca-39-sealing-cryptographic-proof.yml',
+              """          certificates = root.findall('.//ds:X509Certificate', ns)\n          if len(certificates) < 2:\n              raise SystemExit('X509Data does not contain the certificate path')\n          for index, certificate in enumerate(certificates):\n              if not certificate.text:\n                  raise SystemExit('empty X509Certificate element')\n              (proof / f'certificate-{index}.der').write_bytes(\n                  base64.b64decode(certificate.text.strip(), validate=True)\n              )\n\n          (proof / 'parser-proof.txt').write_text(\n              'xml_signature_der_binding=PASS\\n'\n              'signed_info_invoice_hash_binding=PASS\\n'\n              'qr_tags_1_9_unique=PASS\\n'\n              'qr_tags_6_9_binding=PASS\\n'\n              'x509_path_extracted=PASS\\n',\n              encoding='utf-8',\n          )\n""",
+              """          certificates = root.findall('.//ds:X509Certificate', ns)\n          if len(certificates) != 1:\n              raise SystemExit(f'Fatoora X509Data must contain exactly one signing certificate, got {len(certificates)}')\n          certificate = certificates[0]\n          if not certificate.text:\n              raise SystemExit('empty X509Certificate element')\n          xml_leaf = base64.b64decode(certificate.text.strip(), validate=True)\n          verified_leaf = (proof / 'certificate-path-0.der').read_bytes()\n          if xml_leaf != verified_leaf:\n              raise SystemExit('XML signing certificate diverges from verified path leaf')\n          (proof / 'xml-signing-certificate.der').write_bytes(xml_leaf)\n\n          (proof / 'parser-proof.txt').write_text(\n              'xml_signature_der_binding=PASS\\n'\n              'signed_info_invoice_hash_binding=PASS\\n'\n              'qr_tags_1_9_unique=PASS\\n'\n              'qr_tags_6_9_binding=PASS\\n'\n              'x509_xml_leaf_matches_verified_path=PASS\\n',\n              encoding='utf-8',\n          )\n""",
+          )
+          replace_once(
+              '.github/workflows/zatca-39-sealing-cryptographic-proof.yml',
+              """          for der in \"$PROOF_DIR\"/certificate-*.der; do\n            openssl x509 -inform DER -in \"$der\" -out \"${der%.der}.pem\"\n          done\n          cert_count=\"$(find \"$PROOF_DIR\" -maxdepth 1 -name 'certificate-*.der' | wc -l)\"\n          if [ \"$cert_count\" -lt 2 ]; then\n            echo 'Certificate path is incomplete.' >&2\n            exit 1\n          fi\n          root_index=$((cert_count - 1))\n          if [ \"$cert_count\" -eq 2 ]; then\n            openssl verify \\\n              -CAfile \"$PROOF_DIR/certificate-${root_index}.pem\" \\\n              \"$PROOF_DIR/certificate-0.pem\" | tee \"$PROOF_DIR/openssl-chain.txt\"\n          else\n            cat \"$PROOF_DIR\"/certificate-{1..$((root_index - 1))}.pem > \"$RUNNER_TEMP/intermediates.pem\"\n            openssl verify \\\n              -CAfile \"$PROOF_DIR/certificate-${root_index}.pem\" \\\n              -untrusted \"$RUNNER_TEMP/intermediates.pem\" \\\n              \"$PROOF_DIR/certificate-0.pem\" | tee \"$PROOF_DIR/openssl-chain.txt\"\n          fi\n""",
+              """          for der in \"$PROOF_DIR\"/certificate-path-*.der; do\n            openssl x509 -inform DER -in \"$der\" -out \"${der%.der}.pem\"\n          done\n          cert_count=\"$(find \"$PROOF_DIR\" -maxdepth 1 -name 'certificate-path-*.der' | wc -l)\"\n          if [ \"$cert_count\" -lt 2 ]; then\n            echo 'Certificate path is incomplete.' >&2\n            exit 1\n          fi\n          root_index=$((cert_count - 1))\n          if [ \"$cert_count\" -eq 2 ]; then\n            openssl verify \\\n              -CAfile \"$PROOF_DIR/certificate-path-${root_index}.pem\" \\\n              \"$PROOF_DIR/certificate-path-0.pem\" | tee \"$PROOF_DIR/openssl-chain.txt\"\n          else\n            : > \"$RUNNER_TEMP/intermediates.pem\"\n            for ((index = 1; index < root_index; index++)); do\n              cat \"$PROOF_DIR/certificate-path-${index}.pem\" >> \"$RUNNER_TEMP/intermediates.pem\"\n            done\n            openssl verify \\\n              -CAfile \"$PROOF_DIR/certificate-path-${root_index}.pem\" \\\n              -untrusted \"$RUNNER_TEMP/intermediates.pem\" \\\n              \"$PROOF_DIR/certificate-path-0.pem\" | tee \"$PROOF_DIR/openssl-chain.txt\"\n          fi\n""",
+          )
+          replace_once(
+              '.github/workflows/zatca-39-sealing-cryptographic-proof.yml',
+              """            echo 'independent_xml_qr_binding=PASS'\n            echo 'private_key_artifact_absent=PASS'\n""",
+              """            echo 'independent_xml_qr_binding=PASS'\n            echo 'x509_xml_leaf_matches_verified_path=PASS'\n            echo 'private_key_artifact_absent=PASS'\n""",
+          )
+          replace_once(
+              '.github/workflows/zatca-39-sealing-cryptographic-proof.yml',
+              """          rm -f \"$PROOF_DIR\"/certificate-*.der \"$PROOF_DIR\"/certificate-*.pem\n""",
+              """          rm -f \"$PROOF_DIR\"/certificate-path-*.der \"$PROOF_DIR\"/certificate-path-*.pem\n          rm -f \"$PROOF_DIR/xml-signing-certificate.der\"\n""",
+          )
+          PY
+
+          npx prettier@3.9.6 --write \
+            packages/domain/src/zatca/xades-envelope.ts \
+            packages/domain/src/zatca/__tests__/xades-envelope.test.ts \
+            packages/domain/src/zatca/__tests__/xades.test.ts \
+            packages/domain/src/zatca/tlv.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts \
+            .github/workflows/zatca-39-sealing-cryptographic-proof.yml
+          git diff --check
+
+      - name: Commit repairs
+        run: |
+          git add \
+            packages/domain/src/zatca/xades-envelope.ts \
+            packages/domain/src/zatca/__tests__/xades-envelope.test.ts \
+            packages/domain/src/zatca/__tests__/xades.test.ts \
+            packages/domain/src/zatca/tlv.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts \
+            .github/workflows/zatca-39-sealing-cryptographic-proof.yml
+          git config user.name 'korvi-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'fix(zatca): serialize signing leaf and preserve chain proof'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
