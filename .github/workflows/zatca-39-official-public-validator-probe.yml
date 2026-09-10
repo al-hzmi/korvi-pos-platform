@@ -1,4 +1,5 @@
 name: ZATCA 39 Official Public Validator Probe
+# Gate 39 exact-HEAD proof trigger: QR cryptographic material remediation.
 
 on:
   push:
