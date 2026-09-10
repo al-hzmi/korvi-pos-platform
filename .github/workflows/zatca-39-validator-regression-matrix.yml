@@ -1,4 +1,4 @@
-name: ZATCA 39 Official Validator Regression Matrix
+name: ZATCA 39 Official Validator Issuer Probe
 
 on:
   push:
@@ -12,32 +12,35 @@ permissions:
 
 jobs:
   probe:
-    name: Validator ${{ matrix.label }}
+    name: Validator issuer-order-24962
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: baseline-78d620
-            sha: 78d620081115e0500c027be93a8174026bb6882a
-          - label: signedinfo-d02b855
-            sha: d02b855b47e72f02b68400ddb8d7ddaa850fe9c2
-          - label: xmlsig-tag6-f8497b
-            sha: f8497b02616ad5bcb19843455b0afc3f1da447aa
-          - label: qr789-55c691
-            sha: 55c69121af6342104fd99c1ca32ad21f352445ce
     env:
       PROOF_DIR: /tmp/korvi-zatca-validator-proof
       SECRET_DIR: /tmp/korvi-zatca-validator-pki
       ZATCA_PORTAL_ORIGIN: https://sandbox.zatca.gov.sa
 
     steps:
-      - name: Check out candidate
+      - name: Check out validator-proven profile
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ matrix.sha }}
+          ref: 24962c97a020236112b2e0c4505feb49ace5ba72
           fetch-depth: 1
+
+      - name: Apply issuer serialization candidate only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/api/src/zatca/certificate-path-validator.ts')
+          text = path.read_text()
+          before = "return [...components].reverse().join(', ');"
+          after = "return components.join(', ');"
+          if text.count(before) != 1:
+              raise SystemExit('issuer-order target is not unique')
+          path.write_text(text.replace(before, after))
+          PY
 
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
@@ -79,13 +82,13 @@ jobs:
           EOF
           openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/root.key.pem"
           openssl req -new -x509 -key "$SECRET_DIR/root.key.pem" -sha256 -days 3650 \
-            -subj '/CN=Korvi Validator Matrix Root/O=Korvi Test/C=SA' \
+            -subj '/CN=Korvi Validator Issuer Root/O=Korvi Test/C=SA' \
             -addext 'basicConstraints=critical,CA:TRUE' \
             -addext 'keyUsage=critical,keyCertSign,cRLSign' \
             -out "$SECRET_DIR/root.cert.pem"
           openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/intermediate.key.pem"
           openssl req -new -key "$SECRET_DIR/intermediate.key.pem" \
-            -subj '/CN=Korvi Validator Matrix Intermediate/O=Korvi Test/C=SA' \
+            -subj '/CN=Korvi Validator Issuer Intermediate/O=Korvi Test/C=SA' \
             -out "$SECRET_DIR/intermediate.csr.pem"
           openssl x509 -req -in "$SECRET_DIR/intermediate.csr.pem" \
             -CA "$SECRET_DIR/root.cert.pem" -CAkey "$SECRET_DIR/root.key.pem" -CAcreateserial \
@@ -93,7 +96,7 @@ jobs:
             -out "$SECRET_DIR/intermediate.cert.pem"
           openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/leaf.key.pem"
           openssl req -new -key "$SECRET_DIR/leaf.key.pem" \
-            -subj '/CN=Korvi Validator Matrix EGS/O=Korvi Test/C=SA' \
+            -subj '/CN=Korvi Validator Issuer EGS/O=Korvi Test/C=SA' \
             -out "$SECRET_DIR/leaf.csr.pem"
           openssl x509 -req -in "$SECRET_DIR/leaf.csr.pem" \
             -CA "$SECRET_DIR/intermediate.cert.pem" -CAkey "$SECRET_DIR/intermediate.key.pem" -CAcreateserial \
@@ -138,7 +141,6 @@ jobs:
             --data-binary @"$RUNNER_TEMP/sealed-invoice.b64" \
             --output "$PROOF_DIR/response.json" --write-out '%{http_code}' "$url")"
           test "$code" = 200
-          echo "candidate=${{ matrix.label }} sha=${{ matrix.sha }}"
           python3 -m json.tool "$PROOF_DIR/response.json"
 
       - name: Destroy ephemeral secrets
@@ -156,7 +158,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: validator-matrix-${{ matrix.label }}
+          name: validator-issuer-order-24962
           path: /tmp/korvi-zatca-validator-proof/response.json
           if-no-files-found: error
           retention-days: 7
