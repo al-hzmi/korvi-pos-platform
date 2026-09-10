@@ -38,7 +38,7 @@ function algorithm(identifier: Uint8Array): Uint8Array {
   return der(0x30, oid(identifier));
 }
 
-function spki(curve = OID_SECP256K1, pointFill = 0x11): Uint8Array {
+function spki(curve: Uint8Array = OID_SECP256K1, pointFill = 0x11): Uint8Array {
   const point = new Uint8Array(65).fill(pointFill);
   point[0] = 0x04;
   return der(
