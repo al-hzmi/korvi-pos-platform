@@ -19,13 +19,23 @@ const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_TIMEOUT_MS = 60_000;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 
+const requestIdSchema = z.union([
+  z
+    .string()
+    .min(1)
+    .max(500)
+    .refine((value) => value === value.trim()),
+  z.number().int().nonnegative().safe(),
+]);
 const successResponseSchema = z
   .object({
-    requestID: z.union([z.string().min(1).max(500), z.number().int().nonnegative()]),
+    requestID: requestIdSchema,
     binarySecurityToken: z.string().min(1).max(32_768),
     secret: z.string().min(1).max(8_192),
   })
   .passthrough();
+
+class ResponseLimitError extends Error {}
 
 export interface ZatcaFatooraCredentialStoreInput {
   readonly scope: TenantScope;
@@ -106,39 +116,40 @@ export function createZatcaComplianceCsidHttpIssuer(
           signal: controller.signal,
         });
       } catch {
-        return { kind: 'uncertain', reason: 'transport' };
-      } finally {
         clearTimeout(timer);
+        return { kind: 'uncertain', reason: 'transport' };
       }
 
       if (!response.ok) {
+        clearTimeout(timer);
         if (isDefiniteClientRejection(response.status)) {
           return { kind: 'rejected', rejectionCode: `HTTP_${response.status}` };
         }
         return { kind: 'uncertain', reason: 'transport' };
       }
 
-      let payload: z.infer<typeof successResponseSchema>;
+      let bytes: Uint8Array;
       try {
-        const bytes = await readBoundedResponse(response, maxResponseBytes);
-        const parsed = successResponseSchema.safeParse(JSON.parse(new TextDecoder().decode(bytes)));
-        if (!parsed.success) {
-          return { kind: 'uncertain', reason: 'response-invalid' };
-        }
-        payload = parsed.data;
-      } catch {
-        return { kind: 'uncertain', reason: 'response-invalid' };
+        bytes = await readBoundedResponse(response, maxResponseBytes);
+      } catch (error) {
+        clearTimeout(timer);
+        return error instanceof ResponseLimitError
+          ? { kind: 'uncertain', reason: 'response-invalid' }
+          : { kind: 'uncertain', reason: 'transport' };
       }
+      clearTimeout(timer);
+
+      const parsedJson = parseJson(bytes);
+      if (parsedJson === null) return { kind: 'uncertain', reason: 'response-invalid' };
+      const parsed = successResponseSchema.safeParse(parsedJson);
+      if (!parsed.success) return { kind: 'uncertain', reason: 'response-invalid' };
+      const payload = parsed.data;
 
       let certificateDer: Uint8Array;
       try {
         certificateDer = decodeBinarySecurityTokenCertificate(payload.binarySecurityToken);
         const certificate = extractZatcaSigningCertificateMaterial(certificateDer);
-        assertSameBytes(
-          certificate.signingPublicKeySpkiDer,
-          input.expectedPublicKeySpkiDer,
-          'issued certificate key mismatch',
-        );
+        assertSameBytes(certificate.signingPublicKeySpkiDer, input.expectedPublicKeySpkiDer);
       } catch {
         return { kind: 'uncertain', reason: 'response-invalid' };
       }
@@ -185,7 +196,7 @@ async function readBoundedResponse(response: Response, maxBytes: number): Promis
   if (declared !== null) {
     const length = Number(declared);
     if (!Number.isSafeInteger(length) || length < 0 || length > maxBytes) {
-      throw new Error('response too large');
+      throw new ResponseLimitError('response too large');
     }
   }
   if (response.body === null) throw new Error('missing response body');
@@ -200,7 +211,7 @@ async function readBoundedResponse(response: Response, maxBytes: number): Promis
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel();
-        throw new Error('response too large');
+        throw new ResponseLimitError('response too large');
       }
       chunks.push(Uint8Array.from(value));
     }
@@ -215,6 +226,14 @@ async function readBoundedResponse(response: Response, maxBytes: number): Promis
     offset += chunk.byteLength;
   }
   return result;
+}
+
+function parseJson(bytes: Uint8Array): unknown | null {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function decodeBinarySecurityTokenCertificate(token: string): Uint8Array {
@@ -258,7 +277,7 @@ function isDefiniteClientRejection(status: number): boolean {
   return status >= 400 && status < 500 && ![408, 425, 429].includes(status);
 }
 
-function assertSameBytes(left: Uint8Array, right: Uint8Array, _message: string): void {
+function assertSameBytes(left: Uint8Array, right: Uint8Array): void {
   if (left.length !== right.length || !timingSafeEqual(Buffer.from(left), Buffer.from(right))) {
     throw new Error('certificate key mismatch');
   }
