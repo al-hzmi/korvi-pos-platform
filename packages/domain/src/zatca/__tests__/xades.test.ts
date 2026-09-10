@@ -7,10 +7,12 @@ import {
   ZATCA_INVOICE_REFERENCE_ID,
   ZATCA_INVOICE_REFERENCE_TRANSFORMS,
   ZATCA_SIGNED_PROPERTIES_ID,
+  ZATCA_XADES_NAMESPACE,
   ZATCA_XADES_SIGNED_PROPERTIES_TYPE,
   ZATCA_XPATH_ALGORITHM,
   hashZatcaSignedPropertiesProfile,
   renderZatcaSignedInfoXml,
+  renderZatcaSignedPropertiesHashInputXml,
   renderZatcaSignedPropertiesXml,
   zatcaCertificateDigestValue,
 } from '../xades.js';
@@ -25,7 +27,7 @@ function digestHex(fill: number): string {
 }
 
 describe('ZATCA Fatoora SignedInfo structure', () => {
-  it('pins algorithms, references and the required digest representations', () => {
+  it('pins algorithms, references and the two distinct Fatoora digest representations', () => {
     const xml = renderZatcaSignedInfoXml({
       invoiceDigest: digest(1),
       signedPropertiesDigestHex: digestHex(2),
@@ -48,7 +50,7 @@ describe('ZATCA Fatoora SignedInfo structure', () => {
       '<ds:DigestValue>AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=</ds:DigestValue>',
     );
     expect(xml).toContain(
-      '<ds:DigestValue>AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=</ds:DigestValue>',
+      '<ds:DigestValue>MDIwMjAyMDIwMjAyMDIwMjAyMDIwMjAyMDIwMjAyMDIwMjAyMDIwMjAyMDIwMjAyMDIwMjAyMDIwMjAyMDIwMg==</ds:DigestValue>',
     );
   });
 
@@ -98,27 +100,25 @@ describe('ZATCA Fatoora SignedProperties', () => {
   const signingCertificateDer = Uint8Array.from([0x30, 0x01, 0x01]);
   const issuerName = 'CN=TSZEINVOICE-SubCA-1, DC=extgazt, DC=gov, DC=local';
   const serialNumber = '123456789';
+  const input = {
+    signingTime: '2026-09-10T00:00:00Z',
+    signingCertificateDer,
+    issuerName,
+    serialNumber,
+  } as const;
 
-  it('uses SigningCertificate plus DER-derived issuer identity fields, never V2', async () => {
-    const xml = await renderZatcaSignedPropertiesXml({
-      signingTime: '2026-09-10T00:00:00Z',
-      signingCertificateDer,
-      issuerName,
-      serialNumber,
-    });
+  it('embeds SigningCertificate plus DER-derived identity and never V2', async () => {
+    const xml = await renderZatcaSignedPropertiesXml(input);
 
     expect(xml).toContain(`<xades:SignedProperties Id="${ZATCA_SIGNED_PROPERTIES_ID}">`);
+    expect(xml).not.toContain('xmlns:xades=');
     expect(xml).toContain('<xades:SigningTime>2026-09-10T00:00:00Z</xades:SigningTime>');
     expect(xml).toContain('<xades:SigningCertificate>');
     expect(xml).not.toContain('SigningCertificateV2');
-    expect(xml).toContain(
-      `<ds:X509IssuerName xmlns:ds="${XMLDSIG_NAMESPACE}">${issuerName}</ds:X509IssuerName>`,
-    );
-    expect(xml).toContain(
-      `<ds:X509SerialNumber xmlns:ds="${XMLDSIG_NAMESPACE}">${serialNumber}</ds:X509SerialNumber>`,
-    );
+    expect(xml).toContain(`<ds:X509IssuerName>${issuerName}</ds:X509IssuerName>`);
+    expect(xml).toContain(`<ds:X509SerialNumber>${serialNumber}</ds:X509SerialNumber>`);
+    expect(xml).not.toContain('xmlns:ds=');
     expect(xml.match(/<xades:Cert>/g)).toHaveLength(1);
-    expect(xml.match(new RegExp(XMLDSIG_SHA256_ALGORITHM, 'g'))).toHaveLength(1);
   });
 
   it('uses the Fatoora certificate-hash representation: Base64 of lower-case SHA256 hex text', async () => {
@@ -127,59 +127,53 @@ describe('ZATCA Fatoora SignedProperties', () => {
     );
   });
 
-  it('linearizes inter-element formatting before hashing SignedProperties', async () => {
-    const xml = await renderZatcaSignedPropertiesXml({
-      signingTime: '2026-09-10T00:00:00Z',
-      signingCertificateDer,
-      issuerName,
-      serialNumber,
-    });
-    const minified = xml.replace(/>\s+</g, '><');
-    const [prettyHash, minifiedHash] = await Promise.all([
-      hashZatcaSignedPropertiesProfile(xml),
-      hashZatcaSignedPropertiesProfile(minified),
-    ]);
-    expect(prettyHash).toBe(minifiedHash);
-    expect(prettyHash).toMatch(/^[0-9a-f]{64}$/);
+  it('renders and hashes the byte-exact compatibility template rather than canonicalizing embedded XML', async () => {
+    const hashInput = await renderZatcaSignedPropertiesHashInputXml(input);
+    expect(hashInput).toContain(
+      `<xades:SignedProperties xmlns:xades="${ZATCA_XADES_NAMESPACE}" Id="${ZATCA_SIGNED_PROPERTIES_ID}">`,
+    );
+    expect(hashInput).toContain(
+      `<ds:DigestMethod xmlns:ds="${XMLDSIG_NAMESPACE}" Algorithm="${XMLDSIG_SHA256_ALGORITHM}"/>`,
+    );
+    expect(hashInput).toContain(
+      `                                                    <ds:X509IssuerName xmlns:ds="${XMLDSIG_NAMESPACE}">${issuerName}</ds:X509IssuerName>`,
+    );
+    expect(hashInput).toEndWith('                                </xades:SignedProperties>');
+    await expect(hashZatcaSignedPropertiesProfile(hashInput)).resolves.toBe(
+      '26588d49a6e236c6ef5b6effacc38548164124337fb2b14e65c5c47e095cba54',
+    );
+
+    const whitespaceMutated = hashInput.replace(
+      '                                    <xades:SignedSignatureProperties>',
+      '                                   <xades:SignedSignatureProperties>',
+    );
+    await expect(hashZatcaSignedPropertiesProfile(whitespaceMutated)).resolves.not.toBe(
+      '26588d49a6e236c6ef5b6effacc38548164124337fb2b14e65c5c47e095cba54',
+    );
+  });
+
+  it('refuses hashing the embedded representation to prevent accidental profile drift', async () => {
+    const embedded = await renderZatcaSignedPropertiesXml(input);
+    await expect(hashZatcaSignedPropertiesProfile(embedded)).rejects.toThrow(/hash input/);
   });
 
   it('fails closed on missing certificate identity material', async () => {
     await expect(
-      renderZatcaSignedPropertiesXml({
-        signingTime: '2026-09-10T00:00:00Z',
-        signingCertificateDer: new Uint8Array(0),
-        issuerName,
-        serialNumber,
-      }),
+      renderZatcaSignedPropertiesXml({ ...input, signingCertificateDer: new Uint8Array(0) }),
     ).rejects.toThrow(/SigningCertificate requires/);
-    await expect(
-      renderZatcaSignedPropertiesXml({
-        signingTime: '2026-09-10T00:00:00Z',
-        signingCertificateDer,
-        issuerName: '   ',
-        serialNumber,
-      }),
-    ).rejects.toThrow(/X509IssuerName/);
-    await expect(
-      renderZatcaSignedPropertiesXml({
-        signingTime: '2026-09-10T00:00:00Z',
-        signingCertificateDer,
-        issuerName,
-        serialNumber: '0',
-      }),
-    ).rejects.toThrow(/positive decimal/);
+    await expect(renderZatcaSignedPropertiesXml({ ...input, issuerName: '   ' })).rejects.toThrow(
+      /X509IssuerName/,
+    );
+    await expect(renderZatcaSignedPropertiesXml({ ...input, serialNumber: '0' })).rejects.toThrow(
+      /positive decimal/,
+    );
   });
 
   it('refuses non-UTC and impossible signing instants instead of normalizing them', async () => {
     for (const signingTime of ['2026-09-10T03:00:00+03:00', '2026-02-30T00:00:00Z']) {
-      await expect(
-        renderZatcaSignedPropertiesXml({
-          signingTime,
-          signingCertificateDer,
-          issuerName,
-          serialNumber,
-        }),
-      ).rejects.toThrow(ZatcaInvoiceError);
+      await expect(renderZatcaSignedPropertiesXml({ ...input, signingTime })).rejects.toThrow(
+        ZatcaInvoiceError,
+      );
     }
   });
 });
