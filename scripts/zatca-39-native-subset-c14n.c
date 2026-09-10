@@ -100,8 +100,7 @@ int main(int argc, char **argv) {
 
   xmlInitParser();
   xmlDocPtr document = xmlReadFile(
-      argv[1], NULL,
-      XML_PARSE_NONET | XML_PARSE_NOERROR | XML_PARSE_NOWARNING | XML_PARSE_NOBLANKS);
+      argv[1], NULL, XML_PARSE_NONET | XML_PARSE_NOERROR | XML_PARSE_NOWARNING);
   if (document == NULL) {
     fprintf(stderr, "native libxml2 failed to parse sealed invoice\n");
     xmlCleanupParser();
