@@ -36,7 +36,8 @@ const keyDescription: ZatcaSigningKeyDescription = {
 };
 
 async function sha256Base64(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const ownedBytes = Uint8Array.from(bytes);
+  const digest = await crypto.subtle.digest('SHA-256', ownedBytes);
   return bytesToBase64(new Uint8Array(digest));
 }
 
