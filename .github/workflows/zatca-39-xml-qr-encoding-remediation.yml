@@ -43,6 +43,15 @@ jobs:
             writeFileSync(path, input.slice(0, first) + after + input.slice(first + before.length));
           }
 
+          function replaceExactly(path, before, after, expectedCount) {
+            const input = readFileSync(path, 'utf8');
+            const count = input.split(before).length - 1;
+            if (count !== expectedCount) {
+              throw new Error(`Expected ${expectedCount} correction targets in ${path}, got ${count}`);
+            }
+            writeFileSync(path, input.split(before).join(after));
+          }
+
           const envelope = 'packages/domain/src/zatca/xades-envelope.ts';
           const envelopeTest = 'packages/domain/src/zatca/__tests__/xades-envelope.test.ts';
           const tlv = 'packages/domain/src/zatca/tlv.ts';
@@ -81,15 +90,11 @@ jobs:
             `  /** Exact Base64 of the canonical DER ECDSA stamp written into XML and QR tag 7. */\n  readonly signatureValueBase64: string;`,
             `  /** Base64 of XMLDSIG's fixed-width secp256k1 r || s SignatureValue. */\n  readonly signatureValueBase64: string;`,
           );
-          replaceExactlyOnce(
+          replaceExactly(
             sealer,
             `          certificatePathDer,\n          signatureValueBase64: '',\n        }),`,
             `          certificatePathDer,\n        }),`,
-          );
-          replaceExactlyOnce(
-            sealer,
-            `          certificatePathDer,\n          signatureValueBase64: '',\n        }),`,
-            `          certificatePathDer,\n        }),`,
+            2,
           );
           replaceExactlyOnce(
             sealer,
@@ -129,12 +134,7 @@ jobs:
             `const signedPropertiesDigestHex = '02'.repeat(32);`,
             `const signedPropertiesDigestHex = '02'.repeat(32);\nconst signatureValue = new Uint8Array(64);\nsignatureValue[31] = 1;\nsignatureValue[63] = 2;`,
           );
-          const oldSig = "signatureValueBase64: 'AQIDBA=='";
-          let envelopeText = readFileSync(envelopeTest, 'utf8');
-          const count = envelopeText.split(oldSig).length - 1;
-          if (count !== 4) throw new Error(`Expected four envelope SignatureValue fixtures, got ${count}`);
-          envelopeText = envelopeText.split(oldSig).join('signatureValue');
-          writeFileSync(envelopeTest, envelopeText);
+          replaceExactly(envelopeTest, "signatureValueBase64: 'AQIDBA=='", 'signatureValue', 4);
           replaceExactlyOnce(
             envelopeTest,
             `    expect(() => renderZatcaQrDocumentReference('not base64')).toThrow(/Base64/);`,
@@ -163,8 +163,8 @@ jobs:
           );
           replaceExactlyOnce(
             sealerTest,
-            `    expect(new TextDecoder().decode(tlv.get(6))).toBe(result.invoiceHashBase64);`,
-            `    expect(tlv.get(6)).toEqual(result.invoiceHash);`,
+            `    expect(new TextDecoder().decode(tlv.get(6))).toBe(result.invoiceHashBase64);\n    expect(new TextDecoder().decode(tlv.get(7))).toBe(result.signatureValueBase64);`,
+            `    expect(tlv.get(6)).toEqual(result.invoiceHash);\n    expect(new TextDecoder().decode(tlv.get(7))).toBe(bytesToBase64(signatureDer));\n    expect(new TextDecoder().decode(tlv.get(7))).not.toBe(result.signatureValueBase64);`,
           );
 
           NODE
