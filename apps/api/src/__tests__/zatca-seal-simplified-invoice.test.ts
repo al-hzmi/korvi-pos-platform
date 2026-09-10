@@ -6,9 +6,9 @@ import {
   createSign,
   type KeyObject,
 } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   VAT_STANDARD_BP,
@@ -220,14 +220,20 @@ function utcSecond(milliseconds: number): string {
 
 function certificateInstant(value: string): number {
   const milliseconds = Date.parse(value);
-  if (!Number.isFinite(milliseconds)) {
-    throw new Error('OpenSSL produced an invalid certificate time.');
-  }
+  if (!Number.isFinite(milliseconds)) throw new Error('OpenSSL produced an invalid certificate time.');
   return milliseconds;
 }
 
 function decimalSerial(certificate: X509Certificate): string {
   return BigInt(`0x${certificate.serialNumber}`).toString(10);
+}
+
+function normalizeIssuer(value: string): string {
+  return value
+    .split(/\r?\n|,\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join(', ');
 }
 
 const TEST_PKI = generateEphemeralTestPki();
@@ -277,17 +283,17 @@ function csid(overrides: Partial<ZatcaCsidBinding> = {}): ZatcaCsidBinding {
     certificatePath: [
       {
         certificateDer: Uint8Array.from(LEAF_DER),
-        issuerName: TEST_PKI.leafCertificate.issuer,
+        issuerName: normalizeIssuer(TEST_PKI.leafCertificate.issuer),
         serialNumber: decimalSerial(TEST_PKI.leafCertificate),
       },
       {
         certificateDer: Uint8Array.from(INTERMEDIATE_DER),
-        issuerName: TEST_PKI.intermediateCertificate.issuer,
+        issuerName: normalizeIssuer(TEST_PKI.intermediateCertificate.issuer),
         serialNumber: decimalSerial(TEST_PKI.intermediateCertificate),
       },
       {
         certificateDer: Uint8Array.from(ROOT_DER),
-        issuerName: TEST_PKI.rootCertificate.issuer,
+        issuerName: normalizeIssuer(TEST_PKI.rootCertificate.issuer),
         serialNumber: decimalSerial(TEST_PKI.rootCertificate),
       },
     ],
@@ -401,7 +407,7 @@ function signingPort(options: { corruptSignature?: boolean; publicKey?: Uint8Arr
       return {
         handle: KEY,
         publicKeySpkiDer: Uint8Array.from(options.publicKey ?? SPKI_DER),
-        createdAt: '2026-09-01T00:00:00Z',
+        createdAt: STATUS_CHECKED_AT,
       };
     },
     async createPkcs10Csr() {
@@ -422,21 +428,59 @@ function decodeTlv(base64: string): Map<number, Uint8Array> {
     if (tag === undefined || length === undefined || offset + 2 + length > bytes.length) {
       throw new Error('invalid test TLV');
     }
+    if (fields.has(tag)) throw new Error(`duplicate test TLV tag ${String(tag)}`);
     fields.set(tag, Uint8Array.from(bytes.subarray(offset + 2, offset + 2 + length)));
     offset += 2 + length;
   }
   return fields;
 }
 
+async function writeSafeProofArtifacts(
+  result: Awaited<ReturnType<ReturnType<typeof createZatcaSimplifiedInvoiceSealer>['seal']>>,
+  canonicalizer: Libxml2ZatcaCanonicalizer,
+): Promise<void> {
+  const configured = process.env.KORVI_ZATCA_PROOF_DIR;
+  if (configured === undefined || configured.trim() === '') return;
+
+  const directory = resolve(configured);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const write = (name: string, value: string | Uint8Array): void => {
+    writeFileSync(join(directory, name), value, { mode: 0o600 });
+  };
+
+  write('sealed-invoice.xml', result.xml);
+  write('invoice-hash.raw', result.invoiceHash);
+  write('signature.der', Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64')));
+  write('signing-public-key.spki.der', result.signingPublicKeySpkiDer);
+  write('technical-ca-signature.der', result.technicalCaSignatureDer);
+  write(
+    'signing-public-key.pem',
+    TEST_PKI.leafCertificate.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  );
+  write('production-invoice-reference.c14n.xml', await canonicalizer.canonicalizeInvoiceReference(result.xml));
+  write('production-signed-info.c14n.xml', await canonicalizer.canonicalizeSignedInfo(result.xml));
+  write('production-signed-properties.c14n.xml', await canonicalizer.canonicalizeSignedProperties(result.xml));
+  write(
+    'proof-generator.txt',
+    [
+      `invoice_hash_base64=${result.invoiceHashBase64}`,
+      `signature_value_base64=${result.signatureValueBase64}`,
+      `qr_base64_characters=${String(result.qrCodeBase64.length)}`,
+      `trust_anchor_sha256=${result.trustAnchorSha256Hex}`,
+      'private_key_artifact=ABSENT',
+      '',
+    ].join('\n'),
+  );
+}
+
 describe('ZATCA simplified invoice sealing authority', () => {
-  it('seals from one immutable source, self-verifies, and binds QR tags 6-9 to the signature', async () => {
+  it('seals the Fatoora profile and binds the exact invoice hash/signature into QR 6-9', async () => {
     const signing = signingPort();
+    const canonicalizer = new Libxml2ZatcaCanonicalizer();
     const sealer = createZatcaSimplifiedInvoiceSealer({
-      canonicalizer: new Libxml2ZatcaCanonicalizer(),
+      canonicalizer,
       signingKey: signing.port,
       trustedAnchorSha256Hex: [ROOT_SHA256],
-      signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-      signaturePolicyDigest: new Uint8Array(32).fill(7),
     });
 
     const result = await sealer.seal({
@@ -448,19 +492,30 @@ describe('ZATCA simplified invoice sealing authority', () => {
     });
 
     expect(signing.signSha256).toHaveBeenCalledTimes(1);
+    const call = signing.signSha256.mock.calls[0]?.[0];
+    expect(call?.message).toEqual(result.invoiceHash);
+    expect(call?.message).toHaveLength(32);
+
+    const signatureDer = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));
+    expect(signatureDer[0]).toBe(0x30);
+    expect(ecdsaDerToXmlDsigSignature(signatureDer)).toHaveLength(64);
     expect(result.xml).toContain(
       `<ds:SignatureValue>${result.signatureValueBase64}</ds:SignatureValue>`,
     );
+    expect(result.xml).toContain('<xades:SigningCertificate>');
+    expect(result.xml).not.toContain('SigningCertificateV2');
+    expect(result.xml).toContain('<xades:IssuerSerial>');
     expect(result.xml).toContain('<cbc:ID>QR</cbc:ID>');
-    expect(result.xml).toContain('urn:oasis:names:specification:ubl:signature:Invoice');
     expect(result.invoiceHashBase64).toBe(bytesToBase64(result.invoiceHash));
     expect(result.trustAnchorSha256Hex).toBe(ROOT_SHA256);
 
     const tlv = decodeTlv(result.qrCodeBase64);
-    expect(tlv.get(6)).toEqual(result.invoiceHash);
+    expect(new TextDecoder().decode(tlv.get(6))).toBe(result.invoiceHashBase64);
     expect(new TextDecoder().decode(tlv.get(7))).toBe(result.signatureValueBase64);
     expect(tlv.get(8)).toEqual(result.signingPublicKeySpkiDer);
     expect(tlv.get(9)).toEqual(result.technicalCaSignatureDer);
+
+    await writeSafeProofArtifacts(result, canonicalizer);
   });
 
   it('fails closed before signing when the trust anchor is not pinned', async () => {
@@ -469,8 +524,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
       trustedAnchorSha256Hex: ['0'.repeat(64)],
-      signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-      signaturePolicyDigest: new Uint8Array(32).fill(7),
     });
 
     await expect(
@@ -485,7 +538,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
     expect(signing.signSha256).not.toHaveBeenCalled();
   });
 
-  it('fails closed if stored and provider SPKI agree with each other but not with the certificate DER', async () => {
+  it('fails closed if stored and provider SPKI agree with each other but not with certificate DER', async () => {
     const forgedSpki = Uint8Array.from(SPKI_DER);
     forgedSpki[forgedSpki.length - 1] ^= 1;
     const signing = signingPort({ publicKey: forgedSpki });
@@ -493,8 +546,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
       trustedAnchorSha256Hex: [ROOT_SHA256],
-      signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-      signaturePolicyDigest: new Uint8Array(32).fill(7),
     });
 
     await expect(
@@ -515,8 +566,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
       trustedAnchorSha256Hex: [ROOT_SHA256],
-      signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-      signaturePolicyDigest: new Uint8Array(32).fill(7),
     });
 
     await expect(
@@ -531,14 +580,12 @@ describe('ZATCA simplified invoice sealing authority', () => {
     expect(signing.signSha256).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects cross-tenant authority and a SigningTime before invoice issuance before HSM use', async () => {
+  it('rejects cross-tenant authority and pre-invoice SigningTime before HSM use', async () => {
     const signing = signingPort();
     const sealer = createZatcaSimplifiedInvoiceSealer({
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
       trustedAnchorSha256Hex: [ROOT_SHA256],
-      signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-      signaturePolicyDigest: new Uint8Array(32).fill(7),
     });
 
     await expect(
