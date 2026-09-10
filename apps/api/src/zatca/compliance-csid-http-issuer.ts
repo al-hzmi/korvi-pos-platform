@@ -235,9 +235,10 @@ function decodeBinarySecurityTokenCertificate(token: string): Uint8Array {
 }
 
 function decodeCertificatePem(pem: string): Uint8Array {
-  const match = /^-----BEGIN CERTIFICATE-----\s+([A-Za-z0-9+/=\r\n]+)\s+-----END CERTIFICATE-----$/.exec(
-    pem.trim(),
-  );
+  const match =
+    /^-----BEGIN CERTIFICATE-----\s+([A-Za-z0-9+/=\r\n]+)\s+-----END CERTIFICATE-----$/.exec(
+      pem.trim(),
+    );
   if (match?.[1] === undefined) throw new Error('invalid certificate PEM');
   return decodeBase64Strict(match[1].replace(/\s+/g, ''));
 }

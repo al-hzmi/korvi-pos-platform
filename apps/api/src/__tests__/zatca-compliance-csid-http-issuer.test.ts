@@ -20,9 +20,8 @@ const OTHER_LEAF_DER = Buffer.from(
   'base64',
 );
 
-const expectedPublicKeySpkiDer = extractZatcaSigningCertificateMaterial(
-  LEAF_DER,
-).signingPublicKeySpkiDer;
+const expectedPublicKeySpkiDer =
+  extractZatcaSigningCertificateMaterial(LEAF_DER).signingPublicKeySpkiDer;
 const rawSecret = 'raw-fatoora-secret-never-return';
 const token = LEAF_DER.toString('base64');
 
@@ -59,7 +58,9 @@ function credentialStore() {
 }
 
 function fetchMock(response: Response | (() => Promise<Response>)) {
-  return vi.fn(async () => (response instanceof Response ? response : response())) as unknown as typeof fetch;
+  return vi.fn(async () =>
+    response instanceof Response ? response : response(),
+  ) as unknown as typeof fetch;
 }
 
 describe('ZATCA Compliance CSID HTTPS issuer', () => {
