@@ -9,6 +9,10 @@ on:
       - 'packages/database/src/**'
       - 'packages/domain/src/zatca/csid-provisioning.ts'
       - 'packages/domain/src/ports/zatca-provisioning.ts'
+      - 'apps/api/src/zatca/provision-compliance-csid.ts'
+      - 'apps/api/src/zatca/compliance-csid-http-issuer.ts'
+      - 'apps/api/src/__tests__/zatca-provision-compliance-csid.test.ts'
+      - 'apps/api/src/__tests__/zatca-compliance-csid-http-issuer.test.ts'
       - '.github/workflows/zatca-39-csid-postgres-proof.yml'
   workflow_dispatch:
 
