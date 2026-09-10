@@ -116,3 +116,30 @@ export type ZatcaComplianceCsidIssueResult =
 export interface ZatcaComplianceCsidIssuerPort {
   issue(input: IssueZatcaComplianceCsidInput): Promise<ZatcaComplianceCsidIssueResult>;
 }
+
+export interface IssueZatcaProductionCsidInput {
+  readonly scope: TenantScope;
+  readonly terminalId: string;
+  readonly operationId: string;
+  readonly environment: ZatcaCsidEnvironment;
+  /** Durable request id issued with the Compliance CSID and proven eligible by compliance evidence. */
+  readonly complianceRequestId: string;
+  /** Opaque locator for the current Compliance CSID authentication bundle. */
+  readonly currentComplianceSecret: ZatcaFatooraSecretHandle;
+  /** DER SubjectPublicKeyInfo of the non-exportable EGS key the Production CSID must bind to. */
+  readonly expectedPublicKeySpkiDer: Uint8Array;
+}
+
+export type ZatcaProductionCsidIssueResult = ZatcaComplianceCsidIssueResult;
+
+/**
+ * Server-only Production CSID issuer boundary.
+ *
+ * Implementations MUST authenticate with the current Compliance CSID + secret,
+ * perform exactly one POST to the fixed environment endpoint, bind the returned
+ * X.509 certificate to `expectedPublicKeySpkiDer`, and commit the new Fatoora
+ * secret before returning only its opaque handle.
+ */
+export interface ZatcaProductionCsidIssuerPort {
+  issue(input: IssueZatcaProductionCsidInput): Promise<ZatcaProductionCsidIssueResult>;
+}

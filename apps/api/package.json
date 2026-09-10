@@ -15,7 +15,7 @@
     "@korvi/domain": "*",
     "fastify": "5.12.3",
     "libxml2-wasm": "0.7.2",
-    "zod": "4.6.1"
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "tsx": "4.23.13"
