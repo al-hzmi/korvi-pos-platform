@@ -29,7 +29,7 @@ const encoder = new TextEncoder();
 export interface ZatcaSignedInfoInput {
   /** Raw SHA-256 digest of the transformed/canonical invoice from Gate 38. */
   readonly invoiceDigest: Uint8Array;
-  /** Lower-case SHA-256 hex over the exact Fatoora SignedProperties profile bytes. */
+  /** Lower-case SHA-256 hex over the linearized Fatoora SignedProperties block. */
   readonly signedPropertiesDigestHex: string;
 }
 
@@ -44,7 +44,7 @@ export interface ZatcaSignedInfoInput {
  */
 export function renderZatcaSignedInfoXml(input: ZatcaSignedInfoInput): string {
   const invoiceDigest = sha256DigestBase64(input.invoiceDigest, 'invoice');
-  const signedPropertiesDigest = sha256HexBase64(
+  const signedPropertiesDigest = sha256HexAsDigestBase64(
     input.signedPropertiesDigestHex,
     'SignedProperties',
   );
@@ -88,14 +88,10 @@ export interface ZatcaSignedPropertiesInput {
  * Render the SignedProperties shape accepted by the current Fatoora validator.
  *
  * This deliberately uses XAdES `SigningCertificate` + `IssuerSerial`. ZATCA's
- * public validator currently rejects `SigningCertificateV2` in the invoice XSD,
- * while the detailed signing guide populates these exact v1.3.2 elements. The
- * certificate digest follows Fatoora's profile: SHA-256 of the certificate's
+ * public validator rejects `SigningCertificateV2` in the invoice XSD, while the
+ * detailed signing guide populates these exact v1.3.2 elements. The certificate
+ * digest follows Fatoora's profile: SHA-256 of the certificate's unwrapped
  * Base64 text -> lower-case hexadecimal -> Base64 of that hexadecimal text.
- *
- * Whitespace is part of the Fatoora SignedProperties hashing profile. Keep this
- * renderer deterministic and hash the returned string directly with
- * `hashZatcaSignedPropertiesProfile` before placing its digest in SignedInfo.
  */
 export async function renderZatcaSignedPropertiesXml(
   input: ZatcaSignedPropertiesInput,
@@ -136,14 +132,18 @@ export async function renderZatcaSignedPropertiesXml(
 }
 
 /**
- * Fatoora SignedProperties digest: SHA-256 over the exact UTF-8 profile string.
- * The raw digest is represented as lower-case hex before that text is Base64 encoded.
+ * Fatoora Step 5 SignedProperties hash.
+ *
+ * The guide requires the populated block to be linearized and formatting spaces
+ * removed before SHA-256. We remove only inter-element formatting whitespace;
+ * text-node spaces such as those inside X509IssuerName remain cryptographic data.
  */
 export async function hashZatcaSignedPropertiesProfile(xml: string): Promise<string> {
   if (!xml.startsWith(`<xades:SignedProperties Id="${ZATCA_SIGNED_PROPERTIES_ID}">`)) {
     throw new ZatcaInvoiceError('ZATCA SignedProperties profile input is not the generated fragment.');
   }
-  return bytesToHex(await sha256(encoder.encode(xml)));
+  const linearized = xml.replace(/>\s+</g, '><');
+  return bytesToHex(await sha256(encoder.encode(linearized)));
 }
 
 /**
@@ -168,11 +168,15 @@ function sha256DigestBase64(bytes: Uint8Array, label: string): string {
   return bytesToBase64(Uint8Array.from(bytes));
 }
 
-function sha256HexBase64(hex: string, label: string): string {
+function sha256HexAsDigestBase64(hex: string, label: string): string {
   if (!SHA256_HEX.test(hex)) {
     throw new ZatcaInvoiceError(`ZATCA ${label} SHA-256 digest must be lower-case 64-character hex.`);
   }
-  return bytesToBase64(encoder.encode(hex));
+  const bytes = new Uint8Array(SHA256_BYTES);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytesToBase64(bytes);
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
