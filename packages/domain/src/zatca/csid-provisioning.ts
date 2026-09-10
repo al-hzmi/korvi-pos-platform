@@ -8,11 +8,7 @@ const UTC_SECOND = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 export type ZatcaCsidEnvironment = 'sandbox' | 'simulation' | 'production';
 export type ZatcaCsidProvisioningState =
-  | 'prepared'
-  | 'in-flight'
-  | 'issued'
-  | 'rejected'
-  | 'uncertain';
+  'prepared' | 'in-flight' | 'issued' | 'rejected' | 'uncertain';
 
 export class ZatcaCsidProvisioningError extends DomainError {
   public override readonly name = 'ZatcaCsidProvisioningError';
