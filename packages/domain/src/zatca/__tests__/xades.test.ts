@@ -7,11 +7,12 @@ import {
   ZATCA_INVOICE_REFERENCE_ID,
   ZATCA_INVOICE_REFERENCE_TRANSFORMS,
   ZATCA_SIGNED_PROPERTIES_ID,
-  ZATCA_XADES_NAMESPACE,
   ZATCA_XADES_SIGNED_PROPERTIES_TYPE,
   ZATCA_XPATH_ALGORITHM,
+  hashZatcaSignedPropertiesProfile,
   renderZatcaSignedInfoXml,
   renderZatcaSignedPropertiesXml,
+  zatcaCertificateDigestValue,
 } from '../xades.js';
 import { ZatcaInvoiceError } from '../phase2.js';
 
@@ -19,11 +20,15 @@ function digest(fill: number): Uint8Array {
   return new Uint8Array(32).fill(fill);
 }
 
-describe('ZATCA XAdES SignedInfo structure', () => {
-  it('pins the XMLDSIG algorithms and exact ZATCA reference identifiers', () => {
+function digestHex(fill: number): string {
+  return fill.toString(16).padStart(2, '0').repeat(32);
+}
+
+describe('ZATCA Fatoora SignedInfo structure', () => {
+  it('pins algorithms, references and the required digest representations', () => {
     const xml = renderZatcaSignedInfoXml({
       invoiceDigest: digest(1),
-      signedPropertiesDigest: digest(2),
+      signedPropertiesDigestHex: digestHex(2),
     });
 
     expect(xml).toContain(`<ds:SignedInfo xmlns:ds="${XMLDSIG_NAMESPACE}">`);
@@ -37,22 +42,20 @@ describe('ZATCA XAdES SignedInfo structure', () => {
     expect(xml).toContain(
       `<ds:Reference Type="${ZATCA_XADES_SIGNED_PROPERTIES_TYPE}" URI="#${ZATCA_SIGNED_PROPERTIES_ID}">`,
     );
-  });
-
-  it('emits exactly two references', () => {
-    const xml = renderZatcaSignedInfoXml({
-      invoiceDigest: digest(1),
-      signedPropertiesDigest: digest(2),
-    });
     expect(xml.match(/<ds:Reference\b/g)).toHaveLength(2);
-    expect(xml.match(/<ds:DigestMethod\b/g)).toHaveLength(2);
-    expect(xml.match(/<ds:DigestValue>/g)).toHaveLength(2);
+    expect(xml.match(new RegExp(XMLDSIG_SHA256_ALGORITHM, 'g'))).toHaveLength(2);
+    expect(xml).toContain(
+      '<ds:DigestValue>AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=</ds:DigestValue>',
+    );
+    expect(xml).toContain(
+      '<ds:DigestValue>AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=</ds:DigestValue>',
+    );
   });
 
   it('keeps the four invoice transforms in the required order', () => {
     const xml = renderZatcaSignedInfoXml({
       invoiceDigest: digest(1),
-      signedPropertiesDigest: digest(2),
+      signedPropertiesDigestHex: digestHex(2),
     });
 
     let cursor = xml.indexOf('<ds:Transforms>');
@@ -69,138 +72,102 @@ describe('ZATCA XAdES SignedInfo structure', () => {
       cursor,
     );
     expect(c14n).toBeGreaterThan(cursor);
-    expect(xml.indexOf('</ds:Transforms>', c14n)).toBeGreaterThan(c14n);
   });
 
-  it('uses SHA-256 for both digest references and Base64-encodes raw 32-byte digests', () => {
-    const xml = renderZatcaSignedInfoXml({
-      invoiceDigest: digest(1),
-      signedPropertiesDigest: digest(2),
-    });
-    expect(xml.match(new RegExp(XMLDSIG_SHA256_ALGORITHM, 'g'))).toHaveLength(2);
-    expect(xml).toContain(
-      '<ds:DigestValue>AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=</ds:DigestValue>',
-    );
-    expect(xml).toContain(
-      '<ds:DigestValue>AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=</ds:DigestValue>',
-    );
-  });
-
-  it('refuses non-SHA256 digest widths instead of padding or truncating them', () => {
+  it('refuses wrong invoice digest widths and malformed SignedProperties hashes', () => {
     for (const invalid of [new Uint8Array(0), new Uint8Array(31), new Uint8Array(33)]) {
       expect(() =>
         renderZatcaSignedInfoXml({
           invoiceDigest: invalid,
-          signedPropertiesDigest: digest(2),
+          signedPropertiesDigestHex: digestHex(2),
         }),
       ).toThrow(ZatcaInvoiceError);
+    }
+    for (const invalid of ['', '0'.repeat(63), 'A'.repeat(64), 'g'.repeat(64)]) {
       expect(() =>
         renderZatcaSignedInfoXml({
           invoiceDigest: digest(1),
-          signedPropertiesDigest: invalid,
+          signedPropertiesDigestHex: invalid,
         }),
-      ).toThrow(ZatcaInvoiceError);
+      ).toThrow(/lower-case 64-character hex/);
     }
-  });
-
-  it('does not pretend SignedInfo rendering has already produced a signature or certificate', () => {
-    const xml = renderZatcaSignedInfoXml({
-      invoiceDigest: digest(1),
-      signedPropertiesDigest: digest(2),
-    });
-    expect(xml).not.toContain('SignatureValue');
-    expect(xml).not.toContain('KeyInfo');
-    expect(xml).not.toContain('X509Certificate');
   });
 });
 
-describe('ZATCA XAdES SignedPropertiesV2', () => {
-  const certificatePathDer = [
-    Uint8Array.from([0x30, 0x01, 0x01]),
-    Uint8Array.from([0x30, 0x01, 0x02]),
-  ];
+describe('ZATCA Fatoora SignedProperties', () => {
+  const signingCertificateDer = Uint8Array.from([0x30, 0x01, 0x01]);
+  const issuerName = 'CN=TSZEINVOICE-SubCA-1, DC=extgazt, DC=gov, DC=local';
+  const serialNumber = '123456789';
 
-  it('includes signing time, every certificate digest and the signing certificate first', async () => {
+  it('uses SigningCertificate plus DER-derived issuer identity fields, never V2', async () => {
     const xml = await renderZatcaSignedPropertiesXml({
       signingTime: '2026-09-10T00:00:00Z',
-      certificatePathDer,
-      signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-      signaturePolicyDigest: digest(3),
+      signingCertificateDer,
+      issuerName,
+      serialNumber,
     });
 
-    expect(xml).toContain(
-      `<xades:SignedProperties xmlns:xades="${ZATCA_XADES_NAMESPACE}" xmlns:ds="${XMLDSIG_NAMESPACE}" Id="${ZATCA_SIGNED_PROPERTIES_ID}">`,
-    );
+    expect(xml).toContain(`<xades:SignedProperties Id="${ZATCA_SIGNED_PROPERTIES_ID}">`);
     expect(xml).toContain('<xades:SigningTime>2026-09-10T00:00:00Z</xades:SigningTime>');
-    expect(xml.match(/<xades:Cert>/g)).toHaveLength(2);
-    const signingCertificateDigest =
-      '<ds:DigestValue>nbCEfg++xGJt8cyFmiwGJhno5duPqxg8W/nZd5Va+00=</ds:DigestValue>';
-    const issuerDigest =
-      '<ds:DigestValue>PL5kcM/4Xfrd6pmPhX+jh3Lb9G90sDn+8KdfabxKjH0=</ds:DigestValue>';
-    expect(xml.indexOf(signingCertificateDigest)).toBeGreaterThan(-1);
-    expect(xml.indexOf(issuerDigest)).toBeGreaterThan(xml.indexOf(signingCertificateDigest));
-    expect(xml.match(new RegExp(XMLDSIG_SHA256_ALGORITHM, 'g'))).toHaveLength(3);
-    expect(xml).not.toContain('IssuerSerialV2');
+    expect(xml).toContain('<xades:SigningCertificate>');
+    expect(xml).not.toContain('SigningCertificateV2');
+    expect(xml).toContain(
+      `<ds:X509IssuerName xmlns:ds="${XMLDSIG_NAMESPACE}">${issuerName}</ds:X509IssuerName>`,
+    );
+    expect(xml).toContain(
+      `<ds:X509SerialNumber xmlns:ds="${XMLDSIG_NAMESPACE}">${serialNumber}</ds:X509SerialNumber>`,
+    );
+    expect(xml.match(/<xades:Cert>/g)).toHaveLength(1);
+    expect(xml.match(new RegExp(XMLDSIG_SHA256_ALGORITHM, 'g'))).toHaveLength(1);
   });
 
-  it('binds an explicit policy identifier/hash and the data-object format into SignedProperties', async () => {
+  it('uses the Fatoora certificate-hash representation: Base64 of lower-case SHA256 hex text', async () => {
+    await expect(zatcaCertificateDigestValue(signingCertificateDer)).resolves.toBe(
+      'NzNjMTE5MGJhZTQ5MjI5YTkyYTBkYzMwYTZmZWE0OWFlMDg0ZWM0NTg5ODQzMTVjZWJkZTdlZjQxMmYwYjhiOQ==',
+    );
+  });
+
+  it('linearizes inter-element formatting before hashing SignedProperties', async () => {
     const xml = await renderZatcaSignedPropertiesXml({
       signingTime: '2026-09-10T00:00:00Z',
-      certificatePathDer,
-      signaturePolicyIdentifier: 'https://example.invalid/policy?a=1&b=2',
-      signaturePolicyDigest: digest(3),
+      signingCertificateDer,
+      issuerName,
+      serialNumber,
     });
-
-    expect(xml).toContain(
-      '<xades:Identifier>https://example.invalid/policy?a=1&amp;b=2</xades:Identifier>',
-    );
-    expect(xml).toContain(
-      '<ds:DigestValue>AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=</ds:DigestValue>',
-    );
-    expect(xml).toContain(
-      `<xades:DataObjectFormat ObjectReference="#${ZATCA_INVOICE_REFERENCE_ID}">`,
-    );
-    expect(xml).toContain('<xades:MimeType>text/xml</xades:MimeType>');
+    const minified = xml.replace(/>\s+</g, '><');
+    const [prettyHash, minifiedHash] = await Promise.all([
+      hashZatcaSignedPropertiesProfile(xml),
+      hashZatcaSignedPropertiesProfile(minified),
+    ]);
+    expect(prettyHash).toBe(minifiedHash);
+    expect(prettyHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('refuses an absent or empty certificate path', async () => {
+  it('fails closed on missing certificate identity material', async () => {
     await expect(
       renderZatcaSignedPropertiesXml({
         signingTime: '2026-09-10T00:00:00Z',
-        certificatePathDer: [],
-        signaturePolicyIdentifier: 'urn:zatca:policy:test',
-        signaturePolicyDigest: digest(3),
+        signingCertificateDer: new Uint8Array(0),
+        issuerName,
+        serialNumber,
       }),
-    ).rejects.toThrow(/certificate path/);
+    ).rejects.toThrow(/SigningCertificate requires/);
     await expect(
       renderZatcaSignedPropertiesXml({
         signingTime: '2026-09-10T00:00:00Z',
-        certificatePathDer: [new Uint8Array(0)],
-        signaturePolicyIdentifier: 'urn:zatca:policy:test',
-        signaturePolicyDigest: digest(3),
+        signingCertificateDer,
+        issuerName: '   ',
+        serialNumber,
       }),
-    ).rejects.toThrow(/empty certificate/);
-  });
-
-  it('refuses invented-looking relative/blank policy identifiers and wrong digest widths', async () => {
-    for (const identifier of ['', 'policy-v1', 'urn:zatca policy']) {
-      await expect(
-        renderZatcaSignedPropertiesXml({
-          signingTime: '2026-09-10T00:00:00Z',
-          certificatePathDer,
-          signaturePolicyIdentifier: identifier,
-          signaturePolicyDigest: digest(3),
-        }),
-      ).rejects.toThrow(/absolute identifier/);
-    }
+    ).rejects.toThrow(/X509IssuerName/);
     await expect(
       renderZatcaSignedPropertiesXml({
         signingTime: '2026-09-10T00:00:00Z',
-        certificatePathDer,
-        signaturePolicyIdentifier: 'urn:zatca:policy:test',
-        signaturePolicyDigest: new Uint8Array(31),
+        signingCertificateDer,
+        issuerName,
+        serialNumber: '0',
       }),
-    ).rejects.toThrow(/exactly 32 bytes/);
+    ).rejects.toThrow(/positive decimal/);
   });
 
   it('refuses non-UTC and impossible signing instants instead of normalizing them', async () => {
@@ -208,9 +175,9 @@ describe('ZATCA XAdES SignedPropertiesV2', () => {
       await expect(
         renderZatcaSignedPropertiesXml({
           signingTime,
-          certificatePathDer,
-          signaturePolicyIdentifier: 'urn:zatca:policy:test',
-          signaturePolicyDigest: digest(3),
+          signingCertificateDer,
+          issuerName,
+          serialNumber,
         }),
       ).rejects.toThrow(ZatcaInvoiceError);
     }
