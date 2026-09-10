@@ -6,7 +6,6 @@ import {
   VAT_STANDARD_BP,
   ZATCA_SIGNING_ALGORITHM,
   ZATCA_SIGNING_CURVE,
-  bytesToBase64,
   ecdsaDerToXmlDsigSignature,
   tenantId,
   xmlDsigEcdsaSignatureToDer,
