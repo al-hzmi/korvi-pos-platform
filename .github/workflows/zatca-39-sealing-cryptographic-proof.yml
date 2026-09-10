@@ -1,0 +1,292 @@
+name: ZATCA 39 Sealing Cryptographic Proof
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+      - strike/5c-costing-authority
+    paths:
+      - packages/domain/src/ports/zatca.ts
+      - packages/domain/src/zatca/**
+      - apps/api/src/zatca/**
+      - apps/api/package.json
+      - package-lock.json
+      - scripts/zatca-39-sealing-proof.mjs
+      - scripts/zatca-39-native-subset-c14n.c
+      - .github/workflows/zatca-39-sealing-cryptographic-proof.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sealed-invoice-proof:
+    name: Native C14N / OpenSSL / QR binding proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PROOF_DIR: artifacts/zatca-39-sealing
+      SECRET_DIR: ${{ runner.temp }}/zatca-39-ephemeral-pki
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Verify dependency and security policy
+        run: |
+          npm run versions:verify
+          npm run audit
+          npm run format:check
+          npm run lint
+          bash scripts/check-invariants.sh
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+
+      - name: Build production sealing dependency chain
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+          npm run build -w @korvi/api
+
+      - name: Install native libxml2 proof authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROOF_DIR" "$SECRET_DIR"
+          chmod 700 "$PROOF_DIR" "$SECRET_DIR"
+          sudo apt-get update -qq
+          candidate="$(apt-cache policy libxml2-dev | awk '/Candidate:/ {print $2}')"
+          if [ -z "$candidate" ] || [ "$candidate" = '(none)' ]; then
+            echo 'No libxml2-dev candidate is available.' >&2
+            exit 1
+          fi
+          sudo apt-get install -y --no-install-recommends "libxml2-dev=$candidate"
+          printf 'libxml2-dev=%s\n' "$candidate" > "$PROOF_DIR/native-version.txt"
+          printf 'openssl=%s\n' "$(openssl version)" >> "$PROOF_DIR/native-version.txt"
+          printf 'pkg-config-libxml2=%s\n' "$(pkg-config --modversion libxml-2.0)" >> "$PROOF_DIR/native-version.txt"
+
+      - name: Generate ephemeral secp256k1 certificate path
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > "$SECRET_DIR/intermediate.ext" <<'EOF'
+          basicConstraints=critical,CA:TRUE,pathlen:0
+          keyUsage=critical,keyCertSign,cRLSign
+          subjectKeyIdentifier=hash
+          authorityKeyIdentifier=keyid,issuer
+          EOF
+          cat > "$SECRET_DIR/leaf.ext" <<'EOF'
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature
+          subjectKeyIdentifier=hash
+          authorityKeyIdentifier=keyid,issuer
+          EOF
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/root.key.pem"
+          openssl req -new -x509 -key "$SECRET_DIR/root.key.pem" -sha256 -days 3650 \
+            -subj '/CN=Korvi Gate39 Proof Root/O=Korvi Test/C=SA' \
+            -addext 'basicConstraints=critical,CA:TRUE' \
+            -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+            -out "$SECRET_DIR/root.cert.pem"
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/intermediate.key.pem"
+          openssl req -new -key "$SECRET_DIR/intermediate.key.pem" \
+            -subj '/CN=Korvi Gate39 Proof Intermediate/O=Korvi Test/C=SA' \
+            -out "$SECRET_DIR/intermediate.csr.pem"
+          openssl x509 -req -in "$SECRET_DIR/intermediate.csr.pem" \
+            -CA "$SECRET_DIR/root.cert.pem" -CAkey "$SECRET_DIR/root.key.pem" -CAcreateserial \
+            -sha256 -days 2000 -extfile "$SECRET_DIR/intermediate.ext" \
+            -out "$SECRET_DIR/intermediate.cert.pem"
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/leaf.key.pem"
+          openssl req -new -key "$SECRET_DIR/leaf.key.pem" \
+            -subj '/CN=Korvi Gate39 Proof EGS/O=Korvi Test/C=SA' \
+            -out "$SECRET_DIR/leaf.csr.pem"
+          openssl x509 -req -in "$SECRET_DIR/leaf.csr.pem" \
+            -CA "$SECRET_DIR/intermediate.cert.pem" -CAkey "$SECRET_DIR/intermediate.key.pem" -CAcreateserial \
+            -sha256 -days 1000 -extfile "$SECRET_DIR/leaf.ext" \
+            -out "$SECRET_DIR/leaf.cert.pem"
+          for name in root intermediate leaf; do
+            openssl x509 -in "$SECRET_DIR/$name.cert.pem" -outform DER -out "$SECRET_DIR/$name.cert.der"
+          done
+
+      - name: Generate sealed invoice through production authority
+        run: |
+          node scripts/zatca-39-sealing-proof.mjs \
+            "$PROOF_DIR" \
+            "$SECRET_DIR/leaf.key.pem" \
+            "$SECRET_DIR/leaf.cert.der" \
+            "$SECRET_DIR/intermediate.cert.der" \
+            "$SECRET_DIR/root.cert.der"
+
+      - name: Build native final-context C14N oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror \
+            scripts/zatca-39-native-subset-c14n.c \
+            $(pkg-config --cflags --libs libxml-2.0) \
+            -o "$RUNNER_TEMP/zatca39-native-subset-c14n"
+          for target in invoice signed-info signed-properties; do
+            "$RUNNER_TEMP/zatca39-native-subset-c14n" \
+              "$PROOF_DIR/sealed-invoice.xml" "$target" \
+              "$PROOF_DIR/native-$target.c14n.xml"
+          done
+
+      - name: Prove production and native C14N bytes match
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp --silent "$PROOF_DIR/production-invoice-reference.c14n.xml" "$PROOF_DIR/native-invoice.c14n.xml"
+          cmp --silent "$PROOF_DIR/production-signed-info.c14n.xml" "$PROOF_DIR/native-signed-info.c14n.xml"
+          cmp --silent "$PROOF_DIR/production-signed-properties.c14n.xml" "$PROOF_DIR/native-signed-properties.c14n.xml"
+          sha256sum \
+            "$PROOF_DIR/native-invoice.c14n.xml" \
+            "$PROOF_DIR/native-signed-info.c14n.xml" \
+            "$PROOF_DIR/native-signed-properties.c14n.xml" \
+            > "$PROOF_DIR/native-c14n.sha256"
+
+      - name: Verify certificate chain and XMLDSIG signature with OpenSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          openssl verify \
+            -CAfile "$SECRET_DIR/root.cert.pem" \
+            -untrusted "$SECRET_DIR/intermediate.cert.pem" \
+            "$SECRET_DIR/leaf.cert.pem" | tee "$PROOF_DIR/openssl-chain.txt"
+          openssl dgst -sha256 \
+            -verify "$PROOF_DIR/signing-public-key.pem" \
+            -signature "$PROOF_DIR/signature.der" \
+            "$PROOF_DIR/native-signed-info.c14n.xml" | tee "$PROOF_DIR/openssl-signature.txt"
+          grep -Fxq 'Verified OK' "$PROOF_DIR/openssl-signature.txt"
+
+      - name: Independently bind XML and QR tags 6-9
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$PROOF_DIR" <<'PY'
+          import base64
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          proof = pathlib.Path(sys.argv[1])
+          root = ET.parse(proof / 'sealed-invoice.xml').getroot()
+          ns = {
+              'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2',
+              'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
+              'ds': 'http://www.w3.org/2000/09/xmldsig#',
+          }
+          signature = root.find('.//ds:SignatureValue', ns)
+          if signature is None or not signature.text:
+              raise SystemExit('missing XML SignatureValue')
+          signature_text = signature.text.strip()
+          signature_raw = base64.b64decode(signature_text, validate=True)
+          if len(signature_raw) != 64:
+              raise SystemExit('XMLDSIG ECDSA SignatureValue is not 64 raw bytes')
+          if signature_raw != (proof / 'signature.raw').read_bytes():
+              raise SystemExit('XML SignatureValue does not match production signature bytes')
+
+          qr_text = None
+          for reference in root.findall('.//cac:AdditionalDocumentReference', ns):
+              identifier = reference.find('cbc:ID', ns)
+              if identifier is not None and identifier.text == 'QR':
+                  payload = reference.find('.//cbc:EmbeddedDocumentBinaryObject', ns)
+                  if payload is None or not payload.text:
+                      raise SystemExit('QR reference has no payload')
+                  qr_text = payload.text.strip()
+                  break
+          if qr_text is None:
+              raise SystemExit('missing QR AdditionalDocumentReference')
+
+          qr = base64.b64decode(qr_text, validate=True)
+          fields = {}
+          offset = 0
+          while offset < len(qr):
+              if offset + 2 > len(qr):
+                  raise SystemExit('truncated QR TLV header')
+              tag = qr[offset]
+              length = qr[offset + 1]
+              offset += 2
+              if offset + length > len(qr):
+                  raise SystemExit('truncated QR TLV value')
+              if tag in fields:
+                  raise SystemExit(f'duplicate QR tag {tag}')
+              fields[tag] = qr[offset:offset + length]
+              offset += length
+          if sorted(fields) != list(range(1, 10)):
+              raise SystemExit(f'unexpected QR tags: {sorted(fields)}')
+          expected = {
+              6: (proof / 'invoice-hash.raw').read_bytes(),
+              7: signature_text.encode('utf-8'),
+              8: (proof / 'signing-public-key.spki.der').read_bytes(),
+              9: (proof / 'technical-ca-signature.der').read_bytes(),
+          }
+          for tag, value in expected.items():
+              if fields[tag] != value:
+                  raise SystemExit(f'QR tag {tag} diverges from signed artifact')
+          (proof / 'parser-proof.txt').write_text(
+              'xml_signature_binding=PASS\nqr_tags_1_9_unique=PASS\nqr_tags_6_9_binding=PASS\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Destroy ephemeral private-key material and preserve sanitized proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$SECRET_DIR"
+          test ! -e "$SECRET_DIR"
+          if grep -R --binary-files=without-match -E -- 'BEGIN (EC |)PRIVATE KEY' "$PROOF_DIR"; then
+            echo 'Private-key material leaked into proof output.' >&2
+            exit 1
+          fi
+          {
+            echo "commit=$GITHUB_SHA"
+            echo 'production_full_sealer=PASS'
+            echo 'native_invoice_c14n11_match=PASS'
+            echo 'native_signed_info_c14n11_match=PASS'
+            echo 'native_signed_properties_c14n11_match=PASS'
+            echo 'openssl_certificate_path=PASS'
+            echo 'openssl_xml_signature=PASS'
+            echo 'independent_xml_qr_binding=PASS'
+            echo 'private_key_artifact_absent=PASS'
+            echo 'authority=EPHEMERAL_TEST_PKI_NOT_ZATCA_ACCEPTANCE'
+            cat "$PROOF_DIR/generator-proof.txt"
+            cat "$PROOF_DIR/parser-proof.txt"
+          } > "$PROOF_DIR/proof.txt"
+          sha256sum "$PROOF_DIR/sealed-invoice.xml" > "$PROOF_DIR/sealed-invoice.sha256"
+          cat "$PROOF_DIR/proof.txt"
+
+      - name: Upload sanitized cryptographic proof
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zatca-39-sealing-proof-${{ github.sha }}
+          path: |
+            artifacts/zatca-39-sealing/proof.txt
+            artifacts/zatca-39-sealing/native-version.txt
+            artifacts/zatca-39-sealing/native-c14n.sha256
+            artifacts/zatca-39-sealing/sealed-invoice.sha256
+            artifacts/zatca-39-sealing/openssl-chain.txt
+            artifacts/zatca-39-sealing/openssl-signature.txt
+            artifacts/zatca-39-sealing/parser-proof.txt
+          if-no-files-found: error
+          retention-days: 30
