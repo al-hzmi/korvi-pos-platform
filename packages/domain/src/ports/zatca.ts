@@ -1,4 +1,5 @@
 import type { TenantScope } from './persistence.js';
+import type { ZatcaCsidEnvironment } from '../zatca/csid-provisioning.js';
 
 /**
  * ZATCA's current developer material labels the required curve as
@@ -75,6 +76,15 @@ export interface CreateZatcaCsrInput {
   readonly terminalId: string;
   readonly key: ZatcaSigningKeyHandle;
   readonly subject: ZatcaCsrSubject;
+  /**
+   * Immutable FATOORA environment for which this CSR is issued.
+   *
+   * Simulation requires the PREZATCA certificate template while the Developer
+   * Portal and production FATOORA environment require ZATCA-Code-Signing. The
+   * environment therefore belongs to the signed CSR authority and must never be
+   * inferred later from an HTTP endpoint or mutable process configuration.
+   */
+  readonly environment: ZatcaCsidEnvironment;
 }
 
 export interface ZatcaSignInput {
