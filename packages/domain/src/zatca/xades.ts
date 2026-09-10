@@ -29,7 +29,7 @@ const encoder = new TextEncoder();
 export interface ZatcaSignedInfoInput {
   /** Raw SHA-256 digest of the transformed/canonical invoice from Gate 38. */
   readonly invoiceDigest: Uint8Array;
-  /** Lower-case SHA-256 hex over the linearized Fatoora SignedProperties block. */
+  /** Lower-case SHA-256 hex over the exact Fatoora SignedProperties hashing template. */
   readonly signedPropertiesDigestHex: string;
 }
 
@@ -38,13 +38,12 @@ export interface ZatcaSignedInfoInput {
  *
  * Fatoora's cryptographic-stamp profile places the invoice digest and the
  * profile-specific SignedProperties digest here, while the ECDSA operation is
- * performed over the raw invoice-hash bytes themselves. The final SignedInfo is
- * still canonicalized and regression-proved so its XML representation cannot
- * drift silently.
+ * performed over the raw invoice-hash bytes themselves. Fatoora represents the
+ * SignedProperties digest as Base64 of the lower-case hexadecimal SHA-256 text.
  */
 export function renderZatcaSignedInfoXml(input: ZatcaSignedInfoInput): string {
   const invoiceDigest = sha256DigestBase64(input.invoiceDigest, 'invoice');
-  const signedPropertiesDigest = sha256HexAsDigestBase64(
+  const signedPropertiesDigest = sha256HexTextBase64(
     input.signedPropertiesDigestHex,
     'SignedProperties',
   );
@@ -84,68 +83,52 @@ export interface ZatcaSignedPropertiesInput {
   readonly serialNumber: string;
 }
 
+interface PreparedSignedProperties {
+  readonly signingTime: string;
+  readonly certificateDigest: string;
+  readonly issuerName: string;
+  readonly serialNumber: string;
+}
+
 /**
- * Render the SignedProperties shape accepted by the current Fatoora validator.
+ * Render the SignedProperties block embedded in the final XML.
  *
- * This deliberately uses XAdES `SigningCertificate` + `IssuerSerial`. ZATCA's
- * public validator rejects `SigningCertificateV2` in the invoice XSD, while the
- * detailed signing guide populates these exact v1.3.2 elements. The certificate
- * digest follows Fatoora's profile: SHA-256 of the certificate's unwrapped
- * Base64 text -> lower-case hexadecimal -> Base64 of that hexadecimal text.
+ * The Fatoora validator inherits xades/ds namespaces from the surrounding
+ * signature envelope. Keep this representation separate from the byte-exact
+ * hashing template below: ZATCA's validator hashes a reconstructed template,
+ * not a canonicalized copy of the embedded fragment.
  */
 export async function renderZatcaSignedPropertiesXml(
   input: ZatcaSignedPropertiesInput,
 ): Promise<string> {
-  assertUtcSecond('XAdES signing time', input.signingTime);
-  if (input.signingCertificateDer.length === 0) {
-    throw new ZatcaInvoiceError('ZATCA SigningCertificate requires the signing certificate.');
-  }
-  if (input.issuerName.trim() === '') {
-    throw new ZatcaInvoiceError('ZATCA X509IssuerName is required.');
-  }
-  if (!POSITIVE_DECIMAL.test(input.serialNumber)) {
-    throw new ZatcaInvoiceError('ZATCA X509SerialNumber must be a positive decimal integer.');
-  }
-
-  const certificateDigest = await zatcaCertificateDigestValue(input.signingCertificateDer);
-  const issuerName = escapeXmlText(input.issuerName);
-
-  return [
-    `<xades:SignedProperties Id="${ZATCA_SIGNED_PROPERTIES_ID}">`,
-    '                                    <xades:SignedSignatureProperties>',
-    `                                        <xades:SigningTime>${input.signingTime}</xades:SigningTime>`,
-    '                                        <xades:SigningCertificate>',
-    '                                            <xades:Cert>',
-    '                                                <xades:CertDigest>',
-    `                                                    <ds:DigestMethod xmlns:ds="${XMLDSIG_NAMESPACE}" Algorithm="${XMLDSIG_SHA256_ALGORITHM}"></ds:DigestMethod>`,
-    `                                                    <ds:DigestValue xmlns:ds="${XMLDSIG_NAMESPACE}">${certificateDigest}</ds:DigestValue>`,
-    '                                                </xades:CertDigest>',
-    '                                                <xades:IssuerSerial>',
-    `                                                    <ds:X509IssuerName xmlns:ds="${XMLDSIG_NAMESPACE}">${issuerName}</ds:X509IssuerName>`,
-    `                                                    <ds:X509SerialNumber xmlns:ds="${XMLDSIG_NAMESPACE}">${input.serialNumber}</ds:X509SerialNumber>`,
-    '                                                </xades:IssuerSerial>',
-    '                                            </xades:Cert>',
-    '                                        </xades:SigningCertificate>',
-    '                                    </xades:SignedSignatureProperties>',
-    '</xades:SignedProperties>',
-  ].join('\n');
+  return renderSignedPropertiesEmbedded(await prepareSignedProperties(input));
 }
 
 /**
- * Fatoora Step 5 SignedProperties hash.
+ * Render the exact Fatoora SignedProperties template used as the SHA-256 input.
  *
- * The guide requires the populated block to be linearized and formatting spaces
- * removed before SHA-256. We remove only inter-element formatting whitespace;
- * text-node spaces such as those inside X509IssuerName remain cryptographic data.
+ * These namespace declarations and indentation are compatibility bytes, not
+ * cosmetic formatting. The official validator reconstructs this layout before
+ * hashing. Any whitespace change intentionally changes the resulting digest.
  */
+export async function renderZatcaSignedPropertiesHashInputXml(
+  input: ZatcaSignedPropertiesInput,
+): Promise<string> {
+  return renderSignedPropertiesHashInput(await prepareSignedProperties(input));
+}
+
+/** Hash the byte-exact Fatoora SignedProperties compatibility template. */
 export async function hashZatcaSignedPropertiesProfile(xml: string): Promise<string> {
-  if (!xml.startsWith(`<xades:SignedProperties Id="${ZATCA_SIGNED_PROPERTIES_ID}">`)) {
+  if (
+    !xml.startsWith(
+      `<xades:SignedProperties xmlns:xades="${ZATCA_XADES_NAMESPACE}" Id="${ZATCA_SIGNED_PROPERTIES_ID}">`,
+    )
+  ) {
     throw new ZatcaInvoiceError(
-      'ZATCA SignedProperties profile input is not the generated fragment.',
+      'ZATCA SignedProperties hash input is not the generated Fatoora compatibility template.',
     );
   }
-  const linearized = xml.replace(/>\s+</g, '><');
-  return bytesToHex(await sha256(encoder.encode(linearized)));
+  return bytesToHex(await sha256(encoder.encode(xml)));
 }
 
 /**
@@ -161,6 +144,71 @@ export async function zatcaCertificateDigestValue(certificateDer: Uint8Array): P
   return bytesToBase64(encoder.encode(digestHex));
 }
 
+async function prepareSignedProperties(
+  input: ZatcaSignedPropertiesInput,
+): Promise<PreparedSignedProperties> {
+  assertUtcSecond('XAdES signing time', input.signingTime);
+  if (input.signingCertificateDer.length === 0) {
+    throw new ZatcaInvoiceError('ZATCA SigningCertificate requires the signing certificate.');
+  }
+  if (input.issuerName.trim() === '') {
+    throw new ZatcaInvoiceError('ZATCA X509IssuerName is required.');
+  }
+  if (!POSITIVE_DECIMAL.test(input.serialNumber)) {
+    throw new ZatcaInvoiceError('ZATCA X509SerialNumber must be a positive decimal integer.');
+  }
+  return {
+    signingTime: input.signingTime,
+    certificateDigest: await zatcaCertificateDigestValue(input.signingCertificateDer),
+    issuerName: escapeXmlText(input.issuerName),
+    serialNumber: input.serialNumber,
+  };
+}
+
+function renderSignedPropertiesEmbedded(input: PreparedSignedProperties): string {
+  return [
+    `<xades:SignedProperties Id="${ZATCA_SIGNED_PROPERTIES_ID}">`,
+    '                                    <xades:SignedSignatureProperties>',
+    `                                        <xades:SigningTime>${input.signingTime}</xades:SigningTime>`,
+    '                                        <xades:SigningCertificate>',
+    '                                            <xades:Cert>',
+    '                                                <xades:CertDigest>',
+    `                                                    <ds:DigestMethod Algorithm="${XMLDSIG_SHA256_ALGORITHM}"/>`,
+    `                                                    <ds:DigestValue>${input.certificateDigest}</ds:DigestValue>`,
+    '                                                </xades:CertDigest>',
+    '                                                <xades:IssuerSerial>',
+    `                                                    <ds:X509IssuerName>${input.issuerName}</ds:X509IssuerName>`,
+    `                                                    <ds:X509SerialNumber>${input.serialNumber}</ds:X509SerialNumber>`,
+    '                                                </xades:IssuerSerial>',
+    '                                            </xades:Cert>',
+    '                                        </xades:SigningCertificate>',
+    '                                    </xades:SignedSignatureProperties>',
+    '                                </xades:SignedProperties>',
+  ].join('\n');
+}
+
+function renderSignedPropertiesHashInput(input: PreparedSignedProperties): string {
+  return [
+    `<xades:SignedProperties xmlns:xades="${ZATCA_XADES_NAMESPACE}" Id="${ZATCA_SIGNED_PROPERTIES_ID}">`,
+    '                                    <xades:SignedSignatureProperties>',
+    `                                        <xades:SigningTime>${input.signingTime}</xades:SigningTime>`,
+    '                                        <xades:SigningCertificate>',
+    '                                            <xades:Cert>',
+    '                                                <xades:CertDigest>',
+    `                                                    <ds:DigestMethod xmlns:ds="${XMLDSIG_NAMESPACE}" Algorithm="${XMLDSIG_SHA256_ALGORITHM}"/>`,
+    `                                                    <ds:DigestValue xmlns:ds="${XMLDSIG_NAMESPACE}">${input.certificateDigest}</ds:DigestValue>`,
+    '                                                </xades:CertDigest>',
+    '                                                <xades:IssuerSerial>',
+    `                                                    <ds:X509IssuerName xmlns:ds="${XMLDSIG_NAMESPACE}">${input.issuerName}</ds:X509IssuerName>`,
+    `                                                    <ds:X509SerialNumber xmlns:ds="${XMLDSIG_NAMESPACE}">${input.serialNumber}</ds:X509SerialNumber>`,
+    '                                                </xades:IssuerSerial>',
+    '                                            </xades:Cert>',
+    '                                        </xades:SigningCertificate>',
+    '                                    </xades:SignedSignatureProperties>',
+    '                                </xades:SignedProperties>',
+  ].join('\n');
+}
+
 function sha256DigestBase64(bytes: Uint8Array, label: string): string {
   if (bytes.length !== SHA256_BYTES) {
     throw new ZatcaInvoiceError(
@@ -170,17 +218,13 @@ function sha256DigestBase64(bytes: Uint8Array, label: string): string {
   return bytesToBase64(Uint8Array.from(bytes));
 }
 
-function sha256HexAsDigestBase64(hex: string, label: string): string {
+function sha256HexTextBase64(hex: string, label: string): string {
   if (!SHA256_HEX.test(hex)) {
     throw new ZatcaInvoiceError(
       `ZATCA ${label} SHA-256 digest must be lower-case 64-character hex.`,
     );
   }
-  const bytes = new Uint8Array(SHA256_BYTES);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytesToBase64(bytes);
+  return bytesToBase64(encoder.encode(hex));
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
