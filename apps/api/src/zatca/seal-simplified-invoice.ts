@@ -3,6 +3,7 @@ import {
   ZatcaInvoiceError,
   assembleZatcaSimplifiedInvoice,
   bytesToBase64,
+  ecdsaDerToXmlDsigSignature,
   extractZatcaSigningCertificateMaterial,
   hashZatcaSignedPropertiesProfile,
   money,
@@ -11,7 +12,6 @@ import {
   renderZatcaSignedInfoXml,
   renderZatcaSignedPropertiesXml,
   renderZatcaUblSignatureExtension,
-  validateXmlDsigEcdsaSignature,
   validateZatcaCsidForStamping,
   xmlDsigEcdsaSignatureToDer,
   type TenantScope,
@@ -167,7 +167,7 @@ export function createZatcaSimplifiedInvoiceSealer(
       const signedInfoCanonical =
         await dependencies.canonicalizer.canonicalizeSignedInfo(signingSkeleton);
 
-      const signatureRaw = validateXmlDsigEcdsaSignature(
+      const signatureDer = validateCanonicalEcdsaDer(
         await dependencies.signingKey.signSha256({
           scope: input.scope,
           terminalId: input.terminalId,
@@ -175,7 +175,6 @@ export function createZatcaSimplifiedInvoiceSealer(
           message: Uint8Array.from(invoiceDigest),
         }),
       );
-      const signatureDer = xmlDsigEcdsaSignatureToDer(signatureRaw);
       verifyGeneratedSignature(
         invoiceDigest,
         signatureDer,
@@ -265,6 +264,14 @@ function parseUtcSecond(value: string, label: string): number {
 
 function sha256(bytes: Uint8Array): Uint8Array {
   return Uint8Array.from(createHash('sha256').update(bytes).digest());
+}
+
+function validateCanonicalEcdsaDer(signatureDer: Uint8Array): Uint8Array {
+  const copy = Uint8Array.from(signatureDer);
+  const xmlDsigRaw = ecdsaDerToXmlDsigSignature(copy);
+  const canonicalDer = xmlDsigEcdsaSignatureToDer(xmlDsigRaw);
+  assertSameBytes('HSM ECDSA DER / canonical ECDSA DER', copy, canonicalDer);
+  return copy;
 }
 
 function verifyGeneratedSignature(
