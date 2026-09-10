@@ -220,7 +220,8 @@ function utcSecond(milliseconds: number): string {
 
 function certificateInstant(value: string): number {
   const milliseconds = Date.parse(value);
-  if (!Number.isFinite(milliseconds)) throw new Error('OpenSSL produced an invalid certificate time.');
+  if (!Number.isFinite(milliseconds))
+    throw new Error('OpenSSL produced an invalid certificate time.');
   return milliseconds;
 }
 
@@ -457,9 +458,15 @@ async function writeSafeProofArtifacts(
     'signing-public-key.pem',
     TEST_PKI.leafCertificate.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
   );
-  write('production-invoice-reference.c14n.xml', await canonicalizer.canonicalizeInvoiceReference(result.xml));
+  write(
+    'production-invoice-reference.c14n.xml',
+    await canonicalizer.canonicalizeInvoiceReference(result.xml),
+  );
   write('production-signed-info.c14n.xml', await canonicalizer.canonicalizeSignedInfo(result.xml));
-  write('production-signed-properties.c14n.xml', await canonicalizer.canonicalizeSignedProperties(result.xml));
+  write(
+    'production-signed-properties.c14n.xml',
+    await canonicalizer.canonicalizeSignedProperties(result.xml),
+  );
   write(
     'proof-generator.txt',
     [
