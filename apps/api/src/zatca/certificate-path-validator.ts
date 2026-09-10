@@ -28,8 +28,8 @@ export interface VerifiedZatcaCertificatePath {
  * The last certificate is accepted as a trust anchor only when its DER SHA-256
  * fingerprint is pinned by server configuration. Every certificate is validity
  * checked at the exact stamping instant and every child signature is verified by
- * the next CA key. Issuer and serial metadata are also required to agree with DER
- * so XAdES identity cannot be substituted through stale or forged persisted text.
+ * the next CA key. Persisted issuer/serial metadata must describe the same DER
+ * identity, but Fatoora display ordering is derived only from the certificate.
  */
 export function verifyZatcaCertificatePath(
   input: ZatcaCertificatePathTrustInput,
@@ -108,7 +108,7 @@ export function verifyZatcaCertificatePath(
   return {
     trustAnchorSha256Hex,
     certificateSha256Hex: [...fingerprints],
-    signingCertificateIssuerName: normalizeIssuerName(signingCertificate.issuer),
+    signingCertificateIssuerName: fatooraIssuerName(signingCertificate.issuer),
     signingCertificateSerialNumber: BigInt(`0x${signingCertificate.serialNumber}`).toString(10),
   };
 }
@@ -117,13 +117,12 @@ function parseCertificate(entry: ZatcaCertificatePathEntry, index: number): X509
   try {
     const certificate = new X509Certificate(Buffer.from(entry.certificateDer));
     const serialDecimal = BigInt(`0x${certificate.serialNumber}`).toString(10);
-    const issuerName = normalizeIssuerName(certificate.issuer);
     if (serialDecimal !== entry.serialNumber) {
       throw new ZatcaInvoiceError(
         `ZATCA certificate serial metadata diverges from DER at path position ${String(index)}.`,
       );
     }
-    if (normalizeIssuerName(entry.issuerName) !== issuerName) {
+    if (!sameIssuerIdentity(entry.issuerName, certificate.issuer)) {
       throw new ZatcaInvoiceError(
         `ZATCA certificate issuer metadata diverges from DER at path position ${String(index)}.`,
       );
@@ -137,12 +136,54 @@ function parseCertificate(entry: ZatcaCertificatePathEntry, index: number): X509
   }
 }
 
-function normalizeIssuerName(value: string): string {
-  return value
-    .split(/\r?\n|,\s*/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .join(', ');
+/**
+ * Node exposes issuer RDNs in certificate order; Fatoora serializes them in the
+ * reverse, most-specific display order. The DER-backed Node value is the only
+ * source used for the emitted X509IssuerName.
+ */
+function fatooraIssuerName(nodeIssuer: string): string {
+  const components = issuerComponents(nodeIssuer);
+  if (components.length === 0) {
+    throw new ZatcaInvoiceError('ZATCA signing certificate issuer name is empty.');
+  }
+  return [...components].reverse().join(', ');
+}
+
+function sameIssuerIdentity(persisted: string, certificateIssuer: string): boolean {
+  const left = issuerComponents(persisted).sort();
+  const right = issuerComponents(certificateIssuer).sort();
+  return left.length === right.length && left.every((component, index) => component === right[index]);
+}
+
+/** Split DN text on newlines or unescaped commas without corrupting escaped values. */
+function issuerComponents(value: string): string[] {
+  if (/\r?\n/.test(value)) {
+    return value
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+  }
+
+  const parts: string[] = [];
+  let current = '';
+  let escaped = false;
+  for (const character of value) {
+    if (character === ',' && !escaped) {
+      const part = current.trim();
+      if (part.length > 0) parts.push(part);
+      current = '';
+      continue;
+    }
+    current += character;
+    if (character === '\\') {
+      escaped = !escaped;
+    } else {
+      escaped = false;
+    }
+  }
+  const finalPart = current.trim();
+  if (finalPart.length > 0) parts.push(finalPart);
+  return parts;
 }
 
 function assertCertificateValidity(certificate: X509Certificate, at: number, index: number): void {
