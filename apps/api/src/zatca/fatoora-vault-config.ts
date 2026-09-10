@@ -67,10 +67,7 @@ export function loadZatcaFatooraVaultConfig(
     }
 
     const decoded = Buffer.from(encoded, 'base64');
-    if (
-      decoded.length !== AES_256_KEY_BYTES ||
-      decoded.toString('base64') !== encoded
-    ) {
+    if (decoded.length !== AES_256_KEY_BYTES || decoded.toString('base64') !== encoded) {
       throw new Error('ZATCA Fatoora vault key material is not a 32-byte canonical base64 value.');
     }
 

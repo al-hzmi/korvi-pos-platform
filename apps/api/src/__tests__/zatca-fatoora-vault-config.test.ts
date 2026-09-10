@@ -43,9 +43,7 @@ describe('Fatoora vault configuration', () => {
 
   it('rejects duplicate key ids and an active key absent from the keyring', () => {
     expect(() =>
-      loadZatcaFatooraVaultConfig(
-        env('key-current', `key-current=${KEY_A},key-current=${KEY_B}`),
-      ),
+      loadZatcaFatooraVaultConfig(env('key-current', `key-current=${KEY_A},key-current=${KEY_B}`)),
     ).toThrow(/duplicated/);
     expect(() => loadZatcaFatooraVaultConfig(env('key-missing', `key-current=${KEY_A}`))).toThrow(
       /absent/,
