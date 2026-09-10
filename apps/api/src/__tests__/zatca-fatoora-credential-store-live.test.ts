@@ -34,8 +34,7 @@ const LEAF_DER = Buffer.from(
 );
 const ISSUER_TOKEN = LEAF_DER.toString('base64');
 const ISSUER_SECRET = 'integration-fatoora-secret';
-const ISSUER_PUBLIC_KEY =
-  extractZatcaSigningCertificateMaterial(LEAF_DER).signingPublicKeySpkiDer;
+const ISSUER_PUBLIC_KEY = extractZatcaSigningCertificateMaterial(LEAF_DER).signingPublicKeySpkiDer;
 
 async function inTenant<T>(client: pg.Client, tenant: string, work: () => Promise<T>): Promise<T> {
   await client.query('BEGIN');
@@ -194,7 +193,8 @@ describe.skipIf(url === '')('encrypted Fatoora credential vault, PostgreSQL live
     });
 
     expect(result.kind).toBe('issued');
-    if (result.kind !== 'issued') throw new Error('Composed Compliance CSID issuer was not issued.');
+    if (result.kind !== 'issued')
+      throw new Error('Composed Compliance CSID issuer was not issued.');
     expect(JSON.stringify(result)).not.toContain(ISSUER_SECRET);
     expect(JSON.stringify(result)).not.toContain(ISSUER_TOKEN);
     expect(JSON.stringify(result)).not.toContain('123456');
@@ -217,7 +217,8 @@ describe.skipIf(url === '')('encrypted Fatoora credential vault, PostgreSQL live
     expect(rows.rowCount).toBe(1);
     const row = rows.rows[0];
     expect(row).toBeDefined();
-    if (row === undefined) throw new Error('Composed issuer did not persist its encrypted credential.');
+    if (row === undefined)
+      throw new Error('Composed issuer did not persist its encrypted credential.');
     expect(row.ciphertext.includes(Buffer.from(ISSUER_TOKEN, 'utf8'))).toBe(false);
     expect(row.ciphertext.includes(Buffer.from(ISSUER_SECRET, 'utf8'))).toBe(false);
   });
