@@ -124,8 +124,7 @@ export function createZatcaSimplifiedInvoiceSealer(
         issuerName: trust.signingCertificateIssuerName,
         serialNumber: trust.signingCertificateSerialNumber,
       });
-      const signedPropertiesDigestHex =
-        await hashZatcaSignedPropertiesProfile(signedPropertiesXml);
+      const signedPropertiesDigestHex = await hashZatcaSignedPropertiesProfile(signedPropertiesXml);
 
       const contextSkeleton = assembleZatcaSimplifiedInvoice({
         unsignedInvoiceXml: rendered.canonicalXml,

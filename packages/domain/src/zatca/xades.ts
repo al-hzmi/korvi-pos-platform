@@ -140,7 +140,9 @@ export async function renderZatcaSignedPropertiesXml(
  */
 export async function hashZatcaSignedPropertiesProfile(xml: string): Promise<string> {
   if (!xml.startsWith(`<xades:SignedProperties Id="${ZATCA_SIGNED_PROPERTIES_ID}">`)) {
-    throw new ZatcaInvoiceError('ZATCA SignedProperties profile input is not the generated fragment.');
+    throw new ZatcaInvoiceError(
+      'ZATCA SignedProperties profile input is not the generated fragment.',
+    );
   }
   const linearized = xml.replace(/>\s+</g, '><');
   return bytesToHex(await sha256(encoder.encode(linearized)));
@@ -170,7 +172,9 @@ function sha256DigestBase64(bytes: Uint8Array, label: string): string {
 
 function sha256HexAsDigestBase64(hex: string, label: string): string {
   if (!SHA256_HEX.test(hex)) {
-    throw new ZatcaInvoiceError(`ZATCA ${label} SHA-256 digest must be lower-case 64-character hex.`);
+    throw new ZatcaInvoiceError(
+      `ZATCA ${label} SHA-256 digest must be lower-case 64-character hex.`,
+    );
   }
   const bytes = new Uint8Array(SHA256_BYTES);
   for (let index = 0; index < bytes.length; index += 1) {
