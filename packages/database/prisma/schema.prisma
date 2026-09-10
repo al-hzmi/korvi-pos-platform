@@ -123,6 +123,7 @@ model Tenant {
   planAssignments               TenantPlanAssignment[]
   planEntitlements              TenantPlanEntitlement[]
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
+  zatcaFatooraCredentials       ZatcaFatooraCredential[]
 
   @@unique([provisioningOperationId])
   @@map("tenants")
@@ -309,6 +310,7 @@ model Terminal {
   sales                         Sale[]
   returns                       Return[]
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
+  zatcaFatooraCredentials       ZatcaFatooraCredential[]
 
   @@unique([tenantId, code])
   /// The tenant-consistency key. A child row references this table by
@@ -1771,4 +1773,26 @@ model ZatcaCsidProvisioningAttempt {
   @@index([tenantId, terminalId, state], map: "zatca_csid_attempts_tenantId_terminalId_state_idx")
   @@index([tenantId, state, resolvedAt], map: "zatca_csid_attempts_tenantId_state_resolvedAt_idx")
   @@map("zatca_csid_provisioning_attempts")
+}
+
+/// AES-256-GCM ciphertext for the Fatoora Basic-Authentication credential.
+/// Plaintext token/secret and encryption keys deliberately have no columns.
+model ZatcaFatooraCredential {
+  tenantId     String   @db.Uuid
+  terminalId   String   @db.Uuid
+  credentialId String
+  keyId        String
+  nonce        Bytes
+  ciphertext   Bytes
+  authTag      Bytes
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+
+  @@id([tenantId, terminalId, credentialId], map: "zatca_fatoora_credentials_pkey")
+  @@unique([tenantId, credentialId], map: "zatca_fatoora_credentials_tenantId_credentialId_key")
+  @@index([tenantId, terminalId], map: "zatca_fatoora_credentials_tenantId_terminalId_idx")
+  @@map("zatca_fatoora_credentials")
 }

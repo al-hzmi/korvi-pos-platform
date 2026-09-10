@@ -256,3 +256,8 @@ export { listPurchasingProductPage, MAX_PURCHASING_PRODUCT_PAGE } from './purcha
 export type { PurchasingProduct, PurchasingProductPage } from './purchasing/catalog.js';
 // ZATCA Compliance-CSID durable uncertainty boundary (Gate 39).
 export { createZatcaCsidProvisioningRepository } from './zatca/csid-provisioning-repository.js';
+export { createZatcaFatooraCredentialRepository } from './zatca/fatoora-credential-repository.js';
+export type {
+  ZatcaFatooraCiphertextRecord,
+  ZatcaFatooraCredentialRepository,
+} from './zatca/fatoora-credential-repository.js';
