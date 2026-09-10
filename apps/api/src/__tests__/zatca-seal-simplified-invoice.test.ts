@@ -391,13 +391,21 @@ function invoiceInput(): ZatcaSimplifiedInvoiceHashInput {
   };
 }
 
+function flipLastByte(bytes: Uint8Array): void {
+  if (bytes.length === 0) throw new Error('cannot corrupt empty test bytes');
+  const index = bytes.length - 1;
+  const current = bytes[index];
+  if (current === undefined) throw new Error('cannot corrupt missing test byte');
+  bytes[index] = current ^ 1;
+}
+
 function signingPort(options: { corruptSignature?: boolean; publicKey?: Uint8Array } = {}) {
   const signSha256 = vi.fn<ZatcaSigningKeyPort['signSha256']>(async (input) => {
     const signer = createSign('SHA256');
     signer.update(Buffer.from(input.message));
     signer.end();
     const signatureDer = Uint8Array.from(signer.sign(TEST_PKI.leafPrivateKey));
-    if (options.corruptSignature) signatureDer[signatureDer.length - 1] ^= 1;
+    if (options.corruptSignature) flipLastByte(signatureDer);
     return signatureDer;
   });
   const port: ZatcaSigningKeyPort = {
@@ -554,7 +562,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
 
   it('fails closed if stored and provider SPKI agree with each other but not with certificate DER', async () => {
     const forgedSpki = Uint8Array.from(SPKI_DER);
-    forgedSpki[forgedSpki.length - 1] ^= 1;
+    flipLastByte(forgedSpki);
     const signing = signingPort({ publicKey: forgedSpki });
     const sealer = createZatcaSimplifiedInvoiceSealer({
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
