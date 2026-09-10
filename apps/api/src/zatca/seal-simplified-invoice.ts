@@ -3,7 +3,9 @@ import {
   ZatcaInvoiceError,
   assembleZatcaSimplifiedInvoice,
   bytesToBase64,
+  ecdsaDerToXmlDsigSignature,
   extractZatcaSigningCertificateMaterial,
+  hashZatcaSignedPropertiesProfile,
   money,
   phase2SimplifiedInvoiceQr,
   renderZatcaSimplifiedInvoiceHashPayload,
@@ -11,8 +13,6 @@ import {
   renderZatcaSignedPropertiesXml,
   renderZatcaUblSignatureExtension,
   validateZatcaCsidForStamping,
-  validateXmlDsigEcdsaSignature,
-  xmlDsigEcdsaSignatureBase64,
   xmlDsigEcdsaSignatureToDer,
   type TenantScope,
   type ZatcaCsidBinding,
@@ -23,16 +23,19 @@ import {
 import { verifyZatcaCertificatePath } from './certificate-path-validator.js';
 
 const SHA256_BYTES = 32;
-const ZERO_SHA256 = new Uint8Array(SHA256_BYTES);
+const ZERO_SHA256_HEX = '0'.repeat(SHA256_BYTES * 2);
 
 export interface ZatcaSimplifiedInvoiceSealerDependencies {
   readonly canonicalizer: ZatcaXmlCanonicalizationPort;
   readonly signingKey: ZatcaSigningKeyPort;
   /** Server-controlled ZATCA trust anchors only; never supplied by a request. */
   readonly trustedAnchorSha256Hex: readonly string[];
-  /** Server-controlled authoritative XAdES policy identity and exact SHA-256 digest. */
-  readonly signaturePolicyIdentifier: string;
-  readonly signaturePolicyDigest: Uint8Array;
+  /**
+   * Reserved for policy-version pinning during onboarding. The current Fatoora
+   * invoice profile does not serialize an explicit policy element.
+   */
+  readonly signaturePolicyIdentifier?: string;
+  readonly signaturePolicyDigest?: Uint8Array;
 }
 
 export interface SealZatcaSimplifiedInvoiceInput {
@@ -50,6 +53,7 @@ export interface SealedZatcaSimplifiedInvoice {
   readonly invoiceHashBase64: string;
   readonly invoiceHash: Uint8Array;
   readonly qrCodeBase64: string;
+  /** Exact Base64 of the canonical DER ECDSA stamp written into XML and QR tag 7. */
   readonly signatureValueBase64: string;
   readonly signingPublicKeySpkiDer: Uint8Array;
   readonly technicalCaSignatureDer: Uint8Array;
@@ -63,15 +67,13 @@ export interface ZatcaSimplifiedInvoiceSealer {
 /**
  * Construct the Gate 39 sealing authority from server-owned dependencies.
  *
- * Trust anchors and signature-policy material are captured once from trusted
- * application configuration. Per-request callers can never substitute either.
+ * Trust anchors are captured once from trusted application configuration.
+ * Per-request callers can never substitute them or inject private-key material.
  */
 export function createZatcaSimplifiedInvoiceSealer(
   dependencies: ZatcaSimplifiedInvoiceSealerDependencies,
 ): ZatcaSimplifiedInvoiceSealer {
   const trustedAnchorSha256Hex = [...dependencies.trustedAnchorSha256Hex];
-  const signaturePolicyDigest = Uint8Array.from(dependencies.signaturePolicyDigest);
-  const signaturePolicyIdentifier = dependencies.signaturePolicyIdentifier;
 
   return {
     async seal(input) {
@@ -118,17 +120,19 @@ export function createZatcaSimplifiedInvoiceSealer(
       );
       const signedPropertiesXml = await renderZatcaSignedPropertiesXml({
         signingTime: input.stampingTime,
-        certificatePathDer,
-        signaturePolicyIdentifier,
-        signaturePolicyDigest,
+        signingCertificateDer: Uint8Array.from(csid.signingCertificate.certificateDer),
+        issuerName: trust.signingCertificateIssuerName,
+        serialNumber: trust.signingCertificateSerialNumber,
       });
+      const signedPropertiesDigestHex =
+        await hashZatcaSignedPropertiesProfile(signedPropertiesXml);
 
       const contextSkeleton = assembleZatcaSimplifiedInvoice({
         unsignedInvoiceXml: rendered.canonicalXml,
         signatureExtensionXml: renderZatcaUblSignatureExtension({
           signedInfoXml: renderZatcaSignedInfoXml({
-            invoiceDigest: ZERO_SHA256,
-            signedPropertiesDigest: ZERO_SHA256,
+            invoiceDigest: new Uint8Array(SHA256_BYTES),
+            signedPropertiesDigestHex: ZERO_SHA256_HEX,
           }),
           signedPropertiesXml,
           certificatePathDer,
@@ -138,8 +142,6 @@ export function createZatcaSimplifiedInvoiceSealer(
 
       const signedPropertiesCanonical =
         await dependencies.canonicalizer.canonicalizeSignedProperties(contextSkeleton);
-      const signedPropertiesDigest = sha256(signedPropertiesCanonical);
-
       const invoiceCanonical =
         await dependencies.canonicalizer.canonicalizeInvoiceReference(contextSkeleton);
       const gate38Bytes = new TextEncoder().encode(rendered.canonicalXml);
@@ -152,7 +154,7 @@ export function createZatcaSimplifiedInvoiceSealer(
 
       const signedInfoXml = renderZatcaSignedInfoXml({
         invoiceDigest,
-        signedPropertiesDigest,
+        signedPropertiesDigestHex,
       });
       const signingSkeleton = assembleZatcaSimplifiedInvoice({
         unsignedInvoiceXml: rendered.canonicalXml,
@@ -166,20 +168,20 @@ export function createZatcaSimplifiedInvoiceSealer(
       const signedInfoCanonical =
         await dependencies.canonicalizer.canonicalizeSignedInfo(signingSkeleton);
 
-      const signatureRaw = validateXmlDsigEcdsaSignature(
+      const signatureDer = validateCanonicalEcdsaDer(
         await dependencies.signingKey.signSha256({
           scope: input.scope,
           terminalId: input.terminalId,
           key: csid.key,
-          message: Uint8Array.from(signedInfoCanonical),
+          message: Uint8Array.from(invoiceDigest),
         }),
       );
       verifyGeneratedSignature(
-        signedInfoCanonical,
-        signatureRaw,
+        invoiceDigest,
+        signatureDer,
         certificateMaterial.signingPublicKeySpkiDer,
       );
-      const signatureValueBase64 = xmlDsigEcdsaSignatureBase64(signatureRaw);
+      const signatureValueBase64 = bytesToBase64(signatureDer);
 
       const qrCodeBase64 = phase2SimplifiedInvoiceQr({
         sellerName: input.invoice.invoice.sellerName,
@@ -188,7 +190,7 @@ export function createZatcaSimplifiedInvoiceSealer(
         invoiceTotalWithVat: money(BigInt(input.invoice.invoice.totalMinor), 'SAR'),
         vatTotal: money(BigInt(input.invoice.invoice.vatMinor), 'SAR'),
         invoiceHash: invoiceDigest,
-        xmlSignatureValueBase64: signatureValueBase64,
+        ecdsaSignatureDer: signatureDer,
         ecdsaPublicKeySpkiDer: certificateMaterial.signingPublicKeySpkiDer,
         zatcaCaSignatureDer: certificateMaterial.technicalCaSignatureDer,
       });
@@ -265,9 +267,17 @@ function sha256(bytes: Uint8Array): Uint8Array {
   return Uint8Array.from(createHash('sha256').update(bytes).digest());
 }
 
+function validateCanonicalEcdsaDer(signatureDer: Uint8Array): Uint8Array {
+  const copy = Uint8Array.from(signatureDer);
+  const xmlDsigRaw = ecdsaDerToXmlDsigSignature(copy);
+  const canonicalDer = xmlDsigEcdsaSignatureToDer(xmlDsigRaw);
+  assertSameBytes('HSM ECDSA DER / canonical ECDSA DER', copy, canonicalDer);
+  return copy;
+}
+
 function verifyGeneratedSignature(
-  signedInfoCanonical: Uint8Array,
-  signatureRaw: Uint8Array,
+  invoiceDigest: Uint8Array,
+  signatureDer: Uint8Array,
   publicKeySpkiDer: Uint8Array,
 ): void {
   let publicKey;
@@ -284,9 +294,9 @@ function verifyGeneratedSignature(
   }
 
   const verifier = createVerify('SHA256');
-  verifier.update(Buffer.from(signedInfoCanonical));
+  verifier.update(Buffer.from(invoiceDigest));
   verifier.end();
-  if (!verifier.verify(publicKey, Buffer.from(xmlDsigEcdsaSignatureToDer(signatureRaw)))) {
+  if (!verifier.verify(publicKey, Buffer.from(signatureDer))) {
     throw new ZatcaInvoiceError(
       'ZATCA signing provider returned a signature that does not verify against the CSID certificate.',
     );
@@ -309,12 +319,12 @@ async function assertFinalCryptographicInvariants(input: {
     input.invoiceCanonical,
   );
   assertSameBytes(
-    'final SignedProperties / hashed SignedProperties',
+    'final SignedProperties / generated SignedProperties',
     finalProperties,
     input.signedPropertiesCanonical,
   );
   assertSameBytes(
-    'final SignedInfo / signed SignedInfo',
+    'final SignedInfo / generated SignedInfo',
     finalSignedInfo,
     input.signedInfoCanonical,
   );
