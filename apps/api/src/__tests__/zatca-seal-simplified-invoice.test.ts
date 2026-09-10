@@ -18,6 +18,7 @@ import {
   bytesToBase64,
   ecdsaDerToXmlDsigSignature,
   tenantId,
+  xmlDsigEcdsaSignatureToDer,
   type InvoiceRecord,
   type SaleRecord,
   type ZatcaCertificateStatusEvidence,
@@ -460,7 +461,10 @@ async function writeSafeProofArtifacts(
 
   write('sealed-invoice.xml', result.xml);
   write('invoice-hash.raw', result.invoiceHash);
-  write('signature.der', Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64')));
+  write(
+    'signature.der',
+    xmlDsigEcdsaSignatureToDer(Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'))),
+  );
   write('signing-public-key.spki.der', result.signingPublicKeySpkiDer);
   write('technical-ca-signature.der', result.technicalCaSignatureDer);
   write('certificate-path-0.der', LEAF_DER);
@@ -517,7 +521,9 @@ describe('ZATCA simplified invoice sealing authority', () => {
     expect(call?.message).not.toEqual(result.invoiceHash);
     expect(signedInfoCanonical.length).toBeGreaterThan(32);
 
-    const signatureDer = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));
+    const signatureValue = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));
+    expect(signatureValue).toHaveLength(64);
+    const signatureDer = xmlDsigEcdsaSignatureToDer(signatureValue);
     expect(
       verify('sha256', signedInfoCanonical, TEST_PKI.leafCertificate.publicKey, signatureDer),
     ).toBe(true);
@@ -525,7 +531,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
       verify('sha256', result.invoiceHash, TEST_PKI.leafCertificate.publicKey, signatureDer),
     ).toBe(false);
     expect(signatureDer[0]).toBe(0x30);
-    expect(ecdsaDerToXmlDsigSignature(signatureDer)).toHaveLength(64);
+    expect(ecdsaDerToXmlDsigSignature(signatureDer)).toEqual(signatureValue);
     expect(result.xml).toContain(
       `<ds:SignatureValue>${result.signatureValueBase64}</ds:SignatureValue>`,
     );
@@ -541,8 +547,9 @@ describe('ZATCA simplified invoice sealing authority', () => {
     expect(result.trustAnchorSha256Hex).toBe(ROOT_SHA256);
 
     const tlv = decodeTlv(result.qrCodeBase64);
-    expect(new TextDecoder().decode(tlv.get(6))).toBe(result.invoiceHashBase64);
-    expect(new TextDecoder().decode(tlv.get(7))).toBe(result.signatureValueBase64);
+    expect(tlv.get(6)).toEqual(result.invoiceHash);
+    expect(new TextDecoder().decode(tlv.get(7))).toBe(bytesToBase64(signatureDer));
+    expect(new TextDecoder().decode(tlv.get(7))).not.toBe(result.signatureValueBase64);
     expect(tlv.get(8)).toEqual(result.signingPublicKeySpkiDer);
     expect(tlv.get(9)).toEqual(result.technicalCaSignatureDer);
 

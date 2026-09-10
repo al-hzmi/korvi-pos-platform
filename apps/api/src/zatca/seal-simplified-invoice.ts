@@ -54,7 +54,7 @@ export interface SealedZatcaSimplifiedInvoice {
   readonly invoiceHashBase64: string;
   readonly invoiceHash: Uint8Array;
   readonly qrCodeBase64: string;
-  /** Exact Base64 of the canonical DER ECDSA stamp written into XML and QR tag 7. */
+  /** Base64 of XMLDSIG's fixed-width secp256k1 r || s SignatureValue. */
   readonly signatureValueBase64: string;
   readonly signingPublicKeySpkiDer: Uint8Array;
   readonly technicalCaSignatureDer: Uint8Array;
@@ -142,7 +142,6 @@ export function createZatcaSimplifiedInvoiceSealer(
           }),
           signedPropertiesXml,
           certificatePathDer,
-          signatureValueBase64: '',
         }),
       });
 
@@ -168,7 +167,6 @@ export function createZatcaSimplifiedInvoiceSealer(
           signedInfoXml,
           signedPropertiesXml,
           certificatePathDer,
-          signatureValueBase64: '',
         }),
       });
       const signedInfoCanonical =
@@ -187,7 +185,8 @@ export function createZatcaSimplifiedInvoiceSealer(
         signatureDer,
         certificateMaterial.signingPublicKeySpkiDer,
       );
-      const signatureValueBase64 = bytesToBase64(signatureDer);
+      const signatureValue = ecdsaDerToXmlDsigSignature(signatureDer);
+      const signatureValueBase64 = bytesToBase64(signatureValue);
 
       const qrCodeBase64 = phase2SimplifiedInvoiceQr({
         sellerName: input.invoice.invoice.sellerName,
@@ -207,7 +206,7 @@ export function createZatcaSimplifiedInvoiceSealer(
           signedInfoXml,
           signedPropertiesXml,
           certificatePathDer,
-          signatureValueBase64,
+          signatureValue,
         }),
         qrCodeBase64,
       });

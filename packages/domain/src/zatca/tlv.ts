@@ -105,7 +105,7 @@ export interface SimplifiedInvoiceQrInput {
 /**
  * Cryptographic values needed by a Phase 2 simplified-invoice QR.
  *
- * Tag 6 carries the 44-byte UTF-8 Base64 text of the 32-byte invoice hash.
+ * Tag 6 carries the exact 32-byte SHA-256 invoice hash, without an inner Base64 layer.
  * Tag 7 carries the UTF-8 Base64 text of the ASN.1 DER ECDSA signature.
  * Tag 8 carries the EGS public-key DER and tag 9 carries the technical CA signature
  * over that public key for simplified invoices. No private-key material belongs here.
@@ -200,11 +200,11 @@ export function phase2SimplifiedInvoiceQrFields(
   }
 
   const signatureDer = requireDerSequence(ZATCA_TAG.ECDSA_SIGNATURE, input.ecdsaSignatureDer);
-  const invoiceHashBase64 = bytesToBase64(Uint8Array.from(input.invoiceHash));
+  const invoiceHash = Uint8Array.from(input.invoiceHash);
   const signatureBase64 = bytesToBase64(signatureDer);
   const fields = textualFieldsAsBinary(simplifiedInvoiceQrFields(input));
   fields.push(
-    { tag: ZATCA_TAG.XML_INVOICE_HASH, value: encoder.encode(invoiceHashBase64) },
+    { tag: ZATCA_TAG.XML_INVOICE_HASH, value: invoiceHash },
     { tag: ZATCA_TAG.ECDSA_SIGNATURE, value: encoder.encode(signatureBase64) },
     {
       tag: ZATCA_TAG.ECDSA_PUBLIC_KEY,

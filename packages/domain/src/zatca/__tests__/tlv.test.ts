@@ -181,12 +181,14 @@ describe('Phase 2 simplified invoice QR', () => {
     expect(tags).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
-  it('encodes tag 6 as the 44-byte UTF-8 Base64 invoice-hash text required by ZATCA', () => {
+  it('encodes tag 6 as the exact 32-byte SHA-256 value with no inner Base64 layer', () => {
     const fields = phase2SimplifiedInvoiceQrFields(input);
     const hash = fields.find((field) => field.tag === ZATCA_TAG.XML_INVOICE_HASH);
-    const expected = Buffer.from(input.invoiceHash).toString('base64');
-    expect(Buffer.from(hash?.value ?? []).toString('utf8')).toBe(expected);
-    expect(hash?.value.length).toBe(44);
+    expect(hash?.value).toEqual(input.invoiceHash);
+    expect(hash?.value.length).toBe(32);
+    expect(Buffer.from(hash?.value ?? []).toString('utf8')).not.toBe(
+      Buffer.from(input.invoiceHash).toString('base64'),
+    );
   });
 
   it('encodes tag 7 as UTF-8 Base64 of the exact DER SignatureValue bytes', () => {
