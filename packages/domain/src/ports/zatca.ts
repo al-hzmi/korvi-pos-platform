@@ -12,7 +12,7 @@ export type ZatcaSigningCurve = typeof ZATCA_SIGNING_CURVE;
 export const ZATCA_SIGNING_ALGORITHM = 'ECDSA_SECP256K1_SHA256' as const;
 export type ZatcaSigningAlgorithm = typeof ZATCA_SIGNING_ALGORITHM;
 
-/** Fixed-width XMLDSIG r || s helper width; ZATCA's Fatoora stamp serializes DER instead. */
+/** Fixed-width r || s returned by Korvi's security-module boundary. */
 export const ZATCA_XMLDSIG_ECDSA_SIGNATURE_BYTES = 64 as const;
 
 /**
@@ -112,12 +112,13 @@ export interface ZatcaSigningKeyPort {
   createPkcs10Csr(input: CreateZatcaCsrInput): Promise<Uint8Array>;
 
   /**
-   * Sign the raw invoice-hash bytes with ECDSA secp256k1/SHA-256 and return one
-   * canonical ASN.1 DER ECDSA signature. This DER value is the byte sequence
-   * Base64-encoded into Fatoora `ds:SignatureValue` and QR tag 7.
+   * Sign the raw invoice-hash bytes with ECDSA secp256k1/SHA-256 and return the
+   * validated fixed-width 64-byte `r || s` result. Provider adapters whose HSM
+   * returns ASN.1 DER MUST normalize it at this boundary. The sealing authority
+   * converts this fixed-width value back to canonical DER for Fatoora XML/QR.
    *
-   * Provider adapters MUST reject malformed/non-canonical signatures. The
-   * private key and activation data are never returned.
+   * Keeping the provider boundary fixed-width makes malformed scalar widths and
+   * non-canonical DER impossible to leak into the rest of the application.
    */
   signSha256(input: ZatcaSignInput): Promise<Uint8Array>;
 }
