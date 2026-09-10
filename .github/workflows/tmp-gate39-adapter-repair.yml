@@ -1,0 +1,51 @@
+name: Temporary Gate39 DER Adapter Repair
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/tmp-gate39-adapter-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/zatca-39-csid-lifecycle
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Repair DER-returning proof HSM adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts')
+          text = path.read_text()
+          old = """    const raw = ecdsaDerToXmlDsigSignature(signer.sign(TEST_PKI.leafPrivateKey));\n    if (options.corruptSignature) raw[0] ^= 1;\n    return raw;\n"""
+          new = """    const signatureDer = Uint8Array.from(signer.sign(TEST_PKI.leafPrivateKey));\n    if (options.corruptSignature) signatureDer[signatureDer.length - 1] ^= 1;\n    return signatureDer;\n"""
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one legacy raw-signature adapter block, found {count}')
+          path.write_text(text.replace(old, new))
+          PY
+          npx prettier@3.9.6 --write apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
+          git diff --check
+      - name: Commit repair
+        run: |
+          git add apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
+          git config user.name 'korvi-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'fix(zatca): make proof HSM adapter return DER'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
