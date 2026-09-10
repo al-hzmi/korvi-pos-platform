@@ -10,6 +10,7 @@ import {
   phase2SimplifiedInvoiceQr,
   renderZatcaSimplifiedInvoiceHashPayload,
   renderZatcaSignedInfoXml,
+  renderZatcaSignedPropertiesHashInputXml,
   renderZatcaSignedPropertiesXml,
   renderZatcaUblSignatureExtension,
   validateZatcaCsidForStamping,
@@ -118,13 +119,19 @@ export function createZatcaSimplifiedInvoiceSealer(
       const certificatePathDer = csid.certificatePath.map((entry) =>
         Uint8Array.from(entry.certificateDer),
       );
-      const signedPropertiesXml = await renderZatcaSignedPropertiesXml({
+      const signedPropertiesInput = {
         signingTime: input.stampingTime,
         signingCertificateDer: Uint8Array.from(csid.signingCertificate.certificateDer),
         issuerName: trust.signingCertificateIssuerName,
         serialNumber: trust.signingCertificateSerialNumber,
-      });
-      const signedPropertiesDigestHex = await hashZatcaSignedPropertiesProfile(signedPropertiesXml);
+      };
+      const [signedPropertiesXml, signedPropertiesHashInputXml] = await Promise.all([
+        renderZatcaSignedPropertiesXml(signedPropertiesInput),
+        renderZatcaSignedPropertiesHashInputXml(signedPropertiesInput),
+      ]);
+      const signedPropertiesDigestHex = await hashZatcaSignedPropertiesProfile(
+        signedPropertiesHashInputXml,
+      );
 
       const contextSkeleton = assembleZatcaSimplifiedInvoice({
         unsignedInvoiceXml: rendered.canonicalXml,
