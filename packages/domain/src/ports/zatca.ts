@@ -12,7 +12,7 @@ export type ZatcaSigningCurve = typeof ZATCA_SIGNING_CURVE;
 export const ZATCA_SIGNING_ALGORITHM = 'ECDSA_SECP256K1_SHA256' as const;
 export type ZatcaSigningAlgorithm = typeof ZATCA_SIGNING_ALGORITHM;
 
-/** XMLDSIG ECDSA SignatureValue is fixed-width r || s, not ASN.1 DER. */
+/** Fixed-width XMLDSIG r || s helper width; ZATCA's Fatoora stamp serializes DER instead. */
 export const ZATCA_XMLDSIG_ECDSA_SIGNATURE_BYTES = 64 as const;
 
 /**
@@ -82,11 +82,11 @@ export interface ZatcaSignInput {
   readonly terminalId: string;
   readonly key: ZatcaSigningKeyHandle;
   /**
-   * Bytes to be signed using ECDSA secp256k1 with SHA-256.
+   * Raw 32-byte SHA-256 invoice hash from the ZATCA invoice-reference transform.
    *
-   * For XAdES this is the canonicalised `ds:SignedInfo` byte sequence. The
-   * security-module adapter owns the algorithm invocation; callers never hash
-   * or export private-key material on its behalf.
+   * Fatoora's stamping profile signs this hash as the message using ECDSA with
+   * SHA-256. The security module therefore performs the algorithm invocation;
+   * callers never receive or export private-key material.
    */
   readonly message: Uint8Array;
 }
@@ -112,10 +112,12 @@ export interface ZatcaSigningKeyPort {
   createPkcs10Csr(input: CreateZatcaCsrInput): Promise<Uint8Array>;
 
   /**
-   * Return the XMLDSIG ECDSA SignatureValue bytes: exactly 64 bytes `r || s`,
-   * each integer encoded as a 32-byte unsigned I2OSP value. This is NOT ASN.1 DER.
-   * Provider adapters whose HSM returns DER must convert and validate it at the
-   * adapter boundary. The private key and activation data are never returned.
+   * Sign the raw invoice-hash bytes with ECDSA secp256k1/SHA-256 and return one
+   * canonical ASN.1 DER ECDSA signature. This DER value is the byte sequence
+   * Base64-encoded into Fatoora `ds:SignatureValue` and QR tag 7.
+   *
+   * Provider adapters MUST reject malformed/non-canonical signatures. The
+   * private key and activation data are never returned.
    */
   signSha256(input: ZatcaSignInput): Promise<Uint8Array>;
 }
