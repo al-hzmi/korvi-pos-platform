@@ -6,9 +6,7 @@ import {
   VAT_STANDARD_BP,
   ZATCA_SIGNING_ALGORITHM,
   ZATCA_SIGNING_CURVE,
-  ecdsaDerToXmlDsigSignature,
   tenantId,
-  xmlDsigEcdsaSignatureToDer,
 } from '../packages/domain/dist/index.js';
 import { Libxml2ZatcaCanonicalizer } from '../apps/api/dist/zatca/libxml2-canonicalizer.js';
 import { createZatcaSimplifiedInvoiceSealer } from '../apps/api/dist/zatca/seal-simplified-invoice.js';
@@ -82,7 +80,7 @@ const signingKey = {
       maxBuffer: 1024 * 1024,
       windowsHide: true,
     });
-    return ecdsaDerToXmlDsigSignature(Uint8Array.from(der));
+    return Uint8Array.from(der);
   },
 };
 
@@ -117,8 +115,6 @@ const sealer = createZatcaSimplifiedInvoiceSealer({
   canonicalizer,
   signingKey,
   trustedAnchorSha256Hex: [rootSha256Hex],
-  signaturePolicyIdentifier: 'urn:korvi:proof:zatca-signature-policy:v1',
-  signaturePolicyDigest: new Uint8Array(32).fill(0x39),
 });
 
 const result = await sealer.seal({
@@ -132,14 +128,12 @@ const result = await sealer.seal({
 const signedInfoCanonical = await canonicalizer.canonicalizeSignedInfo(result.xml);
 const signedPropertiesCanonical = await canonicalizer.canonicalizeSignedProperties(result.xml);
 const invoiceReferenceCanonical = await canonicalizer.canonicalizeInvoiceReference(result.xml);
-const signatureRaw = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));
-const signatureDer = xmlDsigEcdsaSignatureToDer(signatureRaw);
+const signatureDer = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));
 
 writePrivate('sealed-invoice.xml', result.xml);
 writePrivate('production-signed-info.c14n.xml', signedInfoCanonical);
 writePrivate('production-signed-properties.c14n.xml', signedPropertiesCanonical);
 writePrivate('production-invoice-reference.c14n.xml', invoiceReferenceCanonical);
-writePrivate('signature.raw', signatureRaw);
 writePrivate('signature.der', signatureDer);
 writePrivate('signing-public-key.spki.der', result.signingPublicKeySpkiDer);
 writePrivate('technical-ca-signature.der', result.technicalCaSignatureDer);
@@ -157,7 +151,7 @@ const proof = [
   `invoice_reference_sha256=${sha256Hex(invoiceReferenceCanonical)}`,
   `signed_properties_sha256=${sha256Hex(signedPropertiesCanonical)}`,
   `signed_info_sha256=${sha256Hex(signedInfoCanonical)}`,
-  `signature_raw_bytes=${String(signatureRaw.length)}`,
+  `signature_der_bytes=${String(signatureDer.length)}`,
   `root_sha256=${rootSha256Hex}`,
   `qr_base64_characters=${String(result.qrCodeBase64.length)}`,
   'production_sealer_self_verification=PASS',
