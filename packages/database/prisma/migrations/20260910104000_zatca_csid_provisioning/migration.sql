@@ -201,8 +201,8 @@ CREATE TRIGGER "zatca_csid_provisioning_transition_guard"
 ALTER TABLE "zatca_csid_provisioning_attempts" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "zatca_csid_provisioning_attempts" FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY "zatca_csid_provisioning_attempts_isolation"
-  ON "zatca_csid_provisioning_attempts"
+DROP POLICY IF EXISTS "zatca_csid_provisioning_attempts_isolation" ON "zatca_csid_provisioning_attempts";
+CREATE POLICY "zatca_csid_provisioning_attempts_isolation" ON "zatca_csid_provisioning_attempts"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
