@@ -60,6 +60,12 @@ jobs:
           PY
           bash /tmp/complete-evidence.sh
 
+      - name: Generate Prisma client and build workspaces
+        run: |
+          set -euo pipefail
+          npm run --silent db:generate
+          npm run --silent build
+
       - name: Apply all migrations to PostgreSQL 17
         run: (cd packages/database && npx prisma migrate deploy)
 
