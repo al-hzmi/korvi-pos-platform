@@ -207,9 +207,7 @@ function generateEphemeralTestPki(): EphemeralTestPki {
       intermediateCertificate,
       rootCertificate,
       rootSha256Hex: createHash('sha256').update(rootDer).digest('hex'),
-      spkiDer: Uint8Array.from(
-        leafCertificate.publicKey.export({ type: 'spki', format: 'der' }),
-      ),
+      spkiDer: Uint8Array.from(leafCertificate.publicKey.export({ type: 'spki', format: 'der' })),
     };
   } finally {
     rmSync(directory, { recursive: true, force: true });
