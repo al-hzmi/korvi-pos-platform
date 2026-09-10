@@ -100,11 +100,9 @@ export function createZatcaCsidProvisioningRepository(
     markRequestStarted: (scope, attemptId, requestStartedAt) =>
       transitionFromPrepared(prisma, scope, attemptId, requestStartedAt),
 
-    markIssued: (scope, attemptId, result) =>
-      finalizeIssued(prisma, scope, attemptId, result),
+    markIssued: (scope, attemptId, result) => finalizeIssued(prisma, scope, attemptId, result),
 
-    markRejected: (scope, attemptId, result) =>
-      finalizeRejected(prisma, scope, attemptId, result),
+    markRejected: (scope, attemptId, result) => finalizeRejected(prisma, scope, attemptId, result),
 
     markUncertain: (scope, attemptId, result) =>
       finalizeUncertain(prisma, scope, attemptId, result),
@@ -334,7 +332,13 @@ function mapAttempt(scope: TenantScope, row: AttemptRow): ZatcaCsidProvisioningA
     if (row.rejectionCode === null) {
       throw corrupt('rejectionCode');
     }
-    return { ...base, state: 'rejected', requestStartedAt, resolvedAt, rejectionCode: row.rejectionCode };
+    return {
+      ...base,
+      state: 'rejected',
+      requestStartedAt,
+      resolvedAt,
+      rejectionCode: row.rejectionCode,
+    };
   }
   if (row.uncertaintyReason === null) {
     throw corrupt('uncertaintyReason');
@@ -353,7 +357,9 @@ function expectState<S extends ZatcaCsidProvisioningAttempt['state']>(
   state: S,
 ): Extract<ZatcaCsidProvisioningAttempt, { state: S }> {
   if (attempt.state !== state) {
-    throw new ZatcaCsidProvisioningError(`ZATCA CSID repository returned ${attempt.state}; expected ${state}.`);
+    throw new ZatcaCsidProvisioningError(
+      `ZATCA CSID repository returned ${attempt.state}; expected ${state}.`,
+    );
   }
   return attempt as Extract<ZatcaCsidProvisioningAttempt, { state: S }>;
 }
@@ -361,7 +367,9 @@ function expectState<S extends ZatcaCsidProvisioningAttempt['state']>(
 function toUtcSecond(value: Date): string {
   const iso = value.toISOString();
   if (!iso.endsWith('.000Z')) {
-    throw new ZatcaCsidProvisioningError('ZATCA CSID persisted timestamp is not an exact UTC second.');
+    throw new ZatcaCsidProvisioningError(
+      'ZATCA CSID persisted timestamp is not an exact UTC second.',
+    );
   }
   return iso.replace('.000Z', 'Z');
 }

@@ -32,7 +32,13 @@ const PREPARED = '2026-09-10T10:30:00Z';
 const STARTED = '2026-09-10T10:30:01Z';
 const RESOLVED = '2026-09-10T10:30:02Z';
 
-function prepared(tenant: string, terminal: string, attemptId: string, operationId: string, requestHash = HASH_A) {
+function prepared(
+  tenant: string,
+  terminal: string,
+  attemptId: string,
+  operationId: string,
+  requestHash = HASH_A,
+) {
   return prepareZatcaCsidProvisioning({
     attemptId,
     scope: { tenantId: tenantId(tenant) },
@@ -52,7 +58,11 @@ function prepared(tenant: string, terminal: string, attemptId: string, operation
   });
 }
 
-async function inTenant(client: pg.Client, tenant: string, work: () => Promise<void>): Promise<void> {
+async function inTenant(
+  client: pg.Client,
+  tenant: string,
+  work: () => Promise<void>,
+): Promise<void> {
   await client.query('BEGIN');
   await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenant]);
   try {
@@ -147,8 +157,14 @@ describe.skipIf(url === '')('ZATCA CSID provisioning repository, PostgreSQL live
     const attemptB = prepared(D.tenantB, D.terminalB, D.attemptB, 'operation-a');
     await repository.reservePrepared({ tenantId: tenantId(D.tenantB) }, attemptB);
 
-    const seenA = await repository.findByOperationId({ tenantId: tenantId(D.tenantA) }, 'operation-a');
-    const seenB = await repository.findByOperationId({ tenantId: tenantId(D.tenantB) }, 'operation-a');
+    const seenA = await repository.findByOperationId(
+      { tenantId: tenantId(D.tenantA) },
+      'operation-a',
+    );
+    const seenB = await repository.findByOperationId(
+      { tenantId: tenantId(D.tenantB) },
+      'operation-a',
+    );
     expect(seenA?.attemptId).toBe(D.attemptA);
     expect(seenB?.attemptId).toBe(D.attemptB);
   });

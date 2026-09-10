@@ -154,11 +154,9 @@ CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_operationId_key"
 CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_id_key"
   ON "zatca_csid_provisioning_attempts"("tenantId", "id");
 CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_credentialId_key"
-  ON "zatca_csid_provisioning_attempts"("tenantId", "credentialId")
-  WHERE "credentialId" IS NOT NULL;
+  ON "zatca_csid_provisioning_attempts"("tenantId", "credentialId");
 CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_remoteRequestId_key"
-  ON "zatca_csid_provisioning_attempts"("tenantId", "remoteRequestId")
-  WHERE "remoteRequestId" IS NOT NULL;
+  ON "zatca_csid_provisioning_attempts"("tenantId", "remoteRequestId");
 CREATE INDEX "zatca_csid_attempts_tenantId_terminalId_state_idx"
   ON "zatca_csid_provisioning_attempts"("tenantId", "terminalId", "state");
 CREATE INDEX "zatca_csid_attempts_tenantId_state_resolvedAt_idx"

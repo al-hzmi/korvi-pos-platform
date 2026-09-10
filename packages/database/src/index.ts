@@ -254,3 +254,5 @@ export type {
 } from './purchasing/receiving.js';
 export { listPurchasingProductPage, MAX_PURCHASING_PRODUCT_PAGE } from './purchasing/catalog.js';
 export type { PurchasingProduct, PurchasingProductPage } from './purchasing/catalog.js';
+// ZATCA Compliance-CSID durable uncertainty boundary (Gate 39).
+export { createZatcaCsidProvisioningRepository } from './zatca/csid-provisioning-repository.js';

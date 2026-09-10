@@ -76,52 +76,53 @@ model Tenant {
   // Every tenant-owned model points back here, which is exactly the point:
   // if a new model has no line in this list, it has no tenant, and the RLS
   // test will refuse it.
-  branches                 Branch[]
-  users                    User[]
-  memberships              TenantMembership[]
-  roles                    Role[]
-  rolePermissions          RolePermission[]
-  userRoles                UserRole[]
-  terminals                Terminal[]
-  settings                 TenantSettings?
-  categories               Category[]
-  products                 Product[]
-  productBarcodes          ProductBarcode[]
-  productPrices            ProductPrice[]
-  inventoryBalances        InventoryBalance[]
-  inventoryMovements       InventoryMovement[]
-  inventoryCostBalances    InventoryCostBalance[]
-  inventoryValuationEvents InventoryValuationEvent[]
-  inventoryAdjustments     InventoryAdjustment[]
-  inventoryAdjustmentLines InventoryAdjustmentLine[]
-  inventoryCounts          InventoryCount[]
-  inventoryCountLines      InventoryCountLine[]
-  inventoryTransfers       InventoryTransfer[]
-  inventoryTransferLines   InventoryTransferLine[]
-  suppliers                Supplier[]
-  purchaseOrders           PurchaseOrder[]
-  purchaseOrderLines       PurchaseOrderLine[]
-  purchaseReceipts         PurchaseReceipt[]
-  purchaseReceiptLines     PurchaseReceiptLine[]
-  customers                Customer[]
-  shifts                   Shift[]
-  cashMovements            CashMovement[]
-  sales                    Sale[]
-  saleLines                SaleLine[]
-  saleDiscounts            SaleDiscount[]
-  tenders                  Tender[]
-  invoices                 Invoice[]
-  taxBreakdown             InvoiceTaxBreakdown[]
-  returns                  Return[]
-  returnLines              ReturnLine[]
-  refunds                  Refund[]
-  idempotencyKeys          IdempotencyKey[]
-  auditEvents              AuditEvent[]
-  sessions                 Session[]
-  ownerBootstraps          TenantOwnerBootstrapInvitation[]
-  commercialAccount        TenantCommercialAccount?
-  planAssignments          TenantPlanAssignment[]
-  planEntitlements         TenantPlanEntitlement[]
+  branches                      Branch[]
+  users                         User[]
+  memberships                   TenantMembership[]
+  roles                         Role[]
+  rolePermissions               RolePermission[]
+  userRoles                     UserRole[]
+  terminals                     Terminal[]
+  settings                      TenantSettings?
+  categories                    Category[]
+  products                      Product[]
+  productBarcodes               ProductBarcode[]
+  productPrices                 ProductPrice[]
+  inventoryBalances             InventoryBalance[]
+  inventoryMovements            InventoryMovement[]
+  inventoryCostBalances         InventoryCostBalance[]
+  inventoryValuationEvents      InventoryValuationEvent[]
+  inventoryAdjustments          InventoryAdjustment[]
+  inventoryAdjustmentLines      InventoryAdjustmentLine[]
+  inventoryCounts               InventoryCount[]
+  inventoryCountLines           InventoryCountLine[]
+  inventoryTransfers            InventoryTransfer[]
+  inventoryTransferLines        InventoryTransferLine[]
+  suppliers                     Supplier[]
+  purchaseOrders                PurchaseOrder[]
+  purchaseOrderLines            PurchaseOrderLine[]
+  purchaseReceipts              PurchaseReceipt[]
+  purchaseReceiptLines          PurchaseReceiptLine[]
+  customers                     Customer[]
+  shifts                        Shift[]
+  cashMovements                 CashMovement[]
+  sales                         Sale[]
+  saleLines                     SaleLine[]
+  saleDiscounts                 SaleDiscount[]
+  tenders                       Tender[]
+  invoices                      Invoice[]
+  taxBreakdown                  InvoiceTaxBreakdown[]
+  returns                       Return[]
+  returnLines                   ReturnLine[]
+  refunds                       Refund[]
+  idempotencyKeys               IdempotencyKey[]
+  auditEvents                   AuditEvent[]
+  sessions                      Session[]
+  ownerBootstraps               TenantOwnerBootstrapInvitation[]
+  commercialAccount             TenantCommercialAccount?
+  planAssignments               TenantPlanAssignment[]
+  planEntitlements              TenantPlanEntitlement[]
+  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
 
   @@unique([provisioningOperationId])
   @@map("tenants")
@@ -302,11 +303,12 @@ model Terminal {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch  Branch   @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
-  shifts  Shift[]
-  sales   Sale[]
-  returns Return[]
+  tenant                        Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch                        Branch                         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  shifts                        Shift[]
+  sales                         Sale[]
+  returns                       Return[]
+  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
 
   @@unique([tenantId, code])
   /// The tenant-consistency key. A child row references this table by
@@ -1722,4 +1724,51 @@ model GlobalCatalogItem {
   updatedAt      DateTime @updatedAt
 
   @@map("global_catalog_items")
+}
+
+// ---------------------------------------------------------------------------
+// ZATCA Compliance-CSID provisioning evidence (Gate 39)
+// ---------------------------------------------------------------------------
+
+model ZatcaCsidProvisioningAttempt {
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  terminalId String @db.Uuid
+
+  operationId String
+  requestHash String @db.Char(64)
+  environment String
+
+  keyProvider   String
+  keyId         String
+  keyExportable Boolean
+  csrSha256Hex  String  @db.Char(64)
+
+  state            String
+  preparedAt       DateTime
+  requestStartedAt DateTime?
+  resolvedAt       DateTime?
+
+  remoteRequestId String?
+  credentialId    String?
+  certificateDer  Bytes?
+  secretProvider  String?
+  secretId        String?
+
+  rejectionCode     String?
+  uncertaintyReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")
+  @@unique([tenantId, id], map: "zatca_csid_attempts_tenantId_id_key")
+  @@unique([tenantId, credentialId], map: "zatca_csid_attempts_tenantId_credentialId_key")
+  @@unique([tenantId, remoteRequestId], map: "zatca_csid_attempts_tenantId_remoteRequestId_key")
+  @@index([tenantId, terminalId, state], map: "zatca_csid_attempts_tenantId_terminalId_state_idx")
+  @@index([tenantId, state, resolvedAt], map: "zatca_csid_attempts_tenantId_state_resolvedAt_idx")
+  @@map("zatca_csid_provisioning_attempts")
 }
