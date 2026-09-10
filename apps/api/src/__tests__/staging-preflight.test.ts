@@ -79,12 +79,13 @@ describe('staging database refusal before serving traffic', () => {
 
   it('loads the actual checked-in migration bytes and schema table names', async () => {
     const expected = await readDeploymentManifest();
-    expect(expected.migrations).toHaveLength(12);
+    expect(expected.migrations).toHaveLength(13);
     expect(
       expected.migrations.every((migration) => /^[a-f0-9]{64}$/.test(migration.checksum)),
     ).toBe(true);
     expect(expected.tables).toContain('inventory_cost_balances');
     expect(expected.tables).toContain('tenant_owner_bootstrap_invitations');
+    expect(expected.tables).toContain('zatca_csid_provisioning_attempts');
     expect(new Set(expected.tables).size).toBe(expected.tables.length);
   });
 });
