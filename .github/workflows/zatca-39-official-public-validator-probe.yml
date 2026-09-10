@@ -1,5 +1,5 @@
 name: ZATCA 39 Official Public Validator Probe
-# Gate 39 exact-HEAD proof trigger: QR cryptographic material remediation.
+# Gate 39 continuous compatibility guard for the validator-proven sealing profile.
 
 on:
   push:
@@ -132,7 +132,7 @@ jobs:
           writeFileSync(`${process.env.RUNNER_TEMP}/zatca-validator-url.txt`, actual, { mode: 0o600 });
           NODE
 
-      - name: Submit sealed invoice to official public validator
+      - name: Submit sealed invoice and enforce official validator contract
         shell: bash
         run: |
           set -euo pipefail
@@ -162,6 +162,37 @@ jobs:
             exit 1
           fi
           python3 -m json.tool "$PROOF_DIR/response.json" | tee "$PROOF_DIR/response.pretty.json"
+
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const payload = JSON.parse(readFileSync(`${process.env.PROOF_DIR}/response.json`, 'utf8'));
+          const errors = Array.isArray(payload.errors) ? payload.errors : [];
+          const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+          const allowedTestCredentialErrors = new Set(['X509IssuerName', 'X509SerialNumber']);
+
+          if (warnings.length !== 0) {
+            throw new Error(`Official validator returned unexpected warnings: ${JSON.stringify(warnings)}`);
+          }
+
+          for (const finding of errors) {
+            if (
+              finding?.category !== 'SIGNATURE_ERROR' ||
+              typeof finding?.code !== 'string' ||
+              !allowedTestCredentialErrors.has(finding.code)
+            ) {
+              throw new Error(`Official validator returned an unexpected compatibility finding: ${JSON.stringify(finding)}`);
+            }
+          }
+
+          if (errors.some((finding) => finding?.category === 'QR_CODE_ERROR')) {
+            throw new Error('Official validator reported a QR cryptographic regression.');
+          }
+
+          console.log(
+            `official_validator_contract=PASS valid=${String(payload.valid)} allowed_test_credential_findings=${String(errors.length)}`,
+          );
+          NODE
 
       - name: Destroy ephemeral secrets
         if: always()
