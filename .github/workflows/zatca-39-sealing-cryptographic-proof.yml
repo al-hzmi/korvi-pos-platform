@@ -4,14 +4,13 @@ on:
   push:
     branches:
       - review/zatca-39-csid-lifecycle
-      - strike/5c-costing-authority
     paths:
       - packages/domain/src/ports/zatca.ts
       - packages/domain/src/zatca/**
       - apps/api/src/zatca/**
+      - apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
       - apps/api/package.json
       - package-lock.json
-      - scripts/zatca-39-sealing-proof.mjs
       - scripts/zatca-39-native-subset-c14n.c
       - .github/workflows/zatca-39-sealing-cryptographic-proof.yml
   workflow_dispatch:
@@ -30,7 +29,6 @@ jobs:
     timeout-minutes: 15
     env:
       PROOF_DIR: artifacts/zatca-39-sealing
-      SECRET_DIR: /tmp/korvi-zatca-39-ephemeral-pki
 
     steps:
       - name: Check out
@@ -42,38 +40,39 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Verify package manager
-        run: node scripts/verify-package-manager.mjs
-
-      - name: Install exact lockfile
-        run: npm ci --registry=https://registry.npmjs.org
-
-      - name: Verify dependency and security policy
+      - name: Install and verify repository policy
         run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
           npm run versions:verify
           npm run audit
           npm run format:check
           npm run lint
           bash scripts/check-invariants.sh
 
-      - name: Generate Prisma client
-        run: npm run db:generate
-        env:
-          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
-
-      - name: Build production sealing dependency chain
+      - name: Generate Prisma client and build production sealing chain
         run: |
+          npm run db:generate
           npm run build -w @korvi/domain
           npm run build -w @korvi/database
           npm run build -w @korvi/api
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+
+      - name: Generate sealed proof artifact through production integration test
+        run: |
+          rm -rf "$PROOF_DIR"
+          KORVI_ZATCA_PROOF_DIR="$PROOF_DIR" npx vitest run \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts \
+            -t 'seals the Fatoora profile'
+          test -s "$PROOF_DIR/sealed-invoice.xml"
+          test -s "$PROOF_DIR/invoice-hash.raw"
+          test -s "$PROOF_DIR/signature.der"
 
       - name: Install native libxml2 proof authority
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf "$SECRET_DIR"
-          mkdir -p "$PROOF_DIR" "$SECRET_DIR"
-          chmod 700 "$PROOF_DIR" "$SECRET_DIR"
           sudo apt-get update -qq
           candidate="$(apt-cache policy libxml2-dev | awk '/Candidate:/ {print $2}')"
           if [ -z "$candidate" ] || [ "$candidate" = '(none)' ]; then
@@ -84,58 +83,6 @@ jobs:
           printf 'libxml2-dev=%s\n' "$candidate" > "$PROOF_DIR/native-version.txt"
           printf 'openssl=%s\n' "$(openssl version)" >> "$PROOF_DIR/native-version.txt"
           printf 'pkg-config-libxml2=%s\n' "$(pkg-config --modversion libxml-2.0)" >> "$PROOF_DIR/native-version.txt"
-
-      - name: Generate ephemeral secp256k1 certificate path
-        shell: bash
-        run: |
-          set -euo pipefail
-          umask 077
-          cat > "$SECRET_DIR/intermediate.ext" <<'EOF'
-          basicConstraints=critical,CA:TRUE,pathlen:0
-          keyUsage=critical,keyCertSign,cRLSign
-          subjectKeyIdentifier=hash
-          authorityKeyIdentifier=keyid,issuer
-          EOF
-          cat > "$SECRET_DIR/leaf.ext" <<'EOF'
-          basicConstraints=critical,CA:FALSE
-          keyUsage=critical,digitalSignature
-          subjectKeyIdentifier=hash
-          authorityKeyIdentifier=keyid,issuer
-          EOF
-          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/root.key.pem"
-          openssl req -new -x509 -key "$SECRET_DIR/root.key.pem" -sha256 -days 3650 \
-            -subj '/CN=Korvi Gate39 Proof Root/O=Korvi Test/C=SA' \
-            -addext 'basicConstraints=critical,CA:TRUE' \
-            -addext 'keyUsage=critical,keyCertSign,cRLSign' \
-            -out "$SECRET_DIR/root.cert.pem"
-          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/intermediate.key.pem"
-          openssl req -new -key "$SECRET_DIR/intermediate.key.pem" \
-            -subj '/CN=Korvi Gate39 Proof Intermediate/O=Korvi Test/C=SA' \
-            -out "$SECRET_DIR/intermediate.csr.pem"
-          openssl x509 -req -in "$SECRET_DIR/intermediate.csr.pem" \
-            -CA "$SECRET_DIR/root.cert.pem" -CAkey "$SECRET_DIR/root.key.pem" -CAcreateserial \
-            -sha256 -days 2000 -extfile "$SECRET_DIR/intermediate.ext" \
-            -out "$SECRET_DIR/intermediate.cert.pem"
-          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/leaf.key.pem"
-          openssl req -new -key "$SECRET_DIR/leaf.key.pem" \
-            -subj '/CN=Korvi Gate39 Proof EGS/O=Korvi Test/C=SA' \
-            -out "$SECRET_DIR/leaf.csr.pem"
-          openssl x509 -req -in "$SECRET_DIR/leaf.csr.pem" \
-            -CA "$SECRET_DIR/intermediate.cert.pem" -CAkey "$SECRET_DIR/intermediate.key.pem" -CAcreateserial \
-            -sha256 -days 1000 -extfile "$SECRET_DIR/leaf.ext" \
-            -out "$SECRET_DIR/leaf.cert.pem"
-          for name in root intermediate leaf; do
-            openssl x509 -in "$SECRET_DIR/$name.cert.pem" -outform DER -out "$SECRET_DIR/$name.cert.der"
-          done
-
-      - name: Generate sealed invoice through production authority
-        run: |
-          node scripts/zatca-39-sealing-proof.mjs \
-            "$PROOF_DIR" \
-            "$SECRET_DIR/leaf.key.pem" \
-            "$SECRET_DIR/leaf.cert.der" \
-            "$SECRET_DIR/intermediate.cert.der" \
-            "$SECRET_DIR/root.cert.der"
 
       - name: Build native final-context C14N oracle
         shell: bash
@@ -164,21 +111,7 @@ jobs:
             "$PROOF_DIR/native-signed-properties.c14n.xml" \
             > "$PROOF_DIR/native-c14n.sha256"
 
-      - name: Verify certificate chain and XMLDSIG signature with OpenSSL
-        shell: bash
-        run: |
-          set -euo pipefail
-          openssl verify \
-            -CAfile "$SECRET_DIR/root.cert.pem" \
-            -untrusted "$SECRET_DIR/intermediate.cert.pem" \
-            "$SECRET_DIR/leaf.cert.pem" | tee "$PROOF_DIR/openssl-chain.txt"
-          openssl dgst -sha256 \
-            -verify "$PROOF_DIR/signing-public-key.pem" \
-            -signature "$PROOF_DIR/signature.der" \
-            "$PROOF_DIR/native-signed-info.c14n.xml" | tee "$PROOF_DIR/openssl-signature.txt"
-          grep -Fxq 'Verified OK' "$PROOF_DIR/openssl-signature.txt"
-
-      - name: Independently bind XML and QR tags 6-9
+      - name: Independently bind XML, certificate path and QR tags 6-9
         shell: bash
         run: |
           set -euo pipefail
@@ -195,15 +128,33 @@ jobs:
               'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
               'ds': 'http://www.w3.org/2000/09/xmldsig#',
           }
+
           signature = root.find('.//ds:SignatureValue', ns)
           if signature is None or not signature.text:
               raise SystemExit('missing XML SignatureValue')
           signature_text = signature.text.strip()
-          signature_raw = base64.b64decode(signature_text, validate=True)
-          if len(signature_raw) != 64:
-              raise SystemExit('XMLDSIG ECDSA SignatureValue is not 64 raw bytes')
-          if signature_raw != (proof / 'signature.raw').read_bytes():
-              raise SystemExit('XML SignatureValue does not match production signature bytes')
+          signature_der = base64.b64decode(signature_text, validate=True)
+          if len(signature_der) < 68 or len(signature_der) > 72 or signature_der[0] != 0x30:
+              raise SystemExit('Fatoora SignatureValue is not canonical-looking ECDSA DER')
+          if signature_der != (proof / 'signature.der').read_bytes():
+              raise SystemExit('XML SignatureValue diverges from sealer DER artifact')
+
+          invoice_reference = None
+          for reference in root.findall('.//ds:Reference', ns):
+              if reference.attrib.get('Id') == 'invoiceSignedData':
+                  invoice_reference = reference
+                  break
+          if invoice_reference is None:
+              raise SystemExit('missing invoiceSignedData reference')
+          digest = invoice_reference.find('ds:DigestValue', ns)
+          if digest is None or not digest.text:
+              raise SystemExit('missing invoice hash DigestValue')
+          invoice_hash_text = digest.text.strip()
+          invoice_hash_raw = base64.b64decode(invoice_hash_text, validate=True)
+          if len(invoice_hash_raw) != 32:
+              raise SystemExit('invoice digest is not SHA-256 width')
+          if invoice_hash_raw != (proof / 'invoice-hash.raw').read_bytes():
+              raise SystemExit('SignedInfo invoice digest diverges from production invoice hash')
 
           qr_text = None
           for reference in root.findall('.//cac:AdditionalDocumentReference', ns):
@@ -235,7 +186,7 @@ jobs:
           if sorted(fields) != list(range(1, 10)):
               raise SystemExit(f'unexpected QR tags: {sorted(fields)}')
           expected = {
-              6: (proof / 'invoice-hash.raw').read_bytes(),
+              6: invoice_hash_text.encode('utf-8'),
               7: signature_text.encode('utf-8'),
               8: (proof / 'signing-public-key.spki.der').read_bytes(),
               9: (proof / 'technical-ca-signature.der').read_bytes(),
@@ -243,18 +194,61 @@ jobs:
           for tag, value in expected.items():
               if fields[tag] != value:
                   raise SystemExit(f'QR tag {tag} diverges from signed artifact')
+
+          certificates = root.findall('.//ds:X509Certificate', ns)
+          if len(certificates) < 2:
+              raise SystemExit('X509Data does not contain the certificate path')
+          for index, certificate in enumerate(certificates):
+              if not certificate.text:
+                  raise SystemExit('empty X509Certificate element')
+              (proof / f'certificate-{index}.der').write_bytes(
+                  base64.b64decode(certificate.text.strip(), validate=True)
+              )
+
           (proof / 'parser-proof.txt').write_text(
-              'xml_signature_binding=PASS\nqr_tags_1_9_unique=PASS\nqr_tags_6_9_binding=PASS\n',
+              'xml_signature_der_binding=PASS\n'
+              'signed_info_invoice_hash_binding=PASS\n'
+              'qr_tags_1_9_unique=PASS\n'
+              'qr_tags_6_9_binding=PASS\n'
+              'x509_path_extracted=PASS\n',
               encoding='utf-8',
           )
           PY
 
-      - name: Destroy ephemeral private-key material and preserve sanitized proof
+      - name: Verify certificate path and Fatoora stamp with OpenSSL
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf "$SECRET_DIR"
-          test ! -e "$SECRET_DIR"
+          for der in "$PROOF_DIR"/certificate-*.der; do
+            openssl x509 -inform DER -in "$der" -out "${der%.der}.pem"
+          done
+          cert_count="$(find "$PROOF_DIR" -maxdepth 1 -name 'certificate-*.der' | wc -l)"
+          if [ "$cert_count" -lt 2 ]; then
+            echo 'Certificate path is incomplete.' >&2
+            exit 1
+          fi
+          root_index=$((cert_count - 1))
+          if [ "$cert_count" -eq 2 ]; then
+            openssl verify \
+              -CAfile "$PROOF_DIR/certificate-${root_index}.pem" \
+              "$PROOF_DIR/certificate-0.pem" | tee "$PROOF_DIR/openssl-chain.txt"
+          else
+            cat "$PROOF_DIR"/certificate-{1..$((root_index - 1))}.pem > "$RUNNER_TEMP/intermediates.pem"
+            openssl verify \
+              -CAfile "$PROOF_DIR/certificate-${root_index}.pem" \
+              -untrusted "$RUNNER_TEMP/intermediates.pem" \
+              "$PROOF_DIR/certificate-0.pem" | tee "$PROOF_DIR/openssl-chain.txt"
+          fi
+          openssl dgst -sha256 \
+            -verify "$PROOF_DIR/signing-public-key.pem" \
+            -signature "$PROOF_DIR/signature.der" \
+            "$PROOF_DIR/invoice-hash.raw" | tee "$PROOF_DIR/openssl-signature.txt"
+          grep -Fxq 'Verified OK' "$PROOF_DIR/openssl-signature.txt"
+
+      - name: Preserve sanitized proof only
+        shell: bash
+        run: |
+          set -euo pipefail
           if grep -R --binary-files=without-match -E -- 'BEGIN (EC |)PRIVATE KEY' "$PROOF_DIR"; then
             echo 'Private-key material leaked into proof output.' >&2
             exit 1
@@ -266,14 +260,15 @@ jobs:
             echo 'native_signed_info_c14n11_match=PASS'
             echo 'native_signed_properties_c14n11_match=PASS'
             echo 'openssl_certificate_path=PASS'
-            echo 'openssl_xml_signature=PASS'
+            echo 'openssl_fatoora_invoice_hash_signature=PASS'
             echo 'independent_xml_qr_binding=PASS'
             echo 'private_key_artifact_absent=PASS'
             echo 'authority=EPHEMERAL_TEST_PKI_NOT_ZATCA_ACCEPTANCE'
-            cat "$PROOF_DIR/generator-proof.txt"
+            cat "$PROOF_DIR/proof-generator.txt"
             cat "$PROOF_DIR/parser-proof.txt"
           } > "$PROOF_DIR/proof.txt"
           sha256sum "$PROOF_DIR/sealed-invoice.xml" > "$PROOF_DIR/sealed-invoice.sha256"
+          rm -f "$PROOF_DIR"/certificate-*.der "$PROOF_DIR"/certificate-*.pem
           cat "$PROOF_DIR/proof.txt"
 
       - name: Upload sanitized cryptographic proof
