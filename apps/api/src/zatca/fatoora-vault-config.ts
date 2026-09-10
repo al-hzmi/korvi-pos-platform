@@ -15,8 +15,8 @@ export interface ZatcaFatooraVaultConfig {
  *
  * Both variables are optional as a pair because Gate 39 infrastructure may be
  * disabled in a development process. Supplying only one is always a boot-time
- * error. Production composition that enables ZATCA must require the returned
- * value to be non-null before constructing an issuer.
+ * error. Production composition that enables ZATCA must use
+ * `requireZatcaFatooraVaultConfig` before constructing an issuer.
  *
  * `ZATCA_FATOORA_VAULT_KEYS` is a comma-separated keyring:
  *
@@ -83,4 +83,15 @@ export function loadZatcaFatooraVaultConfig(
     activeKeyId: activeRaw,
     keys,
   };
+}
+
+/** Fail closed when a process is about to enable ZATCA credential infrastructure. */
+export function requireZatcaFatooraVaultConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): ZatcaFatooraVaultConfig {
+  const config = loadZatcaFatooraVaultConfig(env);
+  if (config === null) {
+    throw new Error('ZATCA Fatoora vault is not configured.');
+  }
+  return config;
 }
