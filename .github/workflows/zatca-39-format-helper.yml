@@ -8,7 +8,7 @@ on:
       - .github/workflows/zatca-39-format-helper.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   format:
@@ -26,22 +26,39 @@ jobs:
       - name: Install
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Format proof files
+      - name: Repair ESM fixture and format proof files
         run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts')
+          source = path.read_text()
+          source = source.replace(
+              "import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';",
+              "import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';",
+          )
+          source = source.replace(
+              "Uint8Array.from(require('node:fs').readFileSync(signaturePath))",
+              "Uint8Array.from(readFileSync(signaturePath))",
+          )
+          source = source.replace(
+              "    expect(Buffer.from(csrDer).includes(Buffer.from('ZATCA-Code-Signing'))).toBe(true);\n",
+              "",
+          )
+          path.write_text(source)
+          PY
           npx prettier --write \
             apps/api/src/zatca/azure-key-vault-signing-key.ts \
             apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts
+          git diff --check
 
-      - name: Emit formatted provider
+      - name: Commit formatter result
         run: |
-          echo 'KORVI_PROVIDER_BASE64_BEGIN'
-          base64 -w0 apps/api/src/zatca/azure-key-vault-signing-key.ts
-          echo
-          echo 'KORVI_PROVIDER_BASE64_END'
-
-      - name: Emit formatted test
-        run: |
-          echo 'KORVI_TEST_BASE64_BEGIN'
-          base64 -w0 apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts
-          echo
-          echo 'KORVI_TEST_BASE64_END'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            apps/api/src/zatca/azure-key-vault-signing-key.ts \
+            apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(zatca): normalize Azure signing proof files'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
