@@ -7,12 +7,12 @@ on:
     paths:
       - 'packages/database/prisma/**'
       - 'packages/database/src/**'
-      - 'packages/domain/src/zatca/csid-provisioning.ts'
-      - 'packages/domain/src/ports/zatca-provisioning.ts'
-      - 'apps/api/src/zatca/provision-compliance-csid.ts'
-      - 'apps/api/src/zatca/compliance-csid-http-issuer.ts'
-      - 'apps/api/src/__tests__/zatca-provision-compliance-csid.test.ts'
-      - 'apps/api/src/__tests__/zatca-compliance-csid-http-issuer.test.ts'
+      - 'packages/domain/src/zatca/**'
+      - 'packages/domain/src/ports/zatca*.ts'
+      - 'apps/api/src/zatca/**'
+      - 'apps/api/src/__tests__/zatca-*.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/zatca-39-csid-postgres-proof.yml'
   workflow_dispatch:
 
