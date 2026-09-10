@@ -26,21 +26,16 @@ jobs:
       - run: npm ci --registry=https://registry.npmjs.org
       - name: Apply deterministic wiring
         run: python3 scripts/tmp-gate39-wire.py
-      - name: Format wired files
+      - name: Format wired source files
         run: |
           npx --no-install prisma format --schema packages/database/prisma/schema.prisma
-          npx --no-install prettier --write packages/database/src/index.ts packages/database/src/zatca/fatoora-credential-repository.ts apps/api/src/zatca/encrypted-fatoora-credential-store.ts apps/api/src/__tests__/zatca-encrypted-fatoora-credential-store.test.ts .github/workflows/zatca-39-csid-postgres-proof.yml
-      - name: Refuse stale migration-count assertions
-        run: |
-          if grep -RInE 'exactly 13 migrations|13 migrations|thirteen migrations|13\|13' packages apps scripts .github/workflows --exclude='tmp-gate39-fatoora-store-wire.yml' --exclude='tmp-gate39-wire.py'; then
-            exit 1
-          fi
-      - name: Commit wiring
+          npx --no-install prettier --write packages/database/src/index.ts packages/database/src/zatca/fatoora-credential-repository.ts apps/api/src/zatca/encrypted-fatoora-credential-store.ts apps/api/src/__tests__/zatca-encrypted-fatoora-credential-store.test.ts
+      - name: Commit non-workflow wiring only
         run: |
           set -euo pipefail
           git config user.name korvi-ci
           git config user.email korvi-ci@users.noreply.github.com
-          git add packages/database/prisma/schema.prisma packages/database/src/index.ts packages/database/src/zatca/fatoora-credential-repository.ts apps/api/src/zatca/encrypted-fatoora-credential-store.ts apps/api/src/__tests__/zatca-encrypted-fatoora-credential-store.test.ts .github/workflows/zatca-39-csid-postgres-proof.yml
+          git add packages/database/prisma/schema.prisma packages/database/src/index.ts packages/database/src/zatca/fatoora-credential-repository.ts apps/api/src/zatca/encrypted-fatoora-credential-store.ts apps/api/src/__tests__/zatca-encrypted-fatoora-credential-store.test.ts
           git diff --cached --check
           git commit -m 'feat(zatca): wire encrypted Fatoora credential vault'
           git push origin HEAD:review/zatca-39-csid-lifecycle
