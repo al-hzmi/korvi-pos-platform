@@ -329,8 +329,8 @@ export class AzureKeyVaultSigningKeyPort implements ZatcaSigningKeyPort {
   }
 
   public async signSha256(input: ZatcaSignInput): Promise<Uint8Array> {
-    if (input.message.length !== SHA256_BYTES) {
-      throw new ZatcaInvoiceError('ZATCA invoice hash must be exactly 32 bytes before stamping.');
+    if (input.message.length === 0) {
+      throw new ZatcaInvoiceError('ZATCA signing message must not be empty.');
     }
     const description = await this.describePublicKey(input.scope, input.terminalId, input.key);
     const providerSignature = await this.client.signDigest(input.key.keyId, sha256(input.message));
@@ -696,7 +696,7 @@ function derUtf8String(value: string): Uint8Array {
 }
 
 function derPrintableString(value: string): Uint8Array {
-  if (!/^[A-Za-z0-9 '()+,\-.\/:=?]*$/.test(value)) {
+  if (!/^[A-Za-z0-9 '()+,\-./:=?]*$/.test(value)) {
     throw new ZatcaInvoiceError(
       'ZATCA printable-string CSR value contains unsupported characters.',
     );

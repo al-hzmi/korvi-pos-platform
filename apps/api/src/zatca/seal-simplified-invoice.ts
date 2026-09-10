@@ -179,11 +179,11 @@ export function createZatcaSimplifiedInvoiceSealer(
           scope: input.scope,
           terminalId: input.terminalId,
           key: csid.key,
-          message: Uint8Array.from(invoiceDigest),
+          message: Uint8Array.from(signedInfoCanonical),
         }),
       );
       verifyGeneratedSignature(
-        invoiceDigest,
+        signedInfoCanonical,
         signatureDer,
         certificateMaterial.signingPublicKeySpkiDer,
       );

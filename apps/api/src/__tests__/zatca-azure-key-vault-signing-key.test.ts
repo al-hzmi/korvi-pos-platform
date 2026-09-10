@@ -55,14 +55,19 @@ function bundle(
   publicJwk: JsonWebKey,
   overrides: Partial<AzureKeyVaultKeyBundle> = {},
 ): AzureKeyVaultKeyBundle {
+  const x = publicJwk.x;
+  const y = publicJwk.y;
+  if (x === undefined || y === undefined) {
+    throw new Error('Generated secp256k1 test key is missing public coordinates.');
+  }
   return {
     key: {
       kid: KEY_ID,
       kty: 'EC',
       key_ops: ['sign', 'verify'],
       crv: 'P-256K',
-      x: publicJwk.x,
-      y: publicJwk.y,
+      x,
+      y,
     },
     attributes: { enabled: true, exportable: false, created: 1_725_000_000 },
     tags: {
@@ -182,25 +187,28 @@ describe('Azure Key Vault ZATCA signing authority', () => {
     }
   });
 
-  it('hashes the invoice hash once for Azure ES256K, normalizes high-S, and returns verified DER', async () => {
+  it('hashes canonical SignedInfo once for Azure ES256K, normalizes high-S, and returns verified DER', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'secp256k1' });
     const publicJwk = publicKey.export({ format: 'jwk' });
     const client = fakeClient(bundle(publicJwk), privateKey);
     const port = new AzureKeyVaultSigningKeyPort({ client });
-    const invoiceHash = createHash('sha256').update('invoice').digest();
+    const signedInfo = Buffer.from(
+      '<ds:SignedInfo><ds:Reference URI=""><ds:DigestValue>invoice</ds:DigestValue></ds:Reference><ds:Reference URI="#xadesSignedProperties"><ds:DigestValue>properties</ds:DigestValue></ds:Reference></ds:SignedInfo>',
+      'utf8',
+    );
 
     const signatureDer = await port.signSha256({
       scope: SCOPE,
       terminalId: TERMINAL_ID,
       key: handle(),
-      message: invoiceHash,
+      message: signedInfo,
     });
 
     expect(client.signDigest).toHaveBeenCalledWith(
       KEY_ID,
-      Uint8Array.from(createHash('sha256').update(invoiceHash).digest()),
+      Uint8Array.from(createHash('sha256').update(signedInfo).digest()),
     );
-    expect(verify('sha256', invoiceHash, publicKey, signatureDer)).toBe(true);
+    expect(verify('sha256', signedInfo, publicKey, signatureDer)).toBe(true);
     const raw = ecdsaDerToXmlDsigSignature(signatureDer);
     expect(bytesToBigInt(raw.subarray(32))).toBeLessThanOrEqual(LOW_S_LIMIT);
   });
@@ -277,7 +285,7 @@ describe('Azure Key Vault ZATCA signing authority', () => {
       tags: {},
     };
     const fetchImpl = vi.fn<typeof fetch>(
-      async (_input, init) =>
+      async (_input, _init) =>
         new Response(JSON.stringify(responseBody), {
           status: 200,
           headers: { 'content-type': 'application/json' },

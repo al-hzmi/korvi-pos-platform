@@ -92,11 +92,10 @@ export interface ZatcaSignInput {
   readonly terminalId: string;
   readonly key: ZatcaSigningKeyHandle;
   /**
-   * Raw 32-byte SHA-256 invoice hash from the ZATCA invoice-reference transform.
-   *
-   * Fatoora's stamping profile signs this hash as the message using ECDSA with
-   * SHA-256. The security module therefore performs the algorithm invocation;
-   * callers never receive or export private-key material.
+   * Exact message bytes to sign with ECDSA secp256k1/SHA-256. For an XAdES
+   * invoice stamp these are the canonicalized ds:SignedInfo bytes, whose
+   * references bind both the invoice digest and SignedProperties digest.
+   * Callers never receive or export private-key material.
    */
   readonly message: Uint8Array;
 }
@@ -122,7 +121,7 @@ export interface ZatcaSigningKeyPort {
   createPkcs10Csr(input: CreateZatcaCsrInput): Promise<Uint8Array>;
 
   /**
-   * Sign the raw invoice-hash bytes with ECDSA secp256k1/SHA-256 and return one
+   * Sign the supplied message bytes with ECDSA secp256k1/SHA-256 and return one
    * canonical ASN.1 DER ECDSA signature. Provider adapters MUST NOT return the
    * XMLDSIG fixed-width `r || s` form at this boundary.
    *

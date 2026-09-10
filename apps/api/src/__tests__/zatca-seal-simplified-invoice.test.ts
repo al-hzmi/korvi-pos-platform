@@ -4,6 +4,7 @@ import {
   createHash,
   createPrivateKey,
   createSign,
+  verify,
   type KeyObject,
 } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -511,10 +512,18 @@ describe('ZATCA simplified invoice sealing authority', () => {
 
     expect(signing.signSha256).toHaveBeenCalledTimes(1);
     const call = signing.signSha256.mock.calls[0]?.[0];
-    expect(call?.message).toEqual(result.invoiceHash);
-    expect(call?.message).toHaveLength(32);
+    const signedInfoCanonical = await canonicalizer.canonicalizeSignedInfo(result.xml);
+    expect(call?.message).toEqual(signedInfoCanonical);
+    expect(call?.message).not.toEqual(result.invoiceHash);
+    expect(signedInfoCanonical.length).toBeGreaterThan(32);
 
     const signatureDer = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));
+    expect(
+      verify('sha256', signedInfoCanonical, TEST_PKI.leafCertificate.publicKey, signatureDer),
+    ).toBe(true);
+    expect(
+      verify('sha256', result.invoiceHash, TEST_PKI.leafCertificate.publicKey, signatureDer),
+    ).toBe(false);
     expect(signatureDer[0]).toBe(0x30);
     expect(ecdsaDerToXmlDsigSignature(signatureDer)).toHaveLength(64);
     expect(result.xml).toContain(
