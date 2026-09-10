@@ -1,4 +1,4 @@
-name: ZATCA 39 Lint Remediation
+name: ZATCA 39 SignedInfo Remediation
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
       - name: Install
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Apply exact lint fixes
+      - name: Apply exact Gate 39 corrections
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
@@ -38,35 +38,99 @@ jobs:
             const input = readFileSync(path, 'utf8');
             const first = input.indexOf(before);
             if (first < 0 || input.indexOf(before, first + before.length) >= 0) {
-              throw new Error(`Expected exactly one lint target in ${path}`);
+              throw new Error(`Expected exactly one correction target in ${path}`);
             }
             writeFileSync(path, input.slice(0, first) + after + input.slice(first + before.length));
           }
 
+          const azureTest = 'apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts';
+          const azureProvider = 'apps/api/src/zatca/azure-key-vault-signing-key.ts';
+          const sealer = 'apps/api/src/zatca/seal-simplified-invoice.ts';
+          const sealerTest = 'apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts';
+          const signingPort = 'packages/domain/src/ports/zatca.ts';
+
+          replaceExactlyOnce(azureTest, 'async (_input, init) =>', 'async (_input, _init) =>');
           replaceExactlyOnce(
-            'apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts',
-            'async (_input, init) =>',
-            'async (_input, _init) =>',
-          );
-          replaceExactlyOnce(
-            'apps/api/src/zatca/azure-key-vault-signing-key.ts',
+            azureProvider,
             "if (!/^[A-Za-z0-9 '()+,\\-.\\/:=?]*$/.test(value)) {",
             "if (!/^[A-Za-z0-9 '()+,\\-./:=?]*$/.test(value)) {",
           );
+
+          replaceExactlyOnce(
+            azureTest,
+            `): AzureKeyVaultKeyBundle {\n  return {\n    key: {\n      kid: KEY_ID,\n      kty: 'EC',\n      key_ops: ['sign', 'verify'],\n      crv: 'P-256K',\n      x: publicJwk.x,\n      y: publicJwk.y,\n    },`,
+            `): AzureKeyVaultKeyBundle {\n  const x = publicJwk.x;\n  const y = publicJwk.y;\n  if (x === undefined || y === undefined) {\n    throw new Error('Generated secp256k1 test key is missing public coordinates.');\n  }\n  return {\n    key: {\n      kid: KEY_ID,\n      kty: 'EC',\n      key_ops: ['sign', 'verify'],\n      crv: 'P-256K',\n      x,\n      y,\n    },`,
+          );
+
+          replaceExactlyOnce(
+            signingPort,
+            `  /**\n   * Raw 32-byte SHA-256 invoice hash from the ZATCA invoice-reference transform.\n   *\n   * Fatoora's stamping profile signs this hash as the message using ECDSA with\n   * SHA-256. The security module therefore performs the algorithm invocation;\n   * callers never receive or export private-key material.\n   */\n  readonly message: Uint8Array;`,
+            `  /**\n   * Exact message bytes to sign with ECDSA secp256k1/SHA-256. For an XAdES\n   * invoice stamp these are the canonicalized ds:SignedInfo bytes, whose\n   * references bind both the invoice digest and SignedProperties digest.\n   * Callers never receive or export private-key material.\n   */\n  readonly message: Uint8Array;`,
+          );
+          replaceExactlyOnce(
+            signingPort,
+            `   * Sign the raw invoice-hash bytes with ECDSA secp256k1/SHA-256 and return one\n   * canonical ASN.1 DER ECDSA signature. Provider adapters MUST NOT return the`,
+            `   * Sign the supplied message bytes with ECDSA secp256k1/SHA-256 and return one\n   * canonical ASN.1 DER ECDSA signature. Provider adapters MUST NOT return the`,
+          );
+
+          replaceExactlyOnce(
+            azureProvider,
+            `  public async signSha256(input: ZatcaSignInput): Promise<Uint8Array> {\n    if (input.message.length !== SHA256_BYTES) {\n      throw new ZatcaInvoiceError('ZATCA invoice hash must be exactly 32 bytes before stamping.');\n    }`,
+            `  public async signSha256(input: ZatcaSignInput): Promise<Uint8Array> {\n    if (input.message.length === 0) {\n      throw new ZatcaInvoiceError('ZATCA signing message must not be empty.');\n    }`,
+          );
+
+          replaceExactlyOnce(
+            sealer,
+            `          message: Uint8Array.from(invoiceDigest),\n        }),\n      );\n      verifyGeneratedSignature(\n        invoiceDigest,`,
+            `          message: Uint8Array.from(signedInfoCanonical),\n        }),\n      );\n      verifyGeneratedSignature(\n        signedInfoCanonical,`,
+          );
+
+          replaceExactlyOnce(
+            sealerTest,
+            `  createPrivateKey,\n  createSign,\n  type KeyObject,`,
+            `  createPrivateKey,\n  createSign,\n  verify,\n  type KeyObject,`,
+          );
+          replaceExactlyOnce(
+            sealerTest,
+            `    const call = signing.signSha256.mock.calls[0]?.[0];\n    expect(call?.message).toEqual(result.invoiceHash);\n    expect(call?.message).toHaveLength(32);\n\n    const signatureDer = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));`,
+            `    const call = signing.signSha256.mock.calls[0]?.[0];\n    const signedInfoCanonical = await canonicalizer.canonicalizeSignedInfo(result.xml);\n    expect(call?.message).toEqual(signedInfoCanonical);\n    expect(call?.message).not.toEqual(result.invoiceHash);\n    expect(signedInfoCanonical.length).toBeGreaterThan(32);\n\n    const signatureDer = Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'));\n    expect(\n      verify('sha256', signedInfoCanonical, TEST_PKI.leafCertificate.publicKey, signatureDer),\n    ).toBe(true);\n    expect(\n      verify('sha256', result.invoiceHash, TEST_PKI.leafCertificate.publicKey, signatureDer),\n    ).toBe(false);`,
+          );
+
+          replaceExactlyOnce(
+            azureTest,
+            `  it('hashes the invoice hash once for Azure ES256K, normalizes high-S, and returns verified DER', async () => {\n    const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'secp256k1' });\n    const publicJwk = publicKey.export({ format: 'jwk' });\n    const client = fakeClient(bundle(publicJwk), privateKey);\n    const port = new AzureKeyVaultSigningKeyPort({ client });\n    const invoiceHash = createHash('sha256').update('invoice').digest();\n\n    const signatureDer = await port.signSha256({\n      scope: SCOPE,\n      terminalId: TERMINAL_ID,\n      key: handle(),\n      message: invoiceHash,\n    });\n\n    expect(client.signDigest).toHaveBeenCalledWith(\n      KEY_ID,\n      Uint8Array.from(createHash('sha256').update(invoiceHash).digest()),\n    );\n    expect(verify('sha256', invoiceHash, publicKey, signatureDer)).toBe(true);`,
+            `  it('hashes canonical SignedInfo once for Azure ES256K, normalizes high-S, and returns verified DER', async () => {\n    const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'secp256k1' });\n    const publicJwk = publicKey.export({ format: 'jwk' });\n    const client = fakeClient(bundle(publicJwk), privateKey);\n    const port = new AzureKeyVaultSigningKeyPort({ client });\n    const signedInfo = Buffer.from(\n      '<ds:SignedInfo><ds:Reference URI=""><ds:DigestValue>invoice</ds:DigestValue></ds:Reference><ds:Reference URI="#xadesSignedProperties"><ds:DigestValue>properties</ds:DigestValue></ds:Reference></ds:SignedInfo>',\n      'utf8',\n    );\n\n    const signatureDer = await port.signSha256({\n      scope: SCOPE,\n      terminalId: TERMINAL_ID,\n      key: handle(),\n      message: signedInfo,\n    });\n\n    expect(client.signDigest).toHaveBeenCalledWith(\n      KEY_ID,\n      Uint8Array.from(createHash('sha256').update(signedInfo).digest()),\n    );\n    expect(verify('sha256', signedInfo, publicKey, signatureDer)).toBe(true);`,
+          );
+
           NODE
+
           npx prettier --write \
+            packages/domain/src/ports/zatca.ts \
             apps/api/src/zatca/azure-key-vault-signing-key.ts \
-            apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts
+            apps/api/src/zatca/seal-simplified-invoice.ts \
+            apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
+
+      - name: Targeted cryptographic regression proof
+        run: |
+          npx vitest run \
+            apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
 
       - name: Full verify before commit
         run: npm run verify
 
-      - name: Commit verified remediation and remove helper
+      - name: Commit verified correction and remove helper
         run: |
           git rm .github/workflows/zatca-39-lint-remediation.yml
-          git add apps/api/src/zatca/azure-key-vault-signing-key.ts apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts
+          git add \
+            packages/domain/src/ports/zatca.ts \
+            apps/api/src/zatca/azure-key-vault-signing-key.ts \
+            apps/api/src/zatca/seal-simplified-invoice.ts \
+            apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts \
+            apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(zatca): satisfy signing authority lint gates'
+          git commit -m 'fix(zatca): sign canonical SignedInfo authority'
           git push origin HEAD:review/zatca-39-csid-lifecycle
