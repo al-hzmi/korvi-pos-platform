@@ -93,8 +93,8 @@ describe.skipIf(url === '')('ZATCA CSID provisioning repository, PostgreSQL live
 
     await inTenant(admin, D.tenantA, async () => {
       await admin.query(
-        `INSERT INTO "tenants" ("id","name","slug","status","lifecycleProvenance","updatedAt")
-         VALUES ($1,'ZATCA tenant A','zatca-csid-live-a','active','recorded',now())`,
+        `INSERT INTO "tenants" ("id","name","slug","status","lifecycleProvenance","activatedAt","updatedAt")
+         VALUES ($1,'ZATCA tenant A','zatca-csid-live-a','active','recorded',now(),now())`,
         [D.tenantA],
       );
       await admin.query(
@@ -111,8 +111,8 @@ describe.skipIf(url === '')('ZATCA CSID provisioning repository, PostgreSQL live
 
     await inTenant(admin, D.tenantB, async () => {
       await admin.query(
-        `INSERT INTO "tenants" ("id","name","slug","status","lifecycleProvenance","updatedAt")
-         VALUES ($1,'ZATCA tenant B','zatca-csid-live-b','active','recorded',now())`,
+        `INSERT INTO "tenants" ("id","name","slug","status","lifecycleProvenance","activatedAt","updatedAt")
+         VALUES ($1,'ZATCA tenant B','zatca-csid-live-b','active','recorded',now(),now())`,
         [D.tenantB],
       );
       await admin.query(
