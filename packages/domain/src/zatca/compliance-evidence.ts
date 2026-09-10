@@ -1,9 +1,12 @@
 import { DomainError } from '../errors.js';
 import type { TenantScope } from '../ports/persistence.js';
-import type { ZatcaSigningKeyHandle } from '../ports/zatca.js';
+import {
+  ZATCA_SIGNING_ALGORITHM,
+  ZATCA_SIGNING_CURVE,
+  type ZatcaSigningKeyHandle,
+} from '../ports/zatca.js';
 import type { ZatcaFatooraSecretHandle } from './csid-lifecycle.js';
 import type { ZatcaCsidEnvironment } from './csid-provisioning.js';
-import { ZATCA_SIGNING_ALGORITHM, ZATCA_SIGNING_CURVE } from './csid.js';
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const CREDENTIAL_ID = /^sha256:[0-9a-f]{64}$/;
