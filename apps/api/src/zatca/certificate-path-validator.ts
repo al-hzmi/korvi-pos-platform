@@ -16,15 +16,20 @@ export interface ZatcaCertificatePathTrustInput {
 export interface VerifiedZatcaCertificatePath {
   readonly trustAnchorSha256Hex: string;
   readonly certificateSha256Hex: readonly string[];
+  /** Fatoora display-order issuer name derived from the signing certificate DER. */
+  readonly signingCertificateIssuerName: string;
+  /** Positive decimal serial number derived from the signing certificate DER. */
+  readonly signingCertificateSerialNumber: string;
 }
 
 /**
- * Verify the X.509 path independently of the persisted CSID metadata.
+ * Verify the X.509 path independently of caller-controlled invoice data.
  *
  * The last certificate is accepted as a trust anchor only when its DER SHA-256
- * fingerprint is pinned by server configuration. Caller/invoice data can never
- * introduce a new root. Every path certificate is validity-checked at the XAdES
- * signing instant and every child signature is verified by the next CA key.
+ * fingerprint is pinned by server configuration. Every certificate is validity
+ * checked at the exact stamping instant and every child signature is verified by
+ * the next CA key. Issuer and serial metadata are also required to agree with DER
+ * so XAdES identity cannot be substituted through stale or forged persisted text.
  */
 export function verifyZatcaCertificatePath(
   input: ZatcaCertificatePathTrustInput,
@@ -96,12 +101,15 @@ export function verifyZatcaCertificatePath(
   }
 
   const trustAnchorSha256Hex = fingerprints.at(-1);
-  if (trustAnchorSha256Hex === undefined) {
-    throw new ZatcaInvoiceError('ZATCA trust anchor fingerprint is unavailable.');
+  const signingCertificate = certificates[0];
+  if (trustAnchorSha256Hex === undefined || signingCertificate === undefined) {
+    throw new ZatcaInvoiceError('ZATCA verified certificate-path identity is unavailable.');
   }
   return {
     trustAnchorSha256Hex,
     certificateSha256Hex: [...fingerprints],
+    signingCertificateIssuerName: normalizeIssuerName(signingCertificate.issuer),
+    signingCertificateSerialNumber: BigInt(`0x${signingCertificate.serialNumber}`).toString(10),
   };
 }
 
@@ -109,9 +117,15 @@ function parseCertificate(entry: ZatcaCertificatePathEntry, index: number): X509
   try {
     const certificate = new X509Certificate(Buffer.from(entry.certificateDer));
     const serialDecimal = BigInt(`0x${certificate.serialNumber}`).toString(10);
+    const issuerName = normalizeIssuerName(certificate.issuer);
     if (serialDecimal !== entry.serialNumber) {
       throw new ZatcaInvoiceError(
         `ZATCA certificate serial metadata diverges from DER at path position ${String(index)}.`,
+      );
+    }
+    if (normalizeIssuerName(entry.issuerName) !== issuerName) {
+      throw new ZatcaInvoiceError(
+        `ZATCA certificate issuer metadata diverges from DER at path position ${String(index)}.`,
       );
     }
     return certificate;
@@ -121,6 +135,14 @@ function parseCertificate(entry: ZatcaCertificatePathEntry, index: number): X509
       `ZATCA certificate DER is invalid at path position ${String(index)}.`,
     );
   }
+}
+
+function normalizeIssuerName(value: string): string {
+  return value
+    .split(/\r?\n|,\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join(', ');
 }
 
 function assertCertificateValidity(certificate: X509Certificate, at: number, index: number): void {
