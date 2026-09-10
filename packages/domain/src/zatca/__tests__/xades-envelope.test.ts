@@ -54,7 +54,7 @@ async function signatureFragments() {
 }
 
 describe('ZATCA UBL XAdES envelope', () => {
-  it('pins BR-KSA-28/29/30 identifiers and emits the whole certificate path in order', async () => {
+  it('pins BR-KSA-28/29/30 identifiers and serializes only the signing leaf in X509Data', async () => {
     const fragments = await signatureFragments();
     const extension = renderZatcaUblSignatureExtension({
       ...fragments,
@@ -75,8 +75,9 @@ describe('ZATCA UBL XAdES envelope', () => {
     expect(extension).toContain(
       `<xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#${ZATCA_XML_SIGNATURE_ID}">`,
     );
-    expect(extension.match(/<ds:X509Certificate>/g)).toHaveLength(2);
-    expect(extension.indexOf('MAEB')).toBeLessThan(extension.indexOf('MAEC'));
+    expect(extension.match(/<ds:X509Certificate>/g)).toHaveLength(1);
+    expect(extension).toContain('<ds:X509Certificate>MAEB</ds:X509Certificate>');
+    expect(extension).not.toContain('MAEC');
   });
 
   it('emits the required cac:Signature authority pointer', () => {
@@ -158,7 +159,7 @@ describe('ZATCA UBL XAdES envelope', () => {
         certificatePathDer: [new Uint8Array(0)],
         signatureValueBase64: 'AQIDBA==',
       }),
-    ).toThrow(/empty certificate/);
+    ).toThrow(/non-empty signing certificate/);
     expect(() => renderZatcaQrDocumentReference('not base64')).toThrow(/Base64/);
     expect(() => renderZatcaQrDocumentReference('A'.repeat(704))).toThrow(/700/);
   });

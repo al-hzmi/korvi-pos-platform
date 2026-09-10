@@ -138,7 +138,9 @@ describe('ZATCA Fatoora SignedProperties', () => {
     expect(hashInput).toContain(
       `                                                    <ds:X509IssuerName xmlns:ds="${XMLDSIG_NAMESPACE}">${issuerName}</ds:X509IssuerName>`,
     );
-    expect(hashInput).toEndWith('                                </xades:SignedProperties>');
+    expect(hashInput.endsWith('                                </xades:SignedProperties>')).toBe(
+      true,
+    );
     await expect(hashZatcaSignedPropertiesProfile(hashInput)).resolves.toBe(
       '26588d49a6e236c6ef5b6effacc38548164124337fb2b14e65c5c47e095cba54',
     );

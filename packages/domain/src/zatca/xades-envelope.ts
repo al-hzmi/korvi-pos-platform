@@ -38,7 +38,9 @@ export interface ZatcaUblSignatureEnvelopeInput {
  * Render the UBL extension that carries one XAdES-B-B signature.
  *
  * BR-KSA-28/29/30 identifiers are constants rather than caller-controlled data.
- * The certificate path is signing certificate first through the trust anchor.
+ * The caller supplies the already-verified certificate path with the signing leaf first.
+ * Fatoora ds:X509Data serializes only that signing certificate; intermediates and the
+ * pinned trust anchor remain trust-validation inputs and are never duplicated into XML.
  * No private key or FATOORA secret can enter this renderer.
  */
 export function renderZatcaUblSignatureExtension(input: ZatcaUblSignatureEnvelopeInput): string {
@@ -56,12 +58,13 @@ export function renderZatcaUblSignatureExtension(input: ZatcaUblSignatureEnvelop
     assertBase64('XML SignatureValue', input.signatureValueBase64);
   }
 
-  const certificates = input.certificatePathDer.map((certificateDer) => {
-    if (certificateDer.length === 0) {
-      throw new ZatcaInvoiceError('ZATCA X509Data cannot contain an empty certificate.');
-    }
-    return `<ds:X509Certificate>${bytesToBase64(Uint8Array.from(certificateDer))}</ds:X509Certificate>`;
-  });
+  const signingCertificateDer = input.certificatePathDer[0];
+  if (signingCertificateDer === undefined || signingCertificateDer.length === 0) {
+    throw new ZatcaInvoiceError('ZATCA X509Data requires a non-empty signing certificate.');
+  }
+  const signingCertificate = `<ds:X509Certificate>${bytesToBase64(
+    Uint8Array.from(signingCertificateDer),
+  )}</ds:X509Certificate>`;
 
   return [
     '<ext:UBLExtensions>',
@@ -76,7 +79,7 @@ export function renderZatcaUblSignatureExtension(input: ZatcaUblSignatureEnvelop
     input.signedInfoXml,
     `<ds:SignatureValue>${input.signatureValueBase64}</ds:SignatureValue>`,
     '<ds:KeyInfo><ds:X509Data>',
-    ...certificates,
+    signingCertificate,
     '</ds:X509Data></ds:KeyInfo>',
     '<ds:Object>',
     `<xades:QualifyingProperties xmlns:xades="${ZATCA_XADES_NAMESPACE}" Target="#${ZATCA_XML_SIGNATURE_ID}">`,

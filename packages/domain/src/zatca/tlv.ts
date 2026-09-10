@@ -107,7 +107,8 @@ export interface SimplifiedInvoiceQrInput {
  *
  * Tag 6 carries the 44-byte UTF-8 Base64 text of the 32-byte invoice hash.
  * Tag 7 carries the UTF-8 Base64 text of the ASN.1 DER ECDSA signature.
- * Tags 8 and 9 carry DER bytes directly. No private-key material belongs here.
+ * Tag 8 carries the EGS public-key DER and tag 9 carries the technical CA signature
+ * over that public key for simplified invoices. No private-key material belongs here.
  */
 export interface Phase2SimplifiedInvoiceQrInput extends SimplifiedInvoiceQrInput {
   readonly invoiceHash: Uint8Array;

@@ -454,6 +454,9 @@ async function writeSafeProofArtifacts(
   write('signature.der', Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64')));
   write('signing-public-key.spki.der', result.signingPublicKeySpkiDer);
   write('technical-ca-signature.der', result.technicalCaSignatureDer);
+  write('certificate-path-0.der', LEAF_DER);
+  write('certificate-path-1.der', INTERMEDIATE_DER);
+  write('certificate-path-2.der', ROOT_DER);
   write(
     'signing-public-key.pem',
     TEST_PKI.leafCertificate.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
@@ -512,6 +515,10 @@ describe('ZATCA simplified invoice sealing authority', () => {
     expect(result.xml).toContain('<xades:SigningCertificate>');
     expect(result.xml).not.toContain('SigningCertificateV2');
     expect(result.xml).toContain('<xades:IssuerSerial>');
+    expect(result.xml.match(/<ds:X509Certificate>/g)).toHaveLength(1);
+    expect(result.xml).toContain(bytesToBase64(LEAF_DER));
+    expect(result.xml).not.toContain(bytesToBase64(INTERMEDIATE_DER));
+    expect(result.xml).not.toContain(bytesToBase64(ROOT_DER));
     expect(result.xml).toContain('<cbc:ID>QR</cbc:ID>');
     expect(result.invoiceHashBase64).toBe(bytesToBase64(result.invoiceHash));
     expect(result.trustAnchorSha256Hex).toBe(ROOT_SHA256);
