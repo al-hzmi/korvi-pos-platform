@@ -1,0 +1,109 @@
+name: Scratch run ZATCA compliance evidence proof
+
+on:
+  push:
+    branches:
+      - scratch/inspect-production-csid
+
+permissions:
+  contents: write
+
+jobs:
+  prove-evidence:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: korvi_evidence_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_evidence_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/korvi_evidence_test
+      APP_DATABASE_URL: postgresql://korvi_evidence_app:korvi_evidence_app@127.0.0.1:5432/korvi_evidence_test
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Materialize the already-reviewed evidence slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/scratch-complete-zatca-evidence.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(source) if line.strip() == '- name: Complete evidence persistence wiring')
+          run_line = next(i for i in range(start + 1, len(source)) if source[i].strip() == 'run: |')
+          end = next(i for i in range(run_line + 1, len(source)) if source[i].strip() == '- name: Apply migrations to PostgreSQL 17')
+          body = []
+          for line in source[run_line + 1:end]:
+              body.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/complete-evidence.sh').write_text('\n'.join(body) + '\n')
+          PY
+          bash /tmp/complete-evidence.sh
+
+      - name: Apply all migrations to PostgreSQL 17
+        run: (cd packages/database && npx prisma migrate deploy)
+
+      - name: Create restricted application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_evidence_app LOGIN PASSWORD 'korvi_evidence_app'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT ON DATABASE korvi_evidence_test TO korvi_evidence_app;
+          GRANT USAGE ON SCHEMA public TO korvi_evidence_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO korvi_evidence_app;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO korvi_evidence_app;
+          SQL
+
+      - name: Run PostgreSQL adversarial evidence proof
+        env:
+          KORVI_TEST_DATABASE_URL: ${{ env.APP_DATABASE_URL }}
+          KORVI_TEST_ADMIN_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npx vitest run packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts
+
+      - name: Full repository verify
+        run: |
+          set -euo pipefail
+          unset KORVI_TEST_DATABASE_URL KORVI_TEST_ADMIN_DATABASE_URL
+          npm run verify
+
+      - name: Commit permanent evidence slice only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            packages/domain/src/zatca/compliance-evidence.ts \
+            packages/domain/src/ports/zatca-compliance-evidence.ts \
+            packages/domain/src/zatca/__tests__/compliance-evidence.test.ts \
+            packages/domain/src/index.ts \
+            packages/database/prisma/schema.prisma \
+            packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql \
+            packages/database/src/zatca/compliance-evidence-repository.ts \
+            packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts \
+            packages/database/src/index.ts
+          git diff --cached --check
+          git commit -m "feat(zatca): persist trusted compliance evidence"
+          git push origin HEAD:scratch/inspect-production-csid
