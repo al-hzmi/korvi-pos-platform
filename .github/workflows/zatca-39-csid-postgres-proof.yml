@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   postgres-proof:
-    name: PostgreSQL 17 / migration / RLS / CSID CAS
+    name: PostgreSQL 17 / migration / RLS / CSID CAS / encrypted Fatoora vault
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -78,19 +78,19 @@ jobs:
           test "$flags" = 'f|f|f|f|f|f'
           printf 'commit=%s\napp_role_flags=%s\n' "$GITHUB_SHA" "$flags" | tee "$PROOF_LOG"
 
-      - name: Apply all thirteen migrations as application role
+      - name: Apply all fourteen migrations as application role
         shell: bash
         run: |
           set -euo pipefail
           count="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          if [ "$count" -ne 13 ]; then
-            echo "Expected exactly 13 migrations, got $count" >&2
+          if [ "$count" -ne 14 ]; then
+            echo "Expected exactly 14 migrations, got $count" >&2
             exit 1
           fi
           npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
           npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
           ledger="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
-          test "$ledger" = '13|13'
+          test "$ledger" = '14|14'
           echo "migration_ledger=$ledger" | tee -a "$PROOF_LOG"
 
       - name: Prove schema drift is zero
@@ -100,7 +100,7 @@ jobs:
           set -euo pipefail
           npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code 2>&1 | tee -a "../../$PROOF_LOG"
 
-      - name: Prove CSID database security invariants
+      - name: Prove CSID and encrypted Fatoora vault database security invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -112,7 +112,19 @@ jobs:
           test "$forbidden" = '0'
           trigger_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_csid_provisioning_attempts'::regclass AND tgname='zatca_csid_provisioning_transition_guard' AND NOT tgisinternal")"
           test "$trigger_count" = '1'
-          printf 'rls=%s\npolicy_count=%s\nforbidden_secret_columns=%s\ntransition_guard=%s\n' "$rls" "$policies" "$forbidden" "$trigger_count" | tee -a "$PROOF_LOG"
+
+          vault_rls="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT relrowsecurity::text || '|' || relforcerowsecurity::text FROM pg_class WHERE oid='zatca_fatoora_credentials'::regclass")"
+          test "$vault_rls" = 'true|true'
+          vault_policies="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='zatca_fatoora_credentials' AND policyname='zatca_fatoora_credentials_isolation'")"
+          test "$vault_policies" = '1'
+          vault_forbidden="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_fatoora_credentials' AND lower(column_name) IN ('otp','secret','fatoorasecret','fatoorasecretplaintext','rawsecret','binarysecuritytoken')")"
+          test "$vault_forbidden" = '0'
+          vault_shape="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE column_name IN ('nonce','ciphertext','authTag','keyId'))::text || '|' || count(*)::text FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_fatoora_credentials')"
+          test "$vault_shape" = '4|9'
+          vault_guard="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_fatoora_credentials'::regclass AND tgname='zatca_fatoora_credential_identity_guard' AND NOT tgisinternal")"
+          test "$vault_guard" = '1'
+
+          printf 'rls=%s\npolicy_count=%s\nforbidden_secret_columns=%s\ntransition_guard=%s\nvault_rls=%s\nvault_policy_count=%s\nvault_forbidden_plaintext_columns=%s\nvault_shape=%s\nvault_identity_guard=%s\n' "$rls" "$policies" "$forbidden" "$trigger_count" "$vault_rls" "$vault_policies" "$vault_forbidden" "$vault_shape" "$vault_guard" | tee -a "$PROOF_LOG"
 
       - name: Generate and build
         run: |
@@ -124,6 +136,12 @@ jobs:
         run: |
           set -euo pipefail
           npx --no-install vitest run packages/database/src/__tests__/zatca-csid-provisioning-live.test.ts 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run encrypted Fatoora vault unit proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run apps/api/src/__tests__/zatca-encrypted-fatoora-credential-store.test.ts 2>&1 | tee -a "$PROOF_LOG"
 
       - name: Run full verification against PostgreSQL
         shell: bash
