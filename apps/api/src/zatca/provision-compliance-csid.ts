@@ -87,6 +87,7 @@ export function createZatcaComplianceCsidProvisioner(
           scope: input.scope,
           terminalId: input.terminalId,
           operationId: input.operationId,
+          environment: existing.environment,
           csrDer: Uint8Array.from(input.csrDer),
           expectedPublicKeySpkiDer: Uint8Array.from(keyDescription.publicKeySpkiDer),
           otp: input.otp,
