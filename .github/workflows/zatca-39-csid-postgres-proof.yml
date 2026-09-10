@@ -1,0 +1,138 @@
+name: ZATCA 39 CSID PostgreSQL Proof
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - 'packages/database/prisma/**'
+      - 'packages/database/src/**'
+      - 'packages/domain/src/zatca/csid-provisioning.ts'
+      - 'packages/domain/src/ports/zatca-provisioning.ts'
+      - '.github/workflows/zatca-39-csid-postgres-proof.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-proof:
+    name: PostgreSQL 17 / migration / RLS / CSID CAS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://korvi_app:korvi_gate39_ci@localhost:5432/korvi_gate39
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_app:korvi_gate39_ci@localhost:5432/korvi_gate39
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_gate39
+      PROOF_LOG: artifacts/zatca-39-csid-postgres-proof.txt
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_gate39
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_gate39"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Establish restricted application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_app
+            LOGIN PASSWORD 'korvi_gate39_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_gate39 TO korvi_app;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_app;
+          SQL
+          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='korvi_app'")"
+          test "$flags" = 'f|f|f|f|f|f'
+          printf 'commit=%s\napp_role_flags=%s\n' "$GITHUB_SHA" "$flags" | tee "$PROOF_LOG"
+
+      - name: Apply all thirteen migrations as application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          if [ "$count" -ne 13 ]; then
+            echo "Expected exactly 13 migrations, got $count" >&2
+            exit 1
+          fi
+          npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
+          npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
+          ledger="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
+          test "$ledger" = '13|13'
+          echo "migration_ledger=$ledger" | tee -a "$PROOF_LOG"
+
+      - name: Prove schema drift is zero
+        shell: bash
+        working-directory: packages/database
+        run: |
+          set -euo pipefail
+          npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code 2>&1 | tee -a "../../$PROOF_LOG"
+
+      - name: Prove CSID database security invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          rls="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT relrowsecurity::text || '|' || relforcerowsecurity::text FROM pg_class WHERE oid='zatca_csid_provisioning_attempts'::regclass")"
+          test "$rls" = 'true|true'
+          policies="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='zatca_csid_provisioning_attempts' AND policyname='zatca_csid_provisioning_attempts_isolation'")"
+          test "$policies" = '1'
+          forbidden="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_csid_provisioning_attempts' AND lower(column_name) IN ('otp','secret','fatoorasecret','fatoorasecretplaintext','rawsecret')")"
+          test "$forbidden" = '0'
+          trigger_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_csid_provisioning_attempts'::regclass AND tgname='zatca_csid_provisioning_transition_guard' AND NOT tgisinternal")"
+          test "$trigger_count" = '1'
+          printf 'rls=%s\npolicy_count=%s\nforbidden_secret_columns=%s\ntransition_guard=%s\n' "$rls" "$policies" "$forbidden" "$trigger_count" | tee -a "$PROOF_LOG"
+
+      - name: Generate and build
+        run: |
+          npm run db:generate
+          npm run build
+
+      - name: Run CSID live concurrency proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run packages/database/src/__tests__/zatca-csid-provisioning-live.test.ts 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run full verification against PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run verify 2>&1 | tee -a "$PROOF_LOG"
+          git diff --check
+
+      - name: Preserve proof log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zatca-39-csid-postgres-proof-${{ github.sha }}
+          path: artifacts/zatca-39-csid-postgres-proof.txt
+          if-no-files-found: error
+          retention-days: 14
