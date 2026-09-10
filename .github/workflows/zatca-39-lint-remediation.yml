@@ -111,6 +111,9 @@ jobs:
             apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts \
             apps/api/src/__tests__/zatca-seal-simplified-invoice.test.ts
 
+      - name: Build domain for targeted proof
+        run: npm run build -w @korvi/domain
+
       - name: Targeted cryptographic regression proof
         run: |
           npx vitest run \
