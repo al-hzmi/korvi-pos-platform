@@ -15,29 +15,31 @@ const ROOT_DER = Buffer.from(
   'base64',
 );
 const ROOT_SHA256 = '9f7f32ff248230ee369e59c8062dadeb38afdadbe91683e65363551933302eee';
+const LEAF_ISSUER = 'CN=Korvi Test Intermediate, O=Korvi Test, C=SA';
+const ROOT_ISSUER = 'CN=Korvi Test Root, O=Korvi Test, C=SA';
 
 function path(): ZatcaCertificatePathEntry[] {
   return [
     {
       certificateDer: Uint8Array.from(LEAF_DER),
-      issuerName: 'CN=Korvi Test Intermediate',
+      issuerName: LEAF_ISSUER,
       serialNumber: '450312152406879335212031948402126825523050645634',
     },
     {
       certificateDer: Uint8Array.from(INTERMEDIATE_DER),
-      issuerName: 'CN=Korvi Test Root',
+      issuerName: ROOT_ISSUER,
       serialNumber: '670869925239569732157368057148473565833061083770',
     },
     {
       certificateDer: Uint8Array.from(ROOT_DER),
-      issuerName: 'CN=Korvi Test Root',
+      issuerName: ROOT_ISSUER,
       serialNumber: '589788082441346456674380209399185534342317936160',
     },
   ];
 }
 
 describe('ZATCA X.509 certificate path trust validation', () => {
-  it('verifies every child signature and terminates only at a pinned trust anchor', () => {
+  it('verifies the path and derives XAdES signing-certificate identity from DER', () => {
     const result = verifyZatcaCertificatePath({
       certificatePath: path(),
       trustedAnchorSha256Hex: [ROOT_SHA256],
@@ -47,6 +49,10 @@ describe('ZATCA X.509 certificate path trust validation', () => {
     expect(result.trustAnchorSha256Hex).toBe(ROOT_SHA256);
     expect(result.certificateSha256Hex).toHaveLength(3);
     expect(result.certificateSha256Hex.at(-1)).toBe(ROOT_SHA256);
+    expect(result.signingCertificateIssuerName).toBe(LEAF_ISSUER);
+    expect(result.signingCertificateSerialNumber).toBe(
+      '450312152406879335212031948402126825523050645634',
+    );
   });
 
   it('refuses an arbitrary self-signed tail that is not server-pinned', () => {
@@ -103,16 +109,26 @@ describe('ZATCA X.509 certificate path trust validation', () => {
     ).toThrow(/outside its validity window/);
   });
 
-  it('refuses persisted serial metadata that does not describe the exact DER certificate', () => {
-    const forgedMetadata = path();
-    forgedMetadata[0] = { ...forgedMetadata[0]!, serialNumber: '1' };
+  it('refuses persisted serial or issuer metadata that does not describe the exact DER certificate', () => {
+    const forgedSerial = path();
+    forgedSerial[0] = { ...forgedSerial[0]!, serialNumber: '1' };
     expect(() =>
       verifyZatcaCertificatePath({
-        certificatePath: forgedMetadata,
+        certificatePath: forgedSerial,
         trustedAnchorSha256Hex: [ROOT_SHA256],
         at: '2027-01-01T00:00:00Z',
       }),
     ).toThrow(/serial metadata diverges/);
+
+    const forgedIssuer = path();
+    forgedIssuer[0] = { ...forgedIssuer[0]!, issuerName: 'CN=Forged Issuer' };
+    expect(() =>
+      verifyZatcaCertificatePath({
+        certificatePath: forgedIssuer,
+        trustedAnchorSha256Hex: [ROOT_SHA256],
+        at: '2027-01-01T00:00:00Z',
+      }),
+    ).toThrow(/issuer metadata diverges/);
   });
 
   it('uses domain-specific failure when path/time input is malformed', () => {
