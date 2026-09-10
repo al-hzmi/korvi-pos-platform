@@ -105,9 +105,15 @@ describe('ZATCA CSID provisioning state machine', () => {
   it('fails closed on malformed hashes, times, keys and impossible causal ordering', () => {
     expect(() =>
       prepareZatcaCsidProvisioning({
-        ...prepared(),
-        state: undefined as never,
+        attemptId: 'attempt-1',
+        scope: { tenantId: tenantId('tenant-1') },
+        terminalId: 'terminal-1',
+        operationId: 'operation-1',
         requestHash: 'ABC',
+        environment: 'sandbox',
+        key,
+        csrSha256Hex: '22'.repeat(32),
+        preparedAt: '2026-09-10T09:00:00Z',
       }),
     ).toThrow(/request hash/);
 
