@@ -1,0 +1,162 @@
+name: ZATCA 39 Official Validator Regression Matrix
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/zatca-39-validator-regression-matrix.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Validator ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: baseline-78d620
+            sha: 78d620081115e0500c027be93a8174026bb6882a
+          - label: signedinfo-d02b855
+            sha: d02b855b47e72f02b68400ddb8d7ddaa850fe9c2
+          - label: xmlsig-tag6-f8497b
+            sha: f8497b02616ad5bcb19843455b0afc3f1da447aa
+          - label: qr789-55c691
+            sha: 55c69121af6342104fd99c1ca32ad21f352445ce
+    env:
+      PROOF_DIR: /tmp/korvi-zatca-validator-proof
+      SECRET_DIR: /tmp/korvi-zatca-validator-pki
+      ZATCA_PORTAL_ORIGIN: https://sandbox.zatca.gov.sa
+
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ matrix.sha }}
+          fetch-depth: 1
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Build production sealing authority
+        run: |
+          npm run db:generate
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+          npm run build -w @korvi/api
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+
+      - name: Generate ephemeral secp256k1 certificate path
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$SECRET_DIR" "$PROOF_DIR"
+          mkdir -p "$SECRET_DIR" "$PROOF_DIR"
+          chmod 700 "$SECRET_DIR" "$PROOF_DIR"
+          umask 077
+          cat > "$SECRET_DIR/intermediate.ext" <<'EOF'
+          basicConstraints=critical,CA:TRUE,pathlen:0
+          keyUsage=critical,keyCertSign,cRLSign
+          subjectKeyIdentifier=hash
+          authorityKeyIdentifier=keyid,issuer
+          EOF
+          cat > "$SECRET_DIR/leaf.ext" <<'EOF'
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature
+          subjectKeyIdentifier=hash
+          authorityKeyIdentifier=keyid,issuer
+          EOF
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/root.key.pem"
+          openssl req -new -x509 -key "$SECRET_DIR/root.key.pem" -sha256 -days 3650 \
+            -subj '/CN=Korvi Validator Matrix Root/O=Korvi Test/C=SA' \
+            -addext 'basicConstraints=critical,CA:TRUE' \
+            -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+            -out "$SECRET_DIR/root.cert.pem"
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/intermediate.key.pem"
+          openssl req -new -key "$SECRET_DIR/intermediate.key.pem" \
+            -subj '/CN=Korvi Validator Matrix Intermediate/O=Korvi Test/C=SA' \
+            -out "$SECRET_DIR/intermediate.csr.pem"
+          openssl x509 -req -in "$SECRET_DIR/intermediate.csr.pem" \
+            -CA "$SECRET_DIR/root.cert.pem" -CAkey "$SECRET_DIR/root.key.pem" -CAcreateserial \
+            -sha256 -days 2000 -extfile "$SECRET_DIR/intermediate.ext" \
+            -out "$SECRET_DIR/intermediate.cert.pem"
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp256k1 -out "$SECRET_DIR/leaf.key.pem"
+          openssl req -new -key "$SECRET_DIR/leaf.key.pem" \
+            -subj '/CN=Korvi Validator Matrix EGS/O=Korvi Test/C=SA' \
+            -out "$SECRET_DIR/leaf.csr.pem"
+          openssl x509 -req -in "$SECRET_DIR/leaf.csr.pem" \
+            -CA "$SECRET_DIR/intermediate.cert.pem" -CAkey "$SECRET_DIR/intermediate.key.pem" -CAcreateserial \
+            -sha256 -days 1000 -extfile "$SECRET_DIR/leaf.ext" \
+            -out "$SECRET_DIR/leaf.cert.pem"
+          for name in root intermediate leaf; do
+            openssl x509 -in "$SECRET_DIR/$name.cert.pem" -outform DER -out "$SECRET_DIR/$name.cert.der"
+          done
+
+      - name: Generate candidate sealed invoice
+        run: |
+          node scripts/zatca-39-sealing-proof.mjs \
+            "$PROOF_DIR" \
+            "$SECRET_DIR/leaf.key.pem" \
+            "$SECRET_DIR/leaf.cert.der" \
+            "$SECRET_DIR/intermediate.cert.der" \
+            "$SECRET_DIR/root.cert.der"
+          test -s "$PROOF_DIR/sealed-invoice.xml"
+          base64 -w0 "$PROOF_DIR/sealed-invoice.xml" > "$RUNNER_TEMP/sealed-invoice.b64"
+
+      - name: Resolve and submit to official validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          curl --fail --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 20 --max-time 120 -A "$ua" \
+            "$ZATCA_PORTAL_ORIGIN/env-config.js" -o "$RUNNER_TEMP/zatca-env.js"
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const text = readFileSync(`${process.env.RUNNER_TEMP}/zatca-env.js`, 'utf8');
+          const match = /REACT_APP_API_URL\s*:\s*["']([^"']+)["']/.exec(text);
+          if (match === null) throw new Error('Official portal REACT_APP_API_URL was not found.');
+          const url = match[1].replace(/\/$/, '');
+          if (!url.startsWith('https://gw-fatoora.zatca.gov.sa/')) throw new Error('Non-ZATCA validator authority.');
+          writeFileSync(`${process.env.RUNNER_TEMP}/validator-url`, url, { mode: 0o600 });
+          NODE
+          url="$(cat "$RUNNER_TEMP/validator-url")"
+          code="$(curl --silent --show-error --location --connect-timeout 20 --max-time 180 \
+            -A "$ua" -H 'Content-Type: text/plain' -H 'accepted-language: en' -H 'Accept-Language: en' \
+            -H "Origin: $ZATCA_PORTAL_ORIGIN" -H "Referer: $ZATCA_PORTAL_ORIGIN/Compliance" \
+            --data-binary @"$RUNNER_TEMP/sealed-invoice.b64" \
+            --output "$PROOF_DIR/response.json" --write-out '%{http_code}' "$url")"
+          test "$code" = 200
+          echo "candidate=${{ matrix.label }} sha=${{ matrix.sha }}"
+          python3 -m json.tool "$PROOF_DIR/response.json"
+
+      - name: Destroy ephemeral secrets
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$SECRET_DIR"
+          rm -f "$PROOF_DIR/sealed-invoice.xml" "$RUNNER_TEMP/sealed-invoice.b64"
+          if [ -d "$PROOF_DIR" ] && grep -R --binary-files=without-match -E -- 'BEGIN (EC |)PRIVATE KEY' "$PROOF_DIR"; then
+            echo 'Private-key material leaked into retained proof.' >&2
+            exit 1
+          fi
+
+      - name: Upload response only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: validator-matrix-${{ matrix.label }}
+          path: /tmp/korvi-zatca-validator-proof/response.json
+          if-no-files-found: error
+          retention-days: 7
