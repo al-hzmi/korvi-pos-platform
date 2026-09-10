@@ -6,20 +6,10 @@ import type { Money } from '../money/money.js';
 /**
  * ZATCA e-invoicing QR payload — TLV, then Base64.
  *
- * Phase 1 values (tags 1-5) are UTF-8 text. Tags 1-5 alone are NOT ZATCA Phase 2 compliance.
- * Phase 2 adds cryptographic material whose representations are intentionally explicit. Treating every
- * cryptographic field as either arbitrary text or arbitrary bytes can produce
- * a QR that parses while referring to different cryptographic material.
- *
- * The May 2023 Security Features Implementation Standards are authoritative
- * for tag 6: the QR carries the raw 32-byte SHA-256 invoice hash. The official
- * technical guide maps tag 7 to the XML `ds:SignatureValue` (Base64 text),
- * illustrates tag 8 as DER SubjectPublicKeyInfo, and tag 9 as the technical
- * CA signature over that public key. Those representations are modelled separately below.
- *
- * Ordering matters as much as content: hashing, stamping and the tags 1-9 QR all
- * happen locally *before* the customer receives the document. Only reporting to
- * the Authority may be queued and retried. See docs/architecture/zatca.md.
+ * Phase 1 values (tags 1-5) are UTF-8 text. Phase 2 adds the exact public
+ * cryptographic values produced by the Fatoora stamping profile. The TLV value
+ * representation is explicit per tag so a valid-looking QR cannot silently
+ * refer to different bytes than the XML cryptographic stamp.
  */
 export const ZATCA_TAG = {
   SELLER_NAME: 1,
@@ -51,7 +41,6 @@ const encoder = new TextEncoder();
 const MAX_TLV_VALUE_BYTES = 0xff;
 const MAX_QR_BASE64_CHARACTERS = 700;
 const SHA256_BYTES = 32;
-const BASE64_VALUE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function assertTagByte(tag: number): void {
   if (!Number.isInteger(tag) || tag < 0 || tag > 0xff) {
@@ -59,11 +48,7 @@ function assertTagByte(tag: number): void {
   }
 }
 
-/**
- * Encode one already-materialised byte field as tag, length, value.
- *
- * This primitive never interprets or re-encodes the value bytes.
- */
+/** Encode one already-materialised byte field as tag, length, value. */
 export function encodeBinaryTlvField(field: BinaryTlvField): Uint8Array {
   assertTagByte(field.tag);
   if (field.value.length > MAX_TLV_VALUE_BYTES) {
@@ -83,10 +68,7 @@ export function encodeBinaryTlvField(field: BinaryTlvField): Uint8Array {
 /**
  * Encode one textual field as tag, length, UTF-8 value.
  *
- * The length is the UTF-8 **byte** count, not the character count. An Arabic
- * seller name is roughly two bytes per letter, so a character count produces a
- * declared length shorter than the payload and the Authority's parser walks off
- * the end of the field.
+ * The length is the UTF-8 byte count, not the JavaScript character count.
  */
 export function encodeTlvField(field: TlvField): Uint8Array {
   return encodeBinaryTlvField({ tag: field.tag, value: encoder.encode(field.value) });
@@ -123,17 +105,14 @@ export interface SimplifiedInvoiceQrInput {
 /**
  * Cryptographic values needed by a Phase 2 simplified-invoice QR.
  *
- * No private-key material belongs here. Every field is already public or a
- * derived signature/hash produced by the validated sealing authority.
+ * Tag 6 carries the 44-byte UTF-8 Base64 text of the 32-byte invoice hash.
+ * Tag 7 carries the UTF-8 Base64 text of the ASN.1 DER ECDSA signature.
+ * Tags 8 and 9 carry DER bytes directly. No private-key material belongs here.
  */
 export interface Phase2SimplifiedInvoiceQrInput extends SimplifiedInvoiceQrInput {
-  /** Raw SHA-256 invoice-hash bytes; exactly 32 bytes by the May 2023 standard. */
   readonly invoiceHash: Uint8Array;
-  /** Exact Base64 text stored in XML `ds:SignatureValue`. */
-  readonly xmlSignatureValueBase64: string;
-  /** DER SubjectPublicKeyInfo for the ECDSA signing public key. */
+  readonly ecdsaSignatureDer: Uint8Array;
   readonly ecdsaPublicKeySpkiDer: Uint8Array;
-  /** DER ECDSA signature on the stamp public key from ZATCA's technical CA. */
   readonly zatcaCaSignatureDer: Uint8Array;
 }
 
@@ -177,13 +156,6 @@ function requireNonEmptyCryptoField(tag: number, value: Uint8Array): Uint8Array 
   return Uint8Array.from(value);
 }
 
-function requireBase64SignatureValue(value: string): Uint8Array {
-  if (value.length === 0 || value.length % 4 !== 0 || !BASE64_VALUE.test(value)) {
-    throw new TlvEncodingError('ZATCA XML SignatureValue must be canonical non-empty Base64 text.');
-  }
-  return requireNonEmptyCryptoField(ZATCA_TAG.ECDSA_SIGNATURE, encoder.encode(value));
-}
-
 function requireDerSequence(tag: number, value: Uint8Array): Uint8Array {
   const copy = requireNonEmptyCryptoField(tag, value);
   if (copy.length < 2 || copy[0] !== 0x30) {
@@ -216,14 +188,7 @@ function requireDerSequence(tag: number, value: Uint8Array): Uint8Array {
   return copy;
 }
 
-/**
- * Build all nine Phase 2 QR fields in the normative order.
- *
- * Tags 1-5 come from the exact Phase 1 builder. Tag 6 is raw SHA-256 bytes.
- * Tag 7 is the Base64 XML SignatureValue encoded as UTF-8. Tags 8 and 9 are the
- * DER values illustrated by ZATCA's technical guide. Caller-owned byte buffers
- * are copied so they cannot mutate the QR after validation.
- */
+/** Build all nine Phase 2 QR fields in the normative order. */
 export function phase2SimplifiedInvoiceQrFields(
   input: Phase2SimplifiedInvoiceQrInput,
 ): BinaryTlvField[] {
@@ -233,13 +198,13 @@ export function phase2SimplifiedInvoiceQrFields(
     );
   }
 
+  const signatureDer = requireDerSequence(ZATCA_TAG.ECDSA_SIGNATURE, input.ecdsaSignatureDer);
+  const invoiceHashBase64 = bytesToBase64(Uint8Array.from(input.invoiceHash));
+  const signatureBase64 = bytesToBase64(signatureDer);
   const fields = textualFieldsAsBinary(simplifiedInvoiceQrFields(input));
   fields.push(
-    { tag: ZATCA_TAG.XML_INVOICE_HASH, value: Uint8Array.from(input.invoiceHash) },
-    {
-      tag: ZATCA_TAG.ECDSA_SIGNATURE,
-      value: requireBase64SignatureValue(input.xmlSignatureValueBase64),
-    },
+    { tag: ZATCA_TAG.XML_INVOICE_HASH, value: encoder.encode(invoiceHashBase64) },
+    { tag: ZATCA_TAG.ECDSA_SIGNATURE, value: encoder.encode(signatureBase64) },
     {
       tag: ZATCA_TAG.ECDSA_PUBLIC_KEY,
       value: requireDerSequence(ZATCA_TAG.ECDSA_PUBLIC_KEY, input.ecdsaPublicKeySpkiDer),
