@@ -3,7 +3,9 @@ import { createPrismaClient } from '@korvi/database';
 import { loadConfig } from '../config.js';
 import { createZatcaComplianceCsidInfrastructureFromEnvironment } from '../zatca/compliance-csid-infrastructure.js';
 
-const DATABASE_URL = 'postgresql://korvi:korvi@127.0.0.1:1/unused';
+// The client is never connected in this unit suite. Keep the syntactically valid
+// URL credential-free so repository secret scanners do not need test exceptions.
+const DATABASE_URL = 'postgresql://127.0.0.1:1/unused';
 const KEY = Buffer.alloc(32, 0x5a).toString('base64');
 const prisma = createPrismaClient(DATABASE_URL);
 
