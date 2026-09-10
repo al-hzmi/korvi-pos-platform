@@ -21,6 +21,7 @@ const certificatePathDer = [
   Uint8Array.from([0x30, 0x01, 0x01]),
   Uint8Array.from([0x30, 0x01, 0x02]),
 ];
+const signedPropertiesDigestHex = '02'.repeat(32);
 
 function digest(fill: number): Uint8Array {
   return new Uint8Array(32).fill(fill);
@@ -41,13 +42,13 @@ function unsignedInvoice(): string {
 async function signatureFragments() {
   const signedInfoXml = renderZatcaSignedInfoXml({
     invoiceDigest: digest(1),
-    signedPropertiesDigest: digest(2),
+    signedPropertiesDigestHex,
   });
   const signedPropertiesXml = await renderZatcaSignedPropertiesXml({
     signingTime: '2026-09-10T00:00:00Z',
-    certificatePathDer,
-    signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-    signaturePolicyDigest: digest(3),
+    signingCertificateDer: certificatePathDer[0] as Uint8Array,
+    issuerName: 'CN=Korvi Test Issuer, O=Korvi Test, C=SA',
+    serialNumber: '123456789',
   });
   return { signedInfoXml, signedPropertiesXml };
 }
@@ -111,12 +112,12 @@ describe('ZATCA UBL XAdES envelope', () => {
 
   it('creates a unique context-complete pre-signing skeleton with an empty SignatureValue', async () => {
     const skeleton = await buildZatcaSignatureSkeleton(unsignedInvoice(), {
-      signedInfo: { invoiceDigest: digest(1), signedPropertiesDigest: digest(2) },
+      signedInfo: { invoiceDigest: digest(1), signedPropertiesDigestHex },
       signedProperties: {
         signingTime: '2026-09-10T00:00:00Z',
-        certificatePathDer,
-        signaturePolicyIdentifier: 'urn:zatca:signature-policy:test-v1',
-        signaturePolicyDigest: digest(3),
+        signingCertificateDer: certificatePathDer[0] as Uint8Array,
+        issuerName: 'CN=Korvi Test Issuer, O=Korvi Test, C=SA',
+        serialNumber: '123456789',
       },
       certificatePathDer,
     });
