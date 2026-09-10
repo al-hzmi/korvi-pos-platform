@@ -1,0 +1,72 @@
+name: ZATCA 39 Lint Remediation
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/zatca-39-lint-remediation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: review/zatca-39-csid-lifecycle
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Apply exact lint fixes
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+
+          function replaceExactlyOnce(path, before, after) {
+            const input = readFileSync(path, 'utf8');
+            const first = input.indexOf(before);
+            if (first < 0 || input.indexOf(before, first + before.length) >= 0) {
+              throw new Error(`Expected exactly one lint target in ${path}`);
+            }
+            writeFileSync(path, input.slice(0, first) + after + input.slice(first + before.length));
+          }
+
+          replaceExactlyOnce(
+            'apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts',
+            'async (_input, init) =>',
+            'async (_input, _init) =>',
+          );
+          replaceExactlyOnce(
+            'apps/api/src/zatca/azure-key-vault-signing-key.ts',
+            "if (!/^[A-Za-z0-9 '()+,\\-.\\/:=?]*$/.test(value)) {",
+            "if (!/^[A-Za-z0-9 '()+,\\-./:=?]*$/.test(value)) {",
+          );
+          NODE
+          npx prettier --write \
+            apps/api/src/zatca/azure-key-vault-signing-key.ts \
+            apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts
+
+      - name: Full verify before commit
+        run: npm run verify
+
+      - name: Commit verified remediation and remove helper
+        run: |
+          git rm .github/workflows/zatca-39-lint-remediation.yml
+          git add apps/api/src/zatca/azure-key-vault-signing-key.ts apps/api/src/__tests__/zatca-azure-key-vault-signing-key.test.ts
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(zatca): satisfy signing authority lint gates'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
