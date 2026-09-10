@@ -396,9 +396,9 @@ function signingPort(options: { corruptSignature?: boolean; publicKey?: Uint8Arr
     const signer = createSign('SHA256');
     signer.update(Buffer.from(input.message));
     signer.end();
-    const raw = ecdsaDerToXmlDsigSignature(signer.sign(TEST_PKI.leafPrivateKey));
-    if (options.corruptSignature) raw[0] ^= 1;
-    return raw;
+    const signatureDer = Uint8Array.from(signer.sign(TEST_PKI.leafPrivateKey));
+    if (options.corruptSignature) signatureDer[signatureDer.length - 1] ^= 1;
+    return signatureDer;
   });
   const port: ZatcaSigningKeyPort = {
     async generateNonExportableKey() {
