@@ -466,7 +466,9 @@ async function writeSafeProofArtifacts(
     xmlDsigEcdsaSignatureToDer(Uint8Array.from(Buffer.from(result.signatureValueBase64, 'base64'))),
   );
   write('signing-public-key.spki.der', result.signingPublicKeySpkiDer);
+  write('qr-tag-8-public-key.raw', result.signingPublicKeyRaw);
   write('technical-ca-signature.der', result.technicalCaSignatureDer);
+  write('qr-tag-9-ca-signature.p1363', result.technicalCaSignature);
   write('certificate-path-0.der', LEAF_DER);
   write('certificate-path-1.der', INTERMEDIATE_DER);
   write('certificate-path-2.der', ROOT_DER);
@@ -548,10 +550,13 @@ describe('ZATCA simplified invoice sealing authority', () => {
 
     const tlv = decodeTlv(result.qrCodeBase64);
     expect(tlv.get(6)).toEqual(result.invoiceHash);
-    expect(new TextDecoder().decode(tlv.get(7))).toBe(bytesToBase64(signatureDer));
-    expect(new TextDecoder().decode(tlv.get(7))).not.toBe(result.signatureValueBase64);
-    expect(tlv.get(8)).toEqual(result.signingPublicKeySpkiDer);
-    expect(tlv.get(9)).toEqual(result.technicalCaSignatureDer);
+    expect(new TextDecoder().decode(tlv.get(7))).toBe(result.signatureValueBase64);
+    expect(tlv.get(8)).toEqual(result.signingPublicKeyRaw);
+    expect(tlv.get(8)).toHaveLength(64);
+    expect(tlv.get(8)).not.toEqual(result.signingPublicKeySpkiDer);
+    expect(tlv.get(9)).toEqual(result.technicalCaSignature);
+    expect(tlv.get(9)).toHaveLength(64);
+    expect(tlv.get(9)).not.toEqual(result.technicalCaSignatureDer);
 
     await writeSafeProofArtifacts(result, canonicalizer);
   });

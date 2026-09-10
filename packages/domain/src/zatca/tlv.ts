@@ -1,5 +1,6 @@
 import { TlvEncodingError } from '../errors.js';
 import { bytesToBase64 } from './base64.js';
+import { validateXmlDsigEcdsaSignature } from './ecdsa.js';
 import { moneyToMajorString } from '../money/money.js';
 import type { Money } from '../money/money.js';
 
@@ -41,6 +42,8 @@ const encoder = new TextEncoder();
 const MAX_TLV_VALUE_BYTES = 0xff;
 const MAX_QR_BASE64_CHARACTERS = 700;
 const SHA256_BYTES = 32;
+const P1363_SIGNATURE_BYTES = 64;
+const RAW_PUBLIC_KEY_BYTES = 64;
 
 function assertTagByte(tag: number): void {
   if (!Number.isInteger(tag) || tag < 0 || tag > 0xff) {
@@ -106,15 +109,19 @@ export interface SimplifiedInvoiceQrInput {
  * Cryptographic values needed by a Phase 2 simplified-invoice QR.
  *
  * Tag 6 carries the exact 32-byte SHA-256 invoice hash, without an inner Base64 layer.
- * Tag 7 carries the UTF-8 Base64 text of the ASN.1 DER ECDSA signature.
- * Tag 8 carries the EGS public-key DER and tag 9 carries the technical CA signature
- * over that public key for simplified invoices. No private-key material belongs here.
+ * Tag 7 carries the exact XMLDSIG SignatureValue Base64 text, whose decoded value is
+ * IEEE P1363 secp256k1 r || s. Tag 8 carries the 64-byte public-key X || Y BLOB.
+ * Tag 9 carries the ZATCA technical CA signature in IEEE P1363 r || s form.
+ * No private-key material belongs here.
  */
 export interface Phase2SimplifiedInvoiceQrInput extends SimplifiedInvoiceQrInput {
   readonly invoiceHash: Uint8Array;
-  readonly ecdsaSignatureDer: Uint8Array;
-  readonly ecdsaPublicKeySpkiDer: Uint8Array;
-  readonly zatcaCaSignatureDer: Uint8Array;
+  /** Same fixed-width r || s value serialized by XMLDSIG SignatureValue before Base64. */
+  readonly ecdsaSignature: Uint8Array;
+  /** Uncompressed secp256k1 point without the 0x04 prefix: X || Y. */
+  readonly ecdsaPublicKey: Uint8Array;
+  /** ZATCA technical CA certificate signature converted from DER to IEEE P1363 r || s. */
+  readonly zatcaCaSignature: Uint8Array;
 }
 
 /** Build the stable textual tags shared by Phase 1 and Phase 2. */
@@ -157,34 +164,45 @@ function requireNonEmptyCryptoField(tag: number, value: Uint8Array): Uint8Array 
   return Uint8Array.from(value);
 }
 
-function requireDerSequence(tag: number, value: Uint8Array): Uint8Array {
+function requireExactCryptoField(
+  tag: number,
+  value: Uint8Array,
+  expectedBytes: number,
+  label: string,
+): Uint8Array {
   const copy = requireNonEmptyCryptoField(tag, value);
-  if (copy.length < 2 || copy[0] !== 0x30) {
+  if (copy.length !== expectedBytes) {
     throw new TlvEncodingError(
-      `Cryptographic TLV value for tag ${String(tag)} must be one DER SEQUENCE.`,
+      `ZATCA ${label} for tag ${String(tag)} must be exactly ${String(expectedBytes)} bytes, got ${String(copy.length)}.`,
     );
   }
+  return copy;
+}
 
-  const firstLength = copy[1] as number;
-  let contentLength: number;
-  let headerLength: number;
-  if (firstLength < 0x80) {
-    contentLength = firstLength;
-    headerLength = 2;
-  } else if (firstLength === 0x81) {
-    if (copy.length < 3 || (copy[2] as number) < 0x80) {
-      throw new TlvEncodingError(`Tag ${String(tag)} uses a non-canonical DER length.`);
-    }
-    contentLength = copy[2] as number;
-    headerLength = 3;
-  } else {
-    throw new TlvEncodingError(
-      `Tag ${String(tag)} DER length is unsupported by the one-byte TLV value limit.`,
-    );
+function requireP1363Signature(tag: number, value: Uint8Array): Uint8Array {
+  const copy = requireExactCryptoField(
+    tag,
+    value,
+    P1363_SIGNATURE_BYTES,
+    'IEEE P1363 ECDSA signature',
+  );
+  try {
+    return validateXmlDsigEcdsaSignature(copy);
+  } catch (error) {
+    const detail = error instanceof Error ? ` ${error.message}` : '';
+    throw new TlvEncodingError(`Invalid ZATCA ECDSA signature for tag ${String(tag)}.${detail}`);
   }
+}
 
-  if (headerLength + contentLength !== copy.length) {
-    throw new TlvEncodingError(`Tag ${String(tag)} DER SEQUENCE length does not match its bytes.`);
+function requireRawPublicKey(value: Uint8Array): Uint8Array {
+  const copy = requireExactCryptoField(
+    ZATCA_TAG.ECDSA_PUBLIC_KEY,
+    value,
+    RAW_PUBLIC_KEY_BYTES,
+    'ECDSA public-key BLOB',
+  );
+  if (copy.every((byte) => byte === 0)) {
+    throw new TlvEncodingError('ZATCA ECDSA public-key BLOB must not be the point at infinity.');
   }
   return copy;
 }
@@ -199,21 +217,16 @@ export function phase2SimplifiedInvoiceQrFields(
     );
   }
 
-  const signatureDer = requireDerSequence(ZATCA_TAG.ECDSA_SIGNATURE, input.ecdsaSignatureDer);
   const invoiceHash = Uint8Array.from(input.invoiceHash);
-  const signatureBase64 = bytesToBase64(signatureDer);
+  const signature = requireP1363Signature(ZATCA_TAG.ECDSA_SIGNATURE, input.ecdsaSignature);
+  const publicKey = requireRawPublicKey(input.ecdsaPublicKey);
+  const caSignature = requireP1363Signature(ZATCA_TAG.ZATCA_CA_SIGNATURE, input.zatcaCaSignature);
   const fields = textualFieldsAsBinary(simplifiedInvoiceQrFields(input));
   fields.push(
     { tag: ZATCA_TAG.XML_INVOICE_HASH, value: invoiceHash },
-    { tag: ZATCA_TAG.ECDSA_SIGNATURE, value: encoder.encode(signatureBase64) },
-    {
-      tag: ZATCA_TAG.ECDSA_PUBLIC_KEY,
-      value: requireDerSequence(ZATCA_TAG.ECDSA_PUBLIC_KEY, input.ecdsaPublicKeySpkiDer),
-    },
-    {
-      tag: ZATCA_TAG.ZATCA_CA_SIGNATURE,
-      value: requireDerSequence(ZATCA_TAG.ZATCA_CA_SIGNATURE, input.zatcaCaSignatureDer),
-    },
+    { tag: ZATCA_TAG.ECDSA_SIGNATURE, value: encoder.encode(bytesToBase64(signature)) },
+    { tag: ZATCA_TAG.ECDSA_PUBLIC_KEY, value: publicKey },
+    { tag: ZATCA_TAG.ZATCA_CA_SIGNATURE, value: caSignature },
   );
   return fields;
 }
