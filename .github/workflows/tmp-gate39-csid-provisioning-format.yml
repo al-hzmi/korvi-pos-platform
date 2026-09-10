@@ -1,0 +1,39 @@
+name: Temporary Gate39 CSID Provisioning Formatter
+
+on:
+  push:
+    branches:
+      - review/zatca-39-csid-lifecycle
+    paths:
+      - .github/workflows/tmp-gate39-csid-provisioning-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/zatca-39-csid-lifecycle
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Format exact file
+        run: |
+          npx prettier@3.9.6 --write packages/domain/src/zatca/csid-provisioning.ts
+          git diff --check
+      - name: Commit formatter output
+        run: |
+          git add packages/domain/src/zatca/csid-provisioning.ts
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'korvi-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'style(zatca): format CSID provisioning state'
+          git push origin HEAD:review/zatca-39-csid-lifecycle
