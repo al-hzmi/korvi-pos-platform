@@ -59,14 +59,8 @@ function certificate(
     tbsSignatureAlgorithm?: Uint8Array;
     unusedSignatureBits?: number;
   } = {},
-): {
-  certificateDer: Uint8Array;
-  publicKeySpkiDer: Uint8Array;
-  publicKeyRaw: Uint8Array;
-  caSignatureDer: Uint8Array;
-} {
+): { certificateDer: Uint8Array; publicKeySpkiDer: Uint8Array; caSignatureDer: Uint8Array } {
   const publicKeySpkiDer = spki(options.curve);
-  const publicKeyRaw = new Uint8Array(64).fill(0x11);
   const tbsAlgorithm = algorithm(options.tbsSignatureAlgorithm ?? OID_ECDSA_SHA256);
   const outerAlgorithm = algorithm(options.outerSignatureAlgorithm ?? OID_ECDSA_SHA256);
   const tbs = der(
@@ -88,34 +82,22 @@ function certificate(
       der(0x03, Uint8Array.of(options.unusedSignatureBits ?? 0), caSignatureDer),
     ),
     publicKeySpkiDer,
-    publicKeyRaw,
     caSignatureDer,
   };
 }
 
 describe('ZATCA signing certificate DER material', () => {
-  it('extracts SPKI plus exact 64-byte QR public-key and CA-signature material defensively', () => {
+  it('extracts the exact secp256k1 SPKI and technical-CA signature defensively', () => {
     const fixture = certificate();
     const result = extractZatcaSigningCertificateMaterial(fixture.certificateDer);
-    const expectedCaSignature = new Uint8Array(64);
-    expectedCaSignature[31] = 1;
-    expectedCaSignature[63] = 2;
 
     expect(result.signingPublicKeySpkiDer).toEqual(fixture.publicKeySpkiDer);
-    expect(result.signingPublicKeyRaw).toEqual(fixture.publicKeyRaw);
-    expect(result.signingPublicKeyRaw).toHaveLength(64);
     expect(result.technicalCaSignatureDer).toEqual(fixture.caSignatureDer);
-    expect(result.technicalCaSignature).toEqual(expectedCaSignature);
-    expect(result.technicalCaSignature).toHaveLength(64);
 
     result.signingPublicKeySpkiDer[0] = 0;
-    result.signingPublicKeyRaw[0] = 0;
     result.technicalCaSignatureDer[0] = 0;
-    result.technicalCaSignature[31] = 0;
     expect(fixture.publicKeySpkiDer[0]).toBe(0x30);
-    expect(fixture.publicKeyRaw[0]).toBe(0x11);
     expect(fixture.caSignatureDer[0]).toBe(0x30);
-    expect(expectedCaSignature[31]).toBe(1);
   });
 
   it('refuses secp256r1 even though it is also commonly called P-256', () => {

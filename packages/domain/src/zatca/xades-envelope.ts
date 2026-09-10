@@ -1,5 +1,4 @@
 import { bytesToBase64 } from './base64.js';
-import { validateXmlDsigEcdsaSignature } from './ecdsa.js';
 import { ZatcaInvoiceError } from './phase2.js';
 import {
   XMLDSIG_NAMESPACE,
@@ -31,8 +30,8 @@ export interface ZatcaUblSignatureEnvelopeInput {
   readonly signedInfoXml: string;
   readonly signedPropertiesXml: string;
   readonly certificatePathDer: readonly Uint8Array[];
-  /** Omit only while building the pre-signing canonicalization skeleton. */
-  readonly signatureValue?: Uint8Array;
+  /** Empty only while building the pre-signing canonicalization skeleton. */
+  readonly signatureValueBase64: string;
 }
 
 /**
@@ -55,10 +54,9 @@ export function renderZatcaUblSignatureExtension(input: ZatcaUblSignatureEnvelop
   if (input.certificatePathDer.length === 0) {
     throw new ZatcaInvoiceError('ZATCA X509Data requires the signing certificate path.');
   }
-  const signatureValueBase64 =
-    input.signatureValue === undefined
-      ? ''
-      : bytesToBase64(validateXmlDsigEcdsaSignature(input.signatureValue));
+  if (input.signatureValueBase64 !== '') {
+    assertBase64('XML SignatureValue', input.signatureValueBase64);
+  }
 
   const signingCertificateDer = input.certificatePathDer[0];
   if (signingCertificateDer === undefined || signingCertificateDer.length === 0) {
@@ -79,7 +77,7 @@ export function renderZatcaUblSignatureExtension(input: ZatcaUblSignatureEnvelop
     `<sbc:ReferencedSignatureID>${ZATCA_UBL_REFERENCED_SIGNATURE_ID}</sbc:ReferencedSignatureID>`,
     `<ds:Signature xmlns:ds="${XMLDSIG_NAMESPACE}" Id="${ZATCA_XML_SIGNATURE_ID}">`,
     input.signedInfoXml,
-    `<ds:SignatureValue>${signatureValueBase64}</ds:SignatureValue>`,
+    `<ds:SignatureValue>${input.signatureValueBase64}</ds:SignatureValue>`,
     '<ds:KeyInfo><ds:X509Data>',
     signingCertificate,
     '</ds:X509Data></ds:KeyInfo>',
@@ -203,6 +201,7 @@ export async function buildZatcaSignatureSkeleton(
     signedInfoXml,
     signedPropertiesXml,
     certificatePathDer: input.certificatePathDer,
+    signatureValueBase64: '',
   });
   return assembleZatcaSimplifiedInvoice({ unsignedInvoiceXml, signatureExtensionXml });
 }

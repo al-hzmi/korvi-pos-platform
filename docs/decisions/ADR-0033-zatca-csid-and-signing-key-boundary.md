@@ -81,13 +81,13 @@ The pure `zatcaCsrSubject` authority validates the published stable shapes befor
 
 Provider-specific ASN.1 encoding remains the signing adapter's responsibility.
 
-### 6. Signing is message-in/signature-out
+### 6. Signing is message-in/signature-out, pinned to the live Fatoora validator profile
 
-The domain supplies bytes to `signSha256`; the security module applies ECDSA **secp256k1** with SHA-256 and returns the signature only. For XAdES, those input bytes are the canonicalised `ds:SignedInfo` bytes, whose references bind the invoice digest and the signed-properties digest.
+The domain supplies the raw 32-byte SHA-256 invoice hash to `signSha256`; the security module applies ECDSA **secp256k1** with SHA-256 and returns the signature only. No caller may ask the provider to return the private key so it can sign locally.
 
-This follows the current Security Features Implementation Standards' XAdES/XMLDSIG structure. The older detailed signing walkthrough describes the operation more loosely as signing the generated invoice hash; Korvi does not collapse XMLDSIG `SignedInfo` signing into a raw-digest shortcut unless the current official validator proves that requirement.
+This representation is not inferred from generic XMLDSIG semantics. On 10 September 2026 Korvi ran the production sealer against ZATCA's live public validator as a four-revision differential matrix. The profile that signed the raw invoice hash and serialized DER/Base64 cryptographic values reached the validator with only test-certificate issuer/serial findings. Changing the signed message to canonicalised `ds:SignedInfo` introduced `SIGNATURE_ERROR/signatureValue`; subsequent raw/P1363 QR reinterpretations introduced additional `hashedXml`, public-key and certificate-signature findings.
 
-No caller may ask the provider to return the private key so it can sign locally.
+Therefore the live Fatoora validator behavior is the compatibility authority for this profile. Future changes to the signed message or QR cryptographic byte representation require a fresh official-validator differential proof before merge.
 
 ### 7. Certificate and API-secret lifecycle remain fail-closed
 

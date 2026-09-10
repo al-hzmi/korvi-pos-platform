@@ -187,30 +187,44 @@ describe('Azure Key Vault ZATCA signing authority', () => {
     }
   });
 
-  it('hashes canonical SignedInfo once for Azure ES256K, normalizes high-S, and returns verified DER', async () => {
+  it('hashes the exact 32-byte invoice hash once for Azure ES256K and returns verified DER', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'secp256k1' });
     const publicJwk = publicKey.export({ format: 'jwk' });
     const client = fakeClient(bundle(publicJwk), privateKey);
     const port = new AzureKeyVaultSigningKeyPort({ client });
-    const signedInfo = Buffer.from(
-      '<ds:SignedInfo><ds:Reference URI=""><ds:DigestValue>invoice</ds:DigestValue></ds:Reference><ds:Reference URI="#xadesSignedProperties"><ds:DigestValue>properties</ds:DigestValue></ds:Reference></ds:SignedInfo>',
-      'utf8',
-    );
+    const invoiceHash = createHash('sha256').update('validator-proven-invoice').digest();
 
     const signatureDer = await port.signSha256({
       scope: SCOPE,
       terminalId: TERMINAL_ID,
       key: handle(),
-      message: signedInfo,
+      message: invoiceHash,
     });
 
     expect(client.signDigest).toHaveBeenCalledWith(
       KEY_ID,
-      Uint8Array.from(createHash('sha256').update(signedInfo).digest()),
+      Uint8Array.from(createHash('sha256').update(invoiceHash).digest()),
     );
-    expect(verify('sha256', signedInfo, publicKey, signatureDer)).toBe(true);
+    expect(verify('sha256', invoiceHash, publicKey, signatureDer)).toBe(true);
     const raw = ecdsaDerToXmlDsigSignature(signatureDer);
     expect(bytesToBigInt(raw.subarray(32))).toBeLessThanOrEqual(LOW_S_LIMIT);
+
+    await expect(
+      port.signSha256({
+        scope: SCOPE,
+        terminalId: TERMINAL_ID,
+        key: handle(),
+        message: new Uint8Array(31),
+      }),
+    ).rejects.toThrow(/exactly 32 bytes/);
+    await expect(
+      port.signSha256({
+        scope: SCOPE,
+        terminalId: TERMINAL_ID,
+        key: handle(),
+        message: new Uint8Array(33),
+      }),
+    ).rejects.toThrow(/exactly 32 bytes/);
   });
 
   it('fails closed if Azure marks the key exportable', async () => {

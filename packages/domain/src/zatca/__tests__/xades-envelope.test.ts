@@ -22,9 +22,6 @@ const certificatePathDer = [
   Uint8Array.from([0x30, 0x01, 0x02]),
 ];
 const signedPropertiesDigestHex = '02'.repeat(32);
-const signatureValue = new Uint8Array(64);
-signatureValue[31] = 1;
-signatureValue[63] = 2;
 
 function digest(fill: number): Uint8Array {
   return new Uint8Array(32).fill(fill);
@@ -62,7 +59,7 @@ describe('ZATCA UBL XAdES envelope', () => {
     const extension = renderZatcaUblSignatureExtension({
       ...fragments,
       certificatePathDer,
-      signatureValue,
+      signatureValueBase64: 'AQIDBA==',
     });
 
     expect(extension).toContain(`<cbc:ID>${ZATCA_UBL_SIGNATURE_INFORMATION_ID}</cbc:ID>`);
@@ -94,7 +91,7 @@ describe('ZATCA UBL XAdES envelope', () => {
     const extension = renderZatcaUblSignatureExtension({
       ...fragments,
       certificatePathDer,
-      signatureValue,
+      signatureValueBase64: 'AQIDBA==',
     });
     const qr = 'AQFL';
     const finalXml = assembleZatcaSimplifiedInvoice({
@@ -137,7 +134,7 @@ describe('ZATCA UBL XAdES envelope', () => {
     const extension = renderZatcaUblSignatureExtension({
       ...fragments,
       certificatePathDer,
-      signatureValue,
+      signatureValueBase64: 'AQIDBA==',
     });
     for (const injected of [
       '<ext:UBLExtensions></ext:UBLExtensions>',
@@ -160,16 +157,9 @@ describe('ZATCA UBL XAdES envelope', () => {
       renderZatcaUblSignatureExtension({
         ...fragments,
         certificatePathDer: [new Uint8Array(0)],
-        signatureValue,
+        signatureValueBase64: 'AQIDBA==',
       }),
     ).toThrow(/non-empty signing certificate/);
-    expect(() =>
-      renderZatcaUblSignatureExtension({
-        ...fragments,
-        certificatePathDer,
-        signatureValue: Uint8Array.from([0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02]),
-      }),
-    ).toThrow(/exactly 64 bytes/);
     expect(() => renderZatcaQrDocumentReference('not base64')).toThrow(/Base64/);
     expect(() => renderZatcaQrDocumentReference('A'.repeat(704))).toThrow(/700/);
   });

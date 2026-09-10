@@ -13,6 +13,16 @@ import {
 import { money, moneyFromMajorString } from '../../money/money.js';
 import { TlvEncodingError } from '../../errors.js';
 
+function derSequence(content: readonly number[]): Uint8Array {
+  if (content.length < 0x80) {
+    return Uint8Array.from([0x30, content.length, ...content]);
+  }
+  if (content.length <= 0xff) {
+    return Uint8Array.from([0x30, 0x81, content.length, ...content]);
+  }
+  throw new Error('Test DER helper supports at most 255 content bytes.');
+}
+
 describe('base64', () => {
   it('matches known vectors including every padding case', () => {
     const encode = (text: string): string => bytesToBase64(new TextEncoder().encode(text));
@@ -146,19 +156,13 @@ describe('Phase 2 simplified invoice QR', () => {
     invoiceTotalWithVat: moneyFromMajorString('115.00'),
     vatTotal: moneyFromMajorString('15.00'),
   };
-  const signature = new Uint8Array(64);
-  signature[31] = 1;
-  signature[63] = 2;
-  const publicKey = new Uint8Array(64).fill(0x11);
-  const caSignature = new Uint8Array(64);
-  caSignature[31] = 3;
-  caSignature[63] = 4;
+  const ecdsaSignatureDer = derSequence([0x02, 0x01, 0x01, 0x02, 0x01, 0x02]);
   const input = {
     ...phase1,
     invoiceHash: Uint8Array.from({ length: 32 }, (_, index) => index),
-    ecdsaSignature: signature,
-    ecdsaPublicKey: publicKey,
-    zatcaCaSignature: caSignature,
+    ecdsaSignatureDer,
+    ecdsaPublicKeySpkiDer: derSequence([0x02, 0x01, 0x02]),
+    zatcaCaSignatureDer: derSequence([0x02, 0x01, 0x03]),
   };
 
   it('orders exactly tags 1 through 9 and preserves the Phase 1 prefix byte-for-byte', () => {
@@ -177,50 +181,44 @@ describe('Phase 2 simplified invoice QR', () => {
     expect(tags).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
-  it('encodes tag 6 as the exact 32-byte SHA-256 value with no inner Base64 layer', () => {
+  it('encodes tag 6 as the 44-byte UTF-8 Base64 invoice-hash text required by ZATCA', () => {
     const fields = phase2SimplifiedInvoiceQrFields(input);
     const hash = fields.find((field) => field.tag === ZATCA_TAG.XML_INVOICE_HASH);
-    expect(hash?.value).toEqual(input.invoiceHash);
-    expect(hash?.value.length).toBe(32);
+    const expected = Buffer.from(input.invoiceHash).toString('base64');
+    expect(Buffer.from(hash?.value ?? []).toString('utf8')).toBe(expected);
+    expect(hash?.value.length).toBe(44);
   });
 
-  it('encodes tag 7 as the same Base64 text carried by XMLDSIG SignatureValue', () => {
+  it('encodes tag 7 as UTF-8 Base64 of the exact DER SignatureValue bytes', () => {
     const fields = phase2SimplifiedInvoiceQrFields(input);
-    const value = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_SIGNATURE)?.value;
-    expect(Buffer.from(value ?? []).toString('utf8')).toBe(
-      Buffer.from(signature).toString('base64'),
+    const signature = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_SIGNATURE);
+    expect(Buffer.from(signature?.value ?? []).toString('utf8')).toBe(
+      Buffer.from(ecdsaSignatureDer).toString('base64'),
     );
-    expect(value?.length).toBe(88);
   });
 
-  it('encodes tags 8 and 9 as exact 64-byte ZATCA public-key/P1363 values', () => {
+  it('preserves DER public-key and technical-CA signature bytes in tags 8 and 9', () => {
     const fields = phase2SimplifiedInvoiceQrFields(input);
-    const encodedPublicKey = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_PUBLIC_KEY);
-    const encodedCaSignature = fields.find((field) => field.tag === ZATCA_TAG.ZATCA_CA_SIGNATURE);
-    expect(encodedPublicKey?.value).toEqual(publicKey);
-    expect(encodedPublicKey?.value).toHaveLength(64);
-    expect(encodedCaSignature?.value).toEqual(caSignature);
-    expect(encodedCaSignature?.value).toHaveLength(64);
+    const publicKey = fields.find((field) => field.tag === ZATCA_TAG.ECDSA_PUBLIC_KEY);
+    const caSignature = fields.find((field) => field.tag === ZATCA_TAG.ZATCA_CA_SIGNATURE);
+    expect(publicKey?.value).toEqual(input.ecdsaPublicKeySpkiDer);
+    expect(caSignature?.value).toEqual(input.zatcaCaSignatureDer);
   });
 
-  it('copies caller-owned cryptographic buffers when constructing fields', () => {
-    const mutableSignature = Uint8Array.from(signature);
-    const mutablePublicKey = Uint8Array.from(publicKey);
-    const mutableCaSignature = Uint8Array.from(caSignature);
+  it('copies caller-owned DER buffers when constructing fields', () => {
+    const publicKey = derSequence([0x02, 0x01, 0x02]);
+    const signature = derSequence([0x02, 0x01, 0x01, 0x02, 0x01, 0x02]);
     const fields = phase2SimplifiedInvoiceQrFields({
       ...input,
-      ecdsaSignature: mutableSignature,
-      ecdsaPublicKey: mutablePublicKey,
-      zatcaCaSignature: mutableCaSignature,
+      ecdsaSignatureDer: signature,
+      ecdsaPublicKeySpkiDer: publicKey,
     });
-    mutableSignature[31] = 99;
-    mutablePublicKey[0] = 99;
-    mutableCaSignature[31] = 99;
-    expect(Buffer.from(fields.find((field) => field.tag === 7)?.value ?? []).toString('utf8')).toBe(
-      Buffer.from(signature).toString('base64'),
+    publicKey[2] = 99;
+    signature[2] = 99;
+    expect(fields.find((field) => field.tag === ZATCA_TAG.ECDSA_PUBLIC_KEY)?.value[2]).toBe(0x02);
+    expect(fields.find((field) => field.tag === ZATCA_TAG.ECDSA_SIGNATURE)?.value).not.toEqual(
+      signature,
     );
-    expect(fields.find((field) => field.tag === 8)?.value[0]).toBe(0x11);
-    expect(fields.find((field) => field.tag === 9)?.value[31]).toBe(3);
   });
 
   it('requires a real SHA-256-width invoice hash', () => {
@@ -232,32 +230,45 @@ describe('Phase 2 simplified invoice QR', () => {
     );
   });
 
-  it('rejects malformed QR signature/public-key widths and zero cryptographic values', () => {
+  it('rejects malformed DER in tags 7 through 9', () => {
     expect(() =>
-      phase2SimplifiedInvoiceQr({ ...input, ecdsaSignature: new Uint8Array(63) }),
+      phase2SimplifiedInvoiceQr({ ...input, ecdsaSignatureDer: new Uint8Array(64) }),
     ).toThrow(TlvEncodingError);
     expect(() =>
-      phase2SimplifiedInvoiceQr({ ...input, ecdsaSignature: new Uint8Array(64) }),
+      phase2SimplifiedInvoiceQr({
+        ...input,
+        ecdsaPublicKeySpkiDer: Uint8Array.from([0x04, ...new Uint8Array(64)]),
+      }),
     ).toThrow(TlvEncodingError);
     expect(() =>
-      phase2SimplifiedInvoiceQr({ ...input, ecdsaPublicKey: new Uint8Array(65) }),
+      phase2SimplifiedInvoiceQr({ ...input, zatcaCaSignatureDer: new Uint8Array(64) }),
+    ).toThrow(TlvEncodingError);
+  });
+
+  it('rejects malformed DER lengths instead of accepting truncated cryptographic values', () => {
+    expect(() =>
+      phase2SimplifiedInvoiceQr({
+        ...input,
+        ecdsaPublicKeySpkiDer: Uint8Array.from([0x30, 0x05, 0x02, 0x01, 0x01]),
+      }),
     ).toThrow(TlvEncodingError);
     expect(() =>
-      phase2SimplifiedInvoiceQr({ ...input, ecdsaPublicKey: new Uint8Array(64) }),
-    ).toThrow(TlvEncodingError);
-    expect(() =>
-      phase2SimplifiedInvoiceQr({ ...input, zatcaCaSignature: new Uint8Array(65) }),
-    ).toThrow(TlvEncodingError);
-    expect(() =>
-      phase2SimplifiedInvoiceQr({ ...input, zatcaCaSignature: new Uint8Array(64) }),
+      phase2SimplifiedInvoiceQr({
+        ...input,
+        zatcaCaSignatureDer: Uint8Array.from([0x30, 0x81, 0x03, 0x02, 0x01, 0x01]),
+      }),
     ).toThrow(TlvEncodingError);
   });
 
   it('rejects a QR payload that exceeds the ZATCA 700-character Base64 limit', () => {
+    const largeDer = derSequence(new Array(200).fill(1));
     expect(() =>
       phase2SimplifiedInvoiceQr({
         ...input,
         sellerName: 'س'.repeat(120),
+        ecdsaSignatureDer: largeDer,
+        ecdsaPublicKeySpkiDer: largeDer,
+        zatcaCaSignatureDer: largeDer,
       }),
     ).toThrow(TlvEncodingError);
   });

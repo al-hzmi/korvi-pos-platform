@@ -1,7 +1,7 @@
-import { ecdsaDerToXmlDsigSignature } from './ecdsa.js';
 import { ZatcaInvoiceError } from './phase2.js';
 
 const DER_SEQUENCE = 0x30;
+const DER_INTEGER = 0x02;
 const DER_OBJECT_IDENTIFIER = 0x06;
 const DER_BIT_STRING = 0x03;
 const DER_CONTEXT_VERSION = 0xa0;
@@ -22,12 +22,8 @@ interface DerElement {
 export interface ZatcaSigningCertificateMaterial {
   /** Exact DER SubjectPublicKeyInfo carried by the signing certificate. */
   readonly signingPublicKeySpkiDer: Uint8Array;
-  /** ZATCA QR tag 8 public-key BLOB: uncompressed secp256k1 X || Y, exactly 64 bytes. */
-  readonly signingPublicKeyRaw: Uint8Array;
-  /** Exact DER ECDSA signatureValue carried by the certificate BIT STRING. */
+  /** Exact DER ECDSA signatureValue carried by the certificate BIT STRING; QR tag 9. */
   readonly technicalCaSignatureDer: Uint8Array;
-  /** ZATCA QR tag 9 technical-CA signature in IEEE P1363 r || s form, exactly 64 bytes. */
-  readonly technicalCaSignature: Uint8Array;
 }
 
 /**
@@ -111,7 +107,7 @@ export function extractZatcaSigningCertificateMaterial(
     DER_SEQUENCE,
     'X.509 SubjectPublicKeyInfo must be a DER SEQUENCE.',
   );
-  const signingPublicKeyRaw = extractSecp256k1PublicKeyRaw(bytes, subjectPublicKeyInfo);
+  validateSecp256k1Spki(bytes, subjectPublicKeyInfo);
   const spkiDer = bytes.slice(subjectPublicKeyInfo.start, subjectPublicKeyInfo.end);
 
   const signatureContent = content(bytes, signatureValue);
@@ -121,17 +117,15 @@ export function extractZatcaSigningCertificateMaterial(
     );
   }
   const technicalCaSignatureDer = signatureContent.slice(1);
-  const technicalCaSignature = ecdsaDerToXmlDsigSignature(technicalCaSignatureDer);
+  validateEcdsaSignatureDerShape(technicalCaSignatureDer);
 
   return {
     signingPublicKeySpkiDer: spkiDer,
-    signingPublicKeyRaw,
     technicalCaSignatureDer,
-    technicalCaSignature,
   };
 }
 
-function extractSecp256k1PublicKeyRaw(bytes: Uint8Array, spki: DerElement): Uint8Array {
+function validateSecp256k1Spki(bytes: Uint8Array, spki: DerElement): void {
   const children = readChildren(bytes, spki, 'SubjectPublicKeyInfo');
   if (children.length !== 2) {
     throw new ZatcaInvoiceError(
@@ -174,7 +168,40 @@ function extractSecp256k1PublicKeyRaw(bytes: Uint8Array, spki: DerElement): Uint
       'ZATCA secp256k1 SubjectPublicKeyInfo must contain one uncompressed 65-byte EC point.',
     );
   }
-  return Uint8Array.from(publicKeyContent.subarray(2));
+}
+
+function validateEcdsaSignatureDerShape(signatureDer: Uint8Array): void {
+  const signature = readDerElement(signatureDer, 0, 'certificate ECDSA signature');
+  requireTag(signature, DER_SEQUENCE, 'Certificate ECDSA signature must be a DER SEQUENCE.');
+  if (signature.end !== signatureDer.length) {
+    throw new ZatcaInvoiceError('Certificate ECDSA signature contains trailing DER data.');
+  }
+  const scalars = readChildren(signatureDer, signature, 'certificate ECDSA signature');
+  if (scalars.length !== 2) {
+    throw new ZatcaInvoiceError(
+      'Certificate ECDSA signature must contain exactly r and s INTEGERs.',
+    );
+  }
+  for (const [index, scalar] of scalars.entries()) {
+    if (scalar === undefined) {
+      throw new ZatcaInvoiceError('Certificate ECDSA signature scalar is missing.');
+    }
+    requireTag(scalar, DER_INTEGER, 'Certificate ECDSA signature scalar must be a DER INTEGER.');
+    const value = content(signatureDer, scalar);
+    const label = index === 0 ? 'r' : 's';
+    if (value.length === 0 || value.length > 33) {
+      throw new ZatcaInvoiceError(`Certificate ECDSA ${label} scalar has invalid width.`);
+    }
+    if ((value[0] ?? 0) >= 0x80) {
+      throw new ZatcaInvoiceError(`Certificate ECDSA ${label} scalar must not be negative.`);
+    }
+    if (value.length > 1 && value[0] === 0 && ((value[1] ?? 0) & 0x80) === 0) {
+      throw new ZatcaInvoiceError(`Certificate ECDSA ${label} scalar has redundant DER padding.`);
+    }
+    if (value.every((byte) => byte === 0)) {
+      throw new ZatcaInvoiceError(`Certificate ECDSA ${label} scalar must be non-zero.`);
+    }
+  }
 }
 
 function readAlgorithmOid(bytes: Uint8Array, algorithm: DerElement, label: string): string {

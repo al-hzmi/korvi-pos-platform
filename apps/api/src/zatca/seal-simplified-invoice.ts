@@ -54,14 +54,10 @@ export interface SealedZatcaSimplifiedInvoice {
   readonly invoiceHashBase64: string;
   readonly invoiceHash: Uint8Array;
   readonly qrCodeBase64: string;
-  /** Base64 of XMLDSIG's fixed-width secp256k1 r || s SignatureValue. */
+  /** Exact Base64 of the canonical DER ECDSA stamp written into XML and QR tag 7. */
   readonly signatureValueBase64: string;
   readonly signingPublicKeySpkiDer: Uint8Array;
-  /** Exact 64-byte X || Y value encoded into QR tag 8. */
-  readonly signingPublicKeyRaw: Uint8Array;
   readonly technicalCaSignatureDer: Uint8Array;
-  /** Exact 64-byte IEEE P1363 value encoded into QR tag 9. */
-  readonly technicalCaSignature: Uint8Array;
   readonly trustAnchorSha256Hex: string;
 }
 
@@ -146,6 +142,7 @@ export function createZatcaSimplifiedInvoiceSealer(
           }),
           signedPropertiesXml,
           certificatePathDer,
+          signatureValueBase64: '',
         }),
       });
 
@@ -171,6 +168,7 @@ export function createZatcaSimplifiedInvoiceSealer(
           signedInfoXml,
           signedPropertiesXml,
           certificatePathDer,
+          signatureValueBase64: '',
         }),
       });
       const signedInfoCanonical =
@@ -181,16 +179,15 @@ export function createZatcaSimplifiedInvoiceSealer(
           scope: input.scope,
           terminalId: input.terminalId,
           key: csid.key,
-          message: Uint8Array.from(signedInfoCanonical),
+          message: Uint8Array.from(invoiceDigest),
         }),
       );
       verifyGeneratedSignature(
-        signedInfoCanonical,
+        invoiceDigest,
         signatureDer,
         certificateMaterial.signingPublicKeySpkiDer,
       );
-      const signatureValue = ecdsaDerToXmlDsigSignature(signatureDer);
-      const signatureValueBase64 = bytesToBase64(signatureValue);
+      const signatureValueBase64 = bytesToBase64(signatureDer);
 
       const qrCodeBase64 = phase2SimplifiedInvoiceQr({
         sellerName: input.invoice.invoice.sellerName,
@@ -199,9 +196,9 @@ export function createZatcaSimplifiedInvoiceSealer(
         invoiceTotalWithVat: money(BigInt(input.invoice.invoice.totalMinor), 'SAR'),
         vatTotal: money(BigInt(input.invoice.invoice.vatMinor), 'SAR'),
         invoiceHash: invoiceDigest,
-        ecdsaSignature: signatureValue,
-        ecdsaPublicKey: certificateMaterial.signingPublicKeyRaw,
-        zatcaCaSignature: certificateMaterial.technicalCaSignature,
+        ecdsaSignatureDer: signatureDer,
+        ecdsaPublicKeySpkiDer: certificateMaterial.signingPublicKeySpkiDer,
+        zatcaCaSignatureDer: certificateMaterial.technicalCaSignatureDer,
       });
 
       const finalXml = assembleZatcaSimplifiedInvoice({
@@ -210,7 +207,7 @@ export function createZatcaSimplifiedInvoiceSealer(
           signedInfoXml,
           signedPropertiesXml,
           certificatePathDer,
-          signatureValue,
+          signatureValueBase64,
         }),
         qrCodeBase64,
       });
@@ -230,9 +227,7 @@ export function createZatcaSimplifiedInvoiceSealer(
         qrCodeBase64,
         signatureValueBase64,
         signingPublicKeySpkiDer: Uint8Array.from(certificateMaterial.signingPublicKeySpkiDer),
-        signingPublicKeyRaw: Uint8Array.from(certificateMaterial.signingPublicKeyRaw),
         technicalCaSignatureDer: Uint8Array.from(certificateMaterial.technicalCaSignatureDer),
-        technicalCaSignature: Uint8Array.from(certificateMaterial.technicalCaSignature),
         trustAnchorSha256Hex: trust.trustAnchorSha256Hex,
       };
     },
