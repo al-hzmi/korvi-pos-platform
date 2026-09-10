@@ -16,7 +16,7 @@ export interface ZatcaCertificatePathTrustInput {
 export interface VerifiedZatcaCertificatePath {
   readonly trustAnchorSha256Hex: string;
   readonly certificateSha256Hex: readonly string[];
-  /** Fatoora display-order issuer name derived from the signing certificate DER. */
+  /** Fatoora validator-facing issuer name derived from the signing certificate DER. */
   readonly signingCertificateIssuerName: string;
   /** Positive decimal serial number derived from the signing certificate DER. */
   readonly signingCertificateSerialNumber: string;
