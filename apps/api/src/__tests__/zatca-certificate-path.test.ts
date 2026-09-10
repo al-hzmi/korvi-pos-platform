@@ -17,6 +17,7 @@ const ROOT_DER = Buffer.from(
 const ROOT_SHA256 = '9f7f32ff248230ee369e59c8062dadeb38afdadbe91683e65363551933302eee';
 const LEAF_ISSUER = 'CN=Korvi Test Intermediate, O=Korvi Test, C=SA';
 const ROOT_ISSUER = 'CN=Korvi Test Root, O=Korvi Test, C=SA';
+const FATOORA_LEAF_ISSUER = 'C=SA, O=Korvi Test, CN=Korvi Test Intermediate';
 
 function path(): ZatcaCertificatePathEntry[] {
   return [
@@ -39,7 +40,7 @@ function path(): ZatcaCertificatePathEntry[] {
 }
 
 describe('ZATCA X.509 certificate path trust validation', () => {
-  it('verifies the path and derives XAdES signing-certificate identity from DER', () => {
+  it('verifies the path and derives Fatoora XAdES identity from DER', () => {
     const result = verifyZatcaCertificatePath({
       certificatePath: path(),
       trustedAnchorSha256Hex: [ROOT_SHA256],
@@ -49,10 +50,21 @@ describe('ZATCA X.509 certificate path trust validation', () => {
     expect(result.trustAnchorSha256Hex).toBe(ROOT_SHA256);
     expect(result.certificateSha256Hex).toHaveLength(3);
     expect(result.certificateSha256Hex.at(-1)).toBe(ROOT_SHA256);
-    expect(result.signingCertificateIssuerName).toBe(LEAF_ISSUER);
+    expect(result.signingCertificateIssuerName).toBe(FATOORA_LEAF_ISSUER);
     expect(result.signingCertificateSerialNumber).toBe(
       '450312152406879335212031948402126825523050645634',
     );
+  });
+
+  it('accepts equivalent persisted issuer ordering but emits only DER-derived Fatoora order', () => {
+    const reordered = path();
+    reordered[0] = { ...reordered[0]!, issuerName: FATOORA_LEAF_ISSUER };
+    const result = verifyZatcaCertificatePath({
+      certificatePath: reordered,
+      trustedAnchorSha256Hex: [ROOT_SHA256],
+      at: '2027-01-01T00:00:00Z',
+    });
+    expect(result.signingCertificateIssuerName).toBe(FATOORA_LEAF_ISSUER);
   });
 
   it('refuses an arbitrary self-signed tail that is not server-pinned', () => {
