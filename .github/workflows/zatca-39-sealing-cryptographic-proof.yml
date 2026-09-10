@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 15
     env:
       PROOF_DIR: artifacts/zatca-39-sealing
-      SECRET_DIR: ${{ runner.temp }}/zatca-39-ephemeral-pki
+      SECRET_DIR: /tmp/korvi-zatca-39-ephemeral-pki
 
     steps:
       - name: Check out
@@ -71,6 +71,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf "$SECRET_DIR"
           mkdir -p "$PROOF_DIR" "$SECRET_DIR"
           chmod 700 "$PROOF_DIR" "$SECRET_DIR"
           sudo apt-get update -qq
