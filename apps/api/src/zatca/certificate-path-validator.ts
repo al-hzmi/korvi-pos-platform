@@ -152,7 +152,9 @@ function fatooraIssuerName(nodeIssuer: string): string {
 function sameIssuerIdentity(persisted: string, certificateIssuer: string): boolean {
   const left = issuerComponents(persisted).sort();
   const right = issuerComponents(certificateIssuer).sort();
-  return left.length === right.length && left.every((component, index) => component === right[index]);
+  return (
+    left.length === right.length && left.every((component, index) => component === right[index])
+  );
 }
 
 /** Split DN text on newlines or unescaped commas without corrupting escaped values. */
