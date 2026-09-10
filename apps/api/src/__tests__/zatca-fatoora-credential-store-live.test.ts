@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { tenantId } from '@korvi/domain';
+import { extractZatcaSigningCertificateMaterial, tenantId } from '@korvi/domain';
 import {
   createPrismaClient,
   createZatcaFatooraCredentialRepository,
   type PrismaClient,
 } from '@korvi/database';
+import { createZatcaComplianceCsidInfrastructure } from '../zatca/compliance-csid-infrastructure.js';
 import {
   KORVI_FATOORA_SECRET_PROVIDER,
   createEncryptedZatcaFatooraCredentialStore,
@@ -27,6 +28,14 @@ const CREDENTIAL_ID = `sha256:${'a'.repeat(64)}`;
 const TOKEN = 'sandbox-binary-security-token';
 const SECRET = 'sandbox-fatoora-secret';
 const KEY = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+const LEAF_DER = Buffer.from(
+  'MIIB3jCCAYSgAwIBAgIUTuCx/ib7wmZ0haQVB52pc8xrCIIwCgYIKoZIzj0EAwIwRDEgMB4GA1UEAwwXS29ydmkgVGVzdCBJbnRlcm1lZGlhdGUxEzARBgNVBAoMCktvcnZpIFRlc3QxCzAJBgNVBAYTAlNBMB4XDTI2MDkwOTIzNDIyMloXDTI5MDYwNTIzNDIyMlowOzEXMBUGA1UEAwwOS29ydmkgVGVzdCBFR1MxEzARBgNVBAoMCktvcnZpIFRlc3QxCzAJBgNVBAYTAlNBMFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAExtCZqdiCZU4A196YvvvzGJzrvV2PJ2AY9o08pZ9U1EeV25ETytPUidGTON+nwDdqYe+SSZrBGcXKfBuhLXV75KNgMF4wDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwHQYDVR0OBBYEFOeAiOZIOml+yYwvdiVAs9AvCmVWMB8GA1UdIwQYMBaAFIhLbjfz+A+FvmWK+9XdmDDDo9acMAoGCCqGSM49BAMCA0gAMEUCIE/dVTQxbO29P920Wu43gGA3MxYiL7wATgr+QSd2+PtQAiEA+7IUo+nZmZr5lS4/BSyNyO+ekWI/H6ksVp0KgFBlHY4=',
+  'base64',
+);
+const ISSUER_TOKEN = LEAF_DER.toString('base64');
+const ISSUER_SECRET = 'integration-fatoora-secret';
+const ISSUER_PUBLIC_KEY =
+  extractZatcaSigningCertificateMaterial(LEAF_DER).signingPublicKeySpkiDer;
 
 async function inTenant<T>(client: pg.Client, tenant: string, work: () => Promise<T>): Promise<T> {
   await client.query('BEGIN');
@@ -152,6 +161,65 @@ describe.skipIf(url === '')('encrypted Fatoora credential vault, PostgreSQL live
     expect(row.authTag).toHaveLength(16);
     expect(row.ciphertext.includes(Buffer.from(TOKEN, 'utf8'))).toBe(false);
     expect(row.ciphertext.includes(Buffer.from(SECRET, 'utf8'))).toBe(false);
+  });
+
+  it('composes the HTTP issuer with the real encrypted PostgreSQL vault and returns only an opaque handle', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          requestID: 778899,
+          binarySecurityToken: ISSUER_TOKEN,
+          secret: ISSUER_SECRET,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    const infrastructure = createZatcaComplianceCsidInfrastructure({
+      prisma,
+      vault: {
+        activeKeyId: 'gate39-live-v1',
+        keys: [{ id: 'gate39-live-v1', key: KEY }],
+      },
+      fetchImpl,
+    });
+    const scope = { tenantId: tenantId(D.tenantA) };
+
+    const result = await infrastructure.issuer.issue({
+      scope,
+      terminalId: D.terminalA,
+      operationId: 'live-composed-issuer',
+      environment: 'sandbox',
+      csrDer: Uint8Array.from([0x30, 0x03, 0x01, 0x02, 0x03]),
+      expectedPublicKeySpkiDer: Uint8Array.from(ISSUER_PUBLIC_KEY),
+      otp: '123456',
+    });
+
+    expect(result.kind).toBe('issued');
+    if (result.kind !== 'issued') throw new Error('Composed Compliance CSID issuer was not issued.');
+    expect(JSON.stringify(result)).not.toContain(ISSUER_SECRET);
+    expect(JSON.stringify(result)).not.toContain(ISSUER_TOKEN);
+    expect(JSON.stringify(result)).not.toContain('123456');
+    await expect(
+      infrastructure.credentialStore.resolve({
+        scope,
+        terminalId: D.terminalA,
+        handle: result.fatooraSecret,
+      }),
+    ).resolves.toEqual({ binarySecurityToken: ISSUER_TOKEN, secret: ISSUER_SECRET });
+
+    const rows = await inTenant(admin, D.tenantA, async () =>
+      admin.query<CipherRow>(
+        `SELECT "keyId","nonce","ciphertext","authTag"
+           FROM "zatca_fatoora_credentials"
+          WHERE "tenantId"=$1 AND "credentialId"=$2`,
+        [D.tenantA, result.credentialId],
+      ),
+    );
+    expect(rows.rowCount).toBe(1);
+    const row = rows.rows[0];
+    expect(row).toBeDefined();
+    if (row === undefined) throw new Error('Composed issuer did not persist its encrypted credential.');
+    expect(row.ciphertext.includes(Buffer.from(ISSUER_TOKEN, 'utf8'))).toBe(false);
+    expect(row.ciphertext.includes(Buffer.from(ISSUER_SECRET, 'utf8'))).toBe(false);
   });
 
   it('keeps the same credential unavailable across tenant authority boundaries', async () => {
