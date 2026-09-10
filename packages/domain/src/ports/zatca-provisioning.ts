@@ -72,6 +72,8 @@ export interface IssueZatcaComplianceCsidInput {
   readonly operationId: string;
   /** DER PKCS#10 CSR. */
   readonly csrDer: Uint8Array;
+  /** DER SubjectPublicKeyInfo for the exact non-exportable key that signed the CSR. */
+  readonly expectedPublicKeySpkiDer: Uint8Array;
   /** One-time code exists only for this call and must never be logged or persisted. */
   readonly otp: string;
 }
@@ -99,8 +101,9 @@ export type ZatcaComplianceCsidIssueResult =
  * Server-only credential issuer boundary.
  *
  * A concrete adapter owns HTTPS, Basic/OTP headers and the raw ZATCA secret. It
- * MUST store that secret in an approved secret manager before returning. Neither
- * callers nor PostgreSQL ever receive the plaintext secret.
+ * MUST prove the issued certificate carries `expectedPublicKeySpkiDer` and store
+ * that secret in an approved secret manager before returning. Neither callers nor
+ * PostgreSQL ever receive the plaintext secret.
  */
 export interface ZatcaComplianceCsidIssuerPort {
   issue(input: IssueZatcaComplianceCsidInput): Promise<ZatcaComplianceCsidIssueResult>;
