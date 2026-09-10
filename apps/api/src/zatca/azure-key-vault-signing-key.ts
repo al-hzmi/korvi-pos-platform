@@ -333,10 +333,7 @@ export class AzureKeyVaultSigningKeyPort implements ZatcaSigningKeyPort {
       throw new ZatcaInvoiceError('ZATCA invoice hash must be exactly 32 bytes before stamping.');
     }
     const description = await this.describePublicKey(input.scope, input.terminalId, input.key);
-    const providerSignature = await this.client.signDigest(
-      input.key.keyId,
-      sha256(input.message),
-    );
+    const providerSignature = await this.client.signDigest(input.key.keyId, sha256(input.message));
     const signatureDer = canonicalLowSDer(providerSignature);
     assertSignature(description.publicKeySpkiDer, input.message, signatureDer, 'ZATCA stamp');
     return signatureDer;
@@ -507,9 +504,7 @@ function canonicalLowSDer(signature: Uint8Array): Uint8Array {
   const r = scalar(rBytes, 'r');
   const s = scalar(sBytes, 's');
   const lowS = s > LOW_S_LIMIT ? SECP256K1_ORDER - s : s;
-  return xmlDsigEcdsaSignatureToDer(
-    Uint8Array.from([...bigInt32(r), ...bigInt32(lowS)]),
-  );
+  return xmlDsigEcdsaSignatureToDer(Uint8Array.from([...bigInt32(r), ...bigInt32(lowS)]));
 }
 
 function scalar(bytes: Uint8Array, label: 'r' | 's'): bigint {

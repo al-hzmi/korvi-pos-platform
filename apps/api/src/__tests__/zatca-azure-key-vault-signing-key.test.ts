@@ -6,7 +6,7 @@ import {
   type KeyObject,
   type JsonWebKey,
 } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -51,7 +51,10 @@ function base64Url(value: string | Buffer): string {
   return Buffer.from(value).toString('base64url');
 }
 
-function bundle(publicJwk: JsonWebKey, overrides: Partial<AzureKeyVaultKeyBundle> = {}): AzureKeyVaultKeyBundle {
+function bundle(
+  publicJwk: JsonWebKey,
+  overrides: Partial<AzureKeyVaultKeyBundle> = {},
+): AzureKeyVaultKeyBundle {
   return {
     key: {
       kid: KEY_ID,
@@ -77,11 +80,7 @@ function highSRawSignature(privateKey: KeyObject, digest: Uint8Array): Uint8Arra
     const keyPath = join(directory, 'key.pem');
     const digestPath = join(directory, 'digest.bin');
     const signaturePath = join(directory, 'signature.der');
-    writeFileSync(
-      keyPath,
-      privateKey.export({ type: 'pkcs8', format: 'pem' }),
-      { mode: 0o600 },
-    );
+    writeFileSync(keyPath, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
     writeFileSync(digestPath, digest, { mode: 0o600 });
     execFileSync(
       'openssl',
@@ -99,9 +98,7 @@ function highSRawSignature(privateKey: KeyObject, digest: Uint8Array): Uint8Arra
       ],
       { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true },
     );
-    const raw = ecdsaDerToXmlDsigSignature(
-      Uint8Array.from(require('node:fs').readFileSync(signaturePath)),
-    );
+    const raw = ecdsaDerToXmlDsigSignature(Uint8Array.from(readFileSync(signaturePath)));
     const s = bytesToBigInt(raw.subarray(32));
     const highS = s > LOW_S_LIMIT ? s : SECP256K1_ORDER - s;
     return Uint8Array.from([...raw.subarray(0, 32), ...bigInt32(highS)]);
@@ -154,7 +151,9 @@ describe('Azure Key Vault ZATCA signing authority', () => {
   it('creates a verifiable Simulation PKCS#10 CSR with the PREZATCA template', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'secp256k1' });
     const publicJwk = publicKey.export({ format: 'jwk' });
-    const port = new AzureKeyVaultSigningKeyPort({ client: fakeClient(bundle(publicJwk), privateKey) });
+    const port = new AzureKeyVaultSigningKeyPort({
+      client: fakeClient(bundle(publicJwk), privateKey),
+    });
 
     const csrDer = await port.createPkcs10Csr({
       scope: SCOPE,
@@ -165,7 +164,6 @@ describe('Azure Key Vault ZATCA signing authority', () => {
     });
 
     expect(Buffer.from(csrDer).includes(Buffer.from('PREZATCA-Code-Signing'))).toBe(true);
-    expect(Buffer.from(csrDer).includes(Buffer.from('ZATCA-Code-Signing'))).toBe(true);
 
     const directory = mkdtempSync(join(tmpdir(), 'korvi-zatca-csr-'));
     try {
@@ -212,7 +210,9 @@ describe('Azure Key Vault ZATCA signing authority', () => {
     const publicJwk = publicKey.export({ format: 'jwk' });
     const port = new AzureKeyVaultSigningKeyPort({
       client: fakeClient(
-        bundle(publicJwk, { attributes: { enabled: true, exportable: true, created: 1_725_000_000 } }),
+        bundle(publicJwk, {
+          attributes: { enabled: true, exportable: true, created: 1_725_000_000 },
+        }),
         privateKey,
       ),
     });
@@ -257,9 +257,9 @@ describe('Azure Key Vault ZATCA signing authority', () => {
     await expect(
       rest.getKey('https://korvi-test.vault.azure.net/keys/key-without-version'),
     ).rejects.toThrow(/versioned key/i);
-    await expect(
-      rest.getKey('https://attacker.example/keys/key/version'),
-    ).rejects.toThrow(/configured vault/i);
+    await expect(rest.getKey('https://attacker.example/keys/key/version')).rejects.toThrow(
+      /configured vault/i,
+    );
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -276,8 +276,12 @@ describe('Azure Key Vault ZATCA signing authority', () => {
       attributes: { enabled: true, exportable: false, created: 1_725_000_000 },
       tags: {},
     };
-    const fetchImpl = vi.fn<typeof fetch>(async (_input, init) =>
-      new Response(JSON.stringify(responseBody), { status: 200, headers: { 'content-type': 'application/json' } }),
+    const fetchImpl = vi.fn<typeof fetch>(
+      async (_input, init) =>
+        new Response(JSON.stringify(responseBody), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
     );
     const rest = new AzureKeyVaultRestClient({
       vaultUrl: 'https://korvi-test.vault.azure.net',
