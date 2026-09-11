@@ -84,6 +84,7 @@ CREATE TRIGGER "zatca_compliance_evidence_immutable_guard"
 ALTER TABLE "zatca_compliance_evidence" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "zatca_compliance_evidence" FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence";
 CREATE POLICY "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
