@@ -1,4 +1,4 @@
-name: Verify production ZATCA evidence promotion
+name: Verify clean ZATCA evidence promotion
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  verify-and-freeze:
+  verify-and-promote-clean-tree:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     services:
@@ -27,18 +27,27 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
+      BASE_SHA: 8e835573e1f6606f83cd0cea28e698829d8d95aa
+      TARGET_BRANCH: review/zatca-39-compliance-evidence
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/korvi_evidence_test
       APP_DATABASE_URL: postgresql://korvi_evidence_app:korvi_evidence_app@127.0.0.1:5432/korvi_evidence_test
 
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - name: Check out diagnostic source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Materialize reviewed permanent slice
+      - name: Install diagnostic source dependencies
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Materialize reviewed permanent evidence slice
         shell: bash
         run: |
           set -euo pipefail
@@ -48,9 +57,9 @@ jobs:
           def body(path, step, nxt):
               lines = Path(path).read_text().splitlines()
               s = next(i for i,l in enumerate(lines) if l.strip() == f'- name: {step}')
-              r = next(i for i in range(s+1,len(lines)) if lines[i].strip() == 'run: |')
-              e = next(i for i in range(r+1,len(lines)) if lines[i].strip() == f'- name: {nxt}')
-              return '\n'.join(l[10:] if l.startswith('          ') else l for l in lines[r+1:e]) + '\n'
+              r = next(i for i in range(s + 1, len(lines)) if lines[i].strip() == 'run: |')
+              e = next(i for i in range(r + 1, len(lines)) if lines[i].strip() == f'- name: {nxt}')
+              return '\n'.join(l[10:] if l.startswith('          ') else l for l in lines[r + 1:e]) + '\n'
 
           Path('/tmp/materialize.sh').write_text(body(
               '.github/workflows/scratch-run-zatca-evidence.yml',
@@ -71,6 +80,7 @@ jobs:
           python <<'PY'
           from pathlib import Path
           import re, uuid
+
           p = Path('packages/domain/src/zatca/__tests__/compliance-evidence.test.ts')
           text = p.read_text()
           pattern = re.compile(r"evidenceId:\s*'([^']+)'")
@@ -85,7 +95,7 @@ jobs:
               raise SystemExit('no non-UUID evidenceId fixture found')
           PY
 
-      - name: Format permanent source
+      - name: Format permanent evidence source
         run: |
           npx prettier --write \
             packages/domain/src/zatca/compliance-evidence.ts \
@@ -97,26 +107,75 @@ jobs:
             packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts \
             packages/database/src/index.ts
 
-      - name: Remove scratch-only scaffolding before verification
+      - name: Build isolated production worktree from clean base
         shell: bash
         run: |
           set -euo pipefail
-          rm -f \
-            .github/workflows/scratch-complete-zatca-evidence.yml \
-            .github/workflows/scratch-finalize-zatca-evidence-v2.yml \
-            .github/workflows/scratch-finish-zatca-evidence.yml \
-            .github/workflows/scratch-run-zatca-evidence.yml \
-            .github/workflows/promote-zatca-evidence.yml
+          git cat-file -e "$BASE_SHA^{commit}"
+          rm -rf /tmp/korvi-production
+          git worktree add --detach /tmp/korvi-production "$BASE_SHA"
+          cd /tmp/korvi-production
+          git switch -c "$TARGET_BRANCH"
 
-      - name: Build workspaces
+          while IFS= read -r path; do
+            mkdir -p "$(dirname "$path")"
+            cp "$GITHUB_WORKSPACE/$path" "$path"
+          done <<'EOF'
+          packages/domain/src/zatca/compliance-evidence.ts
+          packages/domain/src/ports/zatca-compliance-evidence.ts
+          packages/domain/src/zatca/__tests__/compliance-evidence.test.ts
+          packages/domain/src/index.ts
+          packages/database/prisma/schema.prisma
+          packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
+          packages/database/src/zatca/compliance-evidence-repository.ts
+          packages/database/src/__tests__/zatca-compliance-evidence-live-fixture.ts
+          packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts
+          packages/database/src/index.ts
+          EOF
+
+      - name: Upgrade Fastify patch and generate lockfile with npm
+        working-directory: /tmp/korvi-production
+        run: |
+          npm install --workspace @korvi/api --save-exact --package-lock-only --registry=https://registry.npmjs.org fastify@5.12.4
+          npm ci --registry=https://registry.npmjs.org
+          npm run versions:verify
+
+      - name: Enforce exact production path whitelist
+        shell: bash
+        working-directory: /tmp/korvi-production
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE_SHA" | sort > /tmp/actual-paths.txt
+          cat > /tmp/expected-paths.txt <<'EOF'
+          apps/api/package.json
+          package-lock.json
+          packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
+          packages/database/prisma/schema.prisma
+          packages/database/src/__tests__/zatca-compliance-evidence-live-fixture.ts
+          packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts
+          packages/database/src/index.ts
+          packages/database/src/zatca/compliance-evidence-repository.ts
+          packages/domain/src/index.ts
+          packages/domain/src/ports/zatca-compliance-evidence.ts
+          packages/domain/src/zatca/__tests__/compliance-evidence.test.ts
+          packages/domain/src/zatca/compliance-evidence.ts
+          EOF
+          sort -o /tmp/expected-paths.txt /tmp/expected-paths.txt
+          diff -u /tmp/expected-paths.txt /tmp/actual-paths.txt
+          git diff --check
+
+      - name: Build production worktree
+        working-directory: /tmp/korvi-production
         run: |
           npm run --silent db:generate
           npm run --silent build
 
-      - name: Deploy migrations
-        run: (cd packages/database && npx prisma migrate deploy)
+      - name: Deploy migrations on PostgreSQL 17
+        working-directory: /tmp/korvi-production/packages/database
+        run: npx prisma migrate deploy
 
-      - name: Restricted application role
+      - name: Create restricted application role
+        shell: bash
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
           CREATE ROLE korvi_evidence_app LOGIN PASSWORD 'korvi_evidence_app'
@@ -127,25 +186,32 @@ jobs:
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO korvi_evidence_app;
           SQL
 
-      - name: PostgreSQL adversarial proof
+      - name: PostgreSQL adversarial evidence proof
+        working-directory: /tmp/korvi-production
         env:
           KORVI_TEST_DATABASE_URL: ${{ env.APP_DATABASE_URL }}
           KORVI_TEST_ADMIN_DATABASE_URL: ${{ env.DATABASE_URL }}
         run: npx vitest run packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts
 
-      - name: Full verify on intended production tree
+      - name: Full verify on isolated production tree
+        working-directory: /tmp/korvi-production
         run: |
           unset KORVI_TEST_DATABASE_URL KORVI_TEST_ADMIN_DATABASE_URL
           npm run verify
 
-      - name: Freeze verified production tree
+      - name: Freeze only verified production changes
         shell: bash
+        working-directory: /tmp/korvi-production
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A \
-            .github/workflows \
+
+          git add apps/api/package.json package-lock.json
+          git diff --cached --check
+          git commit -m "build(deps): update fastify to 5.12.4"
+
+          git add \
             packages/domain/src/zatca/compliance-evidence.ts \
             packages/domain/src/ports/zatca-compliance-evidence.ts \
             packages/domain/src/zatca/__tests__/compliance-evidence.test.ts \
@@ -158,4 +224,6 @@ jobs:
             packages/database/src/index.ts
           git diff --cached --check
           git commit -m "feat(zatca): persist trusted compliance evidence"
-          git push origin HEAD:verify/zatca-evidence-promotion
+
+          test -z "$(git status --porcelain)"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
