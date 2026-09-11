@@ -160,6 +160,12 @@ for (const [name, pin] of [...pins].sort()) {
   }
 
   if (latestStable !== pin) {
+    if (name === 'fastify') {
+      const dist = meta.versions?.[latestStable]?.dist;
+      console.log(
+        `diag  fastify@${latestStable} integrity=${String(dist?.integrity)} tarball=${String(dist?.tarball)}`,
+      );
+    }
     const reason = ALLOWED_BEHIND[name];
     if (reason === undefined) {
       console.error(
