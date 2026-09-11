@@ -144,10 +144,7 @@ async function findByComplianceAttemptWithin(
   return rows[0] ?? null;
 }
 
-function assertReplay(
-  input: RecordZatcaAcceptedComplianceEvidenceInput,
-  row: EvidenceRow,
-): void {
+function assertReplay(input: RecordZatcaAcceptedComplianceEvidenceInput, row: EvidenceRow): void {
   if (
     row.id !== input.evidenceId ||
     row.terminalId !== input.terminalId ||
