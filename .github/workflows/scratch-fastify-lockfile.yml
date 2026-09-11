@@ -1,0 +1,70 @@
+name: Scratch Fastify Lockfile Proof
+
+on:
+  push:
+    branches:
+      - scratch/zatca39-fastify-lockfile-20260911
+    paths:
+      - .github/workflows/scratch-fastify-lockfile.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-and-prove:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Generate exact Fastify lockfile
+        run: npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+
+      - name: Prove lockfile scope and end-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff -- package-lock.json > /tmp/lock.diff
+          test -s /tmp/lock.diff
+          unexpected="$(git diff --name-only | grep -vx 'package-lock.json' || true)"
+          if [ -n "$unexpected" ]; then
+            echo 'Unexpected file changed while generating lockfile:' >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require('node:fs');
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const api = lock.packages['apps/api'];
+          const fastify = lock.packages['node_modules/fastify'];
+          if (api?.dependencies?.fastify !== '5.12.4') throw new Error('apps/api lock pin is not 5.12.4');
+          if (fastify?.version !== '5.12.4') throw new Error('resolved Fastify is not 5.12.4');
+          if (fastify?.resolved !== 'https://registry.npmjs.org/fastify/-/fastify-5.12.4.tgz') throw new Error('unexpected Fastify tarball');
+          console.log('Fastify lockfile end-state is exact.');
+          NODE
+          cat /tmp/lock.diff
+
+      - name: Install from generated lockfile
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+
+      - name: Verify dependency pins
+        run: npm run versions:verify
+
+      - name: Upload verified lockfile
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fastify-lockfile-${{ github.sha }}
+          path: package-lock.json
+          retention-days: 1
