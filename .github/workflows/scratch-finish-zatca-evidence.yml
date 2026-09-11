@@ -35,6 +35,9 @@ jobs:
           cache: npm
       - run: npm ci --registry=https://registry.npmjs.org
 
+      - name: Refresh Fastify stable pin and lockfile
+        run: npm install --workspace apps/api fastify@5.12.4 --save-exact --registry=https://registry.npmjs.org
+
       - name: Materialize reviewed evidence and maintainable live proof
         shell: bash
         run: |
@@ -109,13 +112,15 @@ jobs:
           unset KORVI_TEST_DATABASE_URL KORVI_TEST_ADMIN_DATABASE_URL
           npm run verify
 
-      - name: Commit only permanent evidence files
+      - name: Commit only permanent evidence and dependency files
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
+            apps/api/package.json \
+            package-lock.json \
             packages/domain/src/zatca/compliance-evidence.ts \
             packages/domain/src/ports/zatca-compliance-evidence.ts \
             packages/domain/src/zatca/__tests__/compliance-evidence.test.ts \
