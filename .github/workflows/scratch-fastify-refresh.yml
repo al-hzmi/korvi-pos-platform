@@ -1,4 +1,4 @@
-name: Scratch Fastify Refresh Proof
+name: Scratch Gate 39 Repair And Proof
 
 on:
   push:
@@ -12,10 +12,30 @@ permissions:
   contents: read
 
 jobs:
-  refresh-and-verify:
-    name: Generate exact Fastify refresh and verify
+  repair-and-verify:
+    name: Repair exact blockers and prove full Gate 39 slice
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgresql://korvi_app:korvi_gate39_ci@localhost:5432/korvi_gate39
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_app:korvi_gate39_ci@localhost:5432/korvi_gate39
+      KORVI_TEST_ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/korvi_gate39
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_gate39
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_gate39
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_gate39"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
 
     steps:
       - name: Check out exact scratch commit
@@ -33,41 +53,102 @@ jobs:
       - name: Install exact current lockfile
         run: npm ci --registry=https://registry.npmjs.org
 
+      - name: Apply exact structural corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def ensure_replace(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f"expected source pattern absent: {path}")
+              p.write_text(text.replace(old, new, 1))
+
+          ensure_replace("apps/api/src/__tests__/staging-preflight.test.ts", "expect(expected.migrations).toHaveLength(14);", "expect(expected.migrations).toHaveLength(15);")
+          ensure_replace("packages/database/prisma/schema.prisma", '@@unique([tenantId, id], map: "zatca_csid_attempts_tenantId_id_key")', '@@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")')
+          ensure_replace("packages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql", 'CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_id_key"', 'CREATE UNIQUE INDEX "zatca_csid_provisioning_attempts_tenantId_id_key"')
+          ensure_replace("packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql", 'CREATE POLICY "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence"', 'DROP POLICY IF EXISTS "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence";\nCREATE POLICY "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence"')
+          PY
+
       - name: Refresh Fastify exactly
         run: npm install -w @korvi/api fastify@5.12.4 --save-exact --registry=https://registry.npmjs.org
 
       - name: Format Evidence slice
         run: npx --no-install prettier --write packages/database/src/zatca/compliance-evidence-repository.ts packages/domain/src/ports/zatca-compliance-evidence.ts
 
-      - name: Assert refresh scope
+      - name: Assert repair scope and end state
         shell: bash
         run: |
           set -euo pipefail
+          allowed=$'apps/api/package.json\napps/api/src/__tests__/staging-preflight.test.ts\npackage-lock.json\npackages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql\npackages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql\npackages/database/prisma/schema.prisma\npackages/database/src/zatca/compliance-evidence-repository.ts\npackages/domain/src/ports/zatca-compliance-evidence.ts'
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
-          expected=$'apps/api/package.json\npackage-lock.json\npackages/database/src/zatca/compliance-evidence-repository.ts\npackages/domain/src/ports/zatca-compliance-evidence.ts'
           printf 'Changed paths:\n%s\n' "$changed"
-          test "$changed" = "$expected"
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            grep -Fxq "$path" <<< "$allowed" || { echo "Unexpected changed path: $path" >&2; exit 1; }
+          done <<< "$changed"
           grep -F '"fastify": "5.12.4"' apps/api/package.json
+          grep -F 'expect(expected.migrations).toHaveLength(15);' apps/api/src/__tests__/staging-preflight.test.ts
+          grep -F '@@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")' packages/database/prisma/schema.prisma
+          grep -F 'CREATE UNIQUE INDEX "zatca_csid_provisioning_attempts_tenantId_id_key"' packages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql
+          grep -F 'DROP POLICY IF EXISTS "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence";' packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
 
       - name: Full verification
         run: npm run verify
 
-      - name: Diff integrity
+      - name: Establish restricted application role
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
-          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
-          expected=$'apps/api/package.json\npackage-lock.json\npackages/database/src/zatca/compliance-evidence-repository.ts\npackages/domain/src/ports/zatca-compliance-evidence.ts'
-          test "$changed" = "$expected"
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_app LOGIN PASSWORD 'korvi_gate39_ci' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_gate39 TO korvi_app;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_app;
+          SQL
+          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='korvi_app'")"
+          test "$flags" = 'f|f|f|f|f|f'
 
-      - name: Preserve generated permanent files
+      - name: Apply all fifteen migrations and prove zero drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          test "$count" -eq 15
+          npm exec -w @korvi/database -- prisma migrate deploy
+          ledger="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
+          test "$ledger" = '15|15'
+          cd packages/database
+          npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      - name: Prove Evidence PostgreSQL invariants live
+        shell: bash
+        run: |
+          set -euo pipefail
+          rls="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT relrowsecurity::text || '|' || relforcerowsecurity::text FROM pg_class WHERE oid='zatca_compliance_evidence'::regclass")"
+          test "$rls" = 'true|true'
+          policy_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='zatca_compliance_evidence' AND policyname='zatca_compliance_evidence_isolation'")"
+          test "$policy_count" = '1'
+          npx --no-install vitest run packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts
+
+      - name: Diff integrity
+        run: git diff --check
+
+      - name: Preserve verified permanent files
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: zatca39-final-files-${{ github.sha }}
+          name: zatca39-verified-permanent-files-${{ github.sha }}
           path: |
             apps/api/package.json
+            apps/api/src/__tests__/staging-preflight.test.ts
             package-lock.json
+            packages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql
+            packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
+            packages/database/prisma/schema.prisma
             packages/database/src/zatca/compliance-evidence-repository.ts
             packages/domain/src/ports/zatca-compliance-evidence.ts
           if-no-files-found: error
