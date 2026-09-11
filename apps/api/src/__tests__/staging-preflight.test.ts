@@ -79,7 +79,7 @@ describe('staging database refusal before serving traffic', () => {
 
   it('loads the actual checked-in migration bytes and schema table names', async () => {
     const expected = await readDeploymentManifest();
-    expect(expected.migrations).toHaveLength(15);
+    expect(expected.migrations).toHaveLength(16);
     expect(
       expected.migrations.every((migration) => /^[a-f0-9]{64}$/.test(migration.checksum)),
     ).toBe(true);
@@ -87,6 +87,7 @@ describe('staging database refusal before serving traffic', () => {
     expect(expected.tables).toContain('tenant_owner_bootstrap_invitations');
     expect(expected.tables).toContain('zatca_csid_provisioning_attempts');
     expect(expected.tables).toContain('zatca_fatoora_credentials');
+    expect(expected.tables).toContain('zatca_invoice_submissions');
     expect(new Set(expected.tables).size).toBe(expected.tables.length);
   });
 });
