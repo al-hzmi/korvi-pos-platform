@@ -60,6 +60,19 @@ jobs:
           PY
           bash /tmp/complete-evidence.sh
 
+      - name: Format permanent evidence slice
+        run: |
+          npx prettier --write \
+            packages/domain/src/zatca/compliance-evidence.ts \
+            packages/domain/src/ports/zatca-compliance-evidence.ts \
+            packages/domain/src/zatca/__tests__/compliance-evidence.test.ts \
+            packages/domain/src/index.ts \
+            packages/database/prisma/schema.prisma \
+            packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql \
+            packages/database/src/zatca/compliance-evidence-repository.ts \
+            packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts \
+            packages/database/src/index.ts
+
       - name: Generate Prisma client and build workspaces
         run: |
           set -euo pipefail
