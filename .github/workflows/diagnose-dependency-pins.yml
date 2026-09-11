@@ -1,0 +1,34 @@
+name: Diagnose dependency pins
+
+on:
+  push:
+    branches:
+      - verify/zatca-evidence-promotion
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Capture exact pin diagnostics
+        shell: bash
+        run: |
+          set -uo pipefail
+          node scripts/verify-versions.mjs > VERSION_DIAGNOSTICS.txt 2>&1
+          status=$?
+          cat VERSION_DIAGNOSTICS.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION_DIAGNOSTICS.txt
+          git commit -m "ci: capture dependency pin diagnostics"
+          git push origin HEAD:verify/zatca-evidence-promotion
+          exit "$status"
