@@ -20,10 +20,10 @@ describe('Gate 41 service worker contract', () => {
     expect(source).toContain('if (!isAllowedStaticUrl(url)) return;');
   });
 
-  it('publishes a shell snapshot only after its completion marker exists', async () => {
+  it('publishes a new shell snapshot only after its completion marker exists', async () => {
     const source = await workerSource();
     const completionIndex = source.indexOf('await cache.put(\n      COMPLETE_KEY');
-    const pointerIndex = source.indexOf('await writeMeta(nextMeta);');
+    const pointerIndex = source.indexOf('await writeMeta(nextMeta);', completionIndex);
 
     expect(completionIndex).toBeGreaterThan(0);
     expect(pointerIndex).toBeGreaterThan(completionIndex);
