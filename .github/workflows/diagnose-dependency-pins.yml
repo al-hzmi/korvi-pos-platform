@@ -23,12 +23,12 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          node scripts/verify-versions.mjs > VERSION_DIAGNOSTICS.txt 2>&1
+          node scripts/verify-versions.mjs > .github/VERSION_DIAGNOSTICS.md 2>&1
           status=$?
-          cat VERSION_DIAGNOSTICS.txt
+          cat .github/VERSION_DIAGNOSTICS.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add VERSION_DIAGNOSTICS.txt
+          git add -f .github/VERSION_DIAGNOSTICS.md
           git commit -m "ci: capture dependency pin diagnostics"
           git push origin HEAD:verify/zatca-evidence-promotion
           exit "$status"
