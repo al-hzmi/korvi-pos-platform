@@ -95,9 +95,6 @@ jobs:
           grep -F 'CREATE UNIQUE INDEX "zatca_csid_provisioning_attempts_tenantId_id_key"' packages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql
           grep -F 'DROP POLICY IF EXISTS "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence";' packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
 
-      - name: Full verification
-        run: npm run verify
-
       - name: Establish restricted application role
         shell: bash
         run: |
@@ -121,6 +118,9 @@ jobs:
           test "$ledger" = '15|15'
           cd packages/database
           npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      - name: Full verification
+        run: npm run verify
 
       - name: Prove Evidence PostgreSQL invariants live
         shell: bash
