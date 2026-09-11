@@ -174,6 +174,7 @@ export function createZatcaInvoiceSubmissionService(
           throw new AggregateError(
             [transportError, persistenceError],
             'ZATCA request may have left Korvi, but its ambiguous outcome could not be persisted. The durable in-flight row must be reconciled and must not be resent automatically.',
+            { cause: persistenceError },
           );
         }
       }
