@@ -1,0 +1,71 @@
+name: Capture proven Gate 39 candidate
+
+on:
+  push:
+    branches:
+      - scratch/zatca39-fastify-lockfile-20260911
+    paths:
+      - '.github/workflows/capture-zatca39-candidate.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out scratch branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 1
+
+      - name: Download exact proven artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10276554622/zip" \
+            --output /tmp/zatca39-final-candidate.zip
+          rm -rf /tmp/zatca39-final-candidate
+          mkdir -p /tmp/zatca39-final-candidate
+          unzip -q /tmp/zatca39-final-candidate.zip -d /tmp/zatca39-final-candidate
+
+      - name: Verify exact candidate file digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' \
+            'fd7a5451fa04b0baeefdfb99bfd318befee1cca08b37d16e3d2762729b954803' '/tmp/zatca39-final-candidate/apps/api/package.json' \
+            'ed15bd62dc8f897ab7f259136555dc7e8d036cabc134686f9c832cbbf0ff8ca5' '/tmp/zatca39-final-candidate/apps/pos-web/package.json' \
+            'ddd19d65c17773f469a0e9f70dfb2ed561eee22563a64fe461b837a50dc085a3' '/tmp/zatca39-final-candidate/package-lock.json' \
+            '2689004267e0e79313a46e088409934794b1a3fe91d2d4c7ba2d80b62681f8b3' '/tmp/zatca39-final-candidate/packages/database/prisma/schema.prisma' \
+            | sha256sum --check --strict
+
+      - name: Materialize only proven permanent files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/zatca39-final-candidate/apps/api/package.json apps/api/package.json
+          cp /tmp/zatca39-final-candidate/apps/pos-web/package.json apps/pos-web/package.json
+          cp /tmp/zatca39-final-candidate/package-lock.json package-lock.json
+          cp /tmp/zatca39-final-candidate/packages/database/prisma/schema.prisma packages/database/prisma/schema.prisma
+          git diff --check
+          git diff -- apps/api/package.json apps/pos-web/package.json package-lock.json packages/database/prisma/schema.prisma
+
+      - name: Commit exact proven blobs to scratch branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- apps/api/package.json apps/pos-web/package.json package-lock.json packages/database/prisma/schema.prisma
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'chore(scratch): materialize proven Gate 39 candidate'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
