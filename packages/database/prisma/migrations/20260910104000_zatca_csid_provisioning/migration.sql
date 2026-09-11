@@ -151,7 +151,7 @@ CREATE TABLE "zatca_csid_provisioning_attempts" (
 
 CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_operationId_key"
   ON "zatca_csid_provisioning_attempts"("tenantId", "operationId");
-CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_id_key"
+CREATE UNIQUE INDEX "zatca_csid_provisioning_attempts_tenantId_id_key"
   ON "zatca_csid_provisioning_attempts"("tenantId", "id");
 CREATE UNIQUE INDEX "zatca_csid_attempts_tenantId_credentialId_key"
   ON "zatca_csid_provisioning_attempts"("tenantId", "credentialId");
