@@ -257,7 +257,9 @@ export function createZatcaInvoiceSubmissionService(
         input.mode,
       );
       if (current === null) {
-        throw new ZatcaInvoiceSubmissionError('ZATCA submission does not exist for reconciliation.');
+        throw new ZatcaInvoiceSubmissionError(
+          'ZATCA submission does not exist for reconciliation.',
+        );
       }
       if (current.state !== 'uncertain') {
         throw new ZatcaInvoiceSubmissionError(
