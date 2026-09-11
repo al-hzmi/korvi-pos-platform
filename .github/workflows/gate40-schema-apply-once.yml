@@ -9,6 +9,8 @@ jobs:
   apply:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_gate40
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
