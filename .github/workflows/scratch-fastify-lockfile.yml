@@ -53,23 +53,45 @@ jobs:
       - name: Generate exact Fastify lockfile
         run: npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
 
-      - name: Apply remaining exact Prisma correction
+      - name: Apply exact Prisma Evidence model and naming corrections
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
+
           p = Path('packages/database/prisma/schema.prisma')
           text = p.read_text()
-          old = '@@unique([tenantId, id], map: "zatca_csid_attempts_tenantId_id_key")'
-          new = '@@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")'
-          if text.count(new) == 1 and old not in text:
-              pass
-          elif text.count(old) == 1 and new not in text:
-              p.write_text(text.replace(old, new, 1))
-          else:
-              raise SystemExit('unexpected CSID composite unique schema state')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              if text.count(old) != 1:
+                  raise SystemExit(f'unexpected Prisma schema state for {label}: expected exactly one source block')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
+              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaComplianceEvidence       ZatcaComplianceEvidence[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
+              'Tenant Evidence relation',
+          )
+          replace_once(
+              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
+              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaComplianceEvidence       ZatcaComplianceEvidence[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
+              'Terminal Evidence relation',
+          )
+          replace_once(
+              '  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)\n\n  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")\n  @@unique([tenantId, id], map: "zatca_csid_attempts_tenantId_id_key")',
+              '  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n  terminal           Terminal                 @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)\n  complianceEvidence ZatcaComplianceEvidence?\n\n  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")\n  @@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")',
+              'Compliance attempt Evidence relation and canonical unique name',
+          )
+          marker = '''/// AES-256-GCM ciphertext for the Fatoora Basic-Authentication credential.\n'''
+          model = '''/// Immutable accepted ZATCA compliance-check evidence.\n/// Production CSID onboarding consumes this authority instead of trusting caller-supplied\n/// request ids, environments or credentials. Database triggers enforce source issuance,\n/// terminal consistency, temporal ordering and append-only retention.\nmodel ZatcaComplianceEvidence {\n  id                  String   @id @db.Uuid\n  tenantId            String   @db.Uuid\n  terminalId          String   @db.Uuid\n  complianceAttemptId String   @db.Uuid\n  checkSetHash        String   @db.Char(64)\n  acceptedAt          DateTime\n  createdAt           DateTime @default(now())\n\n  tenant            Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "zatca_compliance_evidence_tenantId_fkey")\n  terminal          Terminal                    @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_tenantId_terminalId_fkey")\n  complianceAttempt ZatcaCsidProvisioningAttempt @relation(fields: [tenantId, complianceAttemptId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_attempt_fkey")\n\n  @@unique([tenantId, id], map: "zatca_compliance_evidence_tenantId_id_key")\n  @@unique([tenantId, complianceAttemptId], map: "zatca_compliance_evidence_tenantId_attempt_key")\n  @@index([tenantId, terminalId, acceptedAt], map: "zatca_compliance_evidence_tenantId_terminalId_acceptedAt_idx")\n  @@map("zatca_compliance_evidence")\n}\n\n'''
+          if 'model ZatcaComplianceEvidence {' in text:
+              raise SystemExit('unexpected Prisma schema state: Evidence model already exists in source candidate')
+          replace_once(marker, model + marker, 'Evidence model insertion')
+          p.write_text(text)
           PY
+          npm exec -w @korvi/database -- prisma format
 
       - name: Install exact generated tree
         run: npm ci --registry=https://registry.npmjs.org
@@ -91,6 +113,7 @@ jobs:
           grep -F '"fastify": "5.12.4"' apps/api/package.json
           grep -F '"fastify": "5.12.4"' package-lock.json
           grep -F 'expect(expected.migrations).toHaveLength(15);' apps/api/src/__tests__/staging-preflight.test.ts
+          grep -F 'model ZatcaComplianceEvidence {' packages/database/prisma/schema.prisma
           grep -F '@@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")' packages/database/prisma/schema.prisma
           grep -F 'CREATE UNIQUE INDEX "zatca_csid_provisioning_attempts_tenantId_id_key"' packages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql
           grep -F 'DROP POLICY IF EXISTS "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence";' packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
