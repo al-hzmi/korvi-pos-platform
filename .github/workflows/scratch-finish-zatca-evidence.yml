@@ -66,35 +66,6 @@ jobs:
           bash /tmp/materialize.sh
           bash /tmp/refactor-live.sh
 
-      - name: Fix canonical domain fixture with a real UUID
-        shell: bash
-        run: |
-          set -euo pipefail
-          python <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('packages/domain/src/zatca/__tests__/compliance-evidence.test.ts')
-          text = p.read_text()
-          marker = "it('accepts canonical immutable evidence'"
-          start = text.find(marker)
-          if start < 0:
-              raise SystemExit('canonical evidence test marker not found')
-          next_test = text.find("it('", start + len(marker))
-          if next_test < 0:
-              next_test = len(text)
-          segment = text[start:next_test]
-          replaced, count = re.subn(
-              r"evidenceId:\s*'[^']+'",
-              "evidenceId: '00000000-0000-4000-8000-000000000001'",
-              segment,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit(f'expected one canonical evidenceId fixture, got {count}')
-          p.write_text(text[:start] + replaced + text[next_test:])
-          PY
-
       - name: Format permanent TypeScript
         run: |
           npx prettier --write \
