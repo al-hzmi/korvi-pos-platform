@@ -78,19 +78,19 @@ jobs:
           test "$flags" = 'f|f|f|f|f|f'
           printf 'commit=%s\napp_role_flags=%s\n' "$GITHUB_SHA" "$flags" | tee "$PROOF_LOG"
 
-      - name: Apply all fourteen migrations as application role
+      - name: Apply all fifteen migrations as application role
         shell: bash
         run: |
           set -euo pipefail
           count="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          if [ "$count" -ne 14 ]; then
-            echo "Expected exactly 14 migrations, got $count" >&2
+          if [ "$count" -ne 15 ]; then
+            echo "Expected exactly 15 migrations, got $count" >&2
             exit 1
           fi
           npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
           npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
           ledger="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
-          test "$ledger" = '14|14'
+          test "$ledger" = '15|15'
           echo "migration_ledger=$ledger" | tee -a "$PROOF_LOG"
 
       - name: Prove schema drift is zero
