@@ -53,6 +53,9 @@ jobs:
       - name: Generate exact Fastify lockfile
         run: npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
 
+      - name: Install exact generated tree
+        run: npm ci --registry=https://registry.npmjs.org
+
       - name: Apply exact Prisma Evidence model and naming corrections
         shell: bash
         run: |
@@ -88,9 +91,6 @@ jobs:
           p.write_text(text)
           PY
           npm exec -w @korvi/database -- prisma format
-
-      - name: Install exact generated tree
-        run: npm ci --registry=https://registry.npmjs.org
 
       - name: Format Evidence slice exactly
         run: npx --no-install prettier --write packages/database/src/zatca/compliance-evidence-repository.ts packages/domain/src/ports/zatca-compliance-evidence.ts
