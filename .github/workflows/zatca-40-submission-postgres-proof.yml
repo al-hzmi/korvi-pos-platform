@@ -56,6 +56,14 @@ jobs:
       - name: Check out exact commit
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
 
+      - name: Prove no self-mutating helper remains
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .github/workflows/gate40-repair-once.yml
+          test ! -e .github/workflows/gate40-service-format-once.yml
+          test ! -e .github/workflows/gate40-format-domain-once.yml
+
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
@@ -92,7 +100,10 @@ jobs:
 
       - name: Prove schema drift is zero
         working-directory: packages/database
-        run: npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code 2>&1 | tee -a "../../$PROOF_LOG"
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code 2>&1 | tee -a "../../$PROOF_LOG"
 
       - name: Prove queue security invariants
         run: |
@@ -113,16 +124,27 @@ jobs:
           npm run build
 
       - name: Run durable submission PostgreSQL concurrency proof
-        run: npx --no-install vitest run packages/database/src/__tests__/zatca-invoice-submission-live.test.ts 2>&1 | tee -a "$PROOF_LOG"
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run packages/database/src/__tests__/zatca-invoice-submission-live.test.ts 2>&1 | tee -a "$PROOF_LOG"
 
       - name: Run transition-before-send and ambiguity proof
-        run: npx --no-install vitest run apps/api/src/__tests__/zatca-invoice-submission-service.test.ts 2>&1 | tee -a "$PROOF_LOG"
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run apps/api/src/__tests__/zatca-invoice-submission-service.test.ts 2>&1 | tee -a "$PROOF_LOG"
 
       - name: Run one-shot transport contract proof
-        run: npx --no-install vitest run apps/api/src/__tests__/zatca-invoice-submission-http-client.test.ts 2>&1 | tee -a "$PROOF_LOG"
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run apps/api/src/__tests__/zatca-invoice-submission-http-client.test.ts 2>&1 | tee -a "$PROOF_LOG"
 
       - name: Run full verification against PostgreSQL
+        shell: bash
         run: |
+          set -euo pipefail
           npm run verify 2>&1 | tee -a "$PROOF_LOG"
           git diff --check
 
