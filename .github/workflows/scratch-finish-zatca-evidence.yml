@@ -1,0 +1,160 @@
+name: Scratch finish ZATCA compliance evidence
+
+on:
+  push:
+    branches:
+      - scratch/inspect-production-csid
+
+permissions:
+  contents: write
+
+jobs:
+  finish-evidence:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: korvi_evidence_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_evidence_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/korvi_evidence_test
+      APP_DATABASE_URL: postgresql://korvi_evidence_app:korvi_evidence_app@127.0.0.1:5432/korvi_evidence_test
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Materialize reviewed evidence and maintainable live proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          def step_body(path: str, step_name: str, next_step: str) -> str:
+              lines = Path(path).read_text().splitlines()
+              start = next(i for i, line in enumerate(lines) if line.strip() == f'- name: {step_name}')
+              run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
+              end = next(i for i in range(run_line + 1, len(lines)) if lines[i].strip() == f'- name: {next_step}')
+              body = []
+              for line in lines[run_line + 1:end]:
+                  body.append(line[10:] if line.startswith('          ') else line)
+              return '\n'.join(body) + '\n'
+
+          Path('/tmp/materialize.sh').write_text(step_body(
+              '.github/workflows/scratch-run-zatca-evidence.yml',
+              'Materialize the already-reviewed evidence slice',
+              'Refactor PostgreSQL proof into maintainable fixture',
+          ))
+          Path('/tmp/refactor-live.sh').write_text(step_body(
+              '.github/workflows/scratch-run-zatca-evidence.yml',
+              'Refactor PostgreSQL proof into maintainable fixture',
+              'Format permanent evidence TypeScript',
+          ))
+          PY
+          bash /tmp/materialize.sh
+          bash /tmp/refactor-live.sh
+
+      - name: Fix canonical domain fixture with a real UUID
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('packages/domain/src/zatca/__tests__/compliance-evidence.test.ts')
+          text = p.read_text()
+          marker = "it('accepts canonical immutable evidence'"
+          start = text.find(marker)
+          if start < 0:
+              raise SystemExit('canonical evidence test marker not found')
+          next_test = text.find("it('", start + len(marker))
+          if next_test < 0:
+              next_test = len(text)
+          segment = text[start:next_test]
+          replaced, count = re.subn(
+              r"evidenceId:\s*'[^']+'",
+              "evidenceId: '00000000-0000-4000-8000-000000000001'",
+              segment,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'expected one canonical evidenceId fixture, got {count}')
+          p.write_text(text[:start] + replaced + text[next_test:])
+          PY
+
+      - name: Format permanent TypeScript
+        run: |
+          npx prettier --write \
+            packages/domain/src/zatca/compliance-evidence.ts \
+            packages/domain/src/ports/zatca-compliance-evidence.ts \
+            packages/domain/src/zatca/__tests__/compliance-evidence.test.ts \
+            packages/domain/src/index.ts \
+            packages/database/src/zatca/compliance-evidence-repository.ts \
+            packages/database/src/__tests__/zatca-compliance-evidence-live-fixture.ts \
+            packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts \
+            packages/database/src/index.ts
+
+      - name: Build generated client and workspaces
+        run: |
+          npm run --silent db:generate
+          npm run --silent build
+
+      - name: Migrate PostgreSQL 17
+        run: (cd packages/database && npx prisma migrate deploy)
+
+      - name: Create restricted application role
+        shell: bash
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_evidence_app LOGIN PASSWORD 'korvi_evidence_app'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT ON DATABASE korvi_evidence_test TO korvi_evidence_app;
+          GRANT USAGE ON SCHEMA public TO korvi_evidence_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO korvi_evidence_app;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO korvi_evidence_app;
+          SQL
+
+      - name: PostgreSQL adversarial evidence proof
+        env:
+          KORVI_TEST_DATABASE_URL: ${{ env.APP_DATABASE_URL }}
+          KORVI_TEST_ADMIN_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npx vitest run packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts
+
+      - name: Full repository verify
+        run: |
+          unset KORVI_TEST_DATABASE_URL KORVI_TEST_ADMIN_DATABASE_URL
+          npm run verify
+
+      - name: Commit only permanent evidence files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            packages/domain/src/zatca/compliance-evidence.ts \
+            packages/domain/src/ports/zatca-compliance-evidence.ts \
+            packages/domain/src/zatca/__tests__/compliance-evidence.test.ts \
+            packages/domain/src/index.ts \
+            packages/database/prisma/schema.prisma \
+            packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql \
+            packages/database/src/zatca/compliance-evidence-repository.ts \
+            packages/database/src/__tests__/zatca-compliance-evidence-live-fixture.ts \
+            packages/database/src/__tests__/zatca-compliance-evidence-live.test.ts \
+            packages/database/src/index.ts
+          git diff --cached --check
+          git commit -m "feat(zatca): persist trusted compliance evidence"
+          git push origin HEAD:scratch/inspect-production-csid
