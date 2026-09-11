@@ -10,10 +10,7 @@ import type {
  * provisioning attempt and MUST operate under tenant RLS.
  */
 export interface ZatcaComplianceEvidenceRepository {
-  findById(
-    scope: TenantScope,
-    evidenceId: string,
-  ): Promise<ZatcaAcceptedComplianceEvidence | null>;
+  findById(scope: TenantScope, evidenceId: string): Promise<ZatcaAcceptedComplianceEvidence | null>;
 
   recordAccepted(
     scope: TenantScope,
