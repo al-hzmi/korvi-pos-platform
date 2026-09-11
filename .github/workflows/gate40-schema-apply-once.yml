@@ -40,7 +40,9 @@ jobs:
           if e not in i: q.write_text(i.rstrip()+'\n'+e)
           PY
       - name: Format source
-        run: npx prettier --write packages/database/prisma/schema.prisma packages/database/src/index.ts packages/database/src/zatca/invoice-submission-repository.ts packages/database/src/__tests__/zatca-invoice-submission-live.test.ts .github/workflows/zatca-40-submission-postgres-proof.yml
+        run: |
+          npm exec -w @korvi/database -- prisma format --schema prisma/schema.prisma
+          npx prettier --write packages/database/src/index.ts packages/database/src/zatca/invoice-submission-repository.ts packages/database/src/__tests__/zatca-invoice-submission-live.test.ts .github/workflows/zatca-40-submission-postgres-proof.yml
       - name: Commit
         run: |
           git config user.name 'github-actions[bot]'
