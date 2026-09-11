@@ -50,7 +50,22 @@ jobs:
       - name: Verify package manager
         run: node scripts/verify-package-manager.mjs
 
-      - name: Generate exact Fastify lockfile
+      - name: Apply exact Next patch upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('apps/pos-web/package.json')
+          text = p.read_text()
+          old = '"next": "16.3.4"'
+          new = '"next": "16.3.5"'
+          if text.count(old) != 1 or new in text:
+              raise SystemExit('unexpected Next manifest state')
+          p.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Generate exact dependency lockfile
         run: npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
 
       - name: Install exact generated tree
@@ -99,7 +114,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          allowed=$'package-lock.json\npackages/database/prisma/schema.prisma\npackages/database/src/zatca/compliance-evidence-repository.ts\npackages/domain/src/ports/zatca-compliance-evidence.ts'
+          allowed=$'apps/pos-web/package.json\npackage-lock.json\npackages/database/prisma/schema.prisma\npackages/database/src/zatca/compliance-evidence-repository.ts\npackages/domain/src/ports/zatca-compliance-evidence.ts'
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
           printf 'Runtime changed paths:\n%s\n' "$changed"
           while IFS= read -r path; do
@@ -108,6 +123,8 @@ jobs:
           done <<< "$changed"
           grep -F '"fastify": "5.12.4"' apps/api/package.json
           grep -F '"fastify": "5.12.4"' package-lock.json
+          grep -F '"next": "16.3.5"' apps/pos-web/package.json
+          grep -F '"next": "16.3.5"' package-lock.json
           grep -F 'expect(expected.migrations).toHaveLength(15);' apps/api/src/__tests__/staging-preflight.test.ts
           grep -F 'model ZatcaComplianceEvidence {' packages/database/prisma/schema.prisma
           grep -F '@@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")' packages/database/prisma/schema.prisma
@@ -161,6 +178,7 @@ jobs:
           path: |
             apps/api/package.json
             apps/api/src/__tests__/staging-preflight.test.ts
+            apps/pos-web/package.json
             package-lock.json
             packages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql
             packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
