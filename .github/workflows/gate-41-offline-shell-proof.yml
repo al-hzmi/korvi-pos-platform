@@ -71,7 +71,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$KORVI_BROWSER_ARTIFACT_DIR"
 
-          npm run start -w @korvi/pos-web -- --hostname 127.0.0.1 --port 3000 \
+          setsid npm run start -w @korvi/pos-web -- --hostname 127.0.0.1 --port 3000 \
             >"$KORVI_BROWSER_ARTIFACT_DIR/web.log" 2>&1 &
           echo "$!" > "$KORVI_WEB_PID_FILE"
 
@@ -122,11 +122,12 @@ jobs:
         shell: bash
         run: |
           set +e
-          for pid_file in "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid" "$KORVI_WEB_PID_FILE"; do
-            if [ -f "$pid_file" ]; then
-              kill "$(cat "$pid_file")" 2>/dev/null || true
-            fi
-          done
+          if [ -f "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid" ]; then
+            kill "$(cat "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid")" 2>/dev/null || true
+          fi
+          if [ -f "$KORVI_WEB_PID_FILE" ]; then
+            kill -- "-$(cat "$KORVI_WEB_PID_FILE")" 2>/dev/null || true
+          fi
 
       - name: Preserve sanitized Gate 41 proof
         if: always()
