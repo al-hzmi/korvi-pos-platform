@@ -77,10 +77,10 @@ jobs:
               '0000000001a7','0000000001b7','0000000001a8','0000000001b8',
           ]
           for tail in ids:
-              old_id = f"'018f6a00-0000-7000-8000-{tail}'"
-              new_id = f"`018f6a00-${{RUN_TOKEN}}-7000-8000-{tail}`"
+              old_id = "'018f6a00-0000-7000-8000-" + tail + "'"
+              new_id = '`018f6a00-${RUN_TOKEN}-7000-8000-' + tail + '`'
               if old_id not in text:
-                  raise SystemExit(f'fixture id anchor not found: {tail}')
+                  raise SystemExit('fixture id anchor not found: ' + tail)
               text = text.replace(old_id, new_id, 1)
 
           cleanup = '''    for (const tenant of [D.tenantA, D.tenantB]) {
@@ -90,7 +90,7 @@ jobs:
     }
 '''
           if text.count(cleanup) != 2:
-              raise SystemExit(f'expected two cleanup blocks, found {text.count(cleanup)}')
+              raise SystemExit('expected two cleanup blocks, found ' + str(text.count(cleanup)))
           text = text.replace(cleanup, '')
 
           old = "[tenant, `ZATCA submit ${suffix}`, `zatca-submit-${suffix}`],"
