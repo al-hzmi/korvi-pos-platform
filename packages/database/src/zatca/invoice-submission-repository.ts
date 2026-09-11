@@ -1,6 +1,7 @@
 import {
   ZatcaInvoiceSubmissionError,
   assertSameTenant,
+  assertZatcaInvoiceSubmissionReplay,
   tenantId,
   type TenantScope,
   type ZatcaAcceptedDurableInvoiceSubmission,
@@ -84,8 +85,13 @@ export function createZatcaInvoiceSubmissionRepository(
             'ZATCA submission reservation lost its durable row.',
           );
         }
-        assertReservedIdentity(submission, row);
-        return mapSubmission(scope, row);
+        const durable = mapSubmission(scope, row);
+        // Reservation identity is the immutable business request, not the
+        // caller's locally generated row id or queue timestamp. Concurrent
+        // callers must converge on the first durable winner instead of turning
+        // a harmless retry into a conflict.
+        assertZatcaInvoiceSubmissionReplay(durable, submission);
+        return durable;
       }),
 
     markRequestStarted: (scope, submissionId, requestStartedAt) =>
@@ -244,30 +250,6 @@ function assertScopeMatches(scope: TenantScope, submission: ZatcaPendingInvoiceS
   }
 }
 
-function assertReservedIdentity(
-  submission: ZatcaPendingInvoiceSubmission,
-  row: SubmissionRow,
-): void {
-  const same =
-    row.id === submission.submissionId &&
-    row.tenantId === (submission.scope.tenantId as string) &&
-    row.invoiceId === submission.invoiceId &&
-    row.terminalId === submission.terminalId &&
-    row.environment === submission.environment &&
-    row.mode === submission.mode &&
-    row.invoiceUuid === submission.invoiceUuid &&
-    sameBytes(row.invoiceHash, submission.invoiceHash) &&
-    sameBytes(row.sealedInvoiceXml, submission.sealedInvoiceXml) &&
-    row.secretProvider === submission.productionSecret.provider &&
-    row.secretId === submission.productionSecret.secretId &&
-    toUtcSecond(row.queuedAt) === submission.queuedAt;
-  if (!same) {
-    throw new ZatcaInvoiceSubmissionError(
-      'ZATCA invoice already has different durable submission identity.',
-    );
-  }
-}
-
 function mapSubmission(scope: TenantScope, row: SubmissionRow): ZatcaDurableInvoiceSubmission {
   assertSameTenant(scope, row.tenantId);
   const base = {
@@ -358,14 +340,6 @@ function expectState<S extends ZatcaDurableInvoiceSubmission['state']>(
     );
   }
   return submission as Extract<ZatcaDurableInvoiceSubmission, { state: S }>;
-}
-
-function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
 }
 
 function toUtcSecond(value: Date): string {
