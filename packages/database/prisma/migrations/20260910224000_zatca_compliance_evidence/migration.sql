@@ -25,7 +25,7 @@ CREATE TABLE "zatca_compliance_evidence" (
   CONSTRAINT "zatca_compliance_evidence_attempt_fkey"
     FOREIGN KEY ("tenantId", "complianceAttemptId")
     REFERENCES "zatca_csid_provisioning_attempts"("tenantId", "id")
-    ON DELETE CASCADE ON UPDATE CASCADE,
+    ON DELETE NO ACTION ON UPDATE CASCADE,
   CONSTRAINT "zatca_compliance_evidence_check_hash"
     CHECK ("checkSetHash" ~ '^[0-9a-f]{64}$'),
   CONSTRAINT "zatca_compliance_evidence_exact_second"
