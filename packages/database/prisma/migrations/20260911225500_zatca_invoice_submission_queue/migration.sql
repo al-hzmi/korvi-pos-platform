@@ -125,6 +125,7 @@ CREATE INDEX "zatca_invoice_submissions_tenantId_terminalId_state_idx"
 
 ALTER TABLE "zatca_invoice_submissions" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "zatca_invoice_submissions" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "zatca_invoice_submissions_isolation" ON "zatca_invoice_submissions";
 CREATE POLICY "zatca_invoice_submissions_isolation" ON "zatca_invoice_submissions"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
