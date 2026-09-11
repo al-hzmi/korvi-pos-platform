@@ -79,7 +79,7 @@ describe('staging database refusal before serving traffic', () => {
 
   it('loads the actual checked-in migration bytes and schema table names', async () => {
     const expected = await readDeploymentManifest();
-    expect(expected.migrations).toHaveLength(14);
+    expect(expected.migrations).toHaveLength(15);
     expect(
       expected.migrations.every((migration) => /^[a-f0-9]{64}$/.test(migration.checksum)),
     ).toBe(true);
