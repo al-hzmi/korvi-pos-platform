@@ -95,7 +95,7 @@ jobs:
 
           replace_once(
               '  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)\n\n  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")\n  @@unique([tenantId, id], map: "zatca_csid_attempts_tenantId_id_key")',
-              '  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n  terminal           Terminal                 @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)\n  complianceEvidence ZatcaComplianceEvidence?\n\n  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")\n  @@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")',
+              '  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n  terminal           Terminal                 @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)\n  complianceEvidence ZatcaComplianceEvidence?\n\n  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")\n  @@unique([tenantId, id])',
               'Compliance attempt Evidence relation and canonical unique name',
           )
           marker = '''/// AES-256-GCM ciphertext for the Fatoora Basic-Authentication credential.\n'''
@@ -127,7 +127,7 @@ jobs:
           grep -F '"next": "16.3.5"' package-lock.json
           grep -F 'expect(expected.migrations).toHaveLength(15);' apps/api/src/__tests__/staging-preflight.test.ts
           grep -F 'model ZatcaComplianceEvidence {' packages/database/prisma/schema.prisma
-          grep -F '@@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")' packages/database/prisma/schema.prisma
+          grep -F '@@unique([tenantId, id])' packages/database/prisma/schema.prisma
           grep -F 'CREATE UNIQUE INDEX "zatca_csid_provisioning_attempts_tenantId_id_key"' packages/database/prisma/migrations/20260910104000_zatca_csid_provisioning/migration.sql
           grep -F 'DROP POLICY IF EXISTS "zatca_compliance_evidence_isolation" ON "zatca_compliance_evidence";' packages/database/prisma/migrations/20260910224000_zatca_compliance_evidence/migration.sql
 
