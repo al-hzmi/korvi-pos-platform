@@ -352,7 +352,7 @@ describe('Gate 40 durable ZATCA submission coordinator', () => {
     const repository = new MemorySubmissionRepository();
     const cleared = new TextEncoder().encode('<Invoice><ID>cleared-authority-copy</ID></Invoice>');
     const transport = {
-      submit: vi.fn(async () => ({
+      submit: vi.fn(async (_request: Parameters<ZatcaInvoiceSubmissionPort['submit']>[0]) => ({
         kind: 'accepted' as const,
         httpStatus: 200,
         authorityStatus: 'CLEARED' as const,
