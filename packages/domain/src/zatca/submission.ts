@@ -8,16 +8,10 @@ const UTC_SECOND = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 export type ZatcaInvoiceSubmissionMode = 'reporting' | 'clearance';
 export type ZatcaInvoiceSubmissionState =
-  | 'pending'
-  | 'in-flight'
-  | 'accepted'
-  | 'rejected'
-  | 'uncertain';
+  'pending' | 'in-flight' | 'accepted' | 'rejected' | 'uncertain';
 
 export type ZatcaInvoiceSubmissionUncertaintyReason =
-  | 'credential-store'
-  | 'transport'
-  | 'response-invalid';
+  'credential-store' | 'transport' | 'response-invalid';
 
 export class ZatcaInvoiceSubmissionError extends DomainError {
   public override readonly name = 'ZatcaInvoiceSubmissionError';
@@ -59,9 +53,7 @@ export interface ZatcaUncertainInvoiceSubmission {
 }
 
 export type ZatcaInvoiceSubmissionResult =
-  | ZatcaAcceptedInvoiceSubmission
-  | ZatcaRejectedInvoiceSubmission
-  | ZatcaUncertainInvoiceSubmission;
+  ZatcaAcceptedInvoiceSubmission | ZatcaRejectedInvoiceSubmission | ZatcaUncertainInvoiceSubmission;
 
 /**
  * One HTTP attempt against FATOORA. This port MUST NOT retry internally: once
