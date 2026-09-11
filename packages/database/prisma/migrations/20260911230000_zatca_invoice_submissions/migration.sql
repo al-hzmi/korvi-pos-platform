@@ -16,8 +16,8 @@ CREATE TABLE "zatca_invoice_submissions" (
   "invoiceUuid" UUID NOT NULL,
   "invoiceHash" BYTEA NOT NULL,
   "sealedInvoiceXml" BYTEA NOT NULL,
-  "productionSecretProvider" TEXT NOT NULL,
-  "productionSecretId" TEXT NOT NULL,
+  "secretProvider" TEXT NOT NULL,
+  "secretId" TEXT NOT NULL,
   "state" TEXT NOT NULL DEFAULT 'pending',
   "attemptCount" INTEGER NOT NULL DEFAULT 0,
   "queuedAt" TIMESTAMP(3) NOT NULL,
@@ -55,8 +55,8 @@ CREATE TABLE "zatca_invoice_submissions" (
     CHECK (octet_length("sealedInvoiceXml") BETWEEN 16 AND 3145728),
   CONSTRAINT "zatca_invoice_submissions_secret_handle"
     CHECK (
-      length(btrim("productionSecretProvider")) BETWEEN 1 AND 500 AND
-      length(btrim("productionSecretId")) BETWEEN 1 AND 2048
+      length(btrim("secretProvider")) BETWEEN 1 AND 500 AND
+      length(btrim("secretId")) BETWEEN 1 AND 2048
     ),
   CONSTRAINT "zatca_invoice_submissions_http_status"
     CHECK ("httpStatus" IS NULL OR "httpStatus" BETWEEN 100 AND 599),
@@ -123,9 +123,41 @@ CREATE INDEX "zatca_invoice_submissions_tenantId_state_queuedAt_idx"
   ON "zatca_invoice_submissions"("tenantId", "state", "queuedAt");
 
 CREATE FUNCTION zatca_invoice_submission_guard() RETURNS trigger AS $$
+DECLARE
+  source_invoice_type TEXT;
+  source_terminal_id UUID;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'ZATCA invoice submission evidence cannot be deleted' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT invoice."invoiceType", sale."terminalId"
+    INTO source_invoice_type, source_terminal_id
+    FROM "invoices" AS invoice
+    JOIN "sales" AS sale
+      ON sale."tenantId" = invoice."tenantId"
+     AND sale."id" = invoice."saleId"
+   WHERE invoice."tenantId" = NEW."tenantId"
+     AND invoice."id" = NEW."invoiceId";
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ZATCA submission requires an existing tenant-owned invoice'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF source_terminal_id <> NEW."terminalId" THEN
+    RAISE EXCEPTION 'ZATCA submission terminal contradicts immutable invoice sale terminal'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF (source_invoice_type = 'simplified' AND NEW."mode" <> 'reporting')
+     OR (source_invoice_type = 'standard' AND NEW."mode" <> 'clearance') THEN
+    RAISE EXCEPTION 'ZATCA submission mode contradicts immutable invoice type'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    RETURN NEW;
   END IF;
 
   IF OLD."id" <> NEW."id"
@@ -137,8 +169,8 @@ BEGIN
      OR OLD."invoiceUuid" <> NEW."invoiceUuid"
      OR OLD."invoiceHash" <> NEW."invoiceHash"
      OR OLD."sealedInvoiceXml" <> NEW."sealedInvoiceXml"
-     OR OLD."productionSecretProvider" <> NEW."productionSecretProvider"
-     OR OLD."productionSecretId" <> NEW."productionSecretId"
+     OR OLD."secretProvider" <> NEW."secretProvider"
+     OR OLD."secretId" <> NEW."secretId"
      OR OLD."queuedAt" <> NEW."queuedAt"
      OR OLD."createdAt" <> NEW."createdAt" THEN
     RAISE EXCEPTION 'ZATCA invoice submission immutable request identity cannot change'
@@ -159,7 +191,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER "zatca_invoice_submission_guard"
-  BEFORE UPDATE OR DELETE ON "zatca_invoice_submissions"
+  BEFORE INSERT OR UPDATE OR DELETE ON "zatca_invoice_submissions"
   FOR EACH ROW EXECUTE FUNCTION zatca_invoice_submission_guard();
 
 ALTER TABLE "zatca_invoice_submissions" ENABLE ROW LEVEL SECURITY;
