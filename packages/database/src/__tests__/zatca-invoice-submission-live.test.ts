@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { prepareZatcaInvoiceSubmission, tenantId } from '@korvi/domain';
@@ -5,23 +6,24 @@ import { createPrismaClient, type PrismaClient } from '../client.js';
 import { createZatcaInvoiceSubmissionRepository } from '../zatca/invoice-submission-repository.js';
 
 const url = process.env['KORVI_TEST_DATABASE_URL'] ?? '';
+const RUN_TOKEN = randomBytes(2).toString('hex');
 const D = {
-  tenantA: '018f6a00-0000-7000-8000-0000000001a1',
-  tenantB: '018f6a00-0000-7000-8000-0000000001b1',
-  branchA: '018f6a00-0000-7000-8000-0000000001a2',
-  branchB: '018f6a00-0000-7000-8000-0000000001b2',
-  terminalA: '018f6a00-0000-7000-8000-0000000001a3',
-  terminalB: '018f6a00-0000-7000-8000-0000000001b3',
-  userA: '018f6a00-0000-7000-8000-0000000001a4',
-  userB: '018f6a00-0000-7000-8000-0000000001b4',
-  shiftA: '018f6a00-0000-7000-8000-0000000001a5',
-  shiftB: '018f6a00-0000-7000-8000-0000000001b5',
-  saleA: '018f6a00-0000-7000-8000-0000000001a6',
-  saleB: '018f6a00-0000-7000-8000-0000000001b6',
-  invoiceA: '018f6a00-0000-7000-8000-0000000001a7',
-  invoiceB: '018f6a00-0000-7000-8000-0000000001b7',
-  submissionA: '018f6a00-0000-7000-8000-0000000001a8',
-  submissionB: '018f6a00-0000-7000-8000-0000000001b8',
+  tenantA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a1`,
+  tenantB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b1`,
+  branchA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a2`,
+  branchB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b2`,
+  terminalA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a3`,
+  terminalB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b3`,
+  userA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a4`,
+  userB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b4`,
+  shiftA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a5`,
+  shiftB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b5`,
+  saleA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a6`,
+  saleB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b6`,
+  invoiceA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a7`,
+  invoiceB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b7`,
+  submissionA: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001a8`,
+  submissionB: `018f6a00-${RUN_TOKEN}-7000-8000-0000000001b8`,
 } as const;
 const QUEUED = '2026-09-11T22:50:00Z';
 const STARTED = '2026-09-11T22:50:01Z';
@@ -75,11 +77,6 @@ describe.skipIf(url === '')('ZATCA invoice submission repository, PostgreSQL liv
     await admin.connect();
     repository = createZatcaInvoiceSubmissionRepository(prisma);
 
-    for (const tenant of [D.tenantA, D.tenantB]) {
-      await inTenant(admin, tenant, async () => {
-        await admin.query('DELETE FROM "tenants" WHERE "id"=$1', [tenant]);
-      });
-    }
     await fixture(
       admin,
       D.tenantA,
@@ -105,11 +102,6 @@ describe.skipIf(url === '')('ZATCA invoice submission repository, PostgreSQL liv
   });
 
   afterAll(async () => {
-    for (const tenant of [D.tenantA, D.tenantB]) {
-      await inTenant(admin, tenant, async () => {
-        await admin.query('DELETE FROM "tenants" WHERE "id"=$1', [tenant]);
-      });
-    }
     await admin.end();
     await prisma.$disconnect();
   });
@@ -214,7 +206,7 @@ async function fixture(
   await inTenant(client, tenant, async () => {
     await client.query(
       `INSERT INTO "tenants" ("id","name","slug","status","lifecycleProvenance","activatedAt","updatedAt") VALUES ($1,$2,$3,'active','recorded',now(),now())`,
-      [tenant, `ZATCA submit ${suffix}`, `zatca-submit-${suffix}`],
+      [tenant, `ZATCA submit ${suffix}`, `zatca-submit-${suffix}-${RUN_TOKEN}`],
     );
     await client.query(
       `INSERT INTO "branches" ("id","tenantId","code","nameAr","updatedAt") VALUES ($1,$2,$3,$4,now())`,
@@ -226,7 +218,7 @@ async function fixture(
     );
     await client.query(
       `INSERT INTO "users" ("id","tenantId","email","displayName","updatedAt") VALUES ($1,$2,$3,$4,now())`,
-      [user, tenant, `${suffix}@example.test`, `User ${suffix}`],
+      [user, tenant, `${suffix}.${RUN_TOKEN}@example.test`, `User ${suffix}`],
     );
     await client.query(
       `INSERT INTO "shifts" ("id","tenantId","branchId","terminalId","userId","status","openingFloatMinor","openedAt","updatedAt") VALUES ($1,$2,$3,$4,$5,'open',0,now(),now())`,

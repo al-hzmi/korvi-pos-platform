@@ -153,6 +153,8 @@ async function finalizeAccepted(
              "resolvedAt" = ${new Date(result.resolvedAt)},
              "httpStatus" = ${result.httpStatus},
              "authorityStatus" = ${result.authorityStatus},
+             "rejectionCode" = NULL,
+             "uncertaintyReason" = NULL,
              "clearedInvoiceXml" = ${cleared},
              "updatedAt" = ${new Date(result.resolvedAt)}
        WHERE "tenantId" = ${scope.tenantId as string}::uuid
@@ -182,7 +184,10 @@ async function finalizeRejected(
          SET "state" = 'rejected',
              "resolvedAt" = ${new Date(result.resolvedAt)},
              "httpStatus" = ${result.httpStatus},
+             "authorityStatus" = NULL,
              "rejectionCode" = ${result.rejectionCode},
+             "uncertaintyReason" = NULL,
+             "clearedInvoiceXml" = NULL,
              "updatedAt" = ${new Date(result.resolvedAt)}
        WHERE "tenantId" = ${scope.tenantId as string}::uuid
          AND "id" = ${submissionId}::uuid
