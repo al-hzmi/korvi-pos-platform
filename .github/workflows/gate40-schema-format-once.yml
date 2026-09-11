@@ -1,0 +1,145 @@
+name: Gate 40 Schema Format Once
+
+on:
+  push:
+    branches:
+      - review/zatca-40-submission-pipeline
+    paths:
+      - .github/workflows/gate40-schema-format-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: review/zatca-40-submission-pipeline
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Patch Prisma authority and public database export
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          schema_path = Path('packages/database/prisma/schema.prisma')
+          schema = schema_path.read_text()
+
+          replacements = [
+              (
+                  '  zatcaFatooraCredentials       ZatcaFatooraCredential[]\n\n  @@unique([provisioningOperationId])',
+                  '  zatcaFatooraCredentials       ZatcaFatooraCredential[]\n  zatcaInvoiceSubmissions       ZatcaInvoiceSubmission[]\n\n  @@unique([provisioningOperationId])',
+              ),
+              (
+                  '  zatcaFatooraCredentials       ZatcaFatooraCredential[]\n\n  @@unique([tenantId, code])',
+                  '  zatcaFatooraCredentials       ZatcaFatooraCredential[]\n  zatcaInvoiceSubmissions       ZatcaInvoiceSubmission[]\n\n  @@unique([tenantId, code])',
+              ),
+              (
+                  '  taxBreakdown InvoiceTaxBreakdown[]\n  refunds      Refund[]\n\n  @@unique([tenantId, invoiceNumber])',
+                  '  taxBreakdown     InvoiceTaxBreakdown[]\n  refunds          Refund[]\n  zatcaSubmissions ZatcaInvoiceSubmission[]\n\n  @@unique([tenantId, invoiceNumber])',
+              ),
+          ]
+          for old, new in replacements:
+              count = schema.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one schema anchor, found {count}: {old[:80]!r}')
+              schema = schema.replace(old, new, 1)
+
+          model = '''
+
+/// Durable, tenant-isolated authority for one exact FATOORA submission.
+/// The sealed XML, UUID and hash are frozen before the first outbound byte.
+/// `uncertain` is reconciliation work and can never be automatically resent.
+model ZatcaInvoiceSubmission {
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  invoiceId  String @db.Uuid
+  terminalId String @db.Uuid
+
+  environment String
+  mode        String
+  invoiceUuid String @db.Uuid
+
+  invoiceHash      Bytes
+  sealedInvoiceXml Bytes
+
+  secretProvider String
+  secretId       String
+
+  state        String @default("pending")
+  attemptCount Int    @default(0)
+
+  queuedAt         DateTime
+  requestStartedAt DateTime?
+  resolvedAt       DateTime?
+
+  httpStatus        Int?
+  authorityStatus   String?
+  rejectionCode     String?
+  uncertaintyReason String?
+  clearedInvoiceXml Bytes?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice  Invoice  @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: NoAction)
+  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id], map: "zatca_invoice_submissions_tenantId_id_key")
+  @@unique([tenantId, invoiceId, mode], map: "zatca_invoice_submissions_tenantId_invoiceId_mode_key")
+  @@index([tenantId, state, queuedAt], map: "zatca_invoice_submissions_tenantId_state_queuedAt_idx")
+  @@index([tenantId, terminalId, state], map: "zatca_invoice_submissions_tenantId_terminalId_state_idx")
+  @@map("zatca_invoice_submissions")
+}
+'''
+          if 'model ZatcaInvoiceSubmission {' in schema:
+              raise SystemExit('ZatcaInvoiceSubmission model already exists')
+          schema = schema.rstrip() + model
+          schema_path.write_text(schema)
+
+          index_path = Path('packages/database/src/index.ts')
+          index = index_path.read_text()
+          export = "export { createZatcaInvoiceSubmissionRepository } from './zatca/invoice-submission-repository.js';\n"
+          if export not in index:
+              index = index.rstrip() + '\n' + export
+              index_path.write_text(index)
+          PY
+
+      - name: Format Gate 40 source
+        run: |
+          npx prettier --write \
+            packages/domain/src/zatca/submission.ts \
+            packages/database/prisma/schema.prisma \
+            packages/database/src/index.ts \
+            packages/database/src/zatca/invoice-submission-repository.ts \
+            packages/database/src/__tests__/zatca-invoice-submission-live.test.ts \
+            .github/workflows/zatca-40-submission-postgres-proof.yml
+
+      - name: Commit deterministic output
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            packages/domain/src/zatca/submission.ts \
+            packages/database/prisma/schema.prisma \
+            packages/database/src/index.ts \
+            packages/database/src/zatca/invoice-submission-repository.ts \
+            packages/database/src/__tests__/zatca-invoice-submission-live.test.ts \
+            .github/workflows/zatca-40-submission-postgres-proof.yml
+          git diff --cached --check
+          git commit -m 'feat(zatca): bind Gate 40 queue to Prisma authority'
+          git push origin HEAD:review/zatca-40-submission-pipeline
