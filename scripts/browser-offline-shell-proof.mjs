@@ -3,7 +3,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const baseUrl = process.env.KORVI_BROWSER_BASE_URL ?? 'http://127.0.0.1:3000';
 const chromePort = process.env.KORVI_CHROME_DEBUG_PORT ?? '9222';
-const artifactDirectory = process.env.KORVI_BROWSER_ARTIFACT_DIR ?? 'artifacts/gate41-offline-shell';
+const artifactDirectory =
+  process.env.KORVI_BROWSER_ARTIFACT_DIR ?? 'artifacts/gate41-offline-shell';
 const webPidFile = process.env.KORVI_WEB_PID_FILE;
 
 if (webPidFile === undefined || webPidFile.trim() === '') {
@@ -259,7 +260,11 @@ try {
     return url.origin === baseUrl && url.pathname === '/';
   });
   assert.notEqual(offlineDocument, undefined, 'Offline document response must be observed.');
-  assert.equal(offlineDocument.fromServiceWorker, true, 'Document must come from the Service Worker.');
+  assert.equal(
+    offlineDocument.fromServiceWorker,
+    true,
+    'Document must come from the Service Worker.',
+  );
   assert.equal(offlineDocument.status, 200);
 
   const offlineStaticResponses = responses.slice(responseStart).filter((entry) => {
@@ -285,7 +290,11 @@ try {
   const apiAttempt = await evaluate(`fetch('/v1/auth/me', { cache: 'no-store' })
     .then((response) => ({ resolved: true, status: response.status }))
     .catch(() => ({ resolved: false }))`);
-  assert.equal(apiAttempt.resolved, false, 'API request must not be satisfied by the offline shell worker.');
+  assert.equal(
+    apiAttempt.resolved,
+    false,
+    'API request must not be satisfied by the offline shell worker.',
+  );
 
   const offlineCacheState = await readCacheState();
   assert.equal(
