@@ -36,12 +36,15 @@ jobs:
       - name: Refresh Fastify exactly
         run: npm install -w @korvi/api fastify@5.12.4 --save-exact --registry=https://registry.npmjs.org
 
+      - name: Format Evidence slice
+        run: npx --no-install prettier --write packages/database/src/zatca/compliance-evidence-repository.ts packages/domain/src/ports/zatca-compliance-evidence.ts
+
       - name: Assert refresh scope
         shell: bash
         run: |
           set -euo pipefail
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
-          expected=$'apps/api/package.json\npackage-lock.json'
+          expected=$'apps/api/package.json\npackage-lock.json\npackages/database/src/zatca/compliance-evidence-repository.ts\npackages/domain/src/ports/zatca-compliance-evidence.ts'
           printf 'Changed paths:\n%s\n' "$changed"
           test "$changed" = "$expected"
           grep -F '"fastify": "5.12.4"' apps/api/package.json
@@ -55,15 +58,17 @@ jobs:
           set -euo pipefail
           git diff --check
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
-          expected=$'apps/api/package.json\npackage-lock.json'
+          expected=$'apps/api/package.json\npackage-lock.json\npackages/database/src/zatca/compliance-evidence-repository.ts\npackages/domain/src/ports/zatca-compliance-evidence.ts'
           test "$changed" = "$expected"
 
       - name: Preserve generated permanent files
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: fastify-5.12.4-refresh-${{ github.sha }}
+          name: zatca39-final-files-${{ github.sha }}
           path: |
             apps/api/package.json
             package-lock.json
+            packages/database/src/zatca/compliance-evidence-repository.ts
+            packages/domain/src/ports/zatca-compliance-evidence.ts
           if-no-files-found: error
           retention-days: 1
