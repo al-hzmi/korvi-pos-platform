@@ -114,18 +114,27 @@ describe.skipIf(url === '')('ZATCA invoice submission repository, PostgreSQL liv
     await prisma.$disconnect();
   });
 
-  it('reserves exact immutable payload idempotently and rejects conflicting replay', async () => {
+  it('reserves exact immutable payload idempotently, converges generated identity, and rejects conflicting replay', async () => {
     const scope = { tenantId: tenantId(D.tenantA) };
     const first = pending(D.tenantA, D.invoiceA, D.terminalA, D.submissionA);
     await expect(repository.reservePending(scope, first)).resolves.toEqual(first);
     await expect(repository.reservePending(scope, first)).resolves.toEqual(first);
+
+    const equivalentFromAnotherCaller = prepareZatcaInvoiceSubmission({
+      ...first,
+      submissionId: '018f6a00-0000-7000-8000-0000000001aa',
+      queuedAt: '2026-09-11T22:50:01Z',
+    });
+    await expect(repository.reservePending(scope, equivalentFromAnotherCaller)).resolves.toEqual(
+      first,
+    );
 
     const conflicting = prepareZatcaInvoiceSubmission({
       ...first,
       sealedInvoiceXml: new TextEncoder().encode('<Invoice><ID>changed payload</ID></Invoice>'),
     });
     await expect(repository.reservePending(scope, conflicting)).rejects.toThrow(
-      /different durable submission identity/,
+      /different immutable request identity/,
     );
   });
 
