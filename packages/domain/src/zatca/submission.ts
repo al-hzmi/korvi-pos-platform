@@ -1,6 +1,6 @@
 import type { TenantScope } from '../ports/persistence.js';
-import type { ZatcaFatooraSecretHandle } from './csid-provisioning.js';
 import type { ZatcaCsidEnvironment } from './csid-provisioning.js';
+import type { ZatcaFatooraSecretHandle } from './csid-lifecycle.js';
 
 export type ZatcaInvoiceSubmissionMode = 'reporting' | 'clearance';
 
