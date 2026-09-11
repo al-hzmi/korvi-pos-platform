@@ -69,23 +69,19 @@ jobs:
                   raise SystemExit(f'unexpected Prisma schema state for {label}: expected exactly one source block')
               text = text.replace(old, new, 1)
 
-          replace_once(
-              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
-              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaComplianceEvidence       ZatcaComplianceEvidence[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
-              'Tenant Evidence relation',
-          )
-          replace_once(
-              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
-              '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaComplianceEvidence       ZatcaComplianceEvidence[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]',
-              'Terminal Evidence relation',
-          )
+          old_owner_relations = '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]'
+          new_owner_relations = '  zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]\n  zatcaComplianceEvidence       ZatcaComplianceEvidence[]\n  zatcaFatooraCredentials       ZatcaFatooraCredential[]'
+          if text.count(old_owner_relations) != 2:
+              raise SystemExit('unexpected Prisma schema state: Tenant/Terminal ZATCA relation blocks must appear exactly twice')
+          text = text.replace(old_owner_relations, new_owner_relations)
+
           replace_once(
               '  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)\n\n  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")\n  @@unique([tenantId, id], map: "zatca_csid_attempts_tenantId_id_key")',
               '  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)\n  terminal           Terminal                 @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)\n  complianceEvidence ZatcaComplianceEvidence?\n\n  @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")\n  @@unique([tenantId, id], map: "zatca_csid_provisioning_attempts_tenantId_id_key")',
               'Compliance attempt Evidence relation and canonical unique name',
           )
           marker = '''/// AES-256-GCM ciphertext for the Fatoora Basic-Authentication credential.\n'''
-          model = '''/// Immutable accepted ZATCA compliance-check evidence.\n/// Production CSID onboarding consumes this authority instead of trusting caller-supplied\n/// request ids, environments or credentials. Database triggers enforce source issuance,\n/// terminal consistency, temporal ordering and append-only retention.\nmodel ZatcaComplianceEvidence {\n  id                  String   @id @db.Uuid\n  tenantId            String   @db.Uuid\n  terminalId          String   @db.Uuid\n  complianceAttemptId String   @db.Uuid\n  checkSetHash        String   @db.Char(64)\n  acceptedAt          DateTime\n  createdAt           DateTime @default(now())\n\n  tenant            Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "zatca_compliance_evidence_tenantId_fkey")\n  terminal          Terminal                    @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_tenantId_terminalId_fkey")\n  complianceAttempt ZatcaCsidProvisioningAttempt @relation(fields: [tenantId, complianceAttemptId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_attempt_fkey")\n\n  @@unique([tenantId, id], map: "zatca_compliance_evidence_tenantId_id_key")\n  @@unique([tenantId, complianceAttemptId], map: "zatca_compliance_evidence_tenantId_attempt_key")\n  @@index([tenantId, terminalId, acceptedAt], map: "zatca_compliance_evidence_tenantId_terminalId_acceptedAt_idx")\n  @@map("zatca_compliance_evidence")\n}\n\n'''
+          model = '''/// Immutable accepted ZATCA compliance-check evidence.\n/// Production CSID onboarding consumes this authority instead of trusting caller-supplied\n/// request ids, environments or credentials. Database triggers enforce source issuance,\n/// terminal consistency, temporal ordering and append-only retention.\nmodel ZatcaComplianceEvidence {\n  id                  String   @id @db.Uuid\n  tenantId            String   @db.Uuid\n  terminalId          String   @db.Uuid\n  complianceAttemptId String   @db.Uuid\n  checkSetHash        String   @db.Char(64)\n  acceptedAt          DateTime\n  createdAt           DateTime @default(now())\n\n  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "zatca_compliance_evidence_tenantId_fkey")\n  terminal          Terminal                     @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_tenantId_terminalId_fkey")\n  complianceAttempt ZatcaCsidProvisioningAttempt @relation(fields: [tenantId, complianceAttemptId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_attempt_fkey")\n\n  @@unique([tenantId, id], map: "zatca_compliance_evidence_tenantId_id_key")\n  @@unique([tenantId, complianceAttemptId], map: "zatca_compliance_evidence_tenantId_attempt_key")\n  @@index([tenantId, terminalId, acceptedAt], map: "zatca_compliance_evidence_tenantId_terminalId_acceptedAt_idx")\n  @@map("zatca_compliance_evidence")\n}\n\n'''
           if 'model ZatcaComplianceEvidence {' in text:
               raise SystemExit('unexpected Prisma schema state: Evidence model already exists in source candidate')
           replace_once(marker, model + marker, 'Evidence model insertion')
