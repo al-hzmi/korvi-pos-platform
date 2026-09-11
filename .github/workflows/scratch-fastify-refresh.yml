@@ -1,0 +1,69 @@
+name: Scratch Fastify Refresh Proof
+
+on:
+  push:
+    branches:
+      - scratch/zatca39-fastify-refresh-20260911
+    paths:
+      - '.github/workflows/scratch-fastify-refresh.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-and-verify:
+    name: Generate exact Fastify refresh and verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out exact scratch commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact current lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Refresh Fastify exactly
+        run: npm install -w @korvi/api fastify@5.12.4 --save-exact --registry=https://registry.npmjs.org
+
+      - name: Assert refresh scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          expected=$'apps/api/package.json\npackage-lock.json'
+          printf 'Changed paths:\n%s\n' "$changed"
+          test "$changed" = "$expected"
+          grep -F '"fastify": "5.12.4"' apps/api/package.json
+
+      - name: Full verification
+        run: npm run verify
+
+      - name: Diff integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          expected=$'apps/api/package.json\npackage-lock.json'
+          test "$changed" = "$expected"
+
+      - name: Preserve generated permanent files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fastify-5.12.4-refresh-${{ github.sha }}
+          path: |
+            apps/api/package.json
+            package-lock.json
+          if-no-files-found: error
+          retention-days: 1
