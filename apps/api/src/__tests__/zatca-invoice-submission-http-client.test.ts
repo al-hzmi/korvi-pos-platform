@@ -9,7 +9,8 @@ import {
 const TOKEN = 'production-csid-token';
 const SECRET = 'production-csid-secret';
 const INVOICE_HASH = Buffer.alloc(32, 7).toString('base64');
-const XML = '<?xml version="1.0" encoding="UTF-8"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"><ID>1</ID></Invoice>';
+const XML =
+  '<?xml version="1.0" encoding="UTF-8"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"><ID>1</ID></Invoice>';
 const INVOICE_BASE64 = Buffer.from(XML, 'utf8').toString('base64');
 
 function input(
@@ -44,7 +45,12 @@ function reported(): Response {
   return new Response(
     JSON.stringify({
       reportingStatus: 'REPORTED',
-      validationResults: { status: 'PASS', infoMessages: [], warningMessages: [], errorMessages: [] },
+      validationResults: {
+        status: 'PASS',
+        infoMessages: [],
+        warningMessages: [],
+        errorMessages: [],
+      },
     }),
     { status: 200, headers: { 'content-type': 'application/json' } },
   );
@@ -55,7 +61,12 @@ function cleared(): Response {
     JSON.stringify({
       clearanceStatus: 'CLEARED',
       clearedInvoice: INVOICE_BASE64,
-      validationResults: { status: 'PASS', infoMessages: [], warningMessages: [], errorMessages: [] },
+      validationResults: {
+        status: 'PASS',
+        infoMessages: [],
+        warningMessages: [],
+        errorMessages: [],
+      },
     }),
     { status: 200, headers: { 'content-type': 'application/json' } },
   );
@@ -70,7 +81,9 @@ describe('ZATCA invoice reporting/clearance HTTPS client', () => {
       const client = createZatcaInvoiceSubmissionHttpClient({ credentialResolver, fetchImpl });
 
       await expect(client.submit(input('reporting', environment))).resolves.toEqual({
-        kind: 'accepted', httpStatus: 200, authorityStatus: 'REPORTED',
+        kind: 'accepted',
+        httpStatus: 200,
+        authorityStatus: 'REPORTED',
       });
       expect(fetchImpl).toHaveBeenCalledTimes(1);
       const [url, init] = vi.mocked(fetchImpl).mock.calls[0] ?? [];
@@ -117,39 +130,57 @@ describe('ZATCA invoice reporting/clearance HTTPS client', () => {
       const client = createZatcaInvoiceSubmissionHttpClient({ credentialResolver, fetchImpl });
 
       await expect(client.submit(input())).resolves.toEqual({
-        kind: 'uncertain', reason: 'transport', httpStatus: status,
+        kind: 'uncertain',
+        reason: 'transport',
+        httpStatus: status,
       });
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     },
   );
 
-  it.each([400, 401, 403, 404, 409, 422])('maps definite HTTP %s refusal without body leakage', async (status) => {
-    const credentialResolver = resolver();
-    const client = createZatcaInvoiceSubmissionHttpClient({
-      credentialResolver,
-      fetchImpl: fetchMock(new Response('sensitive-authority-diagnostic', { status })),
-    });
+  it.each([400, 401, 403, 404, 409, 422])(
+    'maps definite HTTP %s refusal without body leakage',
+    async (status) => {
+      const credentialResolver = resolver();
+      const client = createZatcaInvoiceSubmissionHttpClient({
+        credentialResolver,
+        fetchImpl: fetchMock(new Response('sensitive-authority-diagnostic', { status })),
+      });
 
-    const result = await client.submit(input());
-    expect(result).toEqual({ kind: 'rejected', httpStatus: status, rejectionCode: `HTTP_${status}` });
-    expect(JSON.stringify(result)).not.toContain('sensitive-authority-diagnostic');
-  });
+      const result = await client.submit(input());
+      expect(result).toEqual({
+        kind: 'rejected',
+        httpStatus: status,
+        rejectionCode: `HTTP_${status}`,
+      });
+      expect(JSON.stringify(result)).not.toContain('sensitive-authority-diagnostic');
+    },
+  );
 
   it('treats semantic ZATCA validation errors as terminal refusal without reflecting messages', async () => {
     const credentialResolver = resolver();
     const client = createZatcaInvoiceSubmissionHttpClient({
       credentialResolver,
-      fetchImpl: fetchMock(new Response(JSON.stringify({
-        reportingStatus: 'NOT_REPORTED',
-        validationResults: {
-          status: 'ERROR',
-          errorMessages: [{ code: 'BR-KSA-TEST', message: 'sensitive merchant detail' }],
-        },
-      }), { status: 200 })),
+      fetchImpl: fetchMock(
+        new Response(
+          JSON.stringify({
+            reportingStatus: 'NOT_REPORTED',
+            validationResults: {
+              status: 'ERROR',
+              errorMessages: [{ code: 'BR-KSA-TEST', message: 'sensitive merchant detail' }],
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
     });
 
     const result = await client.submit(input());
-    expect(result).toEqual({ kind: 'rejected', httpStatus: 200, rejectionCode: 'ZATCA_VALIDATION_ERROR' });
+    expect(result).toEqual({
+      kind: 'rejected',
+      httpStatus: 200,
+      rejectionCode: 'ZATCA_VALIDATION_ERROR',
+    });
     expect(JSON.stringify(result)).not.toContain('sensitive merchant detail');
   });
 
@@ -157,10 +188,14 @@ describe('ZATCA invoice reporting/clearance HTTPS client', () => {
     const credentialResolver = resolver();
     const client = createZatcaInvoiceSubmissionHttpClient({
       credentialResolver,
-      fetchImpl: fetchMock(new Response(JSON.stringify({ reportingStatus: 'UNKNOWN' }), { status: 200 })),
+      fetchImpl: fetchMock(
+        new Response(JSON.stringify({ reportingStatus: 'UNKNOWN' }), { status: 200 }),
+      ),
     });
     await expect(client.submit(input())).resolves.toEqual({
-      kind: 'uncertain', reason: 'response-invalid', httpStatus: 200,
+      kind: 'uncertain',
+      reason: 'response-invalid',
+      httpStatus: 200,
     });
   });
 
@@ -170,7 +205,10 @@ describe('ZATCA invoice reporting/clearance HTTPS client', () => {
     const fetchImpl = fetchMock(reported());
     const client = createZatcaInvoiceSubmissionHttpClient({ credentialResolver, fetchImpl });
 
-    await expect(client.submit(input())).resolves.toEqual({ kind: 'uncertain', reason: 'credential-store' });
+    await expect(client.submit(input())).resolves.toEqual({
+      kind: 'uncertain',
+      reason: 'credential-store',
+    });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -180,15 +218,22 @@ describe('ZATCA invoice reporting/clearance HTTPS client', () => {
     const client = createZatcaInvoiceSubmissionHttpClient({ credentialResolver, fetchImpl });
 
     await expect(client.submit({ ...input(), invoiceUuid: 'bad' })).rejects.toThrow();
-    await expect(client.submit({ ...input(), invoiceHashBase64: Buffer.alloc(31).toString('base64') })).rejects.toThrow();
-    await expect(client.submit({ ...input(), invoiceBase64: Buffer.from('not xml').toString('base64') })).rejects.toThrow();
+    await expect(
+      client.submit({ ...input(), invoiceHashBase64: Buffer.alloc(31).toString('base64') }),
+    ).rejects.toThrow();
+    await expect(
+      client.submit({ ...input(), invoiceBase64: Buffer.from('not xml').toString('base64') }),
+    ).rejects.toThrow();
     expect(credentialResolver.resolve).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('never exposes plaintext Production CSID material in a result', async () => {
     const credentialResolver = resolver();
-    const client = createZatcaInvoiceSubmissionHttpClient({ credentialResolver, fetchImpl: fetchMock(reported()) });
+    const client = createZatcaInvoiceSubmissionHttpClient({
+      credentialResolver,
+      fetchImpl: fetchMock(reported()),
+    });
     const serialized = JSON.stringify(await client.submit(input()));
     expect(serialized).not.toContain(TOKEN);
     expect(serialized).not.toContain(SECRET);

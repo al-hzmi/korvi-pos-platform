@@ -20,9 +20,7 @@ export interface SubmitZatcaInvoiceInput {
 }
 
 export type ZatcaInvoiceSubmissionUncertaintyReason =
-  | 'credential-store'
-  | 'transport'
-  | 'response-invalid';
+  'credential-store' | 'transport' | 'response-invalid';
 
 export interface ZatcaAcceptedInvoiceSubmission {
   readonly kind: 'accepted';
@@ -45,9 +43,7 @@ export interface ZatcaUncertainInvoiceSubmission {
 }
 
 export type ZatcaInvoiceSubmissionResult =
-  | ZatcaAcceptedInvoiceSubmission
-  | ZatcaRejectedInvoiceSubmission
-  | ZatcaUncertainInvoiceSubmission;
+  ZatcaAcceptedInvoiceSubmission | ZatcaRejectedInvoiceSubmission | ZatcaUncertainInvoiceSubmission;
 
 /**
  * One HTTP attempt against FATOORA. This port MUST NOT retry internally: once

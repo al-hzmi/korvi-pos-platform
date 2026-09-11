@@ -36,27 +36,33 @@ const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_INVOICE_BASE64_CHARACTERS = 4 * 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const authorityMessageSchema = z.object({
-  type: z.string().max(100).optional(),
-  code: z.string().max(500).optional(),
-  category: z.string().max(100).optional(),
-  message: z.string().max(8_192).optional(),
-  status: z.string().max(100).optional(),
-}).passthrough();
+const authorityMessageSchema = z
+  .object({
+    type: z.string().max(100).optional(),
+    code: z.string().max(500).optional(),
+    category: z.string().max(100).optional(),
+    message: z.string().max(8_192).optional(),
+    status: z.string().max(100).optional(),
+  })
+  .passthrough();
 
-const validationResultsSchema = z.object({
-  status: z.string().max(100).optional(),
-  infoMessages: z.array(authorityMessageSchema).max(1_000).optional(),
-  warningMessages: z.array(authorityMessageSchema).max(1_000).optional(),
-  errorMessages: z.array(authorityMessageSchema).max(1_000).optional(),
-}).passthrough();
+const validationResultsSchema = z
+  .object({
+    status: z.string().max(100).optional(),
+    infoMessages: z.array(authorityMessageSchema).max(1_000).optional(),
+    warningMessages: z.array(authorityMessageSchema).max(1_000).optional(),
+    errorMessages: z.array(authorityMessageSchema).max(1_000).optional(),
+  })
+  .passthrough();
 
-const successResponseSchema = z.object({
-  reportingStatus: z.string().max(100).optional(),
-  clearanceStatus: z.string().max(100).optional(),
-  clearedInvoice: z.string().min(1).max(MAX_INVOICE_BASE64_CHARACTERS).optional(),
-  validationResults: validationResultsSchema.optional(),
-}).passthrough();
+const successResponseSchema = z
+  .object({
+    reportingStatus: z.string().max(100).optional(),
+    clearanceStatus: z.string().max(100).optional(),
+    clearedInvoice: z.string().min(1).max(MAX_INVOICE_BASE64_CHARACTERS).optional(),
+    validationResults: validationResultsSchema.optional(),
+  })
+  .passthrough();
 
 class ResponseLimitError extends Error {}
 
@@ -121,10 +127,7 @@ export function createZatcaInvoiceSubmissionHttpClient(
               'Accept-Language': 'en',
               'Accept-Version': 'V2',
               'Clearance-Status': input.mode === 'clearance' ? '1' : '0',
-              Authorization: basicAuthorization(
-                credential.binarySecurityToken,
-                credential.secret,
-              ),
+              Authorization: basicAuthorization(credential.binarySecurityToken, credential.secret),
             },
             body: JSON.stringify({
               invoiceHash: input.invoiceHashBase64,
