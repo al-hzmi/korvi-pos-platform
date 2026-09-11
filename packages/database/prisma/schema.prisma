@@ -125,6 +125,7 @@ model Tenant {
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
   zatcaComplianceEvidence       ZatcaComplianceEvidence[]
   zatcaFatooraCredentials       ZatcaFatooraCredential[]
+  zatcaInvoiceSubmissions       ZatcaInvoiceSubmission[]
 
   @@unique([provisioningOperationId])
   @@map("tenants")
@@ -313,6 +314,7 @@ model Terminal {
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
   zatcaComplianceEvidence       ZatcaComplianceEvidence[]
   zatcaFatooraCredentials       ZatcaFatooraCredential[]
+  zatcaInvoiceSubmissions       ZatcaInvoiceSubmission[]
 
   @@unique([tenantId, code])
   /// The tenant-consistency key. A child row references this table by
@@ -1394,10 +1396,11 @@ model Invoice {
   issuedAt  DateTime
   createdAt DateTime @default(now())
 
-  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sale         Sale                  @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
-  taxBreakdown InvoiceTaxBreakdown[]
-  refunds      Refund[]
+  tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale             Sale                     @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
+  taxBreakdown     InvoiceTaxBreakdown[]
+  refunds          Refund[]
+  zatcaSubmissions ZatcaInvoiceSubmission[]
 
   @@unique([tenantId, invoiceNumber])
   /// The relation key for the one-to-one back to the sale. `saleId` is already
@@ -1821,4 +1824,39 @@ model ZatcaFatooraCredential {
   @@unique([tenantId, credentialId], map: "zatca_fatoora_credentials_tenantId_credentialId_key")
   @@index([tenantId, terminalId], map: "zatca_fatoora_credentials_tenantId_terminalId_idx")
   @@map("zatca_fatoora_credentials")
+}
+
+model ZatcaInvoiceSubmission {
+  id                String    @id @db.Uuid
+  tenantId          String    @db.Uuid
+  invoiceId         String    @db.Uuid
+  terminalId        String    @db.Uuid
+  environment       String
+  mode              String
+  invoiceUuid       String    @db.Uuid
+  invoiceHash       Bytes
+  sealedInvoiceXml  Bytes
+  secretProvider    String
+  secretId          String
+  state             String    @default("pending")
+  attemptCount      Int       @default(0)
+  queuedAt          DateTime
+  requestStartedAt  DateTime?
+  resolvedAt        DateTime?
+  httpStatus        Int?
+  authorityStatus   String?
+  rejectionCode     String?
+  uncertaintyReason String?
+  clearedInvoiceXml Bytes?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice           Invoice   @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: NoAction)
+  terminal          Terminal  @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id], map: "zatca_invoice_submissions_tenantId_id_key")
+  @@unique([tenantId, invoiceId, mode], map: "zatca_invoice_submissions_tenantId_invoiceId_mode_key")
+  @@index([tenantId, state, queuedAt], map: "zatca_invoice_submissions_tenantId_state_queuedAt_idx")
+  @@index([tenantId, terminalId, state], map: "zatca_invoice_submissions_tenantId_terminalId_state_idx")
+  @@map("zatca_invoice_submissions")
 }

@@ -261,3 +261,4 @@ export type {
   ZatcaFatooraCiphertextRecord,
   ZatcaFatooraCredentialRepository,
 } from './zatca/fatoora-credential-repository.js';
+export { createZatcaInvoiceSubmissionRepository } from './zatca/invoice-submission-repository.js';

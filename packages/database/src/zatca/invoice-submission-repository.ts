@@ -76,9 +76,13 @@ export function createZatcaInvoiceSubmissionRepository(
           )
           ON CONFLICT ("tenantId", "invoiceId", "mode") DO NOTHING
           RETURNING *`;
-        const row = inserted[0] ?? (await findByInvoiceWithin(tx, scope, submission.invoiceId, submission.mode));
+        const row =
+          inserted[0] ??
+          (await findByInvoiceWithin(tx, scope, submission.invoiceId, submission.mode));
         if (row === null) {
-          throw new ZatcaInvoiceSubmissionError('ZATCA submission reservation lost its durable row.');
+          throw new ZatcaInvoiceSubmissionError(
+            'ZATCA submission reservation lost its durable row.',
+          );
         }
         assertReservedIdentity(submission, row);
         return mapSubmission(scope, row);
@@ -116,7 +120,10 @@ async function transitionRequestStarted(
          AND "state" = 'pending'
          AND "attemptCount" = 0
       RETURNING *`;
-    return expectState(mapSubmission(scope, singleTransition(rows, submissionId, 'pending', 'in-flight')), 'in-flight');
+    return expectState(
+      mapSubmission(scope, singleTransition(rows, submissionId, 'pending', 'in-flight')),
+      'in-flight',
+    );
   });
 }
 
@@ -132,7 +139,8 @@ async function finalizeAccepted(
   },
 ): Promise<ZatcaAcceptedDurableInvoiceSubmission> {
   return withTenant(prisma, scope.tenantId as string, async (tx) => {
-    const cleared = result.clearedInvoiceXml === undefined ? null : Buffer.from(result.clearedInvoiceXml);
+    const cleared =
+      result.clearedInvoiceXml === undefined ? null : Buffer.from(result.clearedInvoiceXml);
     const rows = await tx.$queryRaw<SubmissionRow[]>`
       UPDATE "zatca_invoice_submissions"
          SET "state" = 'accepted',
@@ -145,7 +153,10 @@ async function finalizeAccepted(
          AND "id" = ${submissionId}::uuid
          AND "state" IN ('in-flight', 'uncertain')
       RETURNING *`;
-    return expectState(mapSubmission(scope, singleTransition(rows, submissionId, 'in-flight/uncertain', 'accepted')), 'accepted');
+    return expectState(
+      mapSubmission(scope, singleTransition(rows, submissionId, 'in-flight/uncertain', 'accepted')),
+      'accepted',
+    );
   });
 }
 
@@ -153,7 +164,11 @@ async function finalizeRejected(
   prisma: PrismaClient,
   scope: TenantScope,
   submissionId: string,
-  result: { readonly resolvedAt: string; readonly httpStatus: number; readonly rejectionCode: string },
+  result: {
+    readonly resolvedAt: string;
+    readonly httpStatus: number;
+    readonly rejectionCode: string;
+  },
 ): Promise<ZatcaRejectedDurableInvoiceSubmission> {
   return withTenant(prisma, scope.tenantId as string, async (tx) => {
     const rows = await tx.$queryRaw<SubmissionRow[]>`
@@ -167,7 +182,10 @@ async function finalizeRejected(
          AND "id" = ${submissionId}::uuid
          AND "state" IN ('in-flight', 'uncertain')
       RETURNING *`;
-    return expectState(mapSubmission(scope, singleTransition(rows, submissionId, 'in-flight/uncertain', 'rejected')), 'rejected');
+    return expectState(
+      mapSubmission(scope, singleTransition(rows, submissionId, 'in-flight/uncertain', 'rejected')),
+      'rejected',
+    );
   });
 }
 
@@ -194,7 +212,10 @@ async function finalizeUncertain(
          AND "id" = ${submissionId}::uuid
          AND "state" = 'in-flight'
       RETURNING *`;
-    return expectState(mapSubmission(scope, singleTransition(rows, submissionId, 'in-flight', 'uncertain')), 'uncertain');
+    return expectState(
+      mapSubmission(scope, singleTransition(rows, submissionId, 'in-flight', 'uncertain')),
+      'uncertain',
+    );
   });
 }
 
@@ -217,11 +238,16 @@ async function findByInvoiceWithin(
 
 function assertScopeMatches(scope: TenantScope, submission: ZatcaPendingInvoiceSubmission): void {
   if (submission.scope.tenantId !== scope.tenantId) {
-    throw new ZatcaInvoiceSubmissionError('ZATCA submission tenant does not match repository scope.');
+    throw new ZatcaInvoiceSubmissionError(
+      'ZATCA submission tenant does not match repository scope.',
+    );
   }
 }
 
-function assertReservedIdentity(submission: ZatcaPendingInvoiceSubmission, row: SubmissionRow): void {
+function assertReservedIdentity(
+  submission: ZatcaPendingInvoiceSubmission,
+  row: SubmissionRow,
+): void {
   const same =
     row.id === submission.submissionId &&
     row.tenantId === (submission.scope.tenantId as string) &&
@@ -236,7 +262,9 @@ function assertReservedIdentity(submission: ZatcaPendingInvoiceSubmission, row: 
     row.secretId === submission.productionSecret.secretId &&
     toUtcSecond(row.queuedAt) === submission.queuedAt;
   if (!same) {
-    throw new ZatcaInvoiceSubmissionError('ZATCA invoice already has different durable submission identity.');
+    throw new ZatcaInvoiceSubmissionError(
+      'ZATCA invoice already has different durable submission identity.',
+    );
   }
 }
 
@@ -259,12 +287,14 @@ function mapSubmission(scope: TenantScope, row: SubmissionRow): ZatcaDurableInvo
   if (row.state === 'pending') return { ...base, state: 'pending', attemptCount: 0 };
   if (row.requestStartedAt === null || row.attemptCount !== 1) throw corrupt('request start');
   const requestStartedAt = toUtcSecond(row.requestStartedAt);
-  if (row.state === 'in-flight') return { ...base, state: 'in-flight', attemptCount: 1, requestStartedAt };
+  if (row.state === 'in-flight')
+    return { ...base, state: 'in-flight', attemptCount: 1, requestStartedAt };
   if (row.resolvedAt === null) throw corrupt('resolution time');
   const resolvedAt = toUtcSecond(row.resolvedAt);
 
   if (row.state === 'accepted') {
-    if (row.httpStatus === null || row.authorityStatus === null) throw corrupt('accepted authority outcome');
+    if (row.httpStatus === null || row.authorityStatus === null)
+      throw corrupt('accepted authority outcome');
     const result: ZatcaAcceptedDurableInvoiceSubmission = {
       ...base,
       state: 'accepted',
@@ -273,7 +303,9 @@ function mapSubmission(scope: TenantScope, row: SubmissionRow): ZatcaDurableInvo
       resolvedAt,
       httpStatus: row.httpStatus,
       authorityStatus: row.authorityStatus,
-      ...(row.clearedInvoiceXml === null ? {} : { clearedInvoiceXml: Uint8Array.from(row.clearedInvoiceXml) }),
+      ...(row.clearedInvoiceXml === null
+        ? {}
+        : { clearedInvoiceXml: Uint8Array.from(row.clearedInvoiceXml) }),
     };
     return result;
   }
@@ -301,10 +333,17 @@ function mapSubmission(scope: TenantScope, row: SubmissionRow): ZatcaDurableInvo
   };
 }
 
-function singleTransition(rows: readonly SubmissionRow[], id: string, from: string, to: string): SubmissionRow {
+function singleTransition(
+  rows: readonly SubmissionRow[],
+  id: string,
+  from: string,
+  to: string,
+): SubmissionRow {
   const row = rows[0];
   if (row === undefined || rows.length !== 1) {
-    throw new ZatcaInvoiceSubmissionError(`ZATCA submission ${id} did not transition ${from} -> ${to}; concurrent or stale state refused.`);
+    throw new ZatcaInvoiceSubmissionError(
+      `ZATCA submission ${id} did not transition ${from} -> ${to}; concurrent or stale state refused.`,
+    );
   }
   return row;
 }
@@ -314,7 +353,9 @@ function expectState<S extends ZatcaDurableInvoiceSubmission['state']>(
   state: S,
 ): Extract<ZatcaDurableInvoiceSubmission, { state: S }> {
   if (submission.state !== state) {
-    throw new ZatcaInvoiceSubmissionError(`ZATCA repository returned ${submission.state}; expected ${state}.`);
+    throw new ZatcaInvoiceSubmissionError(
+      `ZATCA repository returned ${submission.state}; expected ${state}.`,
+    );
   }
   return submission as Extract<ZatcaDurableInvoiceSubmission, { state: S }>;
 }
