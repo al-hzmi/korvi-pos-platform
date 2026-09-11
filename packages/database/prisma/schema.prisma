@@ -123,6 +123,7 @@ model Tenant {
   planAssignments               TenantPlanAssignment[]
   planEntitlements              TenantPlanEntitlement[]
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
+  zatcaComplianceEvidence       ZatcaComplianceEvidence[]
   zatcaFatooraCredentials       ZatcaFatooraCredential[]
 
   @@unique([provisioningOperationId])
@@ -310,6 +311,7 @@ model Terminal {
   sales                         Sale[]
   returns                       Return[]
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
+  zatcaComplianceEvidence       ZatcaComplianceEvidence[]
   zatcaFatooraCredentials       ZatcaFatooraCredential[]
 
   @@unique([tenantId, code])
@@ -1763,16 +1765,40 @@ model ZatcaCsidProvisioningAttempt {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  terminal Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  terminal           Terminal                 @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  complianceEvidence ZatcaComplianceEvidence?
 
   @@unique([tenantId, operationId], map: "zatca_csid_attempts_tenantId_operationId_key")
-  @@unique([tenantId, id], map: "zatca_csid_attempts_tenantId_id_key")
+  @@unique([tenantId, id])
   @@unique([tenantId, credentialId], map: "zatca_csid_attempts_tenantId_credentialId_key")
   @@unique([tenantId, remoteRequestId], map: "zatca_csid_attempts_tenantId_remoteRequestId_key")
   @@index([tenantId, terminalId, state], map: "zatca_csid_attempts_tenantId_terminalId_state_idx")
   @@index([tenantId, state, resolvedAt], map: "zatca_csid_attempts_tenantId_state_resolvedAt_idx")
   @@map("zatca_csid_provisioning_attempts")
+}
+
+/// Immutable accepted ZATCA compliance-check evidence.
+/// Production CSID onboarding consumes this authority instead of trusting caller-supplied
+/// request ids, environments or credentials. Database triggers enforce source issuance,
+/// terminal consistency, temporal ordering and append-only retention.
+model ZatcaComplianceEvidence {
+  id                  String   @id @db.Uuid
+  tenantId            String   @db.Uuid
+  terminalId          String   @db.Uuid
+  complianceAttemptId String   @db.Uuid
+  checkSetHash        String   @db.Char(64)
+  acceptedAt          DateTime
+  createdAt           DateTime @default(now())
+
+  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "zatca_compliance_evidence_tenantId_fkey")
+  terminal          Terminal                     @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_tenantId_terminalId_fkey")
+  complianceAttempt ZatcaCsidProvisioningAttempt @relation(fields: [tenantId, complianceAttemptId], references: [tenantId, id], onDelete: NoAction, map: "zatca_compliance_evidence_attempt_fkey")
+
+  @@unique([tenantId, id], map: "zatca_compliance_evidence_tenantId_id_key")
+  @@unique([tenantId, complianceAttemptId], map: "zatca_compliance_evidence_tenantId_attempt_key")
+  @@index([tenantId, terminalId, acceptedAt], map: "zatca_compliance_evidence_tenantId_terminalId_acceptedAt_idx")
+  @@map("zatca_compliance_evidence")
 }
 
 /// AES-256-GCM ciphertext for the Fatoora Basic-Authentication credential.
