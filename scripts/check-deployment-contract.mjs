@@ -31,7 +31,11 @@ function serviceBlock(name) {
   assert.notEqual(markerIndex, -1, `render.yaml must define ${name}`);
 
   const serviceStart = blueprint.lastIndexOf('  - type:', markerIndex);
-  assert.notEqual(serviceStart, -1, `render.yaml service ${name} must have a service boundary`);
+  assert.notEqual(
+    serviceStart,
+    -1,
+    `render.yaml service ${name} must have a service boundary`,
+  );
 
   const nextService = blueprint.indexOf('\n  - type:', markerIndex + marker.length);
   const databases = blueprint.indexOf('\ndatabases:', markerIndex + marker.length);
@@ -68,8 +72,16 @@ for (const [name, block] of [
   [API_SERVICE, api],
   [WEB_SERVICE, web],
 ]) {
-  assert.equal(scalar(block, 'branch'), RELEASE_BRANCH, `${name} must deploy the release-candidate branch`);
-  assert.equal(scalar(block, 'autoDeployTrigger'), 'off', `${name} must require a controlled deploy`);
+  assert.equal(
+    scalar(block, 'branch'),
+    RELEASE_BRANCH,
+    `${name} must deploy the release-candidate branch`,
+  );
+  assert.equal(
+    scalar(block, 'autoDeployTrigger'),
+    'off',
+    `${name} must require a controlled deploy`,
+  );
 }
 
 const apiEnv = envEntries(api);
@@ -81,7 +93,11 @@ for (const key of requiredSecrets) {
   assert.ok(definition, `staging API must provision production secret ${key}`);
   assert.match(definition, /^        generateValue: true$/m, `${key} must be provider-generated`);
   assert.doesNotMatch(definition, /^        value:/m, `${key} must never be hardcoded`);
-  assert.doesNotMatch(definition, /^        sync:/m, `${key} must not depend on an ignored Blueprint sync`);
+  assert.doesNotMatch(
+    definition,
+    /^        sync:/m,
+    `${key} must not depend on an ignored Blueprint sync`,
+  );
 }
 
 assert.ok(apiEnv.has('DATABASE_URL'), 'staging API must declare DATABASE_URL');
