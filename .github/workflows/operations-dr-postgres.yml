@@ -3,16 +3,7 @@ name: Operations DR PostgreSQL Restore Proof
 on:
   push:
     branches:
-      - strike/5c-costing-authority
-      - review/ops-dr-rehearsal
       - review/operations-50-production-readiness
-    paths:
-      - '.github/workflows/operations-dr-postgres.yml'
-      - 'scripts/dr-sentinel.mjs'
-      - 'packages/database/**'
-      - 'packages/domain/**'
-      - 'docs/decisions/ADR-0029-database-backup-restore-authority.md'
-      - 'docs/operations/DISASTER-RECOVERY.md'
   workflow_dispatch:
 
 concurrency:
