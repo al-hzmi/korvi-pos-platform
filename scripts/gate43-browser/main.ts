@@ -300,14 +300,9 @@ async function seed(): Promise<SeedResult> {
         error instanceof OfflineStoreError && error.code === 'conflict';
     }
 
-    await store.enqueue(
-      PARTITION_B,
-      operation(PARTITION_B_OPERATION_ID, '2500', 5),
-    );
+    await store.enqueue(PARTITION_B, operation(PARTITION_B_OPERATION_ID, '2500', 5));
 
-    const orderedBeforeTransition = (await store.pending(PARTITION_A, 20)).map(
-      (item) => item.id,
-    );
+    const orderedBeforeTransition = (await store.pending(PARTITION_A, 20)).map((item) => item.id);
     await store.markSettled(PARTITION_A, OPERATIONS[0].id);
     await store.markRejected(PARTITION_A, OPERATIONS[1].id, 'server-refused');
 
@@ -364,8 +359,7 @@ async function verify(): Promise<VerifyResult> {
       settledPersisted: settled?.state === 'settled',
       rejectedPersisted: rejected?.state === 'rejected',
       rejectionReasonPersisted: rejected?.rejectionReason === 'server-refused',
-      partitionIsolation:
-        pendingB.length === 1 && pendingB[0]?.id === PARTITION_B_OPERATION_ID,
+      partitionIsolation: pendingB.length === 1 && pendingB[0]?.id === PARTITION_B_OPERATION_ID,
       payloadPersisted: payload?.totalMinor === '1350',
     };
   } finally {

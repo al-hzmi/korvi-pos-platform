@@ -26,13 +26,7 @@ const MAX_REJECTION_REASON_LENGTH = 2_048;
 const QUEUE_KIND_PATTERN = /^[a-z][a-z0-9.-]{0,99}$/;
 
 export type OfflineStoreErrorCode =
-  | 'unavailable'
-  | 'blocked'
-  | 'quota'
-  | 'version'
-  | 'corrupt'
-  | 'conflict'
-  | 'transaction';
+  'unavailable' | 'blocked' | 'quota' | 'version' | 'corrupt' | 'conflict' | 'transaction';
 
 export class OfflineStoreError extends Error {
   public override readonly name = 'OfflineStoreError';
@@ -228,10 +222,7 @@ function canonicalJson(value: unknown, seen: Set<object>): string {
     return JSON.stringify(value);
   }
   if (typeof value !== 'object') {
-    throw new OfflineStoreError(
-      'corrupt',
-      'Queue payload must contain JSON values only.',
-    );
+    throw new OfflineStoreError('corrupt', 'Queue payload must contain JSON values only.');
   }
 
   if (seen.has(value)) {
@@ -240,7 +231,14 @@ function canonicalJson(value: unknown, seen: Set<object>): string {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      return `[${value.map((entry) => canonicalJson(entry, seen)).join(',')}]`;
+      const entries: string[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) {
+          throw new OfflineStoreError('corrupt', 'Queue payload arrays cannot contain holes.');
+        }
+        entries.push(canonicalJson(value[index], seen));
+      }
+      return `[${entries.join(',')}]`;
     }
 
     const prototype = Object.getPrototypeOf(value);
@@ -307,7 +305,9 @@ export function isQueueOperationInput(value: unknown): value is QueueOperationIn
 }
 
 function isQueueState(value: unknown): value is QueuedOperation['state'] {
-  return value === 'pending' || value === 'in-flight' || value === 'settled' || value === 'rejected';
+  return (
+    value === 'pending' || value === 'in-flight' || value === 'settled' || value === 'rejected'
+  );
 }
 
 export function classifyIndexedDbError(error: unknown): OfflineStoreError {
@@ -517,7 +517,9 @@ function createBaseSchema(database: IDBDatabase): void {
 }
 
 function createQueueSchema(database: IDBDatabase): void {
-  const queue = database.createObjectStore(OFFLINE_TRANSACTION_QUEUE_STORE, { keyPath: 'queueKey' });
+  const queue = database.createObjectStore(OFFLINE_TRANSACTION_QUEUE_STORE, {
+    keyPath: 'queueKey',
+  });
   queue.createIndex(QUEUE_PARTITION_INDEX, 'partitionKey', { unique: false });
   queue.createIndex(QUEUE_ORDER_INDEX, ['partitionKey', 'id'], { unique: true });
   queue.createIndex(QUEUE_ID_INDEX, 'id', { unique: true });
@@ -734,7 +736,10 @@ async function transitionQueuedOperation(
   request.onsuccess = () => {
     try {
       if (request.result === undefined) {
-        failure = new OfflineStoreError('conflict', 'Queue operation does not exist in this partition.');
+        failure = new OfflineStoreError(
+          'conflict',
+          'Queue operation does not exist in this partition.',
+        );
         transaction.abort();
         return;
       }

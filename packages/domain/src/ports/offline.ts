@@ -46,10 +46,7 @@ export interface TransactionQueuePort {
     operation: QueueOperationInput<TPayload>,
   ): Promise<void>;
   /** Oldest-first by UUIDv7, so replay order matches what happened. */
-  pending(
-    partition: QueuePartition,
-    limit: number,
-  ): Promise<readonly QueuedOperation[]>;
+  pending(partition: QueuePartition, limit: number): Promise<readonly QueuedOperation[]>;
   get<TPayload = unknown>(
     partition: QueuePartition,
     id: string,
