@@ -23,6 +23,16 @@ node scripts/verify-package-manager.mjs
 npm ci --include=dev --registry=https://registry.npmjs.org
 # Generate reads the schema only; the web build never receives database secrets.
 DATABASE_URL='postgresql://localhost/korvi_generate_only' npm run db:generate
+
+# The free staging service has neither one-off jobs nor a pre-deploy command.
+# Automatic deploys are disabled, so an API build is already a controlled
+# promotion event. Apply pending migrations here, before the candidate runtime
+# can start, and then prove both the ledger and schema are current. This is a
+# staging-only provider adaptation, not the production migration topology.
+if [ "$1" = api ] && [ "${KORVI_ENVIRONMENT:-}" = staging ]; then
+  bash scripts/deploy/staging-migrate.sh
+fi
+
 npm run build -w @korvi/domain
 npm run build -w @korvi/database
 if [ "$1" = api ]; then

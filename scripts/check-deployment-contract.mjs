@@ -5,9 +5,10 @@ const DEPLOYMENT_BRANCH = 'strike/5c-costing-authority';
 const API_SERVICE = 'korvi-staging-api';
 const WEB_SERVICE = 'korvi-staging-web';
 
-const [configSource, blueprint] = await Promise.all([
+const [configSource, blueprint, buildScript] = await Promise.all([
   readFile(new URL('../apps/api/src/config.ts', import.meta.url), 'utf8'),
   readFile(new URL('../render.yaml', import.meta.url), 'utf8'),
+  readFile(new URL('./deploy/build.sh', import.meta.url), 'utf8'),
 ]);
 
 const secretDeclaration = configSource.match(
@@ -79,6 +80,17 @@ for (const [name, block] of [
     `${name} must require a controlled deploy`,
   );
 }
+
+assert.equal(
+  scalar(api, 'buildCommand'),
+  'bash scripts/deploy/build.sh api',
+  'staging API must use the guarded deployment build entrypoint',
+);
+assert.match(
+  buildScript,
+  /if \[ "\$1" = api \] && \[ "\$\{KORVI_ENVIRONMENT:-\}" = staging \]; then\n  bash scripts\/deploy\/staging-migrate\.sh\nfi/,
+  'API staging build must invoke the guarded migration stage',
+);
 
 const apiEnv = envEntries(api);
 assert.match(apiEnv.get('NODE_ENV') ?? '', /^ {8}value: production$/m);

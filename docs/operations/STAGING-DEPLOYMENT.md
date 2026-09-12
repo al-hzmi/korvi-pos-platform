@@ -35,23 +35,34 @@ entrypoint refuses to listen until it has read and checked:
 - the exact schema table set, with ENABLE/FORCE RLS and a policy on every tenant
   table. Only permissions, global catalogue and Prisma's ledger are exempt.
 
-This is a read-only boot check, not an automatic migration, full schema-drift
-proof, policy-body audit, ongoing monitor, seed or authorization bypass. A
+The boot check is read-only: it never repairs, migrates, grants or seeds. A
 connection error is logged generically to avoid leaking driver credentials.
+Migration execution is a separate controlled build stage described below.
 
 ## Deployment contract
 
 `apps/api/src/config.ts` is authoritative for production-required secret names.
 `scripts/check-deployment-contract.mjs`, executed by `npm run verify`, fails if
 `render.yaml` stops provisioning one of those secrets, hardcodes it, duplicates
-an environment key, enables automatic deployment, or points API/web at a branch
-other than the controlled promotion branch.
+an environment key, enables automatic deployment, points API/web at a branch
+other than the controlled promotion branch, or stops using the guarded API build
+entrypoint.
 
 The current required secret domains are owner-bootstrap signing and machine-only
 metrics scraping. Render generates each independently. They must never share a
 value, be copied into browser configuration, be committed, or be printed into
 logs or release evidence. The runtime independently rejects missing, weak,
 whitespace-padded or equal credentials at boot.
+
+Free Render web services do not provide one-off jobs or the paid pre-deploy
+command. For this **disposable staging environment only**, the manually triggered
+API build therefore executes `scripts/deploy/staging-migrate.sh` before building
+the runtime. That script is fail-closed unless both `KORVI_ENVIRONMENT=staging`
+and `NODE_ENV=production` are present, requires `DATABASE_URL`, never prints the
+URL, runs `prisma migrate deploy`, verifies `prisma migrate status`, and requires
+an empty Prisma schema diff. `scripts/check-staging-migration-contract.sh`
+proves the command order and refusal paths in every repository verification.
+This staging adaptation is not the production migration topology.
 
 ## Operator sequence
 
@@ -69,15 +80,16 @@ whitespace-padded or equal credentials at boot.
    **this database only** and USAGE/CREATE on its public schema, matching the
    verified CI ownership model. Never supply the provider's administrative
    credentials to the running API.
-3. Apply the existing migrations **as that application role**, using
-   `prisma migrate deploy`, then run `prisma migrate status` and
-   `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code`
-   from `packages/database`. Credentials travel through secret environment
-   variables only. If an external administration connection is necessary,
-   temporarily allow only the operator's exact egress IP, then remove that rule.
-   Do not use `db push`, reset an occupied database, relax RLS or alter migration
-   history. Role ownership remains the existing staging/CI model, not a claim of
-   a completed production separation between runtime and migration identities.
+3. Keep API `DATABASE_URL` bound to that restricted application role. On a
+   controlled free-staging API deploy, `scripts/deploy/build.sh api` invokes the
+   guarded staging migration stage before runtime compilation. The stage applies
+   checked-in migrations **as that application role**, then proves migration
+   status and zero schema drift. Do not use `db push`, reset an occupied database,
+   relax RLS, alter migration history, or switch to provider administrative
+   credentials to make a deploy pass. A migration/status/diff failure aborts the
+   build and leaves the previous successful service deploy serving traffic.
+   Role ownership remains the existing staging/CI model, not a claim of a
+   completed production separation between runtime and migration identities.
 4. Record the provider-assigned service URLs. Set API `DATABASE_URL` to the
    internal URL for `korvi_staging_app` and `APP_ORIGINS` to the web's exact HTTPS
    origin without a trailing slash. Provision independent CSPRNG-backed
@@ -93,12 +105,13 @@ whitespace-padded or equal credentials at boot.
    GitHub refs and prove the promotion branch is an ancestor. Fast-forward
    `strike/5c-costing-authority` to that exact SHA with `force=false`; abort on
    any concurrent change. Then build API and web using the commands in
-   `render.yaml` and manually deploy both from that promoted branch. Record each
-   provider-reported deployed SHA and refuse field validation if they differ from
-   each other or from the promoted/reviewed SHA. The API's `/health` becomes
-   reachable only after preflight succeeds. It remains a liveness check, not
-   continuous DB readiness. Next's `/` only proves web liveness. Check both
-   independently.
+   `render.yaml` and manually deploy both from that promoted branch. The API
+   build must first complete the guarded migration/status/drift sequence. Record
+   each provider-reported deployed SHA and refuse field validation if they differ
+   from each other or from the promoted/reviewed SHA. The API's `/health` becomes
+   reachable only after migration and preflight both succeed. It remains a
+   liveness check, not continuous DB readiness. Next's `/` only proves web
+   liveness. Check both independently.
 6. Before merchant workflow evidence, verify operations surfaces: `/ready` must
    fail closed when PostgreSQL is unavailable and recover afterward; anonymous
    `/metrics` must return 401; an authenticated scrape using the provider-held
@@ -119,11 +132,13 @@ whitespace-padded or equal credentials at boot.
 
 ## Recovery and cost bounds
 
-- A failed preflight leaves the API unavailable. Correct configuration or the
-  migration procedure; never disable the check to obtain a green health probe.
-- Roll back API and web to the same previously verified source revision. A
-  different migration ledger will deliberately block rollback. Preserve the
-  database and use a reviewed forward fix; do not roll back migrations blindly.
+- A failed migration or preflight leaves the candidate unavailable while the
+  previous successful deploy remains authoritative. Correct the real migration,
+  configuration or role problem; never disable the gate to obtain a green probe.
+- Roll back API and web to the same previously verified source revision only
+  when the database schema remains compatible. Never blindly roll back database
+  migrations. Prefer a reviewed forward fix when a migration has already been
+  committed to the staging ledger.
 - Free services sleep after inactivity and share 750 instance hours/month.
   Two web services share that allowance. Free PostgreSQL expires after 30 days
   and has no managed backups. Set a dated expiry/removal plan at creation; do
@@ -135,6 +150,7 @@ whitespace-padded or equal credentials at boot.
 
 ## Provider references checked 2026-09-12
 
+- [Deploy lifecycle and pre-deploy availability](https://render.com/docs/deploys)
 - [Blueprint fields](https://render.com/docs/blueprint-spec)
 - [Free service and database limits](https://render.com/docs/free)
 - [Database connections](https://render.com/docs/postgresql-creating-connecting)

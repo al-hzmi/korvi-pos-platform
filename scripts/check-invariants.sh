@@ -46,6 +46,12 @@ if ! node scripts/check-deployment-contract.mjs; then
   report "deployment/runtime contract drift"
 fi
 
+# Free staging has no one-off/pre-deploy execution surface. Its controlled API
+# build must therefore apply migrations through the guarded staging-only path.
+if ! bash scripts/check-staging-migration-contract.sh; then
+  report "staging migration contract drift"
+fi
+
 # --- TypeScript escape hatches -------------------------------------------
 scan "'any' type used (CLAUDE.md: TypeScript)" \
      '(: *any\b|<any>|as +any\b|Array<any>)' '*.ts'
