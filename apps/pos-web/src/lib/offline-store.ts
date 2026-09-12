@@ -1,17 +1,38 @@
-import type { PriceMode } from '@korvi/domain';
+import {
+  isUuidV7,
+  type PriceMode,
+  type QueueOperationInput,
+  type QueuedOperation,
+  type QueuePartition,
+  type TransactionQueuePort,
+} from '@korvi/domain';
 import type { ProductSummary } from './api-types';
 import type { CartLine } from './cart';
 
 export const OFFLINE_DB_NAME = 'korvi-pos-offline';
-export const OFFLINE_DB_VERSION = 1;
+export const OFFLINE_DB_VERSION = 2;
 export const OFFLINE_CATALOGUE_STORE = 'catalogue-v1';
 export const OFFLINE_SALE_DRAFT_STORE = 'sale-drafts-v1';
+export const OFFLINE_TRANSACTION_QUEUE_STORE = 'transaction-queue-v1';
 
 const TENANT_INDEX = 'tenantId';
+const QUEUE_PARTITION_INDEX = 'queuePartition';
+const QUEUE_ORDER_INDEX = 'queueOrder';
+const QUEUE_ID_INDEX = 'operationId';
 const MAX_LOCAL_SEARCH_RESULTS = 50;
+const MAX_QUEUE_READ = 500;
+const MAX_QUEUE_PAYLOAD_BYTES = 256 * 1024;
+const MAX_REJECTION_REASON_LENGTH = 2_048;
+const QUEUE_KIND_PATTERN = /^[a-z][a-z0-9.-]{0,99}$/;
 
 export type OfflineStoreErrorCode =
-  'unavailable' | 'blocked' | 'quota' | 'version' | 'corrupt' | 'transaction';
+  | 'unavailable'
+  | 'blocked'
+  | 'quota'
+  | 'version'
+  | 'corrupt'
+  | 'conflict'
+  | 'transaction';
 
 export class OfflineStoreError extends Error {
   public override readonly name = 'OfflineStoreError';
@@ -50,13 +71,28 @@ interface StoredSaleDraft extends OfflineSaleDraft, OfflineSaleScope {
   readonly scopeKey: string;
 }
 
+interface StoredQueuedOperation {
+  readonly queueKey: string;
+  readonly partitionKey: string;
+  readonly tenantId: string;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly id: string;
+  readonly kind: string;
+  readonly payloadJson: string;
+  readonly state: QueuedOperation['state'];
+  readonly attempts: number;
+  readonly enqueuedAt: string;
+  readonly rejectionReason: string | null;
+}
+
 export interface OfflineStoreDescription {
   readonly name: string;
   readonly version: number;
   readonly stores: readonly string[];
 }
 
-export interface KorviOfflineStore {
+export interface KorviOfflineStore extends TransactionQueuePort {
   upsertCatalogue(
     tenantId: string,
     products: readonly ProductSummary[],
@@ -76,6 +112,7 @@ export interface KorviOfflineStore {
   saveSaleDraft(scope: OfflineSaleScope, draft: OfflineSaleDraft): Promise<void>;
   loadSaleDraft(scope: OfflineSaleScope): Promise<OfflineSaleDraft | null>;
   deleteSaleDraft(scope: OfflineSaleScope): Promise<void>;
+  queueCount(partition: QueuePartition): Promise<number>;
   describe(): OfflineStoreDescription;
   close(): void;
 }
@@ -155,6 +192,124 @@ export function offlineSaleScopeKey(scope: OfflineSaleScope): string {
   ]);
 }
 
+function assertQueuePartition(partition: QueuePartition): void {
+  if (
+    !isUuidV7(partition.tenantId) ||
+    !isUuidV7(partition.branchId) ||
+    !isUuidV7(partition.terminalId)
+  ) {
+    throw new OfflineStoreError(
+      'corrupt',
+      'Queue partition identities must be canonical UUIDv7 values.',
+    );
+  }
+}
+
+export function queuePartitionKey(partition: QueuePartition): string {
+  assertQueuePartition(partition);
+  return JSON.stringify([partition.tenantId, partition.branchId, partition.terminalId]);
+}
+
+function queueRecordKey(partition: QueuePartition, id: string): string {
+  if (!isUuidV7(id)) {
+    throw new OfflineStoreError('corrupt', 'Queue operation id must be a canonical UUIDv7.');
+  }
+  return JSON.stringify([partition.tenantId, partition.branchId, partition.terminalId, id]);
+}
+
+function canonicalJson(value: unknown, seen: Set<object>): string {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new OfflineStoreError('corrupt', 'Queue payload cannot contain non-finite numbers.');
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value !== 'object') {
+    throw new OfflineStoreError(
+      'corrupt',
+      'Queue payload must contain JSON values only.',
+    );
+  }
+
+  if (seen.has(value)) {
+    throw new OfflineStoreError('corrupt', 'Queue payload cannot contain cycles.');
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${value.map((entry) => canonicalJson(entry, seen)).join(',')}]`;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new OfflineStoreError(
+        'corrupt',
+        'Queue payload objects must have a plain JSON prototype.',
+      );
+    }
+
+    const record = value as Readonly<Record<string, unknown>>;
+    const entries = Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key], seen)}`);
+    return `{${entries.join(',')}}`;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+export function serializeQueuePayload(value: unknown): string {
+  const serialized = canonicalJson(value, new Set<object>());
+  if (new TextEncoder().encode(serialized).byteLength > MAX_QUEUE_PAYLOAD_BYTES) {
+    throw new OfflineStoreError(
+      'quota',
+      `Queue payload exceeds the ${String(MAX_QUEUE_PAYLOAD_BYTES)} byte safety limit.`,
+    );
+  }
+  return serialized;
+}
+
+function parseQueuePayload(payloadJson: string): unknown {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson) as unknown;
+  } catch {
+    throw new OfflineStoreError('corrupt', 'Queued payload is not valid JSON.');
+  }
+  if (serializeQueuePayload(parsed) !== payloadJson) {
+    throw new OfflineStoreError('corrupt', 'Queued payload is not in canonical JSON form.');
+  }
+  return parsed;
+}
+
+export function isQueueOperationInput(value: unknown): value is QueueOperationInput {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    !isUuidV7(value.id) ||
+    typeof value.kind !== 'string' ||
+    !QUEUE_KIND_PATTERN.test(value.kind) ||
+    typeof value.enqueuedAt !== 'string' ||
+    !Number.isFinite(Date.parse(value.enqueuedAt)) ||
+    !Object.prototype.hasOwnProperty.call(value, 'payload')
+  ) {
+    return false;
+  }
+  try {
+    serializeQueuePayload(value.payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isQueueState(value: unknown): value is QueuedOperation['state'] {
+  return value === 'pending' || value === 'in-flight' || value === 'settled' || value === 'rejected';
+}
+
 export function classifyIndexedDbError(error: unknown): OfflineStoreError {
   if (error instanceof OfflineStoreError) return error;
   if (error instanceof DOMException) {
@@ -169,6 +324,9 @@ export function classifyIndexedDbError(error: unknown): OfflineStoreError {
         'unavailable',
         'IndexedDB is unavailable in this browser context.',
       );
+    }
+    if (error.name === 'ConstraintError') {
+      return new OfflineStoreError('conflict', 'IndexedDB uniqueness constraint was violated.');
     }
     return new OfflineStoreError('transaction', `IndexedDB ${error.name} failure.`);
   }
@@ -267,11 +425,102 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
   };
 }
 
-function createSchema(database: IDBDatabase): void {
+function toStoredQueueRow(
+  partition: QueuePartition,
+  operation: QueueOperationInput,
+): StoredQueuedOperation {
+  assertQueuePartition(partition);
+  if (!isQueueOperationInput(operation)) {
+    throw new OfflineStoreError('corrupt', 'Refusing to persist an invalid queue operation.');
+  }
+  return {
+    queueKey: queueRecordKey(partition, operation.id),
+    partitionKey: queuePartitionKey(partition),
+    tenantId: partition.tenantId,
+    branchId: partition.branchId,
+    terminalId: partition.terminalId,
+    id: operation.id,
+    kind: operation.kind,
+    payloadJson: serializeQueuePayload(operation.payload),
+    state: 'pending',
+    attempts: 0,
+    enqueuedAt: operation.enqueuedAt,
+    rejectionReason: null,
+  };
+}
+
+function decodeStoredQueueRow(
+  value: unknown,
+  partition: QueuePartition,
+): { readonly stored: StoredQueuedOperation; readonly operation: QueuedOperation } {
+  assertQueuePartition(partition);
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    !isUuidV7(value.id) ||
+    value.queueKey !== queueRecordKey(partition, value.id) ||
+    value.partitionKey !== queuePartitionKey(partition) ||
+    value.tenantId !== partition.tenantId ||
+    value.branchId !== partition.branchId ||
+    value.terminalId !== partition.terminalId ||
+    typeof value.kind !== 'string' ||
+    !QUEUE_KIND_PATTERN.test(value.kind) ||
+    typeof value.payloadJson !== 'string' ||
+    !isQueueState(value.state) ||
+    typeof value.attempts !== 'number' ||
+    !Number.isInteger(value.attempts) ||
+    value.attempts < 0 ||
+    typeof value.enqueuedAt !== 'string' ||
+    !Number.isFinite(Date.parse(value.enqueuedAt)) ||
+    !(value.rejectionReason === null || typeof value.rejectionReason === 'string')
+  ) {
+    throw new OfflineStoreError('corrupt', 'Queued operation failed structural validation.');
+  }
+
+  if (
+    (value.state === 'rejected' &&
+      (value.rejectionReason === null ||
+        value.rejectionReason.trim() === '' ||
+        value.rejectionReason.length > MAX_REJECTION_REASON_LENGTH)) ||
+    (value.state !== 'rejected' && value.rejectionReason !== null)
+  ) {
+    throw new OfflineStoreError('corrupt', 'Queued operation terminal metadata is inconsistent.');
+  }
+
+  const payload = parseQueuePayload(value.payloadJson);
+  const input: QueueOperationInput = {
+    id: value.id,
+    kind: value.kind,
+    payload,
+    enqueuedAt: value.enqueuedAt,
+  };
+  if (!isQueueOperationInput(input)) {
+    throw new OfflineStoreError('corrupt', 'Queued operation envelope failed validation.');
+  }
+
+  return {
+    stored: value as unknown as StoredQueuedOperation,
+    operation: {
+      ...input,
+      state: value.state,
+      attempts: value.attempts,
+      rejectionReason: value.rejectionReason,
+    },
+  };
+}
+
+function createBaseSchema(database: IDBDatabase): void {
   const catalogue = database.createObjectStore(OFFLINE_CATALOGUE_STORE, { keyPath: 'cacheKey' });
   catalogue.createIndex(TENANT_INDEX, TENANT_INDEX, { unique: false });
   const drafts = database.createObjectStore(OFFLINE_SALE_DRAFT_STORE, { keyPath: 'scopeKey' });
   drafts.createIndex(TENANT_INDEX, TENANT_INDEX, { unique: false });
+}
+
+function createQueueSchema(database: IDBDatabase): void {
+  const queue = database.createObjectStore(OFFLINE_TRANSACTION_QUEUE_STORE, { keyPath: 'queueKey' });
+  queue.createIndex(QUEUE_PARTITION_INDEX, 'partitionKey', { unique: false });
+  queue.createIndex(QUEUE_ORDER_INDEX, ['partitionKey', 'id'], { unique: true });
+  queue.createIndex(QUEUE_ID_INDEX, 'id', { unique: true });
 }
 
 function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
@@ -280,7 +529,8 @@ function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
     let settled = false;
 
     request.onupgradeneeded = (event) => {
-      if (event.oldVersion === 0) createSchema(request.result);
+      if (event.oldVersion < 1) createBaseSchema(request.result);
+      if (event.oldVersion < 2) createQueueSchema(request.result);
     };
     request.onblocked = () => {
       if (settled) return;
@@ -331,6 +581,199 @@ function replaceTenantCatalogue(
   };
 
   return transactionDone(transaction);
+}
+
+async function enqueueQueuedOperation(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  operation: QueueOperationInput,
+): Promise<void> {
+  const row = toStoredQueueRow(partition, operation);
+  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+  const done = transactionDone(transaction);
+  const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+  const lookup = store.index(QUEUE_ID_INDEX).get(operation.id);
+  let failure: OfflineStoreError | null = null;
+
+  lookup.onerror = () => {
+    failure = classifyIndexedDbError(lookup.error);
+    transaction.abort();
+  };
+  lookup.onsuccess = () => {
+    try {
+      if (lookup.result === undefined) {
+        store.add(row);
+        return;
+      }
+      if (!isRecord(lookup.result) || lookup.result.partitionKey !== row.partitionKey) {
+        failure = new OfflineStoreError(
+          'conflict',
+          'Queue operation id is already owned by another partition.',
+        );
+        transaction.abort();
+        return;
+      }
+      const existing = decodeStoredQueueRow(lookup.result, partition).stored;
+      if (
+        existing.kind !== row.kind ||
+        existing.payloadJson !== row.payloadJson ||
+        existing.enqueuedAt !== row.enqueuedAt
+      ) {
+        failure = new OfflineStoreError(
+          'conflict',
+          'Queue operation id cannot be reused for a different immutable command.',
+        );
+        transaction.abort();
+      }
+    } catch (error) {
+      failure = classifyIndexedDbError(error);
+      transaction.abort();
+    }
+  };
+
+  try {
+    await done;
+  } catch (error) {
+    if (failure !== null) throw failure;
+    throw classifyIndexedDbError(error);
+  }
+}
+
+async function listPendingQueuedOperations(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  limit: number,
+): Promise<readonly QueuedOperation[]> {
+  const partitionKey = queuePartitionKey(partition);
+  const bounded = Math.min(Math.max(Math.trunc(limit), 1), MAX_QUEUE_READ);
+  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readonly');
+  const done = transactionDone(transaction);
+  const index = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE).index(QUEUE_ORDER_INDEX);
+  const range = IDBKeyRange.bound([partitionKey, ''], [partitionKey, '\uffff']);
+  const request = index.openCursor(range, 'next');
+  const operations: QueuedOperation[] = [];
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      request.onerror = () => reject(classifyIndexedDbError(request.error));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor === null || operations.length >= bounded) {
+          resolve();
+          return;
+        }
+        try {
+          const operation = decodeStoredQueueRow(cursor.value, partition).operation;
+          if (operation.state === 'pending') operations.push(operation);
+          if (operations.length >= bounded) {
+            resolve();
+            return;
+          }
+          cursor.continue();
+        } catch (error) {
+          transaction.abort();
+          reject(classifyIndexedDbError(error));
+        }
+      };
+    });
+    await done;
+    return operations;
+  } catch (error) {
+    await done.catch(() => undefined);
+    throw classifyIndexedDbError(error);
+  }
+}
+
+async function loadQueuedOperation<TPayload>(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  id: string,
+): Promise<QueuedOperation<TPayload> | null> {
+  const key = queueRecordKey(partition, id);
+  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readonly');
+  const done = transactionDone(transaction);
+  const value = await requestValue(
+    transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE).get(key),
+  );
+  await done;
+  if (value === undefined) return null;
+  return decodeStoredQueueRow(value, partition).operation as QueuedOperation<TPayload>;
+}
+
+async function transitionQueuedOperation(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  id: string,
+  target: 'settled' | 'rejected',
+  rejectionReason: string | null,
+): Promise<void> {
+  const key = queueRecordKey(partition, id);
+  const normalizedReason = rejectionReason?.trim() ?? null;
+  if (
+    target === 'rejected' &&
+    (normalizedReason === null ||
+      normalizedReason === '' ||
+      normalizedReason.length > MAX_REJECTION_REASON_LENGTH)
+  ) {
+    throw new OfflineStoreError(
+      'corrupt',
+      `Queue rejection reason must be 1-${String(MAX_REJECTION_REASON_LENGTH)} characters.`,
+    );
+  }
+
+  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+  const done = transactionDone(transaction);
+  const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+  const request = store.get(key);
+  let failure: OfflineStoreError | null = null;
+
+  request.onerror = () => {
+    failure = classifyIndexedDbError(request.error);
+    transaction.abort();
+  };
+  request.onsuccess = () => {
+    try {
+      if (request.result === undefined) {
+        failure = new OfflineStoreError('conflict', 'Queue operation does not exist in this partition.');
+        transaction.abort();
+        return;
+      }
+      const decoded = decodeStoredQueueRow(request.result, partition);
+      if (decoded.operation.state === target) {
+        if (target === 'rejected' && decoded.operation.rejectionReason !== normalizedReason) {
+          failure = new OfflineStoreError(
+            'conflict',
+            'Rejected queue operation cannot be rewritten with a different reason.',
+          );
+          transaction.abort();
+        }
+        return;
+      }
+      if (decoded.operation.state === 'settled' || decoded.operation.state === 'rejected') {
+        failure = new OfflineStoreError(
+          'conflict',
+          'A terminal queue operation cannot transition to a different terminal outcome.',
+        );
+        transaction.abort();
+        return;
+      }
+      store.put({
+        ...decoded.stored,
+        state: target,
+        rejectionReason: target === 'rejected' ? normalizedReason : null,
+      } satisfies StoredQueuedOperation);
+    } catch (error) {
+      failure = classifyIndexedDbError(error);
+      transaction.abort();
+    }
+  };
+
+  try {
+    await done;
+  } catch (error) {
+    if (failure !== null) throw failure;
+    throw classifyIndexedDbError(error);
+  }
 }
 
 export async function openKorviOfflineStore(factory?: IDBFactory): Promise<KorviOfflineStore> {
@@ -417,6 +860,38 @@ export async function openKorviOfflineStore(factory?: IDBFactory): Promise<Korvi
       const transaction = database.transaction(OFFLINE_SALE_DRAFT_STORE, 'readwrite');
       transaction.objectStore(OFFLINE_SALE_DRAFT_STORE).delete(offlineSaleScopeKey(scope));
       await transactionDone(transaction);
+    },
+
+    async enqueue(partition, operation) {
+      await enqueueQueuedOperation(database, partition, operation);
+    },
+
+    async pending(partition, limit) {
+      return listPendingQueuedOperations(database, partition, limit);
+    },
+
+    async get<TPayload = unknown>(partition: QueuePartition, id: string) {
+      return loadQueuedOperation<TPayload>(database, partition, id);
+    },
+
+    async markSettled(partition, id) {
+      await transitionQueuedOperation(database, partition, id, 'settled', null);
+    },
+
+    async markRejected(partition, id, reason) {
+      await transitionQueuedOperation(database, partition, id, 'rejected', reason);
+    },
+
+    async queueCount(partition) {
+      const key = queuePartitionKey(partition);
+      const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readonly');
+      const request = transaction
+        .objectStore(OFFLINE_TRANSACTION_QUEUE_STORE)
+        .index(QUEUE_PARTITION_INDEX)
+        .count(IDBKeyRange.only(key));
+      const count = await requestValue(request);
+      await transactionDone(transaction);
+      return count;
     },
 
     describe() {

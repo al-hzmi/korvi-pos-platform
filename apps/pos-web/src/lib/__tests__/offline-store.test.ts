@@ -1,10 +1,14 @@
+import type { QueueOperationInput, QueuePartition } from '@korvi/domain';
 import { describe, expect, it } from 'vitest';
 import {
   OfflineStoreError,
   classifyIndexedDbError,
   isOfflineSaleDraft,
   isProductSummary,
+  isQueueOperationInput,
   offlineSaleScopeKey,
+  queuePartitionKey,
+  serializeQueuePayload,
 } from '../offline-store';
 
 const PRODUCT = {
@@ -27,6 +31,23 @@ const SCOPE = {
   userId: '018f2000-0000-7000-8000-000000000004',
   shiftId: '018f2000-0000-7000-8000-000000000005',
 } as const;
+
+const QUEUE_PARTITION: QueuePartition = {
+  tenantId: SCOPE.tenantId,
+  branchId: SCOPE.branchId,
+  terminalId: SCOPE.terminalId,
+};
+
+const QUEUE_OPERATION: QueueOperationInput = {
+  id: '018f2000-0001-7000-8000-000000000101',
+  kind: 'sale.checkout',
+  payload: {
+    saleId: '018f2000-0001-7000-8000-000000000101',
+    totalMinor: '1150',
+    lines: [{ productId: PRODUCT.id, quantityScaled: '1000' }],
+  },
+  enqueuedAt: '2026-09-12T00:00:00.000Z',
+};
 
 describe('offline store validation', () => {
   it('accepts exact string financial fields and refuses floating or corrupt catalogue values', () => {
@@ -76,11 +97,53 @@ describe('offline store validation', () => {
     expect(key).not.toBe(offlineSaleScopeKey({ ...SCOPE, shiftId: `${SCOPE.shiftId}-other` }));
   });
 
-  it('classifies quota and version failures without hiding unknown transaction failures', () => {
+  it('requires canonical UUIDv7 tenant branch and terminal identities for queue partitions', () => {
+    const key = queuePartitionKey(QUEUE_PARTITION);
+    expect(key).not.toBe(
+      queuePartitionKey({
+        ...QUEUE_PARTITION,
+        terminalId: '018f2000-0000-7000-8000-000000000099',
+      }),
+    );
+    expect(() => queuePartitionKey({ ...QUEUE_PARTITION, tenantId: 'not-a-uuid' })).toThrow(
+      OfflineStoreError,
+    );
+  });
+
+  it('canonicalizes queue payload identity independent of object key insertion order', () => {
+    expect(serializeQueuePayload({ totalMinor: '1150', quantityScaled: '1000' })).toBe(
+      serializeQueuePayload({ quantityScaled: '1000', totalMinor: '1150' }),
+    );
+    expect(serializeQueuePayload(QUEUE_OPERATION.payload)).toContain('"totalMinor":"1150"');
+  });
+
+  it('refuses queue payload values that cannot be replayed as exact JSON', () => {
+    expect(() => serializeQueuePayload({ totalMinor: Number.NaN })).toThrow(OfflineStoreError);
+    expect(() => serializeQueuePayload({ value: BigInt(1) })).toThrow(OfflineStoreError);
+    expect(() => serializeQueuePayload({ value: undefined })).toThrow(OfflineStoreError);
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    expect(() => serializeQueuePayload(cyclic)).toThrow(OfflineStoreError);
+  });
+
+  it('accepts only immutable queue envelopes with canonical UUIDv7 operation identity', () => {
+    expect(isQueueOperationInput(QUEUE_OPERATION)).toBe(true);
+    expect(isQueueOperationInput({ ...QUEUE_OPERATION, id: crypto.randomUUID() })).toBe(false);
+    expect(isQueueOperationInput({ ...QUEUE_OPERATION, kind: 'Sale Checkout' })).toBe(false);
+    expect(isQueueOperationInput({ ...QUEUE_OPERATION, enqueuedAt: 'not-a-date' })).toBe(false);
+    expect(isQueueOperationInput({ ...QUEUE_OPERATION, payload: { totalMinor: Infinity } })).toBe(
+      false,
+    );
+  });
+
+  it('classifies quota version and uniqueness failures without hiding unknown transaction failures', () => {
     expect(classifyIndexedDbError(new DOMException('full', 'QuotaExceededError')).code).toBe(
       'quota',
     );
     expect(classifyIndexedDbError(new DOMException('old', 'VersionError')).code).toBe('version');
+    expect(classifyIndexedDbError(new DOMException('duplicate', 'ConstraintError')).code).toBe(
+      'conflict',
+    );
     expect(classifyIndexedDbError(new Error('boom')).code).toBe('transaction');
     expect(classifyIndexedDbError(new OfflineStoreError('corrupt', 'bad')).code).toBe('corrupt');
   });
