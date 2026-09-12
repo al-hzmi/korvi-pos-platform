@@ -3,7 +3,7 @@ name: Gate 43 Ordered Queue Durability Proof
 on:
   push:
     branches:
-      - review/offline-43-ordered-queue
+      - review/offline-43-ordered-queue-run
   workflow_dispatch:
 
 concurrency:
