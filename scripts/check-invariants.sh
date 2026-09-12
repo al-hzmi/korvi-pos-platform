@@ -40,6 +40,38 @@ scan() {
 
 echo "Scanning invariants..."
 
+# Deployment config is part of the release safety boundary: runtime-required
+# secrets and the controlled staging branch may not drift from render.yaml.
+if ! node scripts/check-deployment-contract.mjs; then
+  report "deployment/runtime contract drift"
+fi
+
+# The provider's own health check is not sufficient release evidence. Keep an
+# independent, secret-free HTTPS probe for liveness, DB readiness, protected
+# metrics refusal and the public web origin mechanically bound to its contract.
+if ! node scripts/check-external-staging-probe-contract.mjs; then
+  report "external staging probe contract drift"
+fi
+
+# Free staging has no one-off/pre-deploy execution surface. Its controlled API
+# build must therefore apply migrations through the guarded staging-only path.
+if ! bash scripts/check-staging-migration-contract.sh; then
+  report "staging migration contract drift"
+fi
+
+# Gate 39 is a hard release blocker. Keep the external proof harness mechanically
+# bound to Premium Key Vault, EC-HSM/P-256K, non-exportability and remote ES256K.
+if ! node scripts/check-zatca-39-hsm-proof-contract.mjs; then
+  report "Gate 39 Azure HSM proof contract drift"
+fi
+
+# One-shot dependency refresh workflows are privileged, write-enabled release
+# tools. They must never survive the exact refresh they were created for.
+if compgen -G '.github/workflows/refresh-*-lock.yml' >/dev/null; then
+  report "temporary dependency-refresh workflow retained in release tree"
+  compgen -G '.github/workflows/refresh-*-lock.yml' | sort | sed 's/^/      /' >&2
+fi
+
 # --- TypeScript escape hatches -------------------------------------------
 scan "'any' type used (CLAUDE.md: TypeScript)" \
      '(: *any\b|<any>|as +any\b|Array<any>)' '*.ts'
@@ -56,7 +88,7 @@ scan "Math rounding on an amount — use mulDivRound (ADR-0002)" \
 scan "float literal in the financial core (ADR-0002)" \
      '=\s*[0-9]+\.[0-9]+\s*;' '*.ts' '^packages/domain/src/(money|tax|tender)/'
 
-# --- Domain purity (ADR-0001) --------------------------------------------
+# --- Domain purity (ADR-0001) ---------------------------------------------
 scan "React imported into the domain (ADR-0001)" \
      "from +'react" '*.ts' '^packages/domain/'
 scan "Prisma imported into the domain (ADR-0001)" \
@@ -66,7 +98,7 @@ scan "Fastify imported into the domain (ADR-0001)" \
 scan "Node filesystem imported into the domain (ADR-0001)" \
      "from +'node:(fs|path)" '*.ts' '^packages/domain/'
 
-# --- Design system (ADR-0006) --------------------------------------------
+# --- Design system (ADR-0006) ---------------------------------------------
 # theme-color.ts is the single sanctioned exception: <meta name="theme-color">
 # is read by the browser chrome, which cannot resolve a CSS variable. Keeping
 # the exception to one named file is what stops it spreading.

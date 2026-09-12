@@ -1,0 +1,289 @@
+name: ZATCA 39 Azure HSM Custody Proof
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  azure-hsm-custody-proof:
+    name: Azure Key Vault Premium EC-HSM P-256K custody / remote-sign proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PROOF_DIR: artifacts/zatca-39-azure-hsm
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+      AZURE_ZATCA_KEY_NAME: ${{ secrets.AZURE_ZATCA_KEY_NAME }}
+
+    steps:
+      - name: Check out exact proof commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Assert live-proof configuration is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            AZURE_CLIENT_ID \
+            AZURE_TENANT_ID \
+            AZURE_SUBSCRIPTION_ID \
+            AZURE_KEY_VAULT_NAME \
+            AZURE_ZATCA_KEY_NAME; do
+            if [ -z "${!name:-}" ]; then
+              echo "Required GitHub secret $name is not configured." >&2
+              exit 1
+            fi
+          done
+
+      - name: Authenticate to Azure with GitHub OIDC
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Prove Azure Key Vault Premium resource class
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROOF_DIR"
+          az keyvault show \
+            --name "$AZURE_KEY_VAULT_NAME" \
+            --only-show-errors \
+            --output json > "$RUNNER_TEMP/zatca-vault.json"
+
+          python3 - "$RUNNER_TEMP/zatca-vault.json" "$PROOF_DIR/vault-metadata.json" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          from urllib.parse import urlparse
+
+          source = pathlib.Path(sys.argv[1])
+          target = pathlib.Path(sys.argv[2])
+          payload = json.loads(source.read_text(encoding='utf-8'))
+          configured_name = os.environ['AZURE_KEY_VAULT_NAME']
+
+          resource_id = payload.get('id')
+          vault_name = payload.get('name')
+          sku_name = str((payload.get('sku') or {}).get('name') or '').lower()
+          vault_uri = payload.get('vaultUri') or (payload.get('properties') or {}).get('vaultUri')
+
+          if not isinstance(resource_id, str) or '/providers/microsoft.keyvault/vaults/' not in resource_id.lower():
+              raise SystemExit('configured resource is not an Azure Key Vault vault')
+          if not isinstance(vault_name, str) or vault_name.lower() != configured_name.lower():
+              raise SystemExit('Azure management-plane vault does not match configured vault')
+          if sku_name != 'premium':
+              raise SystemExit(f'Gate 39 requires Azure Key Vault Premium; got SKU {sku_name!r}')
+          if not isinstance(vault_uri, str):
+              raise SystemExit('Azure Key Vault vaultUri is missing')
+
+          expected_host = f'{configured_name}.vault.azure.net'.lower()
+          actual_host = (urlparse(vault_uri).hostname or '').lower()
+          if actual_host != expected_host:
+              raise SystemExit('Azure Key Vault vaultUri does not bind to configured vault')
+
+          sanitized = {
+              'resourceType': 'Microsoft.KeyVault/vaults',
+              'skuName': 'premium',
+              'configuredVaultBinding': True,
+              'vaultUriBinding': True,
+          }
+          target.write_text(json.dumps(sanitized, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Prove versioned non-exportable P-256K HSM key metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROOF_DIR"
+          az keyvault key show \
+            --vault-name "$AZURE_KEY_VAULT_NAME" \
+            --name "$AZURE_ZATCA_KEY_NAME" \
+            --only-show-errors \
+            --output json > "$RUNNER_TEMP/zatca-key.json"
+
+          python3 - "$RUNNER_TEMP/zatca-key.json" "$PROOF_DIR/key-metadata.json" <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+          from urllib.parse import urlparse
+
+          source = pathlib.Path(sys.argv[1])
+          target = pathlib.Path(sys.argv[2])
+          payload = json.loads(source.read_text(encoding='utf-8'))
+          jwk = payload.get('key') or {}
+          attributes = payload.get('attributes') or {}
+
+          kid = jwk.get('kid')
+          kty = jwk.get('kty')
+          curve = jwk.get('crv')
+          operations = jwk.get('keyOps') or []
+          exportable = attributes.get('exportable')
+          enabled = attributes.get('enabled')
+          private_d_present = bool(jwk.get('d'))
+
+          if kty != 'EC-HSM':
+              raise SystemExit(f'expected EC-HSM key, got {kty!r}')
+          if curve != 'P-256K':
+              raise SystemExit(f'expected P-256K/secp256k1 curve, got {curve!r}')
+          if exportable is not False:
+              raise SystemExit(f'key must explicitly report exportable=false, got {exportable!r}')
+          if enabled is not True:
+              raise SystemExit('key is not enabled')
+          if private_d_present:
+              raise SystemExit('private EC component d was exposed by Key Vault')
+          if not {'sign', 'verify'}.issubset(set(operations)):
+              raise SystemExit(f'key operations must include sign and verify, got {operations!r}')
+          if not isinstance(kid, str) or not re.search(r'/keys/[^/]+/[^/]+$', kid):
+              raise SystemExit(f'key id is not version-pinned: {kid!r}')
+          if not jwk.get('x') or not jwk.get('y'):
+              raise SystemExit('public EC coordinates are missing')
+
+          parsed = urlparse(kid)
+          expected_host = f"{os.environ['AZURE_KEY_VAULT_NAME']}.vault.azure.net".lower()
+          if (parsed.hostname or '').lower() != expected_host:
+              raise SystemExit('versioned key id is not bound to configured Premium vault')
+          parts = [part for part in parsed.path.split('/') if part]
+          if len(parts) != 3 or parts[0] != 'keys' or parts[1].lower() != os.environ['AZURE_ZATCA_KEY_NAME'].lower() or not parts[2]:
+              raise SystemExit('versioned key id is not bound to configured ZATCA key name')
+
+          sanitized = {
+              'kty': kty,
+              'crv': curve,
+              'keyOps': operations,
+              'enabled': enabled,
+              'exportable': exportable,
+              'hsmPlatform': attributes.get('hsmPlatform'),
+              'configuredVaultBinding': True,
+              'configuredKeyBinding': True,
+              'versionPinned': True,
+              'public_x_present': True,
+              'public_y_present': True,
+              'private_d_present': False,
+          }
+          target.write_text(json.dumps(sanitized, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          pathlib.Path('/tmp/korvi-zatca-versioned-kid').write_text(kid, encoding='utf-8')
+          PY
+
+      - name: Remote-sign commit-bound SHA-256 digest with ES256K
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY_ID="$(cat /tmp/korvi-zatca-versioned-kid)"
+          MESSAGE="korvi-zatca-gate-39:${GITHUB_SHA}"
+          DIGEST="$(printf '%s' "$MESSAGE" | openssl dgst -sha256 -binary | base64 -w0)"
+
+          SIGNATURE="$(az keyvault key sign \
+            --id "$KEY_ID" \
+            --algorithm ES256K \
+            --digest "$DIGEST" \
+            --only-show-errors \
+            --query value \
+            --output tsv)"
+          test -n "$SIGNATURE"
+
+          VERIFY_JSON="$(az keyvault key verify \
+            --id "$KEY_ID" \
+            --algorithm ES256K \
+            --digest "$DIGEST" \
+            --signature "$SIGNATURE" \
+            --only-show-errors \
+            --output json)"
+          python3 - "$VERIFY_JSON" <<'PY'
+          import json
+          import sys
+
+          payload = json.loads(sys.argv[1])
+          if payload.get('value') is not True:
+              raise SystemExit(f'Azure remote verification failed: {payload!r}')
+          PY
+
+          az keyvault key download \
+            --id "$KEY_ID" \
+            --encoding PEM \
+            --file "$RUNNER_TEMP/zatca-public-key.pem" \
+            --only-show-errors
+
+          node - "$MESSAGE" "$SIGNATURE" "$RUNNER_TEMP/zatca-public-key.pem" <<'NODE'
+          const crypto = require('node:crypto');
+          const fs = require('node:fs');
+
+          const [message, encodedSignature, publicKeyPath] = process.argv.slice(2);
+          const normalized = encodedSignature.replace(/-/g, '+').replace(/_/g, '/');
+          const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+          const signature = Buffer.from(normalized + padding, 'base64');
+
+          if (signature.length !== 64) {
+            throw new Error(`Expected 64-byte ES256K IEEE-P1363 signature, got ${signature.length}`);
+          }
+
+          const publicKey = fs.readFileSync(publicKeyPath, 'utf8');
+          const verified = crypto.verify(
+            'sha256',
+            Buffer.from(message, 'utf8'),
+            { key: publicKey, dsaEncoding: 'ieee-p1363' },
+            signature,
+          );
+          if (!verified) {
+            throw new Error('Independent public-key verification of Azure HSM signature failed');
+          }
+          NODE
+
+          KEY_ID_SHA256="$(printf '%s' "$KEY_ID" | sha256sum | awk '{print $1}')"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo 'azure_key_vault_resource=PASS'
+            echo 'vault_sku=premium'
+            echo 'configured_vault_binding=PASS'
+            echo 'configured_key_binding=PASS'
+            echo "key_id_sha256=$KEY_ID_SHA256"
+            echo 'key_type=EC-HSM'
+            echo 'curve=P-256K'
+            echo 'algorithm=ES256K'
+            echo 'digest=SHA-256'
+            echo 'azure_remote_sign=PASS'
+            echo 'azure_remote_verify=PASS'
+            echo 'independent_public_key_verify=PASS'
+            echo 'private_key_exportable=false'
+            echo 'private_d_exposed=false'
+          } > "$PROOF_DIR/proof.txt"
+
+          printf '%s' "$MESSAGE" | sha256sum | awk '{print $1}' > "$PROOF_DIR/message.sha256"
+          printf '%s' "$SIGNATURE" | sha256sum | awk '{print $1}' > "$PROOF_DIR/signature-value.sha256"
+          cat "$PROOF_DIR/proof.txt"
+
+      - name: Reject accidental private-key material in proof artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --binary-files=without-match -E -- \
+            'BEGIN (EC |RSA |)PRIVATE KEY|"d"[[:space:]]*:' "$PROOF_DIR"; then
+            echo 'Private-key material or a private EC component leaked into proof output.' >&2
+            exit 1
+          fi
+
+      - name: Upload sanitized Azure HSM proof
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zatca-39-azure-hsm-proof-${{ github.sha }}
+          path: |
+            artifacts/zatca-39-azure-hsm/proof.txt
+            artifacts/zatca-39-azure-hsm/vault-metadata.json
+            artifacts/zatca-39-azure-hsm/key-metadata.json
+            artifacts/zatca-39-azure-hsm/message.sha256
+            artifacts/zatca-39-azure-hsm/signature-value.sha256
+          if-no-files-found: error
+          retention-days: 30

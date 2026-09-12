@@ -194,6 +194,15 @@ export interface InventoryBalance {
   readonly productId: string;
   /** Scaled by 1000, signed. A negative balance is an oversell. */
   readonly quantityScaled: string;
+  /**
+   * Monotonic counter, one step per committed quantity-changing movement.
+   *
+   * A decimal integer string like every other quantity here. A stock count
+   * submits the revision it observed and the server compares it under the row
+   * lock, which is what stops an absolute observation from erasing a sale that
+   * happened mid-count (ADR-0024 §5).
+   */
+  readonly revision: string;
 }
 
 export interface InventoryMovementInput {

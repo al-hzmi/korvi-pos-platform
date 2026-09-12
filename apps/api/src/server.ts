@@ -22,19 +22,26 @@ import { createDrawerService } from './shifts/service.js';
 import { registerBusinessRoutes } from './routes/business.js';
 import { createMerchantAdminService } from './admin/service.js';
 import { createMerchantProductService } from './catalog/service.js';
+import { createMerchantInventoryService } from './inventory/service.js';
+import { createMerchantPurchasingService } from './purchasing/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
+import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
+import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { createOwnerBootstrapService } from './bootstrap/service.js';
 import { registerBootstrapRoutes } from './routes/bootstrap.js';
+import { registerOperationalObservability } from './runtime/observability.js';
 import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
 import type { MerchantAdminService } from './admin/service.js';
 import type { MerchantProductService } from './catalog/service.js';
+import type { MerchantInventoryService } from './inventory/service.js';
+import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
@@ -79,6 +86,26 @@ export interface ServerDeps {
    * creation. It is separate from cashier reads and requires product.write.
    */
   readonly catalog?: MerchantProductService;
+
+  /**
+   * Merchant stock authority: adjustments, counts and branch transfers.
+   *
+   * Separate from `catalog` because they are different permissions over
+   * different truths — one edits what a product *is*, the other moves how much
+   * of it exists — and sharing an object would make it easy to hand a
+   * catalogue route the stock ledger.
+   */
+  readonly inventory?: MerchantInventoryService;
+
+  /**
+   * Purchasing and receiving authority: suppliers, purchase orders, receipts.
+   *
+   * Separate from `inventory` because only one of its operations touches
+   * stock. Ordering goods and counting them are different authorities with
+   * different permissions, and sharing an object would blur the boundary this
+   * strike exists to draw (ADR-0024 §7).
+   */
+  readonly purchasing?: MerchantPurchasingService;
 
   /**
    * Read-only onboarding readiness authority.
@@ -306,6 +333,62 @@ function lazyCatalogService(config: ApiConfig): MerchantProductService {
 }
 
 /**
+ * Merchant stock authority, built once on first use like the others so /health
+ * never needs a database connection.
+ */
+function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
+  let built: MerchantInventoryService | null = null;
+
+  const resolve = (): MerchantInventoryService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantInventoryService({ prisma: createPrismaClient(url) });
+    return built;
+  };
+
+  return {
+    branches: (principal, query) => resolve().branches(principal, query),
+    balances: (principal, query) => resolve().balances(principal, query),
+    costBalances: (principal, query) => resolve().costBalances(principal, query),
+    bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),
+    adjust: (principal, request) => resolve().adjust(principal, request),
+    count: (principal, request) => resolve().count(principal, request),
+    transfer: (principal, request) => resolve().transfer(principal, request),
+  };
+}
+
+/**
+ * Purchasing authority, built once on first use like the others so /health
+ * never needs a database connection.
+ */
+function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
+  let built: MerchantPurchasingService | null = null;
+
+  const resolve = (): MerchantPurchasingService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantPurchasingService({ prisma: createPrismaClient(url) });
+    return built;
+  };
+
+  return {
+    listBranches: (principal, query) => resolve().listBranches(principal, query),
+    listProducts: (principal, query) => resolve().listProducts(principal, query),
+    listSuppliers: (principal, query) => resolve().listSuppliers(principal, query),
+    getSupplier: (principal, supplierId) => resolve().getSupplier(principal, supplierId),
+    createSupplier: (principal, request) => resolve().createSupplier(principal, request),
+    updateSupplier: (principal, request) => resolve().updateSupplier(principal, request),
+    listPurchaseOrders: (principal, query) => resolve().listPurchaseOrders(principal, query),
+    getPurchaseOrder: (principal, id) => resolve().getPurchaseOrder(principal, id),
+    createPurchaseOrder: (principal, request) => resolve().createPurchaseOrder(principal, request),
+    listReceipts: (principal, id, limit) => resolve().listReceipts(principal, id, limit),
+    receive: (principal, request) => resolve().receive(principal, request),
+  };
+}
+
+/**
  * Read-only onboarding authority, constructed lazily like the other database
  * services so /health never needs a database connection.
  */
@@ -354,13 +437,33 @@ function bootstrapServiceFor(config: ApiConfig): OwnerBootstrapService | null {
 
 export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyInstance {
   const app = Fastify({
-    logger: { level: config.LOG_LEVEL },
+    logger: {
+      level: config.LOG_LEVEL,
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.body.password',
+          'req.body.token',
+          'request.headers.authorization',
+          'request.headers.cookie',
+          'request.body.password',
+          'request.body.token',
+          'res.headers["set-cookie"]',
+        ],
+        censor: '[Redacted]',
+      },
+    },
     // The central Korvi generator, not crypto.randomUUID. A v4 carries no
     // time, so a request log line could not be ordered against a sale that was
     // rung up offline and synced later. Every identifier in the system comes
     // from one place (ADR-0003).
     genReqId: () => newId(),
   });
+
+  // Install correlation and low-cardinality telemetry before any business route
+  // is registered so every request follows one operations contract.
+  registerOperationalObservability(app, config);
 
   const service = deps.auth ?? lazyAuthService(config);
   const guards = createGuards(service, config);
@@ -377,9 +480,13 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
       request.log.error('authentication is not configured; DATABASE_URL is missing');
       return reply.code(503).send({ error: 'unavailable' });
     }
-    // The message stays in the log. A handler that echoes it has told the
-    // caller what the database is called.
-    request.log.error(error);
+    // Adapter/database errors can contain hosts, credentials or query detail.
+    // Correlate by request id and safe error class rather than serializing the
+    // raw exception into production logs.
+    request.log.error(
+      { errorType: error.name, statusCode: error.statusCode ?? 500 },
+      'request failed',
+    );
     return reply.code(error.statusCode ?? 500).send({ error: 'internal_error' });
   });
 
@@ -389,6 +496,14 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
   registerCatalogAdminRoutes(app, {
     service: deps.catalog ?? lazyCatalogService(config),
+    guards,
+  });
+  registerInventoryAdminRoutes(app, {
+    service: deps.inventory ?? lazyInventoryService(config),
+    guards,
+  });
+  registerPurchasingAdminRoutes(app, {
+    service: deps.purchasing ?? lazyPurchasingService(config),
     guards,
   });
   registerBootstrapRoutes(app, {

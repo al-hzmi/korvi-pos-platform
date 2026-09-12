@@ -150,6 +150,7 @@ describe.skipIf(url === '')('onboarding readiness authority, live', () => {
 
     expect(result?.ready).toBe(true);
     expect(result?.checks.every((check) => check.ready)).toBe(true);
+    expect(result?.checks.find((check) => check.key === 'pos-operator')?.ready).toBe(true);
   });
 
   it('does not leave a stale ready flag when an operational fact changes', async () => {
@@ -164,6 +165,9 @@ describe.skipIf(url === '')('onboarding readiness authority, live', () => {
     expect(withoutTill?.ready).toBe(false);
     expect(withoutTill?.checks.find((check) => check.key === 'active-terminal')?.blocker).toBe(
       'no-active-terminal',
+    );
+    expect(withoutTill?.checks.find((check) => check.key === 'pos-operator')?.blocker).toBe(
+      'no-viable-pos-operator',
     );
 
     await withTenant(prisma, tenant, async (tx) => {
@@ -184,6 +188,94 @@ describe.skipIf(url === '')('onboarding readiness authority, live', () => {
     );
   });
 
+  it('fails closed when no active member is assigned to a POS branch', async () => {
+    await withTenant(prisma, tenant, async (tx) => {
+      await tx.tenantMembership.update({
+        where: {
+          tenantId_userId: {
+            tenantId: tenant,
+            userId: administrator,
+          },
+        },
+        data: { defaultBranchId: null },
+      });
+    });
+
+    const result = await readiness();
+
+    expect(result?.ready).toBe(false);
+    expect(result?.checks.find((check) => check.key === 'active-branch')?.ready).toBe(true);
+    expect(result?.checks.find((check) => check.key === 'active-terminal')?.ready).toBe(true);
+    expect(result?.checks.find((check) => check.key === 'viable-administrator')?.ready).toBe(true);
+    expect(result?.checks.find((check) => check.key === 'pos-operator')?.blocker).toBe(
+      'no-viable-pos-operator',
+    );
+  });
+
+  it('requires the active terminal to be on the operator assigned branch', async () => {
+    const otherBranch = newId();
+    const otherTerminal = newId();
+
+    await withTenant(prisma, tenant, async (tx) => {
+      await tx.branch.create({
+        data: {
+          id: otherBranch,
+          tenantId: tenant,
+          code: '02',
+          nameAr: 'فرع ثانوي',
+        },
+      });
+      await tx.terminal.create({
+        data: {
+          id: otherTerminal,
+          tenantId: tenant,
+          branchId: otherBranch,
+          code: 'T2',
+          label: 'صندوق الفرع الثاني',
+        },
+      });
+      await tx.terminal.update({
+        where: { id: terminal },
+        data: { isActive: false },
+      });
+    });
+
+    const result = await readiness();
+
+    expect(result?.ready).toBe(false);
+    expect(result?.checks.find((check) => check.key === 'active-terminal')?.ready).toBe(true);
+    expect(result?.checks.find((check) => check.key === 'pos-operator')?.blocker).toBe(
+      'no-viable-pos-operator',
+    );
+  });
+
+  it('requires one assigned operator to hold the full POS lifecycle authority', async () => {
+    await withTenant(prisma, tenant, async (tx) => {
+      const assignment = await tx.userRole.findFirstOrThrow({
+        where: {
+          tenantId: tenant,
+          userId: administrator,
+        },
+      });
+
+      await tx.rolePermission.deleteMany({
+        where: {
+          tenantId: tenant,
+          roleId: assignment.roleId,
+          permissionKey: 'sale.create',
+        },
+      });
+    });
+
+    const result = await readiness();
+
+    expect(result?.ready).toBe(false);
+    expect(result?.checks.find((check) => check.key === 'viable-administrator')?.ready).toBe(true);
+    expect(result?.checks.find((check) => check.key === 'pos-operator')?.blocker).toBe(
+      'no-viable-pos-operator',
+    );
+  });
+
   it('does not call an uncredentialed account a viable administrator', async () => {
     await withTenant(prisma, tenant, async (tx) => {
       await tx.user.update({
@@ -197,6 +289,9 @@ describe.skipIf(url === '')('onboarding readiness authority, live', () => {
     expect(result?.ready).toBe(false);
     expect(result?.checks.find((check) => check.key === 'viable-administrator')?.blocker).toBe(
       'no-viable-administrator',
+    );
+    expect(result?.checks.find((check) => check.key === 'pos-operator')?.blocker).toBe(
+      'no-viable-pos-operator',
     );
   });
 
@@ -218,6 +313,9 @@ describe.skipIf(url === '')('onboarding readiness authority, live', () => {
     expect(result?.ready).toBe(false);
     expect(result?.checks.find((check) => check.key === 'viable-administrator')?.blocker).toBe(
       'no-viable-administrator',
+    );
+    expect(result?.checks.find((check) => check.key === 'pos-operator')?.blocker).toBe(
+      'no-viable-pos-operator',
     );
   });
 
@@ -263,6 +361,9 @@ describe.skipIf(url === '')('onboarding readiness authority, live', () => {
     );
     expect(result?.checks.find((check) => check.key === 'active-terminal')?.blocker).toBe(
       'no-active-terminal',
+    );
+    expect(result?.checks.find((check) => check.key === 'pos-operator')?.blocker).toBe(
+      'no-viable-pos-operator',
     );
   });
 });

@@ -1,0 +1,73 @@
+name: External Staging Surface Probe
+
+on:
+  push:
+    branches:
+      - review/operations-50-production-readiness
+    paths:
+      - .github/workflows/external-staging-surface-probe.yml
+      - scripts/external-staging-probe.mjs
+      - scripts/check-external-staging-probe-contract.mjs
+      - scripts/check-invariants.sh
+      - apps/api/package.json
+      - package-lock.json
+      - apps/api/src/runtime/**
+      - apps/api/src/routes/health.ts
+      - apps/api/src/server.ts
+      - render.yaml
+  workflow_dispatch:
+  schedule:
+    - cron: '7,37 * * * *'
+
+concurrency:
+  group: external-staging-surface-probe
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  public-surface:
+    name: Public TLS / liveness / readiness / metrics refusal / web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      KORVI_PROBE_API_ORIGIN: https://korvi-staging-api.onrender.com
+      KORVI_PROBE_WEB_ORIGIN: https://korvi-staging-web.onrender.com
+      KORVI_PROBE_EVIDENCE_PATH: artifacts/external-staging-probe.json
+      KORVI_PROBE_TIMEOUT_MS: '12000'
+      KORVI_PROBE_MAX_ATTEMPTS: '8'
+      KORVI_PROBE_RETRY_DELAY_MS: '5000'
+
+    steps:
+      - name: Check out exact workflow revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Probe public staging surfaces from external infrastructure
+        run: node scripts/external-staging-probe.mjs
+
+      - name: Reject secret-bearing retained evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$KORVI_PROBE_EVIDENCE_PATH"
+          test -f "$evidence"
+          if grep -Eqi 'postgres(ql)?://|authorization|bearer[[:space:]]|password|private[_ -]?key|session[_ -]?cookie|bootstrap[_ -]?signing|metrics[_ -]?auth[_ -]?token' "$evidence"; then
+            echo 'External probe evidence contains forbidden credential material.' >&2
+            exit 1
+          fi
+
+      - name: Preserve sanitized external probe evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: external-staging-probe-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/external-staging-probe.json
+          if-no-files-found: error
+          retention-days: 30

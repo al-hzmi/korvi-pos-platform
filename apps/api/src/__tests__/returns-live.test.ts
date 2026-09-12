@@ -51,6 +51,7 @@ const R = {
   milk: '018f6000-0000-7000-8000-0000000000f1',
   odd: '018f6000-0000-7000-8000-0000000000f2',
   loose: '018f6000-0000-7000-8000-0000000000f3',
+  costed: '018f6000-0000-7000-8000-0000000000f4',
 } as const;
 
 /** A second merchant, used only to prove it can see nothing of the first. */
@@ -177,6 +178,8 @@ describe.skipIf(url === '')('returns, live', () => {
         [R.odd, 'ODD-1', 1_000n, 'unit', true],
         // Sold by weight, and never tracked in stock.
         [R.loose, 'LOOSE-1', 2_275n, 'weighted', false],
+        // Dedicated to original-sale cost-basis restoration proofs.
+        [R.costed, 'COSTED-1', 1_150n, 'unit', true],
       ] as const) {
         await tx.product.create({
           data: {
@@ -739,5 +742,170 @@ describe.skipIf(url === '')('returns, live', () => {
         data: { priceMinor: 1_150n, vatBasisPoints: 1500, isActive: true, nameAr: 'صنف' },
       });
     });
+  });
+  it('M. partial returns restore the immutable original sale basis with exact remainder', async () => {
+    // Four units are on hand: one historical/unknown and three carrying exactly
+    // 100 halalas of recorded value. Selling all four therefore freezes a
+    // mixed basis (unknown first, then known); reversing the sale must restore
+    // the known segment first as 33 + 33 + 34, then the unknown unit.
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      const balance = await tx.inventoryBalance.update({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: R.tenant,
+            branchId: R.branch,
+            productId: R.costed,
+          },
+        },
+        data: { quantityScaled: 4_000n },
+        select: { revision: true },
+      });
+      await tx.inventoryCostBalance.upsert({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: R.tenant,
+            branchId: R.branch,
+            productId: R.costed,
+          },
+        },
+        create: {
+          tenantId: R.tenant,
+          branchId: R.branch,
+          productId: R.costed,
+          knownQuantityScaled: 3_000n,
+          knownValueMinor: 100n,
+          stockRevision: balance.revision,
+          costRevision: 0n,
+        },
+        update: {
+          knownQuantityScaled: 3_000n,
+          knownValueMinor: 100n,
+          stockRevision: balance.revision,
+          costRevision: 0n,
+        },
+      });
+    });
+
+    const sale = await sell(R.costed, '4000');
+    const afterSale = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      line: await tx.saleLine.findFirst({ where: { id: sale.lineId } }),
+      cost: await tx.inventoryCostBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+      stock: await tx.inventoryBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+    }));
+    expect(afterSale.line).toMatchObject({
+      costKnownQuantityScaled: 3_000n,
+      costUnknownQuantityScaled: 1_000n,
+      costValueMinor: 100n,
+      costProvenance: 'mixed',
+    });
+    expect(afterSale.cost).toMatchObject({ knownQuantityScaled: 0n, knownValueMinor: 0n });
+    expect(afterSale.stock?.quantityScaled).toBe(0n);
+
+    const snapshots: Array<{
+      line: {
+        id: string;
+        costKnownQuantityScaled: bigint;
+        costUnknownQuantityScaled: bigint;
+        costValueMinor: bigint;
+        costProvenance: string;
+      };
+      movement: {
+        sourceLineId: string | null;
+        costKnownQuantityScaled: bigint;
+        costUnknownQuantityScaled: bigint;
+        costValueMinor: bigint;
+        costProvenance: string;
+      };
+    }> = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const result = await returns.create({
+        principal,
+        operationId: newId(),
+        terminalId: R.terminal,
+        saleId: sale.saleId,
+        lines: [{ saleLineId: sale.lineId, quantityScaled: '1000' }],
+        refund: { kind: 'cash' },
+      });
+      if (result.outcome !== 'success') throw new Error(result.reason);
+
+      const evidence = await withTenant(prisma, scope.tenantId, async (tx) => {
+        const line = await tx.returnLine.findFirstOrThrow({
+          where: { returnId: result.document.returnId, saleLineId: sale.lineId },
+          select: {
+            id: true,
+            costKnownQuantityScaled: true,
+            costUnknownQuantityScaled: true,
+            costValueMinor: true,
+            costProvenance: true,
+          },
+        });
+        const movement = await tx.inventoryMovement.findFirstOrThrow({
+          where: { sourceType: 'return', sourceId: result.document.returnId },
+          select: {
+            sourceLineId: true,
+            costKnownQuantityScaled: true,
+            costUnknownQuantityScaled: true,
+            costValueMinor: true,
+            costProvenance: true,
+          },
+        });
+        return { line, movement };
+      });
+      snapshots.push(evidence);
+    }
+
+    expect(snapshots.map(({ line }) => line.costValueMinor)).toEqual([33n, 33n, 34n, 0n]);
+    expect(snapshots.map(({ line }) => line.costKnownQuantityScaled)).toEqual([
+      1_000n,
+      1_000n,
+      1_000n,
+      0n,
+    ]);
+    expect(snapshots.map(({ line }) => line.costUnknownQuantityScaled)).toEqual([
+      0n,
+      0n,
+      0n,
+      1_000n,
+    ]);
+    expect(snapshots.map(({ line }) => line.costProvenance)).toEqual([
+      'recorded',
+      'recorded',
+      'recorded',
+      'unknown',
+    ]);
+
+    for (const { line, movement } of snapshots) {
+      expect(movement.sourceLineId).toBe(line.id);
+      expect(movement.costKnownQuantityScaled).toBe(line.costKnownQuantityScaled);
+      expect(movement.costUnknownQuantityScaled).toBe(line.costUnknownQuantityScaled);
+      expect(movement.costValueMinor).toBe(line.costValueMinor);
+      expect(movement.costProvenance).toBe(line.costProvenance);
+    }
+
+    const final = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      cost: await tx.inventoryCostBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+      stock: await tx.inventoryBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+      returnLines: await tx.returnLine.findMany({ where: { saleLineId: sale.lineId } }),
+    }));
+    expect(final.stock?.quantityScaled).toBe(4_000n);
+    expect(final.cost).toMatchObject({ knownQuantityScaled: 3_000n, knownValueMinor: 100n });
+    expect(final.returnLines.reduce((sum, line) => sum + line.costValueMinor, 0n)).toBe(
+      afterSale.line?.costValueMinor,
+    );
+    expect(final.returnLines.reduce((sum, line) => sum + line.costKnownQuantityScaled, 0n)).toBe(
+      afterSale.line?.costKnownQuantityScaled,
+    );
+    expect(final.returnLines.reduce((sum, line) => sum + line.costUnknownQuantityScaled, 0n)).toBe(
+      afterSale.line?.costUnknownQuantityScaled,
+    );
   });
 });

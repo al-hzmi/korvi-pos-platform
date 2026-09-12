@@ -494,6 +494,9 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         principal,
         operationId: parsed.data.operationId,
         terminalId: parsed.data.terminalId,
+        ...(parsed.data.expectedShiftId === undefined
+          ? {}
+          : { expectedShiftId: parsed.data.expectedShiftId }),
         lines: parsed.data.lines,
         ...(parsed.data.cashReceivedMinor === undefined
           ? {}

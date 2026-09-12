@@ -1,0 +1,187 @@
+name: Gate 42 IndexedDB Durability Proof
+
+on:
+  push:
+    branches:
+      - review/offline-42-indexeddb
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  indexeddb-proof:
+    name: Chrome IndexedDB restart durability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      KORVI_GATE42_BASE_URL: http://127.0.0.1:4173
+      KORVI_GATE42_CHROME_PORT: '9223'
+      KORVI_GATE42_ARTIFACT_DIR: artifacts/gate42-indexeddb-proof
+      KORVI_GATE42_PROFILE_DIR: /tmp/korvi-gate42-profile
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Locate Chrome and record authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_GATE42_ARTIFACT_DIR"
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No Chrome/Chromium binary exists on this runner.' >&2
+            exit 1
+          fi
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner_image=${ImageOS:-unknown}-${ImageVersion:-unknown}"
+            "$chrome" --version
+          } | tee "$KORVI_GATE42_ARTIFACT_DIR/authority.txt"
+
+      - name: Build exact production IndexedDB module into browser harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx vite build scripts/gate42-browser \
+            --outDir "$GITHUB_WORKSPACE/artifacts/gate42-harness" \
+            --emptyOutDir
+
+      - name: Start proof origin and first browser process
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_GATE42_ARTIFACT_DIR"
+          rm -rf "$KORVI_GATE42_PROFILE_DIR"
+
+          setsid python3 -m http.server 4173 \
+            --bind 127.0.0.1 \
+            --directory "$GITHUB_WORKSPACE/artifacts/gate42-harness" \
+            >"$KORVI_GATE42_ARTIFACT_DIR/server.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE42_ARTIFACT_DIR/server.pid"
+
+          setsid "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_GATE42_CHROME_PORT" \
+            --user-data-dir="$KORVI_GATE42_PROFILE_DIR" \
+            --window-size=1200,900 \
+            about:blank >"$KORVI_GATE42_ARTIFACT_DIR/chrome-seed.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE42_ARTIFACT_DIR/chrome.pid"
+
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent "$KORVI_GATE42_BASE_URL" >/dev/null && \
+               curl --fail --silent "http://127.0.0.1:$KORVI_GATE42_CHROME_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Gate 42 first browser runtime did not become ready.' >&2
+          exit 1
+
+      - name: Seed catalogue and sale state through production IndexedDB code
+        run: node scripts/gate42-indexeddb-proof.mjs seed
+
+      - name: Terminate browser completely without deleting its profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_pid="$(cat "$KORVI_GATE42_ARTIFACT_DIR/chrome.pid")"
+          kill -TERM -- "-$browser_pid"
+          for attempt in $(seq 1 80); do
+            if ! curl --silent "http://127.0.0.1:$KORVI_GATE42_CHROME_PORT/json/version" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Chrome did not stop; restart persistence proof would be invalid.' >&2
+          exit 1
+
+      - name: Restart Chrome with the same browser profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          setsid "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_GATE42_CHROME_PORT" \
+            --user-data-dir="$KORVI_GATE42_PROFILE_DIR" \
+            --window-size=1200,900 \
+            about:blank >"$KORVI_GATE42_ARTIFACT_DIR/chrome-restart.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE42_ARTIFACT_DIR/chrome.pid"
+
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent "http://127.0.0.1:$KORVI_GATE42_CHROME_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Gate 42 restarted browser did not become ready.' >&2
+          exit 1
+
+      - name: Prove restart persistence isolation search and corruption refusal
+        run: |
+          set -euo pipefail
+          node scripts/gate42-indexeddb-proof.mjs verify
+          grep -q '^browser_restart_persistence=PASS$' "$KORVI_GATE42_ARTIFACT_DIR/proof.txt"
+          grep -q '^tenant_isolation=PASS$' "$KORVI_GATE42_ARTIFACT_DIR/proof.txt"
+          grep -q '^corruption_rejection=PASS$' "$KORVI_GATE42_ARTIFACT_DIR/proof.txt"
+
+      - name: Surface runtime logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          for log in server.log chrome-seed.log chrome-restart.log; do
+            echo "== $log =="
+            tail -n 200 "$KORVI_GATE42_ARTIFACT_DIR/$log" 2>/dev/null || true
+          done
+
+      - name: Stop proof runtime
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for pid_file in "$KORVI_GATE42_ARTIFACT_DIR/chrome.pid" "$KORVI_GATE42_ARTIFACT_DIR/server.pid"; do
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file")"
+              kill -TERM -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+            fi
+          done
+
+      - name: Preserve sanitized Gate 42 proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gate-42-indexeddb-proof-${{ github.sha }}
+          path: |
+            artifacts/gate42-indexeddb-proof/authority.txt
+            artifacts/gate42-indexeddb-proof/proof.txt
+            artifacts/gate42-indexeddb-proof/restart-persistence.png
+            artifacts/gate42-indexeddb-proof/*.log
+          if-no-files-found: warn
+          retention-days: 30

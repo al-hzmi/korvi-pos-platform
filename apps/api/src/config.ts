@@ -1,6 +1,19 @@
 import { z } from 'zod';
 
 /**
+ * Production secrets that the runtime refuses to start without.
+ *
+ * Deployment-contract verification reads this declaration and requires the
+ * staging Blueprint to provision every member independently. Keep this list in
+ * lock-step with the production boot checks below: adding a new mandatory
+ * secret must make an unprepared deployment fail before it can reach staging.
+ */
+export const PRODUCTION_REQUIRED_SECRET_ENV_KEYS = [
+  'BOOTSTRAP_SIGNING_KEY',
+  'METRICS_AUTH_TOKEN',
+] as const;
+
+/**
  * Environment parsing, once, at the edge.
  *
  * Everything downstream receives a typed object rather than reading
@@ -56,9 +69,22 @@ const schema = z
      * part of it a boot-time check is capable of enforcing (ADR-0021).
      */
     BOOTSTRAP_SIGNING_KEY: z.string().min(32).max(512).optional(),
+
+    /**
+     * Bearer credential for the machine-only Prometheus scrape surface.
+     *
+     * It never enters application persistence and must come from the deployment
+     * secret manager. Production refuses to boot without it: an ERP that ships
+     * an unauthenticated metrics surface, or silently ships no production
+     * telemetry at all, is an operations defect rather than a runtime default.
+     */
+    METRICS_AUTH_TOKEN: z.string().min(32).max(512).optional(),
   })
   .superRefine((value, context) => {
-    if (value.NODE_ENV === 'production' && (value.BOOTSTRAP_SIGNING_KEY ?? '').trim() === '') {
+    const bootstrapSigningKey = value.BOOTSTRAP_SIGNING_KEY;
+    const metricsAuthToken = value.METRICS_AUTH_TOKEN;
+
+    if (value.NODE_ENV === 'production' && (bootstrapSigningKey ?? '').trim() === '') {
       context.addIssue({
         code: 'custom',
         path: ['BOOTSTRAP_SIGNING_KEY'],
@@ -73,6 +99,42 @@ const schema = z
         message: 'is required in production; refusing to accept writes from an unknown origin',
       });
     }
+    if (value.NODE_ENV === 'production' && (metricsAuthToken ?? '').trim() === '') {
+      context.addIssue({
+        code: 'custom',
+        path: ['METRICS_AUTH_TOKEN'],
+        message: 'is required in production; operations telemetry must be authenticated',
+      });
+    }
+
+    if (value.NODE_ENV !== 'production') return;
+
+    if (bootstrapSigningKey !== undefined && bootstrapSigningKey !== bootstrapSigningKey.trim()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['BOOTSTRAP_SIGNING_KEY'],
+        message: 'must be a canonical secret without leading or trailing whitespace',
+      });
+    }
+    if (metricsAuthToken !== undefined && metricsAuthToken !== metricsAuthToken.trim()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['METRICS_AUTH_TOKEN'],
+        message: 'must be a canonical secret without leading or trailing whitespace',
+      });
+    }
+    if (
+      bootstrapSigningKey !== undefined &&
+      metricsAuthToken !== undefined &&
+      bootstrapSigningKey === metricsAuthToken
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['METRICS_AUTH_TOKEN'],
+        message:
+          'must use a credential independent from BOOTSTRAP_SIGNING_KEY; security domains cannot share a production secret',
+      });
+    }
   });
 
 export interface ApiConfig {
@@ -84,6 +146,8 @@ export interface ApiConfig {
   readonly DATABASE_URL: string | undefined;
   /** Never logged, never echoed, never persisted. */
   readonly BOOTSTRAP_SIGNING_KEY: string | undefined;
+  /** Machine-only scrape credential; never logged, echoed or persisted. */
+  readonly METRICS_AUTH_TOKEN: string | undefined;
   readonly isProduction: boolean;
 }
 
@@ -112,6 +176,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     SESSION_TTL_SECONDS: value.SESSION_TTL_HOURS * 3600,
     DATABASE_URL: value.DATABASE_URL,
     BOOTSTRAP_SIGNING_KEY: value.BOOTSTRAP_SIGNING_KEY,
+    METRICS_AUTH_TOKEN: value.METRICS_AUTH_TOKEN,
     isProduction: value.NODE_ENV === 'production',
   };
 }

@@ -1,7 +1,13 @@
 import { withTenant } from '../tenant-context.js';
 import { InsufficientStockError } from '../errors.js';
+import {
+  commitMovementCostWithin,
+  lockCostBalanceWithin,
+  prepareMovementCost,
+} from '../costing/ledger.js';
 import { minor, scoped, tenantParam } from './mapping.js';
 import type { TransactionClient } from '../tenant-context.js';
+import type { IncomingCostBasis, MovementCostEvidence } from '../costing/ledger.js';
 import type {
   InventoryBalance,
   InventoryMovementInput,
@@ -15,6 +21,11 @@ interface BalanceRow {
   branchId: string;
   productId: string;
   quantityScaled: bigint;
+  revision: bigint;
+}
+
+export interface AppliedMovementRow extends BalanceRow {
+  readonly cost: MovementCostEvidence;
 }
 
 function toDomain(scope: TenantScope, row: BalanceRow): InventoryBalance {
@@ -23,28 +34,90 @@ function toDomain(scope: TenantScope, row: BalanceRow): InventoryBalance {
     branchId: row.branchId,
     productId: row.productId,
     quantityScaled: minor(row.quantityScaled),
+    // Decimal integer string, never a Number: a revision is a counter that a
+    // count submits back to us, and 2^53 is not a boundary worth discovering
+    // in a merchant's data (ADR-0024 §A).
+    revision: row.revision.toString(),
+  };
+}
+
+/**
+ * Materialize the natural balance key at zero and hold it for the remainder of
+ * the caller's transaction. Materializing an absent row is not a stock change:
+ * quantity and revision both remain zero until the causal movement below.
+ */
+async function lockBalanceWithin(
+  tx: TransactionClient,
+  tenant: string,
+  branchId: string,
+  productId: string,
+): Promise<BalanceRow> {
+  await tx.$executeRaw`
+    INSERT INTO "inventory_balances"
+      ("tenantId","branchId","productId","quantityScaled","revision","updatedAt")
+    VALUES (${tenant}::uuid, ${branchId}::uuid, ${productId}::uuid, 0, 0, now())
+    ON CONFLICT ("tenantId","branchId","productId") DO NOTHING`;
+
+  const rows = await tx.$queryRaw<{ quantityScaled: bigint; revision: bigint }[]>`
+    SELECT "quantityScaled", "revision" FROM "inventory_balances"
+     WHERE "tenantId" = ${tenant}::uuid
+       AND "branchId" = ${branchId}::uuid
+       AND "productId" = ${productId}::uuid
+     FOR UPDATE`;
+  const row = rows.at(0);
+  if (row === undefined) {
+    throw new Error('Inventory invariant failed: balance row could not be materialized.');
+  }
+  return {
+    tenantId: tenant,
+    branchId,
+    productId,
+    quantityScaled: row.quantityScaled,
+    revision: row.revision,
   };
 }
 
 /**
  * Apply one stock movement inside an existing transaction.
  *
- * Exported because a checkout must record its stock movements in the same
- * transaction as the sale: stock decremented for a sale that then failed to
- * commit is how a shelf count stops matching the shop floor.
+ * Strike 5C extends the old stock primitive rather than adding a second write
+ * path. The stock row is locked first, then its cost row. Quantity, stock
+ * revision, exact valuation pool and immutable cost evidence either all commit
+ * together or all roll back together (ADR-0024 §1, §8).
  *
- * The balance moves by `increment`, not by read-modify-write. Two terminals
- * selling the last unit of the same product at the same moment would both read
- * 1 and both write 0; `increment` makes the arithmetic happen in the database,
- * under its row lock, so the second sees 0 and can be refused.
+ * `incomingCostBasis` is accepted only for positive movements whose caller has
+ * independent evidence of value (purchase receiving, original-basis return, or
+ * transfer destination). A missing basis means the positive stock is explicit
+ * unknown. Negative movements never accept a caller-supplied basis: they consume
+ * the locked branch pool unknown-first on the server.
  */
 export async function applyMovementWithin(
   tx: TransactionClient,
   tenant: string,
   movement: InventoryMovementInput,
   allowNegative = true,
-): Promise<BalanceRow> {
+  sourceLineId: string | null = null,
+  incomingCostBasis?: IncomingCostBasis,
+): Promise<AppliedMovementRow> {
   const quantity = BigInt(movement.quantityScaled);
+  if (quantity === 0n) {
+    throw new Error('Inventory invariant failed: zero delta is not a causal movement.');
+  }
+
+  const before = await lockBalanceWithin(tx, tenant, movement.branchId, movement.productId);
+  const currentCost = await lockCostBalanceWithin(
+    tx,
+    tenant,
+    movement.branchId,
+    movement.productId,
+    before.revision,
+  );
+  const preparedCost = prepareMovementCost(
+    before.quantityScaled,
+    quantity,
+    currentCost,
+    incomingCostBasis,
+  );
 
   await tx.inventoryMovement.create({
     data: {
@@ -57,82 +130,58 @@ export async function applyMovementWithin(
       reason: movement.reason,
       sourceType: movement.sourceType,
       sourceId: movement.sourceId,
+      sourceLineId,
+      costKnownQuantityScaled: preparedCost.evidence.knownQuantityScaled,
+      costUnknownQuantityScaled: preparedCost.evidence.unknownQuantityScaled,
+      costValueMinor: preparedCost.evidence.knownValueMinor,
+      costProvenance: preparedCost.evidence.provenance,
       actorUserId: movement.actorUserId,
       occurredAt: new Date(movement.occurredAt),
     },
   });
 
-  if (allowNegative) {
-    return tx.inventoryBalance.upsert({
-      where: {
-        tenantId_branchId_productId: {
-          tenantId: tenant,
-          branchId: movement.branchId,
-          productId: movement.productId,
-        },
-      },
-      create: {
-        tenantId: tenant,
-        branchId: movement.branchId,
-        productId: movement.productId,
-        quantityScaled: quantity,
-      },
-      update: { quantityScaled: { increment: quantity } },
-    });
-  }
-
-  // The merchant has said stock may not go negative, so the *mutation* has to
-  // enforce it. A read followed by an increment cannot: two tills both see one
-  // unit left, both pass their own check, and both decrement.
-  //
-  // The predicate is evaluated after the row lock is taken, so the second
-  // transaction re-reads what the first committed and matches nothing.
-  const updated = await tx.$queryRaw<{ quantityScaled: bigint }[]>`
+  // The predicate remains on the mutation itself even though this transaction
+  // already holds the row. This is the database's independent statement of the
+  // merchant's no-negative-stock policy and protects against a future caller
+  // that accidentally weakens the lock discipline.
+  const updated = await tx.$queryRaw<{ quantityScaled: bigint; revision: bigint }[]>`
     UPDATE "inventory_balances"
        SET "quantityScaled" = "quantityScaled" + ${quantity},
+           "revision" = "revision" + 1,
            "updatedAt" = now()
      WHERE "tenantId" = ${tenant}::uuid
        AND "branchId" = ${movement.branchId}::uuid
        AND "productId" = ${movement.productId}::uuid
-       AND "quantityScaled" + ${quantity} >= 0
-    RETURNING "quantityScaled"`;
-
-  const row = updated.at(0);
-  if (row !== undefined) {
-    return {
-      tenantId: tenant,
-      branchId: movement.branchId,
-      productId: movement.productId,
-      quantityScaled: row.quantityScaled,
-    };
-  }
-
-  // Nothing matched: either the balance row does not exist yet, or applying
-  // this delta would go below zero. A shipment into a product with no row is
-  // legitimate; taking stock off a shelf that has none is not.
-  if (quantity < 0n) {
+       AND (${allowNegative} OR "quantityScaled" + ${quantity} >= 0)
+    RETURNING "quantityScaled", "revision"`;
+  const after = updated.at(0);
+  if (after === undefined) {
     throw new InsufficientStockError(
       'The branch does not hold enough of this product to satisfy the movement.',
     );
   }
 
-  const created = await tx.inventoryBalance.upsert({
-    where: {
-      tenantId_branchId_productId: {
-        tenantId: tenant,
-        branchId: movement.branchId,
-        productId: movement.productId,
-      },
-    },
-    create: {
-      tenantId: tenant,
-      branchId: movement.branchId,
-      productId: movement.productId,
-      quantityScaled: quantity,
-    },
-    update: { quantityScaled: { increment: quantity } },
+  await commitMovementCostWithin(tx, tenant, {
+    branchId: movement.branchId,
+    productId: movement.productId,
+    stockRevision: after.revision,
+    movementId: movement.id,
+    sourceType: movement.sourceType,
+    sourceId: movement.sourceId,
+    sourceLineId,
+    actorUserId: movement.actorUserId,
+    occurredAt: new Date(movement.occurredAt),
+    prepared: preparedCost,
   });
-  return created;
+
+  return {
+    tenantId: tenant,
+    branchId: movement.branchId,
+    productId: movement.productId,
+    quantityScaled: after.quantityScaled,
+    revision: after.revision,
+    cost: preparedCost.evidence,
+  };
 }
 
 export function createInventoryRepository(prisma: PrismaClient): InventoryRepository {

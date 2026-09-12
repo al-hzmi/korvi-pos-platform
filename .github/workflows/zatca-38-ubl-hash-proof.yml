@@ -1,0 +1,109 @@
+name: ZATCA 38 UBL Hash Proof
+
+on:
+  push:
+    branches:
+      - review/zatca-38-ubl-hash
+      - strike/5c-costing-authority
+    paths:
+      - packages/domain/src/zatca/phase2.ts
+      - packages/domain/src/zatca/__tests__/phase2.test.ts
+      - packages/domain/src/index.ts
+      - scripts/zatca-38-c14n-proof.mjs
+      - .github/workflows/zatca-38-ubl-hash-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubl-c14n11-sha256:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Build domain and run Gate 38 regressions
+        run: |
+          npm run build -w @korvi/domain
+          npx vitest run packages/domain/src/zatca/__tests__/phase2.test.ts
+
+      - name: Install independent XML tooling
+        run: |
+          if ! command -v xmllint >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libxml2-utils
+          fi
+          xmllint --version 2>&1 | head -n 2
+          openssl version
+
+      - name: Generate deterministic Korvi invoice hash payload
+        run: |
+          umask 077
+          node scripts/zatca-38-c14n-proof.mjs "$RUNNER_TEMP/korvi-invoice.xml" "$RUNNER_TEMP/korvi-js-hash.txt"
+          test ! -s "$RUNNER_TEMP/korvi-invoice.xml" && exit 1 || true
+          if grep -a -q '<?xml\|<!DOCTYPE\|<ext:UBLExtensions>\|<cac:Signature>\|<cbc:ID>QR</cbc:ID>' "$RUNNER_TEMP/korvi-invoice.xml"; then
+            echo 'Unsigned hash payload contains a forbidden/excluded node.' >&2
+            exit 1
+          fi
+
+      - name: Validate against normative OASIS UBL 2.1 Invoice XSD
+        run: |
+          UBL_ZIP="$RUNNER_TEMP/UBL-2.1.zip"
+          UBL_DIR="$RUNNER_TEMP/ubl"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip \
+            --output "$UBL_ZIP"
+          echo "oasis_ubl_2_1_zip_sha256=$(sha256sum "$UBL_ZIP" | cut -d' ' -f1)"
+          unzip -q "$UBL_ZIP" -d "$UBL_DIR"
+          SCHEMA="$(find "$UBL_DIR" -path '*/xsd/maindoc/UBL-Invoice-2.1.xsd' -print -quit)"
+          test -n "$SCHEMA"
+          xmllint --noout --schema "$SCHEMA" "$RUNNER_TEMP/korvi-invoice.xml"
+
+      - name: Prove mandatory KSA per-line VAT facts independently
+        run: |
+          XML="$RUNNER_TEMP/korvi-invoice.xml"
+          LINE_TAX_TOTAL_COUNT="$(xmllint --xpath "count(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal'])" "$XML")"
+          LINE_VAT="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='TaxAmount'])" "$XML")"
+          LINE_VAT_CURRENCY="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='TaxAmount']/@currencyID)" "$XML")"
+          LINE_TOTAL="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='RoundingAmount'])" "$XML")"
+          LINE_TOTAL_CURRENCY="$(xmllint --xpath "string(/*[local-name()='Invoice']/*[local-name()='InvoiceLine'][1]/*[local-name()='TaxTotal']/*[local-name()='RoundingAmount']/@currencyID)" "$XML")"
+          test "$LINE_TAX_TOTAL_COUNT" = "1"
+          test "$LINE_VAT" = "15.00"
+          test "$LINE_VAT_CURRENCY" = "SAR"
+          test "$LINE_TOTAL" = "115.00"
+          test "$LINE_TOTAL_CURRENCY" = "SAR"
+          echo '[zatca38] BR-KSA-51/52/53 line VAT facts proved independently'
+
+      - name: Prove Korvi bytes are already Canonical XML 1.1
+        run: |
+          xmllint --c14n11 "$RUNNER_TEMP/korvi-invoice.xml" > "$RUNNER_TEMP/xmllint-c14n11.xml"
+          if ! cmp -s "$RUNNER_TEMP/korvi-invoice.xml" "$RUNNER_TEMP/xmllint-c14n11.xml"; then
+            echo 'Korvi hash payload differs from independent C14N 1.1 output.' >&2
+            echo "korvi_bytes=$(wc -c < "$RUNNER_TEMP/korvi-invoice.xml")" >&2
+            echo "c14n11_bytes=$(wc -c < "$RUNNER_TEMP/xmllint-c14n11.xml")" >&2
+            exit 1
+          fi
+          echo '[zatca38] byte-for-byte C14N 1.1 equivalence proved'
+
+      - name: Prove WebCrypto hash against OpenSSL
+        run: |
+          openssl dgst -sha256 -binary "$RUNNER_TEMP/xmllint-c14n11.xml" \
+            | base64 -w0 > "$RUNNER_TEMP/openssl-hash.txt"
+          if [ "$(cat "$RUNNER_TEMP/korvi-js-hash.txt")" != "$(cat "$RUNNER_TEMP/openssl-hash.txt")" ]; then
+            echo 'Korvi WebCrypto SHA-256/Base64 differs from OpenSSL.' >&2
+            exit 1
+          fi
+          echo "[zatca38] independent_hash=$(cat "$RUNNER_TEMP/openssl-hash.txt")"

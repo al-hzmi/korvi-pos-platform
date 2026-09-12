@@ -1,0 +1,143 @@
+name: Gate 41 Offline Cashier Shell Proof
+
+on:
+  push:
+    branches:
+      - review/offline-41-service-worker
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  offline-shell-proof:
+    name: Chrome hard-outage cashier shell
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      KORVI_BROWSER_BASE_URL: http://127.0.0.1:3000
+      KORVI_API_ORIGIN: http://127.0.0.1:65534
+      KORVI_CHROME_DEBUG_PORT: '9222'
+      KORVI_BROWSER_ARTIFACT_DIR: artifacts/gate41-offline-shell
+      KORVI_WEB_PID_FILE: artifacts/gate41-offline-shell/web.pid
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Locate Chrome and record browser authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_BROWSER_ARTIFACT_DIR"
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No Chrome/Chromium binary exists on this runner.' >&2
+            exit 1
+          fi
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner_image=${ImageOS:-unknown}-${ImageVersion:-unknown}"
+            "$chrome" --version
+          } | tee "$KORVI_BROWSER_ARTIFACT_DIR/authority.txt"
+
+      - name: Build production cashier shell
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+        run: |
+          npm run db:generate
+          npm run build
+
+      - name: Start production web and headless Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_BROWSER_ARTIFACT_DIR"
+
+          setsid npm run start -w @korvi/pos-web -- --hostname 127.0.0.1 --port 3000 \
+            >"$KORVI_BROWSER_ARTIFACT_DIR/web.log" 2>&1 &
+          echo "$!" > "$KORVI_WEB_PID_FILE"
+
+          "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_CHROME_DEBUG_PORT" \
+            --user-data-dir="$RUNNER_TEMP/korvi-gate41-chrome" \
+            --window-size=1440,1200 \
+            about:blank >"$KORVI_BROWSER_ARTIFACT_DIR/chrome.log" 2>&1 &
+          echo "$!" > "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid"
+
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:3000/ >/dev/null && \
+               curl --fail --silent "http://127.0.0.1:$KORVI_CHROME_DEBUG_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+
+          echo 'Gate 41 browser runtime did not become ready.' >&2
+          cat "$KORVI_BROWSER_ARTIFACT_DIR/web.log" >&2 || true
+          cat "$KORVI_BROWSER_ARTIFACT_DIR/chrome.log" >&2 || true
+          exit 1
+
+      - name: Prove hard-outage cashier shell in actual Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/browser-offline-shell-proof.mjs
+          test -s "$KORVI_BROWSER_ARTIFACT_DIR/proof.txt"
+
+      - name: Surface runtime logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          for log in web.log chrome.log; do
+            echo "== $log =="
+            tail -n 200 "$KORVI_BROWSER_ARTIFACT_DIR/$log" 2>/dev/null || true
+          done
+
+      - name: Stop browser runtime
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid" ]; then
+            kill "$(cat "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid")" 2>/dev/null || true
+          fi
+          if [ -f "$KORVI_WEB_PID_FILE" ]; then
+            kill -- "-$(cat "$KORVI_WEB_PID_FILE")" 2>/dev/null || true
+          fi
+
+      - name: Preserve sanitized Gate 41 proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gate-41-offline-shell-proof-${{ github.sha }}
+          path: |
+            artifacts/gate41-offline-shell/authority.txt
+            artifacts/gate41-offline-shell/proof.txt
+            artifacts/gate41-offline-shell/*.png
+            artifacts/gate41-offline-shell/*.log
+          if-no-files-found: warn
+          retention-days: 30

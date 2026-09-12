@@ -22,6 +22,9 @@ lib-cov
 coverage
 *.lcov
 
+# Vitest 5 generated reports and attachments (not test sources)
+.vitest/
+
 # nyc test coverage
 .nyc_output
 

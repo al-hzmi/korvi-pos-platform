@@ -197,6 +197,10 @@ export function memoryInventoryRepository(store: MemoryBusinessStore): Inventory
               branchId,
               productId,
               quantityScaled: scaled,
+              // The fake keeps no movement history, so it reports the same
+              // "unknown history" a migrated balance carries. Nothing in the
+              // cashier paths reads it; the revision contract is proved live.
+              revision: '0',
             } satisfies InventoryBalance),
       );
     },
@@ -208,6 +212,7 @@ export function memoryInventoryRepository(store: MemoryBusinessStore): Inventory
         branchId: movement.branchId,
         productId: movement.productId,
         quantityScaled: movement.quantityScaled,
+        revision: '0',
       });
     },
   };
