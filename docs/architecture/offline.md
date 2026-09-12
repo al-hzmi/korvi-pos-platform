@@ -1,19 +1,19 @@
 # Offline — implementation boundary
 
-ADR-0005 defines the offline-first architecture. Gates 41–43 are now implemented and proven; Gates 44–45 remain open and must preserve the same authority, ordering and reconciliation guarantees.
+ADR-0005 defines the offline-first architecture. Gates 41–44 are now implemented and proven; Gate 45 remains open and must preserve the same authority, ordering and reconciliation guarantees.
 
 ## The guarantee we are building toward
 
 A terminal keeps selling with no network, for as long as the outage lasts, and reconciles afterwards with nothing lost and nothing reordered.
 
-Gates 41–43 establish browser availability, durable local cashier state and the persistent immutable operation queue. They do **not** claim that a financial sale can already be finalized offline: transport/retry execution and conflict/reconciliation policy belong to Gates 44–45.
+Gates 41–44 establish browser availability, durable local cashier state, the persistent immutable operation queue and the ordered retry/acknowledgement engine. They do **not** yet claim the complete cashier offline-sale workflow is production-closed: concrete conflict/reconciliation policy and the real offline sale → reconnect → server-authoritative reconciliation proof belong to Gate 45.
 
 ## Pieces, and where they live
 
 - **Service Worker** — app shell available with no network — Gate 41 CLOSED.
 - **IndexedDB** — versioned durable store for cashier catalogue snapshots and in-progress sale state — Gate 42 CLOSED.
 - **Transaction queue** — durable ordered immutable record of operations that must reach the server — Gate 43 CLOSED.
-- **Sync engine** — drains the queue and handles retry/reporting without loss, duplication or reordering — Gate 44 OPEN.
+- **Sync engine** — leased/fenced oldest-first drain with durable retry/reporting and acknowledgement-before-advance — Gate 44 CLOSED.
 - **Conflict handling** — resolves divergence and proves the real offline-sale/reconnect workflow — Gate 45 OPEN.
 
 ## Gate 41 implementation boundary
@@ -79,12 +79,29 @@ Gate 43 implementation proof on `d6d24a0ec8fb083291ef922d4bc9a970dce12a08`:
 - malformed persisted queue payload was explicitly refused after restart;
 - proof artifact `10288466519`, SHA-256 `f0dc3f798c4dab16e07fb425807361d6e22dc845c4d8371a4b3ac6dfb15ccf0e`, recorded Chrome `152.0.7977.82` on Ubuntu 24.04.
 
+## Gate 44 durable synchronization engine
+
+IndexedDB schema version `3` adds durable sync lifecycle metadata to every queue row: `nextAttemptAt`, `leaseUntil` and an internal claim fencing token. The v2→v3 migration preserves immutable operation identity and payload. A legacy v2 `in-flight` row is conservatively returned to `pending` because Gate 43 had no real claim-owner authority; no unprovable worker ownership is invented during migration.
+
+A worker may claim only the **oldest unresolved** operation for its tenant/branch/terminal partition. Claiming is one IndexedDB read-write transaction, so concurrent tabs/processes cannot both own the same command. A live lease blocks every later operation. An expired lease may be reclaimed, but only as the exact same operation id and payload, with the durable attempt counter incremented. Every acknowledgement, retry schedule or rejection requires the current UUIDv7 fencing token; a stale worker cannot settle or rewrite a command after its lease was recovered by another worker.
+
+The push engine therefore has an explicit acknowledgement-before-advance invariant. A successful send is durably `settled` before the next UUIDv7 is claimed. A retryable/ambiguous response returns the same row to `pending` with centralized exponential backoff and immediately stops the drain, so a newer sale cannot overtake it. A definitive refusal is retained as `rejected` for reconciliation instead of being dropped. Retry exhaustion is also retained explicitly; nothing is silently discarded.
+
+The checkout executor replays only a validated `sale.checkout` payload whose payload `operationId` exactly equals the queue id. Network/server ambiguity and session loss remain retryable because the original sale may already exist server-side; permanent business refusals become durable rejected items for Gate 45 reconciliation. The executor never mints a replacement financial operation id.
+
+Gate 44 implementation proof on `f501be797165cf1190eac6b8bdd4a95c683648e0`:
+
+- exact-head CI run `34664871538` passed dependency pins, audit, formatting, lint, invariants, Prisma generation, production build, typecheck and the complete test suite;
+- actual Chrome proof `34664871536` started from populated schema v2, proved v2→v3 migration, deliberately raced two independent store instances for the oldest queue row and observed exactly one claimant while the other was blocked by the active lease;
+- the proof then terminated **both** Chrome and the proof HTTP origin, restarted Chrome with the same persistent profile, proved the active lease survived restart, recovered the exact same operation only after lease expiry, incremented the durable attempt counter and refused a stale fencing token;
+- a persisted retry schedule blocked all later work before its due instant; after the due instant the engine settled the oldest command, durably acknowledged it, then settled the next UUIDv7 in exact order without duplicate successful execution;
+- both settled rows remained in durable storage rather than disappearing after acknowledgement;
+- proof artifact `10288890491`, SHA-256 `2faba8ac4fc40e5f80f9423a5fcdcb964d610bb0cba2ecfe9aa41a4b2941969f`.
+
 ## Retry
 
-`RetryPolicy` remains a centralized value rather than scattered timers: five minutes initially, doubling to a six-hour ceiling, at most eight attempts. Gate 43 persists operations and terminal outcomes; Gate 44 must now prove how attempts are claimed, retried and acknowledged without duplicate execution or reordering.
+`RetryPolicy` is centralized rather than scattered timers: five minutes initially, doubling to a six-hour ceiling, at most eight attempts. Gate 44 applies that policy through durable `nextAttemptAt` scheduling, leased claims and fenced state transitions. Ambiguity therefore preserves the exact operation identity instead of manufacturing a replacement command.
 
 ## Next real blocker
 
-Gate 44 must implement the synchronization engine over the Gate 43 queue. It must preserve one operation identity from first send through every retry, distinguish definitive rejection from transport ambiguity, never allow a later operation to overtake an unresolved earlier one, and record acknowledgements durably before advancing the queue.
-
-Gate 45 remains responsible for the concrete conflict/reconciliation policy and the complete real offline sale → reconnect → server-authoritative reconciliation workflow. `ConflictResolution` names the possible outcomes (`keep-local`, `keep-remote`, `needs-review`); policy must be proven against the concrete synchronized entities rather than guessed in advance.
+Gate 45 must define and prove concrete reconciliation policy for the synchronized entities and close the complete real cashier workflow: sale composed while disconnected → durable queue → reconnect → server-authoritative checkout/repricing/stock/tax result → deterministic cashier/operator outcome. Conflicts must resolve to an explicit `keep-local`, `keep-remote` or `needs-review` policy only where that outcome is semantically valid; financial, stock, tax, identity and authorization authority must remain on the server and must never be guessed from stale local state.
