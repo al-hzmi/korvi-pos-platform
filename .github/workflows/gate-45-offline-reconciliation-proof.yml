@@ -25,11 +25,11 @@ jobs:
       KORVI_BROWSER_OWNER_EMAIL: owner@stage5d-browser-proof.test
       KORVI_BROWSER_BASE_URL: http://localhost:3000
       KORVI_API_ORIGIN: http://localhost:3001
-      KORVI_BROWSER_ARTIFACT_DIR: artifacts/gate45-stage5d-prep
+      KORVI_BROWSER_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/gate45-stage5d-prep
       KORVI_CHROME_DEBUG_PORT: '9226'
       KORVI_GATE45_BASE_URL: http://localhost:3000
       KORVI_GATE45_CHROME_PORT: '9226'
-      KORVI_GATE45_ARTIFACT_DIR: artifacts/gate45-offline-proof
+      KORVI_GATE45_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/gate45-offline-proof
 
     services:
       postgres:
