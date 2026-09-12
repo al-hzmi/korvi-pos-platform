@@ -7,10 +7,7 @@ import {
   openKorviOfflineStore,
 } from '../../apps/pos-web/src/lib/offline-store';
 import type { ProductSummary } from '../../apps/pos-web/src/lib/api-types';
-import type {
-  OfflineSaleDraft,
-  OfflineSaleScope,
-} from '../../apps/pos-web/src/lib/offline-store';
+import type { OfflineSaleDraft, OfflineSaleScope } from '../../apps/pos-web/src/lib/offline-store';
 
 const TENANT_A = '018f2000-0000-7000-8000-0000000000a1';
 const TENANT_B = '018f2000-0000-7000-8000-0000000000b1';
@@ -129,8 +126,10 @@ function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
   });
 }
 

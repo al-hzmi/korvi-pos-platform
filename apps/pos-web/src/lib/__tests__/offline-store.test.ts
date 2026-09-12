@@ -69,13 +69,17 @@ describe('offline store validation', () => {
     const key = offlineSaleScopeKey(SCOPE);
     expect(key).not.toBe(offlineSaleScopeKey({ ...SCOPE, tenantId: `${SCOPE.tenantId}-other` }));
     expect(key).not.toBe(offlineSaleScopeKey({ ...SCOPE, branchId: `${SCOPE.branchId}-other` }));
-    expect(key).not.toBe(offlineSaleScopeKey({ ...SCOPE, terminalId: `${SCOPE.terminalId}-other` }));
+    expect(key).not.toBe(
+      offlineSaleScopeKey({ ...SCOPE, terminalId: `${SCOPE.terminalId}-other` }),
+    );
     expect(key).not.toBe(offlineSaleScopeKey({ ...SCOPE, userId: `${SCOPE.userId}-other` }));
     expect(key).not.toBe(offlineSaleScopeKey({ ...SCOPE, shiftId: `${SCOPE.shiftId}-other` }));
   });
 
   it('classifies quota and version failures without hiding unknown transaction failures', () => {
-    expect(classifyIndexedDbError(new DOMException('full', 'QuotaExceededError')).code).toBe('quota');
+    expect(classifyIndexedDbError(new DOMException('full', 'QuotaExceededError')).code).toBe(
+      'quota',
+    );
     expect(classifyIndexedDbError(new DOMException('old', 'VersionError')).code).toBe('version');
     expect(classifyIndexedDbError(new Error('boom')).code).toBe('transaction');
     expect(classifyIndexedDbError(new OfflineStoreError('corrupt', 'bad')).code).toBe('corrupt');

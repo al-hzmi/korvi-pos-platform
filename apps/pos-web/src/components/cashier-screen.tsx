@@ -223,7 +223,8 @@ export function CashierScreen({
         <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
           {durableState.status === 'failed' ? (
             <StatusNote tone="warning" className="mb-3" live>
-              التخزين المحلي غير متاح. البيع المتصل يعمل، لكن لا تعتمد على استعادة السلة بعد إغلاق الصفحة.
+              التخزين المحلي غير متاح. البيع المتصل يعمل، لكن لا تعتمد على استعادة السلة بعد إغلاق
+              الصفحة.
             </StatusNote>
           ) : null}
           <ProductPanel

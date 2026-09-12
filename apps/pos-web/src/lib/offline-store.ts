@@ -11,12 +11,7 @@ const TENANT_INDEX = 'tenantId';
 const MAX_LOCAL_SEARCH_RESULTS = 50;
 
 export type OfflineStoreErrorCode =
-  | 'unavailable'
-  | 'blocked'
-  | 'quota'
-  | 'version'
-  | 'corrupt'
-  | 'transaction';
+  'unavailable' | 'blocked' | 'quota' | 'version' | 'corrupt' | 'transaction';
 
 export class OfflineStoreError extends Error {
   public override readonly name = 'OfflineStoreError';
@@ -170,7 +165,10 @@ export function classifyIndexedDbError(error: unknown): OfflineStoreError {
       return new OfflineStoreError('version', 'IndexedDB schema version is incompatible.');
     }
     if (error.name === 'InvalidStateError' || error.name === 'NotAllowedError') {
-      return new OfflineStoreError('unavailable', 'IndexedDB is unavailable in this browser context.');
+      return new OfflineStoreError(
+        'unavailable',
+        'IndexedDB is unavailable in this browser context.',
+      );
     }
     return new OfflineStoreError('transaction', `IndexedDB ${error.name} failure.`);
   }
