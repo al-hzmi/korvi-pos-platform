@@ -6,7 +6,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    branch: review/operations-50-production-readiness
+    branch: strike/5c-costing-authority
     autoDeployTrigger: 'off'
     buildCommand: bash scripts/deploy/build.sh api
     startCommand: node apps/api/dist/staging.js
@@ -29,7 +29,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    branch: review/operations-50-production-readiness
+    branch: strike/5c-costing-authority
     autoDeployTrigger: 'off'
     buildCommand: bash scripts/deploy/build.sh web
     startCommand: npm run start -w @korvi/pos-web -- --hostname 0.0.0.0

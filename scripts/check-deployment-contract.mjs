@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const RELEASE_BRANCH = 'review/operations-50-production-readiness';
+const DEPLOYMENT_BRANCH = 'strike/5c-costing-authority';
 const API_SERVICE = 'korvi-staging-api';
 const WEB_SERVICE = 'korvi-staging-web';
 
@@ -70,8 +70,8 @@ for (const [name, block] of [
 ]) {
   assert.equal(
     scalar(block, 'branch'),
-    RELEASE_BRANCH,
-    `${name} must deploy the release-candidate branch`,
+    DEPLOYMENT_BRANCH,
+    `${name} must deploy the controlled promotion branch`,
   );
   assert.equal(
     scalar(block, 'autoDeployTrigger'),
@@ -102,5 +102,5 @@ assert.match(apiEnv.get('DATABASE_URL') ?? '', /^ {8}sync: false$/m);
 assert.match(apiEnv.get('APP_ORIGINS') ?? '', /^ {8}sync: false$/m);
 
 console.log(
-  `[ok] deployment contract: ${requiredSecrets.length} production secrets, controlled same-branch staging`,
+  `[ok] deployment contract: ${requiredSecrets.length} production secrets, controlled promotion staging`,
 );

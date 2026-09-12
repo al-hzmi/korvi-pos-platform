@@ -10,11 +10,13 @@ synthetic merchants only. They are not the eventual production topology or a
 commercial SLA. Automatic deploys are disabled so one reviewed commit can be
 selected for both services after its CI and PostgreSQL gates pass.
 
-The staging Blueprint is release-candidate infrastructure, not a historical
-snapshot. Both services therefore track `review/operations-50-production-readiness`
-with automatic deployment disabled. An operator must still select one exact,
-reviewed SHA and verify that API and web deployed that same SHA before recording
-field evidence.
+The staging Blueprint uses `strike/5c-costing-authority` as the controlled
+promotion branch. Release candidates are proved first on
+`review/operations-50-production-readiness`. Only after the exact review SHA has
+passed the required CI, incident and DR gates may the promotion branch be moved
+to that same SHA by a non-forced fast-forward. Automatic deployment remains
+disabled, and the operator must verify that API and web both deployed exactly
+the promoted SHA before recording field evidence.
 
 Next continues to proxy browser `/v1/*` requests to Fastify (ADR-0014). The API
 keeps production secure/HttpOnly cookies, exact origin validation and all normal
@@ -43,7 +45,7 @@ connection error is logged generically to avoid leaking driver credentials.
 `scripts/check-deployment-contract.mjs`, executed by `npm run verify`, fails if
 `render.yaml` stops provisioning one of those secrets, hardcodes it, duplicates
 an environment key, enables automatic deployment, or points API/web at a branch
-other than the controlled release-candidate branch.
+other than the controlled promotion branch.
 
 The current required secret domains are owner-bootstrap signing and machine-only
 metrics scraping. Render generates each independently. They must never share a
@@ -55,9 +57,11 @@ whitespace-padded or equal credentials at boot.
 
 1. Connect the Render account. Inspect existing resources and quota first. Do
    not apply the template over an unrelated resource with a matching name.
-   Use only explicitly free plans; decline any paid upgrade. Import the active
-   branch with automatic deployments off, or create equivalent resources via
-   the connected provider API.
+   Use only explicitly free plans; decline any paid upgrade. Keep staging API
+   and web bound to `strike/5c-costing-authority` with automatic deployments off.
+   Candidate code remains on the review branch until all exact-head release
+   proofs are green; never deploy an unproved candidate by moving the provider
+   branch ad hoc.
 2. Create the dedicated PostgreSQL 17 instance. Do not reuse a customer database.
    Use the provider's secure query capability to create `korvi_staging_app` with
    `LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`,
@@ -85,18 +89,27 @@ whitespace-padded or equal credentials at boot.
    recording their values. Set web `KORVI_API_ORIGIN` to the API's exact HTTPS
    origin **before building**. No database URL, signing key, metrics token or
    password belongs in the web environment.
-5. Build API and web using the commands in `render.yaml`; deploy the same exact
-   reviewed commit to both. Record each provider-reported deployed SHA and refuse
-   field validation if they differ from each other or from the reviewed SHA. The
-   API's `/health` becomes reachable only after preflight succeeds. It remains a
-   liveness check, not continuous DB readiness. Next's `/` only proves web
-   liveness. Check both independently.
-6. Provision synthetic merchants through the existing tenant lifecycle,
+5. After CI, incident and DR all succeed on the exact review SHA, re-read both
+   GitHub refs and prove the promotion branch is an ancestor. Fast-forward
+   `strike/5c-costing-authority` to that exact SHA with `force=false`; abort on
+   any concurrent change. Then build API and web using the commands in
+   `render.yaml` and manually deploy both from that promoted branch. Record each
+   provider-reported deployed SHA and refuse field validation if they differ from
+   each other or from the promoted/reviewed SHA. The API's `/health` becomes
+   reachable only after preflight succeeds. It remains a liveness check, not
+   continuous DB readiness. Next's `/` only proves web liveness. Check both
+   independently.
+6. Before merchant workflow evidence, verify operations surfaces: `/ready` must
+   fail closed when PostgreSQL is unavailable and recover afterward; anonymous
+   `/metrics` must return 401; an authenticated scrape using the provider-held
+   `METRICS_AUTH_TOKEN` must succeed. Never print, copy into issue text, browser
+   storage, screenshots or artifacts the bearer credential itself.
+7. Provision synthetic merchants through the existing tenant lifecycle,
    entitlement and initial-owner bootstrap authorities. Do not invent direct
    SQL tenant/user seeds or add a public provisioning endpoint. No demo credential
    or owner capability is committed or published in an issue. Complete the
    existing onboarding flow before exercising merchant operations.
-7. Record interactive evidence: sign-in and cookie attributes; same-origin
+8. Record interactive evidence: sign-in and cookie attributes; same-origin
    stock/cost/purchasing reads and writes; unauthenticated and forbidden-origin
    refusal; supplier/order/partial-receipt flow; stale count/cost refresh;
    double-submit/ambiguous retry; keyboard/focus, RTL, responsive overflow and
