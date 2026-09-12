@@ -149,7 +149,7 @@ jobs:
           source "$RUNNER_TEMP/gate45-secrets.env"
           node scripts/browser-stage5d-seed.mjs
 
-      - name: Start API, production web and persistent Chrome profile
+      - name: Start API, production web and Stage 5D Chrome profile
         shell: bash
         run: |
           set -euo pipefail
@@ -176,7 +176,7 @@ jobs:
             --no-default-browser-check \
             --remote-debugging-address=127.0.0.1 \
             --remote-debugging-port="$KORVI_GATE45_CHROME_PORT" \
-            --user-data-dir="$RUNNER_TEMP/korvi-gate45-chrome" \
+            --user-data-dir="$RUNNER_TEMP/korvi-gate45-stage5d-chrome" \
             --window-size=1440,1200 \
             about:blank >"$KORVI_GATE45_ARTIFACT_DIR/chrome.log" 2>&1 &
           echo "$!" > "$KORVI_GATE45_ARTIFACT_DIR/chrome.pid"
@@ -198,6 +198,43 @@ jobs:
           set -euo pipefail
           source "$RUNNER_TEMP/gate45-secrets.env"
           node scripts/browser-stage5d-proof.mjs
+
+      - name: Start fresh persistent cashier browser profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_pid="$(cat "$KORVI_GATE45_ARTIFACT_DIR/chrome.pid")"
+          kill "$old_pid" 2>/dev/null || true
+          for attempt in $(seq 1 80); do
+            if ! curl --silent "http://127.0.0.1:$KORVI_GATE45_CHROME_PORT/json/version" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 0.25
+          done
+          if curl --silent "http://127.0.0.1:$KORVI_GATE45_CHROME_PORT/json/version" >/dev/null 2>&1; then
+            echo 'Stage 5D Chrome process did not terminate cleanly.' >&2
+            exit 1
+          fi
+          rm -rf "$RUNNER_TEMP/korvi-gate45-cashier-chrome"
+          "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_GATE45_CHROME_PORT" \
+            --user-data-dir="$RUNNER_TEMP/korvi-gate45-cashier-chrome" \
+            --window-size=1440,1200 \
+            about:blank >>"$KORVI_GATE45_ARTIFACT_DIR/chrome.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE45_ARTIFACT_DIR/chrome.pid"
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent "http://127.0.0.1:$KORVI_GATE45_CHROME_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Fresh Gate 45 cashier Chrome profile did not become ready.' >&2
+          exit 1
 
       - name: Execute real offline sales, conflict, reconnect and reconciliation in Chrome
         shell: bash
