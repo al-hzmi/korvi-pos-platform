@@ -2,11 +2,11 @@
 
 Status: **ACTIVE GOVERNANCE DENOMINATOR (v1)**
 
-Evidence baseline: `d6d24a0ec8fb083291ef922d4bc9a970dce12a08`
+Evidence baseline: `f501be797165cf1190eac6b8bdd4a95c683648e0`
 
 Snapshot date: 2026-09-12
 
-Current evidence-backed progress: **84 / 100** (`42 / 50` gates closed)
+Current evidence-backed progress: **86 / 100** (`43 / 50` gates closed)
 
 > This score measures implementation progress toward the current sellable Korvi
 > POS production target. It is not permission to ship. Critical release gates
@@ -142,21 +142,21 @@ saleable.
 | 39 | CSID lifecycle, cryptographic stamp and QR tags 6-9 are implemented | OPEN | CSID/XAdES/QR implementation and internal cryptographic/PostgreSQL evidence exist on the review lineage; the required live Azure Key Vault EC-HSM/P-256K non-exportable custody/sign/verify proof is still open, so no production sealing closure is claimed |
 | 40 | FATOORA reporting, retry and reconciliation are implemented and proven | OPEN | Internal implementation/evidence is green on `cdb911284ae0a6f02a6c9d6407695b90dcc9de45`: CI `34658671978`, PostgreSQL proof `34658671974`, 16/16 migrations, zero drift, durable one-shot/ambiguity/reconciliation proof and 2,385 passed tests; sequential production closure remains blocked by Gate 39 |
 
-### Pillar I — Offline-first resilience (6 / 10)
+### Pillar I — Offline-first resilience (8 / 10)
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
 | 41 | Service Worker keeps the cashier application shell usable without network | CLOSED | Production worker on `1d5e36b3...`; exact-head CI `34660345695` green; actual Chrome hard-outage proof `34660345691` stopped the web server, disabled browser HTTP cache, served the root document plus 21 Next assets from the worker, proved `/v1/*` bypass/no CacheStorage authority, and preserved artifact `10286767699` with digest `d55bdd5f...` |
 | 42 | IndexedDB/local durable store contains the required catalogue and sale state | CLOSED | Final governance SHA `21f839f2...`; exact-head CI `34662360647` and actual Chrome full-process-restart durability proof `34662360724` succeeded; artifact `10288355298` digest `03ad4d6f...` proves catalogue/draft persistence, tenant/branch/terminal/user/shift isolation, Arabic/barcode search and corruption refusal without making cache an HTTP authority |
 | 43 | Persistent ordered transaction queue survives restart/outage | CLOSED | Production queue on `d6d24a0e...`; CI `34663187823` and actual Chrome browser+origin outage/restart proof `34663187862` succeeded; artifact `10288466519` digest `f0dc3f79...` proves v1→v2 preservation, UUIDv7 ordering, exact-envelope idempotency, immutable/cross-partition collision refusal, durable settled/rejected outcomes, partition isolation, payload persistence and corruption refusal |
-| 44 | Sync engine retries/reporting without loss, duplication or reordering | OPEN | Port/RetryPolicy architecture only; durable queue substrate now exists |
+| 44 | Sync engine retries/reporting without loss, duplication or reordering | CLOSED | Durable leased/fenced sync engine on `f501be79...`; exact-head CI `34664871538` and actual Chrome process+origin restart proof `34664871536` succeeded; artifact `10288890491` digest `2faba8ac...` proves v2→v3 preservation, atomic single-owner claim, active-lease blocking, same-operation crash recovery, durable attempts/backoff, stale-token refusal, no overtaking, acknowledgement-before-advance and retained terminal rows |
 | 45 | Conflict/reconciliation policy and a real offline sale/reconnect workflow are proven | OPEN | Explicitly undecided/unproven in offline architecture |
 
 ### Pillar J — Release engineering, staging and field readiness (6 / 10)
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
-| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Gate 43 implementation CI `34663187823` succeeded on `d6d24a0e...`; earlier cashier/Phase-2 release-track CI evidence remains retained |
+| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Gate 44 implementation CI `34664871538` succeeded on `f501be79...`; earlier cashier/Phase-2 release-track CI evidence remains retained |
 | 47 | Restricted-role PostgreSQL 17 proof applies all migrations, detects drift and runs live/full verification | CLOSED | Gate 40 PostgreSQL proof `34658671974` succeeded with 16/16 migrations, zero drift, restricted application role and full verification; earlier release-track PostgreSQL evidence retained |
 | 48 | Matching-SHA API/web staging deployment is live and health-checked | CLOSED | Render staging matching-sha deployment evidence retained from the active release track |
 | 49 | Current-head independent review and all required Human Gates are complete | OPEN | No fresh independent approval/Human Gate is claimed |
@@ -174,14 +174,14 @@ Closed gates by pillar:
 - F: 4
 - G: 4
 - H: 3
-- I: 3
+- I: 4
 - J: 3
 
-Total: `42 / 50` gates.
+Total: `43 / 50` gates.
 
-`42 × 2 = 84`.
+`43 × 2 = 86`.
 
-**Canonical evidence-backed overall progress: 84 / 100.**
+**Canonical evidence-backed overall progress: 86 / 100.**
 
 This replaces the historical `58 / 100` baseline because the old number had no
 stable denominator. Progress now moves only when a named gate closes from the
@@ -197,14 +197,12 @@ opportunities are:
    exact review lineage; only then may Gate 39 be closed;
 2. after Gate 39 closes, promote/re-run the already internally green Gate 40
    FATOORA reporting/retry/reconciliation evidence on the final release lineage;
-3. implement and prove Gate 44: a sync engine over the durable Gate 43 queue
-   that preserves exact operation identity through retries, records durable
-   acknowledgement before advancing and never reorders around an unresolved
-   earlier operation;
-4. then close Gate 45 with concrete conflict/reconciliation policy and a real
-   offline sale → reconnect → server-authoritative reconciliation proof;
-5. obtain the required independent/Human Gates and complete production
-   operations plus controlled merchant field validation.
+3. close Gate 45 with concrete conflict/reconciliation policy and a real
+   offline sale → reconnect → server-authoritative reconciliation proof, using
+   the durable Gate 43 queue and Gate 44 leased/fenced sync engine without
+   weakening financial, stock, tax, identity or authorization authority;
+4. obtain the required independent/Human Gates for inventory and purchasing;
+5. complete production operations plus controlled merchant field validation.
 
 No direct SQL fixture, fake stock, weakened permission, fabricated browser
 claim, skipped regulatory requirement or temporary production bypass may be
