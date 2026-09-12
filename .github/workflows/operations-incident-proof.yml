@@ -124,19 +124,28 @@ jobs:
           }
           trap cleanup EXIT
 
-          for attempt in $(seq 1 40); do
-            if curl --fail --silent --show-error "http://127.0.0.1:${API_PORT}/health" >/dev/null; then
+          api_started='false'
+          for _attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error \
+              "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; then
+              api_started='true'
               break
             fi
-            test "$attempt" -lt 40
+            if ! kill -0 "$api_pid" >/dev/null 2>&1; then
+              echo 'Production API exited before becoming healthy.' >&2
+              sed -E 's#postgresql://[^[:space:]]+#postgresql://[redacted]#g' "$api_log" >&2 || true
+              exit 1
+            fi
             sleep 0.5
           done
+          test "$api_started" = 'true'
 
           headers_file="$(mktemp)"
           curl --fail --silent --show-error --dump-header "$headers_file" \
             "http://127.0.0.1:${API_PORT}/health" >/dev/null
-          grep -Eiq '^x-request-id: [0-9a-f-]+\r?$' "$headers_file"
+          request_id="$(awk 'BEGIN { IGNORECASE=1 } /^x-request-id:/ { gsub("\r", "", $2); print $2 }' "$headers_file")"
           rm -f "$headers_file"
+          [[ "$request_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]
           echo 'request_correlation_header=PASS' >> "$PROOF_LOG"
 
           initial_ready="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 "http://127.0.0.1:${API_PORT}/ready")"
@@ -171,16 +180,18 @@ jobs:
           echo 'outage_visible_in_metrics=PASS' >> "$PROOF_LOG"
 
           docker start "$postgres_container" >/dev/null
-          for attempt in $(seq 1 40); do
+          postgres_started='false'
+          for _attempt in $(seq 1 40); do
             if pg_isready -h 127.0.0.1 -p 5432 -U postgres -d korvi_incident >/dev/null 2>&1; then
+              postgres_started='true'
               break
             fi
-            test "$attempt" -lt 40
             sleep 0.5
           done
+          test "$postgres_started" = 'true'
 
           recovered='false'
-          for attempt in $(seq 1 40); do
+          for _attempt in $(seq 1 40); do
             code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 "http://127.0.0.1:${API_PORT}/ready" || true)"
             if [ "$code" = '200' ]; then
               recovered='true'
