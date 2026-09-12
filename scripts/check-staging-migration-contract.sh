@@ -44,7 +44,11 @@ done
 
 assert_refused() {
   : > "$log"
-  if PATH="$tmp:$PATH" KORVI_MIGRATION_TEST_LOG="$log" "$@" \
+  # Negative cases must be hermetic. `npm run verify` is also executed inside
+  # DR/live jobs that intentionally export DATABASE_URL, so inheriting caller
+  # deployment markers could turn a missing-variable refusal into a false pass.
+  if env -u NODE_ENV -u KORVI_ENVIRONMENT -u DATABASE_URL \
+      PATH="$tmp:$PATH" KORVI_MIGRATION_TEST_LOG="$log" "$@" \
       bash scripts/deploy/staging-migrate.sh >/dev/null 2>&1; then
     echo '[x] staging migration guard accepted an unsafe environment' >&2
     exit 1
@@ -55,8 +59,8 @@ assert_refused() {
   fi
 }
 
-assert_refused env NODE_ENV=development KORVI_ENVIRONMENT=staging DATABASE_URL='postgresql://invalid/korvi'
-assert_refused env NODE_ENV=production KORVI_ENVIRONMENT=production DATABASE_URL='postgresql://invalid/korvi'
-assert_refused env NODE_ENV=production KORVI_ENVIRONMENT=staging
+assert_refused NODE_ENV=development KORVI_ENVIRONMENT=staging DATABASE_URL='postgresql://invalid/korvi'
+assert_refused NODE_ENV=production KORVI_ENVIRONMENT=production DATABASE_URL='postgresql://invalid/korvi'
+assert_refused NODE_ENV=production KORVI_ENVIRONMENT=staging
 
 printf '[ok] staging migration contract is ordered and fail-closed\n'
