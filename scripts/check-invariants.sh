@@ -52,6 +52,12 @@ if ! bash scripts/check-staging-migration-contract.sh; then
   report "staging migration contract drift"
 fi
 
+# Gate 39 is a hard release blocker. Keep the external proof harness mechanically
+# bound to Premium Key Vault, EC-HSM/P-256K, non-exportability and remote ES256K.
+if ! node scripts/check-zatca-39-hsm-proof-contract.mjs; then
+  report "Gate 39 Azure HSM proof contract drift"
+fi
+
 # --- TypeScript escape hatches -------------------------------------------
 scan "'any' type used (CLAUDE.md: TypeScript)" \
      '(: *any\b|<any>|as +any\b|Array<any>)' '*.ts'
@@ -68,7 +74,7 @@ scan "Math rounding on an amount — use mulDivRound (ADR-0002)" \
 scan "float literal in the financial core (ADR-0002)" \
      '=\s*[0-9]+\.[0-9]+\s*;' '*.ts' '^packages/domain/src/(money|tax|tender)/'
 
-# --- Domain purity (ADR-0001) --------------------------------------------
+# --- Domain purity (ADR-0001) ---------------------------------------------
 scan "React imported into the domain (ADR-0001)" \
      "from +'react" '*.ts' '^packages/domain/'
 scan "Prisma imported into the domain (ADR-0001)" \
@@ -78,7 +84,7 @@ scan "Fastify imported into the domain (ADR-0001)" \
 scan "Node filesystem imported into the domain (ADR-0001)" \
      "from +'node:(fs|path)" '*.ts' '^packages/domain/'
 
-# --- Design system (ADR-0006) --------------------------------------------
+# --- Design system (ADR-0006) ---------------------------------------------
 # theme-color.ts is the single sanctioned exception: <meta name="theme-color">
 # is read by the browser chrome, which cannot resolve a CSS variable. Keeping
 # the exception to one named file is what stops it spreading.

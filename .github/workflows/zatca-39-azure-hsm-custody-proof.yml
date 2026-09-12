@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   azure-hsm-custody-proof:
-    name: Azure EC-HSM P-256K custody / remote-sign proof
+    name: Azure Key Vault Premium EC-HSM P-256K custody / remote-sign proof
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -51,6 +51,56 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Prove Azure Key Vault Premium resource class
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROOF_DIR"
+          az keyvault show \
+            --name "$AZURE_KEY_VAULT_NAME" \
+            --only-show-errors \
+            --output json > "$RUNNER_TEMP/zatca-vault.json"
+
+          python3 - "$RUNNER_TEMP/zatca-vault.json" "$PROOF_DIR/vault-metadata.json" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          from urllib.parse import urlparse
+
+          source = pathlib.Path(sys.argv[1])
+          target = pathlib.Path(sys.argv[2])
+          payload = json.loads(source.read_text(encoding='utf-8'))
+          configured_name = os.environ['AZURE_KEY_VAULT_NAME']
+
+          resource_id = payload.get('id')
+          vault_name = payload.get('name')
+          sku_name = str((payload.get('sku') or {}).get('name') or '').lower()
+          vault_uri = payload.get('vaultUri') or (payload.get('properties') or {}).get('vaultUri')
+
+          if not isinstance(resource_id, str) or '/providers/microsoft.keyvault/vaults/' not in resource_id.lower():
+              raise SystemExit('configured resource is not an Azure Key Vault vault')
+          if not isinstance(vault_name, str) or vault_name.lower() != configured_name.lower():
+              raise SystemExit('Azure management-plane vault does not match configured vault')
+          if sku_name != 'premium':
+              raise SystemExit(f'Gate 39 requires Azure Key Vault Premium; got SKU {sku_name!r}')
+          if not isinstance(vault_uri, str):
+              raise SystemExit('Azure Key Vault vaultUri is missing')
+
+          expected_host = f'{configured_name}.vault.azure.net'.lower()
+          actual_host = (urlparse(vault_uri).hostname or '').lower()
+          if actual_host != expected_host:
+              raise SystemExit('Azure Key Vault vaultUri does not bind to configured vault')
+
+          sanitized = {
+              'resourceType': 'Microsoft.KeyVault/vaults',
+              'skuName': 'premium',
+              'configuredVaultBinding': True,
+              'vaultUriBinding': True,
+          }
+          target.write_text(json.dumps(sanitized, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
       - name: Prove versioned non-exportable P-256K HSM key metadata
         shell: bash
         run: |
@@ -64,9 +114,11 @@ jobs:
 
           python3 - "$RUNNER_TEMP/zatca-key.json" "$PROOF_DIR/key-metadata.json" <<'PY'
           import json
+          import os
           import pathlib
           import re
           import sys
+          from urllib.parse import urlparse
 
           source = pathlib.Path(sys.argv[1])
           target = pathlib.Path(sys.argv[2])
@@ -99,14 +151,24 @@ jobs:
           if not jwk.get('x') or not jwk.get('y'):
               raise SystemExit('public EC coordinates are missing')
 
+          parsed = urlparse(kid)
+          expected_host = f"{os.environ['AZURE_KEY_VAULT_NAME']}.vault.azure.net".lower()
+          if (parsed.hostname or '').lower() != expected_host:
+              raise SystemExit('versioned key id is not bound to configured Premium vault')
+          parts = [part for part in parsed.path.split('/') if part]
+          if len(parts) != 3 or parts[0] != 'keys' or parts[1].lower() != os.environ['AZURE_ZATCA_KEY_NAME'].lower() or not parts[2]:
+              raise SystemExit('versioned key id is not bound to configured ZATCA key name')
+
           sanitized = {
-              'kid': kid,
               'kty': kty,
               'crv': curve,
               'keyOps': operations,
               'enabled': enabled,
               'exportable': exportable,
               'hsmPlatform': attributes.get('hsmPlatform'),
+              'configuredVaultBinding': True,
+              'configuredKeyBinding': True,
+              'versionPinned': True,
               'public_x_present': True,
               'public_y_present': True,
               'private_d_present': False,
@@ -179,9 +241,14 @@ jobs:
           }
           NODE
 
+          KEY_ID_SHA256="$(printf '%s' "$KEY_ID" | sha256sum | awk '{print $1}')"
           {
             echo "commit=$GITHUB_SHA"
-            echo "key_id=$KEY_ID"
+            echo 'azure_key_vault_resource=PASS'
+            echo 'vault_sku=premium'
+            echo 'configured_vault_binding=PASS'
+            echo 'configured_key_binding=PASS'
+            echo "key_id_sha256=$KEY_ID_SHA256"
             echo 'key_type=EC-HSM'
             echo 'curve=P-256K'
             echo 'algorithm=ES256K'
@@ -214,6 +281,7 @@ jobs:
           name: zatca-39-azure-hsm-proof-${{ github.sha }}
           path: |
             artifacts/zatca-39-azure-hsm/proof.txt
+            artifacts/zatca-39-azure-hsm/vault-metadata.json
             artifacts/zatca-39-azure-hsm/key-metadata.json
             artifacts/zatca-39-azure-hsm/message.sha256
             artifacts/zatca-39-azure-hsm/signature-value.sha256
