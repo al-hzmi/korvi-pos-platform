@@ -1,4 +1,4 @@
-/* global self, caches, fetch, Request, Response, URL, TextEncoder, crypto */
+/* global self, caches */
 'use strict';
 
 const SHELL_PATH = '/';
