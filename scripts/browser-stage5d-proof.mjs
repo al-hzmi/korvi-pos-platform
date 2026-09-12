@@ -161,54 +161,75 @@ async function waitForEnabledButton(text, timeoutMs = 20_000) {
 }
 
 async function pointForButton(text) {
-  const value = await evaluate(`(() => {
+  const value = await evaluate(`(async () => {
     const button = [...document.querySelectorAll('button')].find((candidate) =>
       (${normalizedTextExpression(text)})(candidate.textContent ?? '') && !candidate.disabled
     );
     if (!(button instanceof HTMLElement)) return null;
     button.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (!button.isConnected || button.disabled) return null;
     const rect = button.getBoundingClientRect();
     const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     if (rect.width <= 0 || rect.height <= 0 || point.x < 0 || point.y < 0 || point.x > innerWidth || point.y > innerHeight) return null;
+    const hit = document.elementFromPoint(point.x, point.y);
+    if (hit === null || (hit !== button && !button.contains(hit))) return null;
     return point;
   })()`);
-  if (value === null || value === undefined) throw new Error(`Enabled button not found: ${text}`);
+  if (value === null || value === undefined)
+    throw new Error(`Enabled button not found or not hit-testable: ${text}`);
   return value;
 }
 
 async function pointForLabel(text) {
-  const value = await evaluate(`(() => {
+  const value = await evaluate(`(async () => {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${js(text)})
     );
     if (!(label instanceof HTMLElement)) return null;
     label.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (!label.isConnected) return null;
     const rect = label.getBoundingClientRect();
     const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     if (rect.width <= 0 || rect.height <= 0 || point.x < 0 || point.y < 0 || point.x > innerWidth || point.y > innerHeight) return null;
+    const hit = document.elementFromPoint(point.x, point.y);
+    if (hit === null || (hit !== label && !label.contains(hit))) return null;
     return point;
   })()`);
-  if (value === null || value === undefined) throw new Error(`Label not found: ${text}`);
+  if (value === null || value === undefined)
+    throw new Error(`Label not found or not hit-testable: ${text}`);
   return value;
 }
 
 async function pointForAriaPrefix(prefix, selector = 'input') {
-  const value = await evaluate(`(() => {
+  const value = await evaluate(`(async () => {
     const element = [...document.querySelectorAll(${js(selector)})].find((candidate) =>
       (candidate.getAttribute('aria-label') ?? '').startsWith(${js(prefix)}) && !candidate.disabled
     );
     if (!(element instanceof HTMLElement)) return null;
     element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (!element.isConnected || element.disabled) return null;
     const rect = element.getBoundingClientRect();
     const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     if (rect.width <= 0 || rect.height <= 0 || point.x < 0 || point.y < 0 || point.x > innerWidth || point.y > innerHeight) return null;
+    const hit = document.elementFromPoint(point.x, point.y);
+    if (hit === null || (hit !== element && !element.contains(hit))) return null;
     return point;
   })()`);
-  if (value === null || value === undefined) throw new Error(`ARIA element not found: ${prefix}`);
+  if (value === null || value === undefined)
+    throw new Error(`ARIA element not found or not hit-testable: ${prefix}`);
   return value;
 }
 
 async function mouseClickPoint(point) {
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: point.x,
+    y: point.y,
+    button: 'none',
+  });
   await cdp.send('Input.dispatchMouseEvent', {
     type: 'mousePressed',
     x: point.x,
