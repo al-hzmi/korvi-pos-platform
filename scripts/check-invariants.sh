@@ -65,6 +65,13 @@ if ! node scripts/check-zatca-39-hsm-proof-contract.mjs; then
   report "Gate 39 Azure HSM proof contract drift"
 fi
 
+# One-shot dependency refresh workflows are privileged, write-enabled release
+# tools. They must never survive the exact refresh they were created for.
+if compgen -G '.github/workflows/refresh-*-lock.yml' >/dev/null; then
+  report "temporary dependency-refresh workflow retained in release tree"
+  compgen -G '.github/workflows/refresh-*-lock.yml' | sort | sed 's/^/      /' >&2
+fi
+
 # --- TypeScript escape hatches -------------------------------------------
 scan "'any' type used (CLAUDE.md: TypeScript)" \
      '(: *any\b|<any>|as +any\b|Array<any>)' '*.ts'
