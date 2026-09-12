@@ -10,6 +10,12 @@ synthetic merchants only. They are not the eventual production topology or a
 commercial SLA. Automatic deploys are disabled so one reviewed commit can be
 selected for both services after its CI and PostgreSQL gates pass.
 
+The staging Blueprint is release-candidate infrastructure, not a historical
+snapshot. Both services therefore track `review/operations-50-production-readiness`
+with automatic deployment disabled. An operator must still select one exact,
+reviewed SHA and verify that API and web deployed that same SHA before recording
+field evidence.
+
 Next continues to proxy browser `/v1/*` requests to Fastify (ADR-0014). The API
 keeps production secure/HttpOnly cookies, exact origin validation and all normal
 authentication/permission checks. Free API services cannot receive private
@@ -30,6 +36,20 @@ entrypoint refuses to listen until it has read and checked:
 This is a read-only boot check, not an automatic migration, full schema-drift
 proof, policy-body audit, ongoing monitor, seed or authorization bypass. A
 connection error is logged generically to avoid leaking driver credentials.
+
+## Deployment contract
+
+`apps/api/src/config.ts` is authoritative for production-required secret names.
+`scripts/check-deployment-contract.mjs`, executed by `npm run verify`, fails if
+`render.yaml` stops provisioning one of those secrets, hardcodes it, duplicates
+an environment key, enables automatic deployment, or points API/web at a branch
+other than the controlled release-candidate branch.
+
+The current required secret domains are owner-bootstrap signing and machine-only
+metrics scraping. Render generates each independently. They must never share a
+value, be copied into browser configuration, be committed, or be printed into
+logs or release evidence. The runtime independently rejects missing, weak,
+whitespace-padded or equal credentials at boot.
 
 ## Operator sequence
 
@@ -55,14 +75,22 @@ connection error is logged generically to avoid leaking driver credentials.
    history. Role ownership remains the existing staging/CI model, not a claim of
    a completed production separation between runtime and migration identities.
 4. Record the provider-assigned service URLs. Set API `DATABASE_URL` to the
-   internal URL for `korvi_staging_app`, `APP_ORIGINS` to the web's exact HTTPS
-   origin without a trailing slash, and a generated `BOOTSTRAP_SIGNING_KEY`.
-   Set web `KORVI_API_ORIGIN` to the API's exact HTTPS origin **before building**.
-   No database URL, signing key or password belongs in the web environment.
+   internal URL for `korvi_staging_app` and `APP_ORIGINS` to the web's exact HTTPS
+   origin without a trailing slash. Provision independent CSPRNG-backed
+   `BOOTSTRAP_SIGNING_KEY` and `METRICS_AUTH_TOKEN` values of at least 32
+   characters each; when the Blueprint creates a missing variable,
+   `generateValue: true` supplies an independent provider-generated secret.
+   Existing services do not gain evidence merely because the manifest changed:
+   verify both variables are present before deployment without reading or
+   recording their values. Set web `KORVI_API_ORIGIN` to the API's exact HTTPS
+   origin **before building**. No database URL, signing key, metrics token or
+   password belongs in the web environment.
 5. Build API and web using the commands in `render.yaml`; deploy the same exact
-   reviewed commit to both. The API's `/health` becomes reachable only after
-   preflight succeeds. It remains a liveness check, not continuous DB readiness.
-   Next's `/` only proves web liveness. Check both independently.
+   reviewed commit to both. Record each provider-reported deployed SHA and refuse
+   field validation if they differ from each other or from the reviewed SHA. The
+   API's `/health` becomes reachable only after preflight succeeds. It remains a
+   liveness check, not continuous DB readiness. Next's `/` only proves web
+   liveness. Check both independently.
 6. Provision synthetic merchants through the existing tenant lifecycle,
    entitlement and initial-owner bootstrap authorities. Do not invent direct
    SQL tenant/user seeds or add a public provisioning endpoint. No demo credential
@@ -92,7 +120,7 @@ connection error is logged generically to avoid leaking driver credentials.
   Gate remain necessary for Stage 5D closure. Production Operations, offline,
   regulatory and physical-device gates remain separate.
 
-## Provider references checked 2026-09-07
+## Provider references checked 2026-09-12
 
 - [Blueprint fields](https://render.com/docs/blueprint-spec)
 - [Free service and database limits](https://render.com/docs/free)

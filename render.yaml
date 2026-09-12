@@ -6,7 +6,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    branch: strike/5c-costing-authority
+    branch: review/operations-50-production-readiness
     autoDeployTrigger: 'off'
     buildCommand: bash scripts/deploy/build.sh api
     startCommand: node apps/api/dist/staging.js
@@ -22,12 +22,14 @@ services:
         sync: false
       - key: BOOTSTRAP_SIGNING_KEY
         generateValue: true
+      - key: METRICS_AUTH_TOKEN
+        generateValue: true
   - type: web
     name: korvi-staging-web
     runtime: node
     plan: free
     region: frankfurt
-    branch: strike/5c-costing-authority
+    branch: review/operations-50-production-readiness
     autoDeployTrigger: 'off'
     buildCommand: bash scripts/deploy/build.sh web
     startCommand: npm run start -w @korvi/pos-web -- --hostname 0.0.0.0

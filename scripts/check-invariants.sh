@@ -40,6 +40,12 @@ scan() {
 
 echo "Scanning invariants..."
 
+# Deployment config is part of the release safety boundary: runtime-required
+# secrets and the controlled staging branch may not drift from render.yaml.
+if ! node scripts/check-deployment-contract.mjs; then
+  report "deployment/runtime contract drift"
+fi
+
 # --- TypeScript escape hatches -------------------------------------------
 scan "'any' type used (CLAUDE.md: TypeScript)" \
      '(: *any\b|<any>|as +any\b|Array<any>)' '*.ts'

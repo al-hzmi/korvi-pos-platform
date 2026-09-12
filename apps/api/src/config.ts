@@ -1,6 +1,19 @@
 import { z } from 'zod';
 
 /**
+ * Production secrets that the runtime refuses to start without.
+ *
+ * Deployment-contract verification reads this declaration and requires the
+ * staging Blueprint to provision every member independently. Keep this list in
+ * lock-step with the production boot checks below: adding a new mandatory
+ * secret must make an unprepared deployment fail before it can reach staging.
+ */
+export const PRODUCTION_REQUIRED_SECRET_ENV_KEYS = [
+  'BOOTSTRAP_SIGNING_KEY',
+  'METRICS_AUTH_TOKEN',
+] as const;
+
+/**
  * Environment parsing, once, at the edge.
  *
  * Everything downstream receives a typed object rather than reading
