@@ -1,0 +1,92 @@
+name: One-shot Autoprefixer Lock Refresh
+
+on:
+  push:
+    branches:
+      - review/operations-50-production-readiness
+    paths:
+      - .github/workflows/refresh-autoprefixer-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    name: Refresh exact Autoprefixer pin and lockfile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out review branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/operations-50-production-readiness
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Refuse package-manager drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-package-manager.mjs
+
+      - name: Refresh Autoprefixer deterministically
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install \
+            --workspace @korvi/pos-web \
+            --save-dev \
+            --save-exact \
+            --package-lock-only \
+            --ignore-scripts \
+            --registry=https://registry.npmjs.org \
+            autoprefixer@10.6.0
+
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const web = JSON.parse(fs.readFileSync('apps/pos-web/package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          if (web.devDependencies?.autoprefixer !== '10.6.0') {
+            throw new Error('workspace manifest did not pin autoprefixer@10.6.0');
+          }
+          if (lock.packages?.['apps/pos-web']?.devDependencies?.autoprefixer !== '10.6.0') {
+            throw new Error('workspace lock metadata did not pin autoprefixer@10.6.0');
+          }
+          const installed = lock.packages?.['node_modules/autoprefixer'];
+          if (installed?.version !== '10.6.0') {
+            throw new Error('lockfile did not resolve autoprefixer@10.6.0');
+          }
+          if (!installed.integrity?.startsWith('sha512-')) {
+            throw new Error('lockfile lost Autoprefixer integrity metadata');
+          }
+          NODE
+
+      - name: Commit generated lock refresh and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/refresh-autoprefixer-lock.yml
+
+          mapfile -t changed < <(git status --porcelain | sed -E 's/^.. //' | sort)
+          expected=(
+            '.github/workflows/refresh-autoprefixer-lock.yml'
+            'apps/pos-web/package.json'
+            'package-lock.json'
+          )
+          if [ "${changed[*]}" != "${expected[*]}" ]; then
+            printf 'Unexpected lock-refresh diff:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          fi
+
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/pos-web/package.json package-lock.json .github/workflows/refresh-autoprefixer-lock.yml
+          git commit -m 'chore(deps): update autoprefixer to 10.6.0'
+          git push origin HEAD:review/operations-50-production-readiness
