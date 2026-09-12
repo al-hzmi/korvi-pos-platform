@@ -269,7 +269,11 @@ async function loginAdminSession() {
     body: JSON.stringify({ tenantSlug, email: ownerEmail, password }),
   });
   const body = await response.json().catch(() => null);
-  assert.equal(response.ok, true, `Admin login failed: ${String(response.status)} ${JSON.stringify(body)}`);
+  assert.equal(
+    response.ok,
+    true,
+    `Admin login failed: ${String(response.status)} ${JSON.stringify(body)}`,
+  );
   const raw =
     typeof response.headers.getSetCookie === 'function'
       ? response.headers.getSetCookie()
@@ -323,7 +327,11 @@ try {
   );
   const seeded = balances.rows.find((row) => row.sku === 'BROWSER-SKU-001');
   assert.ok(seeded !== undefined, 'Stage 5D browser product is missing.');
-  assert.equal(seeded.quantityScaled, '11000', 'Gate 45 requires the proved 11-unit Stage 5D stock baseline.');
+  assert.equal(
+    seeded.quantityScaled,
+    '11000',
+    'Gate 45 requires the proved 11-unit Stage 5D stock baseline.',
+  );
 
   const terminal = await adminRequest(admin.cookie, '/v1/admin/terminals', {
     method: 'POST',
@@ -383,7 +391,9 @@ try {
   assert.equal(rows[0]?.state, 'pending');
   assert.equal(rows[0]?.payload.expectedShiftId?.length, 36);
   await capture('01-first-offline-sale-queued');
-  record('first offline checkout became one immutable durable pending command before the till unlocked');
+  record(
+    'first offline checkout became one immutable durable pending command before the till unlocked',
+  );
 
   await clickButton('بدء بيع جديد');
   await addProofProduct();
@@ -398,7 +408,9 @@ try {
   assert.equal(secondPending?.state, 'pending');
   assert.equal(rows.filter((row) => row.state === 'pending').length, 2);
   await capture('02-second-offline-sale-queued');
-  record('two offline sales persisted as distinct ordered UUIDv7 commands without creating local financial truth');
+  record(
+    'two offline sales persisted as distinct ordered UUIDv7 commands without creating local financial truth',
+  );
 
   assert.equal(await evaluate('navigator.onLine'), false, 'Browser unexpectedly regained network.');
   const adjustmentOperationId = randomUUID();
@@ -413,7 +425,9 @@ try {
   });
   const afterAdjustment = await inventoryRow(admin.cookie, branch.id, seeded.productId);
   assert.equal(afterAdjustment.quantityScaled, '1000');
-  record('while Chrome remained offline, the real inventory authority reduced server stock 11→1 units');
+  record(
+    'while Chrome remained offline, the real inventory authority reduced server stock 11→1 units',
+  );
 
   await setBrowserOffline(false);
   await waitFor(
@@ -427,7 +441,9 @@ try {
       20_000,
     );
   });
-  record('actual Chrome network connectivity was restored without replacing the browser profile or IndexedDB');
+  record(
+    'actual Chrome network connectivity was restored without replacing the browser profile or IndexedDB',
+  );
 
   await waitFor(
     `(async () => {
@@ -465,11 +481,15 @@ try {
     'Queued/rejected checkout must not be rendered as a completed authoritative sale.',
   );
   await capture('03-reconnected-needs-review');
-  record('reconnect settled the oldest command once, then preserved the stock-conflicted command as needs-review');
+  record(
+    'reconnect settled the oldest command once, then preserved the stock-conflicted command as needs-review',
+  );
 
   const finalBalance = await inventoryRow(admin.cookie, branch.id, seeded.productId);
   assert.equal(finalBalance.quantityScaled, '0');
-  record('server inventory reconciled exactly: 11 initial −10 legitimate adjustment −1 accepted sale = 0 units');
+  record(
+    'server inventory reconciled exactly: 11 initial −10 legitimate adjustment −1 accepted sale = 0 units',
+  );
 
   const operations = {
     commit: process.env.GITHUB_SHA ?? 'local',
@@ -487,9 +507,13 @@ try {
     secondQueueState: secondFinal.state,
     secondRejectionReason: secondFinal.rejectionReason,
   };
-  await writeFile(`${artifactDirectory}/operations.json`, `${JSON.stringify(operations, null, 2)}\n`, {
-    mode: 0o600,
-  });
+  await writeFile(
+    `${artifactDirectory}/operations.json`,
+    `${JSON.stringify(operations, null, 2)}\n`,
+    {
+      mode: 0o600,
+    },
+  );
 
   const proof = [
     `commit=${operations.commit}`,
