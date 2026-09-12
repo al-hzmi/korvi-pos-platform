@@ -61,12 +61,7 @@ class QueueDouble implements TransactionQueuePort {
     return Promise.resolve();
   }
 
-  retryClaim(
-    _partition: QueuePartition,
-    _id: string,
-    _token: string,
-    nextAttemptAt: string,
-  ) {
+  retryClaim(_partition: QueuePartition, _id: string, _token: string, nextAttemptAt: string) {
     this.events.push(`retry:${nextAttemptAt}`);
     this.claimResult = { status: 'blocked', reason: 'retry-delay', until: nextAttemptAt };
     return Promise.resolve();
@@ -179,7 +174,10 @@ describe('queue push sync engine', () => {
 
     const first = engine.push();
     await Promise.resolve();
-    await expect(engine.push()).resolves.toMatchObject({ stopReason: 'already-running', claimed: 0 });
+    await expect(engine.push()).resolves.toMatchObject({
+      stopReason: 'already-running',
+      claimed: 0,
+    });
     release?.();
     await first;
   });

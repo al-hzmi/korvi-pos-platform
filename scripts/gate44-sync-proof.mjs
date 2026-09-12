@@ -160,7 +160,10 @@ try {
       captureBeyondViewport: false,
     });
     assert.equal(typeof screenshot.data, 'string');
-    await writeFile(`${artifactDirectory}/restart-sync-engine.png`, Buffer.from(screenshot.data, 'base64'));
+    await writeFile(
+      `${artifactDirectory}/restart-sync-engine.png`,
+      Buffer.from(screenshot.data, 'base64'),
+    );
   }
 
   await appendFile(`${artifactDirectory}/proof.txt`, `${lines.join('\n')}\n`);

@@ -64,11 +64,15 @@ describe('checkout queue executor', () => {
       .fn<ApiClient['checkout']>()
       .mockRejectedValue(new ApiError(401, 'unauthenticated', null));
 
-    await expect(createCheckoutSyncExecutor(apiWithCheckout(network)).execute(OPERATION)).resolves.toEqual({
+    await expect(
+      createCheckoutSyncExecutor(apiWithCheckout(network)).execute(OPERATION),
+    ).resolves.toEqual({
       outcome: 'retry',
       reason: 'network',
     });
-    await expect(createCheckoutSyncExecutor(apiWithCheckout(auth)).execute(OPERATION)).resolves.toEqual({
+    await expect(
+      createCheckoutSyncExecutor(apiWithCheckout(auth)).execute(OPERATION),
+    ).resolves.toEqual({
       outcome: 'retry',
       reason: 'unauthenticated',
     });

@@ -96,8 +96,10 @@ function requestValue<T>(request: IDBRequest<T>): Promise<T> {
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
   });
 }
 
@@ -113,7 +115,9 @@ async function createLegacyV2Database(): Promise<void> {
     catalogue.createIndex('tenantId', 'tenantId', { unique: false });
     const drafts = database.createObjectStore(OFFLINE_SALE_DRAFT_STORE, { keyPath: 'scopeKey' });
     drafts.createIndex('tenantId', 'tenantId', { unique: false });
-    const queue = database.createObjectStore(OFFLINE_TRANSACTION_QUEUE_STORE, { keyPath: 'queueKey' });
+    const queue = database.createObjectStore(OFFLINE_TRANSACTION_QUEUE_STORE, {
+      keyPath: 'queueKey',
+    });
     queue.createIndex('queuePartition', 'partitionKey', { unique: false });
     queue.createIndex('queueOrder', ['partitionKey', 'id'], { unique: true });
     queue.createIndex('operationId', 'id', { unique: true });
