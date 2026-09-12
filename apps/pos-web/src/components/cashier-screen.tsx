@@ -11,6 +11,7 @@ import { SaleReceipt } from './sale-receipt';
 import { StatusNote } from './status-note';
 import { previewCart } from '../lib/cart';
 import { intentLocked, signOutBlocked } from '../lib/checkout';
+import { createDurableProductSource } from '../lib/offline-search-source';
 import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
 import { parseSarToMinor } from '../lib/money';
@@ -61,7 +62,11 @@ export function CashierScreen({
   onShiftChanged,
 }: CashierScreenProps): JSX.Element {
   const cart = useCart();
-  const search = useProductSearch(api);
+  const productSource = useMemo(
+    () => createDurableProductSource(api, principal.tenant.id),
+    [api, principal.tenant.id],
+  );
+  const search = useProductSearch(productSource);
   const checkout = useCheckout(api, onExpired);
   const [cash, setCash] = useState('');
   const [draftHydrated, setDraftHydrated] = useState(false);
@@ -78,7 +83,11 @@ export function CashierScreen({
     }),
     [principal.tenant.id, principal.user.id, shift.id, terminal.branchId, terminal.id],
   );
-  const durableDraft = useDurableSaleDraft(durableScope);
+  const {
+    state: durableState,
+    persist: persistDraft,
+    clear: clearDraft,
+  } = useDurableSaleDraft(durableScope);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
   const parsedCash = parseSarToMinor(cash);
@@ -96,28 +105,28 @@ export function CashierScreen({
   }, [durableScope]);
 
   useEffect(() => {
-    if (draftHydrated || durableDraft.state.status === 'loading') return;
-    if (durableDraft.state.status === 'ready' && durableDraft.state.draft !== null) {
-      cart.dispatch({ type: 'replace', lines: durableDraft.state.draft.lines });
-      setCash(durableDraft.state.draft.cash);
+    if (draftHydrated || durableState.status === 'loading') return;
+    if (durableState.status === 'ready' && durableState.draft !== null) {
+      cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
+      setCash(durableState.draft.cash);
     }
     // A failed local store must never masquerade as durable. It does not,
     // however, revoke the server's online sale authority; the warning below
     // stays visible and the cashier can continue online.
     setDraftHydrated(true);
-  }, [cart, draftHydrated, durableDraft.state]);
+  }, [cart.dispatch, draftHydrated, durableState]);
 
   useEffect(() => {
-    if (!draftHydrated || durableDraft.state.status !== 'ready') return;
+    if (!draftHydrated || durableState.status !== 'ready') return;
     if (checkout.state.phase === 'succeeded') {
-      durableDraft.clear();
+      clearDraft();
       return;
     }
     if (cart.lines.length === 0 && cash === '') {
-      durableDraft.clear();
+      clearDraft();
       return;
     }
-    durableDraft.persist({
+    persistDraft({
       lines: cart.lines,
       cash,
       priceMode,
@@ -127,8 +136,10 @@ export function CashierScreen({
     cart.lines,
     cash,
     checkout.state.phase,
+    clearDraft,
     draftHydrated,
-    durableDraft,
+    durableState.status,
+    persistDraft,
     priceMode,
   ]);
 
@@ -174,14 +185,14 @@ export function CashierScreen({
   }, [checkout.state.failure]);
 
   const newSale = useCallback(() => {
-    durableDraft.clear();
+    clearDraft();
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
     // Once, between customers — not once per item.
     search.browse();
     focusSearch();
-  }, [checkout, cart, durableDraft, search, focusSearch]);
+  }, [checkout, cart, clearDraft, search, focusSearch]);
 
   const submit = useCallback(() => {
     if (cashMinor === null) return;
@@ -210,7 +221,7 @@ export function CashierScreen({
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
         <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
-          {durableDraft.state.status === 'failed' ? (
+          {durableState.status === 'failed' ? (
             <StatusNote tone="warning" className="mb-3" live>
               التخزين المحلي غير متاح. البيع المتصل يعمل، لكن لا تعتمد على استعادة السلة بعد إغلاق الصفحة.
             </StatusNote>
