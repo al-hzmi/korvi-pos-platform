@@ -1,0 +1,303 @@
+name: Gate 45 Offline Sale Reconciliation Proof
+
+on:
+  push:
+    branches:
+      - review/offline-45-reconciliation
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  offline-reconciliation-proof:
+    name: Chrome / PostgreSQL 17 / offline sale reconnect reconciliation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_gate45
+      DATABASE_URL: postgresql://korvi_gate45:korvi_gate45_ci@localhost:5432/korvi_gate45?schema=public
+      KORVI_BROWSER_TENANT_SLUG: stage5d-browser-proof
+      KORVI_BROWSER_OWNER_EMAIL: owner@stage5d-browser-proof.test
+      KORVI_BROWSER_BASE_URL: http://localhost:3000
+      KORVI_API_ORIGIN: http://localhost:3001
+      KORVI_BROWSER_ARTIFACT_DIR: artifacts/gate45-stage5d-prep
+      KORVI_CHROME_DEBUG_PORT: '9226'
+      KORVI_GATE45_BASE_URL: http://localhost:3000
+      KORVI_GATE45_CHROME_PORT: '9226'
+      KORVI_GATE45_ARTIFACT_DIR: artifacts/gate45-offline-proof
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_gate45
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_gate45"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Locate Chrome and record authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_GATE45_ARTIFACT_DIR" "$KORVI_BROWSER_ARTIFACT_DIR"
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No Chrome/Chromium binary exists on this runner.' >&2
+            exit 1
+          fi
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner_image=${ImageOS:-unknown}-${ImageVersion:-unknown}"
+            "$chrome" --version
+            psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command 'SHOW server_version;'
+          } | tee "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+
+      - name: Create restricted application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_gate45
+            LOGIN PASSWORD 'korvi_gate45_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_gate45 TO korvi_gate45;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_gate45;
+          SQL
+
+          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = 'korvi_gate45'")"
+          if [ "$flags" != 'f|f|f|f|f|f' ]; then
+            echo "Gate 45 application role has unsafe authority: $flags" >&2
+            exit 1
+          fi
+          echo "app_role_flags=$flags" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+
+      - name: Apply every migration and prove zero drift
+        shell: bash
+        working-directory: packages/database
+        run: |
+          set -euo pipefail
+          migration_directories="$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          npx --no-install prisma migrate deploy
+          npx --no-install prisma migrate status
+          npx --no-install prisma migrate diff \
+            --from-config-datasource \
+            --to-schema prisma/schema.prisma \
+            --exit-code
+          ledger="$(psql "${DATABASE_URL%%\?*}" --no-psqlrc --tuples-only --no-align --command \
+            'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL;')"
+          if [ "$ledger" != "$migration_directories" ]; then
+            echo "Migration ledger mismatch: directories=$migration_directories ledger=$ledger" >&2
+            exit 1
+          fi
+          echo "migration_directories=$migration_directories" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+          echo "migration_ledger=$ledger" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+          echo 'schema_drift=none' | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+
+      - name: Build actual production API and POS
+        run: |
+          set -euo pipefail
+          npm run db:generate
+          npm run build
+
+      - name: Generate ephemeral synthetic credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -base64 36 | tr -d '\n')"
+          signing_key="$(openssl rand -base64 48 | tr -d '\n')"
+          echo "::add-mask::$password"
+          echo "::add-mask::$signing_key"
+          umask 077
+          {
+            printf 'export KORVI_BROWSER_PASSWORD=%q\n' "$password"
+            printf 'export BOOTSTRAP_SIGNING_KEY=%q\n' "$signing_key"
+          } > "$RUNNER_TEMP/gate45-secrets.env"
+
+      - name: Provision synthetic merchant through Korvi control-plane authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/gate45-secrets.env"
+          node scripts/browser-stage5d-seed.mjs
+
+      - name: Start API, production web and persistent Chrome profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/gate45-secrets.env"
+          mkdir -p "$KORVI_GATE45_ARTIFACT_DIR" "$KORVI_BROWSER_ARTIFACT_DIR"
+
+          NODE_ENV=development \
+            API_PORT=3001 \
+            LOG_LEVEL=warn \
+            DATABASE_URL="$DATABASE_URL" \
+            BOOTSTRAP_SIGNING_KEY="$BOOTSTRAP_SIGNING_KEY" \
+            node apps/api/dist/index.js >"$KORVI_GATE45_ARTIFACT_DIR/api.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE45_ARTIFACT_DIR/api.pid"
+
+          KORVI_API_ORIGIN="$KORVI_API_ORIGIN" \
+            npm run start -w @korvi/pos-web -- --hostname 127.0.0.1 --port 3000 \
+            >"$KORVI_GATE45_ARTIFACT_DIR/web.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE45_ARTIFACT_DIR/web.pid"
+
+          "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_GATE45_CHROME_PORT" \
+            --user-data-dir="$RUNNER_TEMP/korvi-gate45-chrome" \
+            --window-size=1440,1200 \
+            about:blank >"$KORVI_GATE45_ARTIFACT_DIR/chrome.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE45_ARTIFACT_DIR/chrome.pid"
+
+          for attempt in $(seq 1 160); do
+            if curl --fail --silent http://localhost:3001/health >/dev/null && \
+               curl --fail --silent http://localhost:3000/control >/dev/null && \
+               curl --fail --silent "http://127.0.0.1:$KORVI_GATE45_CHROME_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Gate 45 runtime did not become ready.' >&2
+          exit 1
+
+      - name: Establish legitimate product, stock and cost through actual Stage 5D workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/gate45-secrets.env"
+          node scripts/browser-stage5d-proof.mjs
+
+      - name: Execute real offline sales, conflict, reconnect and reconciliation in Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/gate45-secrets.env"
+          node scripts/gate45-offline-reconciliation-proof.mjs
+          grep -q '^actual_chrome_offline_checkout=PASS$' "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
+          grep -q '^durable_two_command_queue=PASS$' "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
+          grep -q '^legitimate_inventory_conflict=PASS$' "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
+          grep -q '^oldest_command_server_settled=PASS$' "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
+          grep -q '^conflicted_command_needs_review=PASS$' "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
+          grep -q '^no_local_financial_authority=PASS$' "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
+          grep -q '^server_inventory_reconciled=PASS$' "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
+
+      - name: Prove accepted and rejected commands against PostgreSQL evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          operations="$KORVI_GATE45_ARTIFACT_DIR/operations.json"
+          node --input-type=module -e \
+            "import fs from 'node:fs'; const o=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); if(o.commit!==process.env.GITHUB_SHA) throw new Error('proof commit mismatch');" \
+            "$operations"
+          settled="$(node --input-type=module -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).firstOperationId)" "$operations")"
+          rejected="$(node --input-type=module -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).secondOperationId)" "$operations")"
+
+          sale_counts="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command \
+            "SELECT (SELECT count(*) FROM sales WHERE \"operationId\" = '$settled')::text || '|' || (SELECT count(*) FROM sales WHERE \"operationId\" = '$rejected')::text;")"
+          if [ "$sale_counts" != '1|0' ]; then
+            echo "Expected one accepted sale and zero rejected sale rows, got $sale_counts" >&2
+            exit 1
+          fi
+
+          invoice_counts="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command \
+            "SELECT (SELECT count(*) FROM invoices i JOIN sales s ON s.id = i.\"saleId\" AND s.\"tenantId\" = i.\"tenantId\" WHERE s.\"operationId\" = '$settled')::text || '|' || (SELECT count(*) FROM invoices i JOIN sales s ON s.id = i.\"saleId\" AND s.\"tenantId\" = i.\"tenantId\" WHERE s.\"operationId\" = '$rejected')::text;")"
+          if [ "$invoice_counts" != '1|0' ]; then
+            echo "Expected one authoritative invoice and no invoice for needs-review command, got $invoice_counts" >&2
+            exit 1
+          fi
+
+          movement_counts="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command \
+            "SELECT (SELECT count(*) FROM inventory_movements m JOIN sales s ON s.id = m.\"sourceId\" AND s.\"tenantId\" = m.\"tenantId\" WHERE m.\"sourceType\" = 'sale' AND s.\"operationId\" = '$settled')::text || '|' || (SELECT count(*) FROM inventory_movements m JOIN sales s ON s.id = m.\"sourceId\" AND s.\"tenantId\" = m.\"tenantId\" WHERE m.\"sourceType\" = 'sale' AND s.\"operationId\" = '$rejected')::text;")"
+          if [ "$movement_counts" != '1|0' ]; then
+            echo "Expected one stock movement for accepted sale and none for rejected command, got $movement_counts" >&2
+            exit 1
+          fi
+
+          movement_quantity="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command \
+            "SELECT m.\"quantityScaled\"::text FROM inventory_movements m JOIN sales s ON s.id = m.\"sourceId\" AND s.\"tenantId\" = m.\"tenantId\" WHERE m.\"sourceType\" = 'sale' AND s.\"operationId\" = '$settled';")"
+          if [ "$movement_quantity" != '-1000' ]; then
+            echo "Accepted offline sale moved unexpected stock quantity: $movement_quantity" >&2
+            exit 1
+          fi
+
+          {
+            echo "postgres_sale_counts=$sale_counts"
+            echo "postgres_invoice_counts=$invoice_counts"
+            echo "postgres_sale_movement_counts=$movement_counts"
+            echo "postgres_accepted_sale_quantity=$movement_quantity"
+            echo 'postgres_authoritative_reconciliation=PASS'
+          } | tee "$KORVI_GATE45_ARTIFACT_DIR/postgres-proof.txt"
+
+      - name: Prove clean repository tree
+        run: git diff --check
+
+      - name: Surface runtime logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          for log in api.log web.log chrome.log; do
+            echo "== $log =="
+            tail -n 250 "$KORVI_GATE45_ARTIFACT_DIR/$log" 2>/dev/null || true
+          done
+
+      - name: Stop runtime and erase credentials
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for pid_file in \
+            "$KORVI_GATE45_ARTIFACT_DIR/chrome.pid" \
+            "$KORVI_GATE45_ARTIFACT_DIR/web.pid" \
+            "$KORVI_GATE45_ARTIFACT_DIR/api.pid"; do
+            if [ -f "$pid_file" ]; then
+              kill "$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done
+          shred -u "$RUNNER_TEMP/gate45-secrets.env" 2>/dev/null || rm -f "$RUNNER_TEMP/gate45-secrets.env"
+
+      - name: Preserve sanitized Gate 45 proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gate-45-offline-reconciliation-proof-${{ github.sha }}
+          path: |
+            artifacts/gate45-offline-proof/authority.txt
+            artifacts/gate45-offline-proof/proof.txt
+            artifacts/gate45-offline-proof/postgres-proof.txt
+            artifacts/gate45-offline-proof/operations.json
+            artifacts/gate45-offline-proof/*.png
+          if-no-files-found: warn
+          retention-days: 30
