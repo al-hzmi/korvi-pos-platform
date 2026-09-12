@@ -1,0 +1,230 @@
+name: Operations Incident Outage Recovery Proof
+
+on:
+  push:
+    branches:
+      - review/operations-50-production-readiness
+    paths:
+      - '.github/workflows/operations-incident-proof.yml'
+      - 'apps/api/src/config.ts'
+      - 'apps/api/src/index.ts'
+      - 'apps/api/src/server.ts'
+      - 'apps/api/src/runtime/observability.ts'
+      - 'apps/api/src/runtime/readiness.ts'
+      - 'apps/api/src/runtime/shutdown.ts'
+      - 'packages/database/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  outage-recovery:
+    name: PostgreSQL outage / fail-closed readiness / recovery / graceful drain
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/korvi_incident
+      APP_URL: postgresql://korvi_incident:korvi_incident_ci@127.0.0.1:5432/korvi_incident
+      PROOF_LOG: artifacts/operations-incident-proof.txt
+      API_PORT: '3101'
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_incident
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_incident"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile and prepare restricted database
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+
+          postgres_major="$(psql "$ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT current_setting('server_version_num')::integer / 10000")"
+          test "$postgres_major" = '17'
+          psql "$ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_incident
+            LOGIN PASSWORD 'korvi_incident_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_incident TO korvi_incident;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_incident;
+          SQL
+          role_flags="$(psql "$ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname='korvi_incident'")"
+          test "$role_flags" = 'f|f|f|f|f|f'
+          DATABASE_URL="$APP_URL" npm exec -w @korvi/database -- prisma migrate deploy
+          DATABASE_URL="$APP_URL" npm exec -w @korvi/database -- prisma migrate status
+
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'postgres_major=%s\n' "$postgres_major"
+            printf 'application_role_flags=%s\n' "$role_flags"
+          } > "$PROOF_LOG"
+
+      - name: Build production runtime
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.APP_URL }}
+        run: |
+          set -euo pipefail
+          npm run db:generate
+          npm run build
+
+      - name: Exercise dependency outage, recovery and bounded shutdown
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t postgres_containers < <(docker ps --filter ancestor=postgres:17 --format '{{.ID}}')
+          test "${#postgres_containers[@]}" -eq 1
+          postgres_container="${postgres_containers[0]}"
+
+          metrics_token="$(openssl rand -hex 32)"
+          bootstrap_key="$(openssl rand -hex 32)"
+          api_log='artifacts/operations-incident-api.log'
+
+          NODE_ENV=production \
+          DATABASE_URL="$APP_URL" \
+          APP_ORIGINS='https://pos.example.invalid' \
+          BOOTSTRAP_SIGNING_KEY="$bootstrap_key" \
+          METRICS_AUTH_TOKEN="$metrics_token" \
+          API_PORT="$API_PORT" \
+          LOG_LEVEL=info \
+          setsid node apps/api/dist/index.js >"$api_log" 2>&1 &
+          api_pid=$!
+
+          cleanup() {
+            kill -TERM -- "-$api_pid" >/dev/null 2>&1 || true
+            docker start "$postgres_container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error "http://127.0.0.1:${API_PORT}/health" >/dev/null; then
+              break
+            fi
+            test "$attempt" -lt 40
+            sleep 0.5
+          done
+
+          headers_file="$(mktemp)"
+          curl --fail --silent --show-error --dump-header "$headers_file" \
+            "http://127.0.0.1:${API_PORT}/health" >/dev/null
+          grep -Eiq '^x-request-id: [0-9a-f-]+\r?$' "$headers_file"
+          rm -f "$headers_file"
+          echo 'request_correlation_header=PASS' >> "$PROOF_LOG"
+
+          initial_ready="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 "http://127.0.0.1:${API_PORT}/ready")"
+          test "$initial_ready" = '200'
+          echo 'initial_readiness=PASS' >> "$PROOF_LOG"
+
+          anonymous_metrics="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:${API_PORT}/metrics")"
+          test "$anonymous_metrics" = '401'
+          echo 'metrics_authentication=PASS' >> "$PROOF_LOG"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${metrics_token}" \
+            "http://127.0.0.1:${API_PORT}/metrics" > artifacts/metrics-before.txt
+          grep -q 'korvi_readiness_responses_total{result="ready"} 1' artifacts/metrics-before.txt
+          echo 'authenticated_metrics_scrape=PASS' >> "$PROOF_LOG"
+
+          docker stop "$postgres_container" >/dev/null
+          echo 'database_hard_stop=PASS' >> "$PROOF_LOG"
+
+          health_during_outage="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 "http://127.0.0.1:${API_PORT}/health")"
+          test "$health_during_outage" = '200'
+          echo 'liveness_during_database_outage=PASS' >> "$PROOF_LOG"
+
+          readiness_during_outage="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 6 "http://127.0.0.1:${API_PORT}/ready")"
+          test "$readiness_during_outage" = '503'
+          echo 'readiness_fail_closed_during_database_outage=PASS' >> "$PROOF_LOG"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${metrics_token}" \
+            "http://127.0.0.1:${API_PORT}/metrics" > artifacts/metrics-outage.txt
+          grep -q 'korvi_readiness_responses_total{result="not_ready"} 1' artifacts/metrics-outage.txt
+          echo 'outage_visible_in_metrics=PASS' >> "$PROOF_LOG"
+
+          docker start "$postgres_container" >/dev/null
+          for attempt in $(seq 1 40); do
+            if pg_isready -h 127.0.0.1 -p 5432 -U postgres -d korvi_incident >/dev/null 2>&1; then
+              break
+            fi
+            test "$attempt" -lt 40
+            sleep 0.5
+          done
+
+          recovered='false'
+          for attempt in $(seq 1 40); do
+            code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 "http://127.0.0.1:${API_PORT}/ready" || true)"
+            if [ "$code" = '200' ]; then
+              recovered='true'
+              break
+            fi
+            sleep 0.5
+          done
+          test "$recovered" = 'true'
+          echo 'readiness_recovered_without_api_restart=PASS' >> "$PROOF_LOG"
+
+          if grep -Fq "$metrics_token" "$api_log" || grep -Fq "$bootstrap_key" "$api_log"; then
+            echo 'Runtime log leaked an operations credential.' >&2
+            exit 1
+          fi
+          echo 'runtime_secret_log_scan=PASS' >> "$PROOF_LOG"
+
+          kill -TERM "$api_pid"
+          set +e
+          wait "$api_pid"
+          exit_code=$?
+          set -e
+          test "$exit_code" -eq 0
+          echo 'graceful_shutdown_exit_zero=PASS' >> "$PROOF_LOG"
+
+          trap - EXIT
+          rm -f "$api_log" artifacts/metrics-before.txt artifacts/metrics-outage.txt
+
+      - name: Reject secret or data-bearing retained evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e artifacts/operations-incident-api.log
+          test ! -e artifacts/metrics-before.txt
+          test ! -e artifacts/metrics-outage.txt
+          if grep -Eqi 'postgresql://|password[[:space:]]*[:=]|authorization:|BEGIN (EC |RSA |)PRIVATE KEY|session[_-]?cookie' "$PROOF_LOG"; then
+            echo 'Potential credential/private material detected in retained incident proof.' >&2
+            exit 1
+          fi
+          echo 'sanitized_retained_evidence=PASS' >> "$PROOF_LOG"
+
+      - name: Preserve sanitized incident proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: operations-incident-proof-${{ github.sha }}
+          path: artifacts/operations-incident-proof.txt
+          if-no-files-found: error
+          retention-days: 30

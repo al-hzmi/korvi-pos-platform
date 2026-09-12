@@ -6,6 +6,7 @@ const environment = {
   KORVI_ENVIRONMENT: 'staging',
   DATABASE_URL: 'postgresql://localhost/korvi_staging_test',
   BOOTSTRAP_SIGNING_KEY: 'synthetic-staging-config-test-key-only',
+  METRICS_AUTH_TOKEN: 'synthetic-staging-metrics-token-only-000000000000',
   APP_ORIGINS: 'https://korvi-web.example',
   PORT: '10000',
 };
@@ -23,6 +24,7 @@ describe('isolated staging configuration', () => {
     'KORVI_ENVIRONMENT',
     'DATABASE_URL',
     'BOOTSTRAP_SIGNING_KEY',
+    'METRICS_AUTH_TOKEN',
     'APP_ORIGINS',
   ])('refuses missing %s before any database connection', (key) => {
     const env: NodeJS.ProcessEnv = { ...environment };

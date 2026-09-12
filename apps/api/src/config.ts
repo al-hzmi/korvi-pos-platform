@@ -56,6 +56,16 @@ const schema = z
      * part of it a boot-time check is capable of enforcing (ADR-0021).
      */
     BOOTSTRAP_SIGNING_KEY: z.string().min(32).max(512).optional(),
+
+    /**
+     * Bearer credential for the machine-only Prometheus scrape surface.
+     *
+     * It never enters application persistence and must come from the deployment
+     * secret manager. Production refuses to boot without it: an ERP that ships
+     * an unauthenticated metrics surface, or silently ships no production
+     * telemetry at all, is an operations defect rather than a runtime default.
+     */
+    METRICS_AUTH_TOKEN: z.string().min(32).max(512).optional(),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV === 'production' && (value.BOOTSTRAP_SIGNING_KEY ?? '').trim() === '') {
@@ -73,6 +83,13 @@ const schema = z
         message: 'is required in production; refusing to accept writes from an unknown origin',
       });
     }
+    if (value.NODE_ENV === 'production' && (value.METRICS_AUTH_TOKEN ?? '').trim() === '') {
+      context.addIssue({
+        code: 'custom',
+        path: ['METRICS_AUTH_TOKEN'],
+        message: 'is required in production; operations telemetry must be authenticated',
+      });
+    }
   });
 
 export interface ApiConfig {
@@ -84,6 +101,8 @@ export interface ApiConfig {
   readonly DATABASE_URL: string | undefined;
   /** Never logged, never echoed, never persisted. */
   readonly BOOTSTRAP_SIGNING_KEY: string | undefined;
+  /** Machine-only scrape credential; never logged, echoed or persisted. */
+  readonly METRICS_AUTH_TOKEN: string | undefined;
   readonly isProduction: boolean;
 }
 
@@ -112,6 +131,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     SESSION_TTL_SECONDS: value.SESSION_TTL_HOURS * 3600,
     DATABASE_URL: value.DATABASE_URL,
     BOOTSTRAP_SIGNING_KEY: value.BOOTSTRAP_SIGNING_KEY,
+    METRICS_AUTH_TOKEN: value.METRICS_AUTH_TOKEN,
     isProduction: value.NODE_ENV === 'production',
   };
 }
