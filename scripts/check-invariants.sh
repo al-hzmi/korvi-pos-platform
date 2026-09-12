@@ -46,6 +46,13 @@ if ! node scripts/check-deployment-contract.mjs; then
   report "deployment/runtime contract drift"
 fi
 
+# The provider's own health check is not sufficient release evidence. Keep an
+# independent, secret-free HTTPS probe for liveness, DB readiness, protected
+# metrics refusal and the public web origin mechanically bound to its contract.
+if ! node scripts/check-external-staging-probe-contract.mjs; then
+  report "external staging probe contract drift"
+fi
+
 # Free staging has no one-off/pre-deploy execution surface. Its controlled API
 # build must therefore apply migrations through the guarded staging-only path.
 if ! bash scripts/check-staging-migration-contract.sh; then
