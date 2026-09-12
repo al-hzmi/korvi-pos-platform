@@ -1,0 +1,617 @@
+name: Gate 45 Implementation Helper
+
+on:
+  push:
+    branches: [review/offline-45-reconciliation]
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/offline-45-reconciliation
+          fetch-depth: 1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Apply Gate 45 production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              return Path(path).read_text()
+
+          def write(path, content):
+              p = Path(path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(content)
+
+          def replace_once(path, old, new):
+              text = read(path)
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement, found {count}')
+              write(path, text.replace(old, new, 1))
+
+          # Browser request carries a precondition, never server authority.
+          replace_once(
+              'apps/pos-web/src/lib/api-types.ts',
+              "export interface CheckoutRequest {\n  readonly operationId: string;\n  readonly terminalId: string;\n  readonly cashReceivedMinor: string;",
+              "export interface CheckoutRequest {\n  readonly operationId: string;\n  readonly terminalId: string;\n  /** Delayed/offline replay precondition. The server derives the active shift and only compares. */\n  readonly expectedShiftId?: string;\n  readonly cashReceivedMinor: string;",
+          )
+
+          replace_once(
+              'apps/pos-web/src/lib/api.ts',
+              "            operationId: request.operationId,\n            terminalId: request.terminalId,\n            cashReceivedMinor: request.cashReceivedMinor,",
+              "            operationId: request.operationId,\n            terminalId: request.terminalId,\n            ...(request.expectedShiftId === undefined\n              ? {}\n              : { expectedShiftId: request.expectedShiftId }),\n            cashReceivedMinor: request.cashReceivedMinor,",
+          )
+
+          replace_once(
+              'apps/api/src/routes/validation.ts',
+              "    operationId: UUID,\n    terminalId: UUID,\n    cashReceivedMinor: MINOR.optional(),",
+              "    operationId: UUID,\n    terminalId: UUID,\n    // A replay precondition, not an authority assertion. The server derives the\n    // active shift and refuses if it no longer matches this immutable intent.\n    expectedShiftId: UUID.optional(),\n    cashReceivedMinor: MINOR.optional(),",
+          )
+
+          replace_once(
+              'apps/api/src/routes/business.ts',
+              "        operationId: parsed.data.operationId,\n        terminalId: parsed.data.terminalId,\n        lines: parsed.data.lines,",
+              "        operationId: parsed.data.operationId,\n        terminalId: parsed.data.terminalId,\n        ...(parsed.data.expectedShiftId === undefined\n          ? {}\n          : { expectedShiftId: parsed.data.expectedShiftId }),\n        lines: parsed.data.lines,",
+          )
+
+          replace_once(
+              'apps/api/src/checkout/service.ts',
+              "  readonly operationId: string;\n  readonly terminalId: string;\n  readonly lines: readonly CheckoutLineInput[];",
+              "  readonly operationId: string;\n  readonly terminalId: string;\n  /**\n   * Optional immutable precondition used by delayed/offline replay. The client\n   * does not choose a shift: the server still derives the current open shift\n   * and merely refuses if it is no longer the one under which the intent was captured.\n   */\n  readonly expectedShiftId?: string | undefined;\n  readonly lines: readonly CheckoutLineInput[];",
+          )
+
+          marker = "const IDEMPOTENCY_SCOPE = 'checkout';"
+          service = read('apps/api/src/checkout/service.ts')
+          if marker not in service:
+              raise SystemExit('checkout service fingerprint marker missing')
+          helper = """function fingerprintCheckoutIntent(\n  input: CheckoutInput,\n  payment: readonly CheckoutTenderInput[],\n  branchId: string,\n): string {\n  return fingerprintIntent({\n    branchId,\n    terminalId: input.terminalId,\n    lines: input.lines.map((line) => ({\n      productId: line.productId,\n      quantityScaled: line.quantityScaled,\n      discount: describeDiscount(line.discount),\n    })),\n    tenders: payment.map((tender) => ({\n      kind: tender.kind,\n      amountMinor: tender.amountMinor,\n      scheme: tender.kind === 'electronic' ? tender.scheme : '',\n      reference: tender.kind === 'electronic' ? tender.reference : '',\n    })),\n    basketDiscount: describeDiscount(input.basketDiscount),\n  });\n}\n\n"""
+          service = service.replace(marker, helper + marker, 1)
+
+          old_block_start = "      const shift = await deps.shifts.findOpenForTerminal(scope, input.terminalId);"
+          old_block_end = "      const tenant = await deps.tenants.current(scope);"
+          start = service.find(old_block_start)
+          end = service.find(old_block_end, start)
+          if start < 0 or end < 0:
+              raise SystemExit('checkout service preflight block markers missing')
+          new_block = """      const payment = normalizePayment(input);\n      if (typeof payment === 'string') return fail(payment);\n\n      /*\n       * Idempotency is resolved before consulting today's shift. This matters\n       * after a long outage: an earlier request can have committed while its\n       * response was lost, and the original shift may be closed by the time\n       * the exact operation is replayed. A completed sale must still be\n       * discoverable; requiring a currently-open shift first would turn a safe\n       * replay into a false rejection.\n       */\n      const reserved = await deps.idempotency.find(scope, IDEMPOTENCY_SCOPE, input.operationId);\n      if (reserved !== null) {\n        const existing = await deps.sales.findByOperationId(scope, input.operationId);\n        if (existing === null) return fail('idempotency-conflict');\n        if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {\n          return fail('idempotency-conflict');\n        }\n        const replayHash = fingerprintCheckoutIntent(input, payment, existing.branchId);\n        if (reserved.requestHash !== replayHash) return fail('idempotency-conflict');\n        const invoice = await deps.sales.invoiceForSale(scope, existing.id);\n        return {\n          outcome: 'success',\n          replayed: true,\n          sale: summarise(existing, invoice?.invoiceNumber ?? '', input.principal.displayName),\n        };\n      }\n\n      const shift = await deps.shifts.findOpenForTerminal(scope, input.terminalId);\n      if (shift === null) return fail('no-open-shift');\n      // The drawer belongs to one cashier. Ringing into somebody else's shift\n      // makes their variance unanswerable at close.\n      if (shift.userId !== input.principal.userId) return fail('shift-invalid');\n      // A delayed operation is pinned to the shift that existed when the\n      // cashier accepted the money. Never move old cash into a replacement\n      // shift merely because the terminal is the same.\n      if (input.expectedShiftId !== undefined && shift.id !== input.expectedShiftId) {\n        return fail('shift-invalid');\n      }\n      // A principal pinned to a branch may not transact through a till in\n      // another one.\n      if (input.principal.branchId !== null && input.principal.branchId !== shift.branchId) {\n        return fail('shift-invalid');\n      }\n\n      const intentHash = fingerprintCheckoutIntent(input, payment, shift.branchId);\n\n"""
+          service = service[:start] + new_block + service[end:]
+
+          needle = """    const existing = await deps.sales.findByOperationId(scope, input.operationId);\n    if (existing === null) {\n      // Reserved but no sale: the competitor rolled back after all, or the\n      // reservation belongs to something other than a completed checkout.\n      // Refusing is the only safe answer — retrying could double-charge.\n      return fail('idempotency-conflict');\n    }\n    const invoice = await deps.sales.invoiceForSale(scope, existing.id);\n"""
+          replacement = """    const existing = await deps.sales.findByOperationId(scope, input.operationId);\n    if (existing === null) {\n      // Reserved but no sale: refusing is the only safe answer. A committed\n      // checkout reservation and sale are one database transaction.\n      return fail('idempotency-conflict');\n    }\n    if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {\n      return fail('idempotency-conflict');\n    }\n    const invoice = await deps.sales.invoiceForSale(scope, existing.id);\n"""
+          if service.count(needle) != 1:
+              raise SystemExit('resolveCompetingOperation block missing')
+          service = service.replace(needle, replacement, 1)
+          write('apps/api/src/checkout/service.ts', service)
+
+          # Queue-aware checkout state: once the immutable command is durably queued,
+          # the till may move to the next customer without claiming a server sale exists.
+          replace_once(
+              'apps/pos-web/src/lib/checkout.ts',
+              "export type CheckoutPhase = 'idle' | 'submitting' | 'succeeded' | 'failed';",
+              "export type CheckoutPhase = 'idle' | 'submitting' | 'queued' | 'succeeded' | 'failed';",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout.ts',
+              "  | { readonly type: 'succeeded'; readonly sale: SaleSummary; readonly replayed: boolean }\n  | { readonly type: 'failed'; readonly failure: Failure }",
+              "  | { readonly type: 'queued'; readonly intent: CheckoutIntent }\n  | { readonly type: 'succeeded'; readonly sale: SaleSummary; readonly replayed: boolean }\n  | { readonly type: 'failed'; readonly failure: Failure }",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout.ts',
+              "    case 'succeeded':\n      return {",
+              "    case 'queued':\n      return {\n        ...state,\n        phase: 'queued',\n        intent: event.intent,\n        attemptOutstanding: false,\n        sale: null,\n        replayed: false,\n        failure: null,\n      };\n    case 'succeeded':\n      return {",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout.ts',
+              "    state.phase === 'submitting' ||\n    state.phase === 'succeeded' ||",
+              "    state.phase === 'submitting' ||\n    state.phase === 'queued' ||\n    state.phase === 'succeeded' ||",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout.ts',
+              "  return state.phase === 'submitting' || state.phase === 'succeeded' || state.attemptOutstanding;",
+              "  return (\n    state.phase === 'submitting' ||\n    state.phase === 'queued' ||\n    state.phase === 'succeeded' ||\n    state.attemptOutstanding\n  );",
+          )
+
+          # Ambiguous network outcomes transfer ownership to the durable queue only
+          # after IndexedDB confirms the immutable command is persisted.
+          replace_once(
+              'apps/pos-web/src/lib/checkout-submit.ts',
+              "export interface CheckoutRunner {\n  checkout(intent: CheckoutIntent): Promise<CheckoutResponse>;\n}\n",
+              "export interface CheckoutRunner {\n  checkout(intent: CheckoutIntent): Promise<CheckoutResponse>;\n}\n\nexport type AmbiguousCheckoutQueue = (intent: CheckoutIntent) => Promise<void>;\n\nconst OFFLINE_QUEUE_UNAVAILABLE = {\n  code: 'offline-queue-unavailable',\n  message:\n    'تعذّر حفظ العملية المعلّقة محلياً. لا تبدأ بيعاً جديداً؛ أعد المحاولة بنفس العملية حتى يتأكد وضعها.',\n  action: 'retry-same',\n} as const;\n",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout-submit.ts',
+              "  onUnauthenticated: () => void,\n  mint: () => string = newId,\n): Promise<void> {",
+              "  onUnauthenticated: () => void,\n  mint: () => string = newId,\n  queueAmbiguous?: AmbiguousCheckoutQueue,\n): Promise<void> {",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout-submit.ts',
+              "    terminalId: input.terminalId,\n    cashReceivedMinor: input.cashReceivedMinor,",
+              "    terminalId: input.terminalId,\n    ...(input.expectedShiftId === undefined ? {} : { expectedShiftId: input.expectedShiftId }),\n    cashReceivedMinor: input.cashReceivedMinor,",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout-submit.ts',
+              "  readonly terminalId: string;\n  readonly lines: readonly CartLine[];",
+              "  readonly terminalId: string;\n  readonly expectedShiftId?: string;\n  readonly lines: readonly CartLine[];",
+          )
+          old_catch = """    .catch((error: unknown) => {\n      const failure = describeFailure(error);\n      if (failure.action === 'reauthenticate') {\n        flight.reset();\n        onUnauthenticated();\n        return;\n      }\n      flight.settle(outcomeFor(failure.action));\n      dispatch({ type: 'failed', failure });\n    });\n"""
+          new_catch = """    .catch(async (error: unknown) => {\n      const failure = describeFailure(error);\n      if (failure.action === 'reauthenticate') {\n        flight.reset();\n        onUnauthenticated();\n        return;\n      }\n      if (failure.action === 'retry-same' && queueAmbiguous !== undefined) {\n        try {\n          // The queue receives the exact intent that may have reached the server.\n          // Only a completed durable write transfers ownership away from this flight.\n          await queueAmbiguous(intent);\n          flight.reset();\n          dispatch({ type: 'queued', intent });\n          return;\n        } catch {\n          // Losing IndexedDB after losing the network is the one case where the\n          // till must stay locked: unlocking would lose a possibly-committed sale.\n          flight.settle('ambiguous');\n          dispatch({ type: 'failed', failure: OFFLINE_QUEUE_UNAVAILABLE });\n          return;\n        }\n      }\n      flight.settle(outcomeFor(failure.action));\n      dispatch({ type: 'failed', failure });\n    });\n"""
+          replace_once('apps/pos-web/src/lib/checkout-submit.ts', old_catch, new_catch)
+
+          # Expose rejected queue rows as immutable reconciliation cases without
+          # adding a second database or deleting evidence.
+          replace_once(
+              'apps/pos-web/src/lib/offline-store.ts',
+              "  queueCount(partition: QueuePartition): Promise<number>;\n  describe(): OfflineStoreDescription;",
+              "  queueCount(partition: QueuePartition): Promise<number>;\n  rejected(partition: QueuePartition, limit?: number): Promise<readonly QueuedOperation[]>;\n  describe(): OfflineStoreDescription;",
+          )
+          marker2 = "function validateClaimRequest(request: QueueClaimRequest): number {"
+          store = read('apps/pos-web/src/lib/offline-store.ts')
+          if marker2 not in store:
+              raise SystemExit('offline store claim marker missing')
+          rejected_fn = """async function listRejectedQueuedOperations(\n  database: IDBDatabase,\n  partition: QueuePartition,\n  limit: number,\n): Promise<readonly QueuedOperation[]> {\n  const partitionKey = queuePartitionKey(partition);\n  const bounded = Math.min(Math.max(Math.trunc(limit), 1), MAX_QUEUE_READ);\n  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readonly');\n  const done = transactionDone(transaction);\n  const index = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE).index(QUEUE_ORDER_INDEX);\n  const range = IDBKeyRange.bound([partitionKey, ''], [partitionKey, '\\uffff']);\n  const request = index.openCursor(range, 'next');\n  const operations: QueuedOperation[] = [];\n\n  try {\n    await new Promise<void>((resolve, reject) => {\n      request.onerror = () => reject(classifyIndexedDbError(request.error));\n      request.onsuccess = () => {\n        const cursor = request.result;\n        if (cursor === null || operations.length >= bounded) {\n          resolve();\n          return;\n        }\n        try {\n          const operation = decodeStoredQueueRow(cursor.value, partition).operation;\n          if (operation.state === 'rejected') operations.push(operation);\n          if (operations.length >= bounded) {\n            resolve();\n            return;\n          }\n          cursor.continue();\n        } catch (error) {\n          transaction.abort();\n          reject(classifyIndexedDbError(error));\n        }\n      };\n    });\n    await done;\n    return operations;\n  } catch (error) {\n    await done.catch(() => undefined);\n    throw classifyIndexedDbError(error);\n  }\n}\n\n"""
+          store = store.replace(marker2, rejected_fn + marker2, 1)
+          method_marker = "    async queueCount(partition) {"
+          idx = store.find(method_marker)
+          if idx < 0:
+              raise SystemExit('queueCount method marker missing')
+          store = store[:idx] + "    async rejected(partition, limit = 100) {\n      return listRejectedQueuedOperations(database, partition, limit);\n    },\n\n" + store[idx:]
+          write('apps/pos-web/src/lib/offline-store.ts', store)
+
+          write('apps/pos-web/src/lib/offline-checkout.ts', r'''import { isUuidV7, type QueueOperationInput, type QueuePartition, type SyncPushReport } from '@korvi/domain';
+import type { ApiClient } from './api';
+import type { CheckoutRequest } from './api-types';
+import type { CheckoutIntent } from './checkout-flight';
+import { createCheckoutSyncExecutor, isCheckoutQueuePayload } from './checkout-sync-executor';
+import {
+  OfflineStoreError,
+  openKorviOfflineStore,
+  type KorviOfflineStore,
+} from './offline-store';
+import { createQueuePushSyncEngine } from './sync-engine';
+
+export interface OfflineSaleReviewCase {
+  readonly operationId: string;
+  readonly enqueuedAt: string;
+  readonly attempts: number;
+  readonly reason: string;
+  readonly intent: CheckoutRequest;
+  readonly disposition: 'needs-review';
+}
+
+export interface OfflineCheckoutSyncSnapshot {
+  readonly report: SyncPushReport;
+  readonly pendingCount: number;
+  readonly needsReview: readonly OfflineSaleReviewCase[];
+}
+
+type OpenStore = () => Promise<KorviOfflineStore>;
+
+/** UUIDv7 embeds its Unix millisecond timestamp in the first 48 bits. */
+export function uuidV7EnqueuedAt(id: string): string {
+  if (!isUuidV7(id)) throw new OfflineStoreError('corrupt', 'Checkout operation id is not UUIDv7.');
+  const milliseconds = Number.parseInt(id.replaceAll('-', '').slice(0, 12), 16);
+  if (!Number.isSafeInteger(milliseconds)) {
+    throw new OfflineStoreError('corrupt', 'Checkout UUIDv7 timestamp is invalid.');
+  }
+  const date = new Date(milliseconds);
+  if (!Number.isFinite(date.getTime())) {
+    throw new OfflineStoreError('corrupt', 'Checkout UUIDv7 timestamp is outside Date range.');
+  }
+  return date.toISOString();
+}
+
+export function checkoutQueueOperation(intent: CheckoutIntent): QueueOperationInput<CheckoutRequest> {
+  if (intent.expectedShiftId === undefined || !isUuidV7(intent.expectedShiftId)) {
+    throw new OfflineStoreError(
+      'corrupt',
+      'Offline checkout must be pinned to the server-authorized shift that captured the cash.',
+    );
+  }
+  const payload: CheckoutRequest = {
+    operationId: intent.operationId,
+    terminalId: intent.terminalId,
+    expectedShiftId: intent.expectedShiftId,
+    cashReceivedMinor: intent.cashReceivedMinor,
+    lines: intent.lines.map((line) => ({ ...line })),
+  };
+  if (!isCheckoutQueuePayload(payload)) {
+    throw new OfflineStoreError('corrupt', 'Refusing to queue an invalid checkout intent.');
+  }
+  return {
+    id: intent.operationId,
+    kind: 'sale.checkout',
+    payload,
+    // Deterministic from the immutable operation id, so re-enqueue after a crash
+    // is the exact same Gate 43 envelope rather than a near-duplicate.
+    enqueuedAt: uuidV7EnqueuedAt(intent.operationId),
+  };
+}
+
+export async function enqueueOfflineCheckout(
+  partition: QueuePartition,
+  intent: CheckoutIntent,
+  openStore: OpenStore = () => openKorviOfflineStore(),
+): Promise<void> {
+  const store = await openStore();
+  try {
+    await store.enqueue(partition, checkoutQueueOperation(intent));
+  } finally {
+    store.close();
+  }
+}
+
+/**
+ * Reconcile queued checkout intents against the real server authority.
+ *
+ * There is deliberately no `keep-local` path for money, tax or stock. A server
+ * acceptance settles the queue item; a definitive business refusal remains an
+ * immutable rejected command and becomes a needs-review case. The browser may
+ * report the conflict but cannot turn provisional cash into an authoritative sale.
+ */
+export async function syncOfflineCheckouts(
+  api: ApiClient,
+  partition: QueuePartition,
+  onUnauthenticated?: () => void,
+  openStore: OpenStore = () => openKorviOfflineStore(),
+): Promise<OfflineCheckoutSyncSnapshot> {
+  const store = await openStore();
+  try {
+    const engine = createQueuePushSyncEngine(
+      store,
+      partition,
+      createCheckoutSyncExecutor(api, { onUnauthenticated }),
+    );
+    const report = await engine.push();
+    const pending = await store.pending(partition, 500);
+    const rejected = await store.rejected(partition, 500);
+    const needsReview: OfflineSaleReviewCase[] = [];
+    for (const operation of rejected) {
+      if (operation.kind !== 'sale.checkout') continue;
+      if (!isCheckoutQueuePayload(operation.payload) || operation.rejectionReason === null) {
+        throw new OfflineStoreError('corrupt', 'Rejected checkout reconciliation evidence is corrupt.');
+      }
+      needsReview.push({
+        operationId: operation.id,
+        enqueuedAt: operation.enqueuedAt,
+        attempts: operation.attempts,
+        reason: operation.rejectionReason,
+        intent: operation.payload,
+        disposition: 'needs-review',
+      });
+    }
+    return { report, pendingCount: pending.length, needsReview };
+  } finally {
+    store.close();
+  }
+}
+''')
+
+          # Exact checkout replay validator now requires the shift precondition and
+          # mirrors the server's 200-line bound.
+          replace_once(
+              'apps/pos-web/src/lib/checkout-sync-executor.ts',
+              "    typeof value.terminalId !== 'string' ||\n    !isUuidV7(value.terminalId) ||\n    typeof value.cashReceivedMinor !== 'string' ||",
+              "    typeof value.terminalId !== 'string' ||\n    !isUuidV7(value.terminalId) ||\n    typeof value.expectedShiftId !== 'string' ||\n    !isUuidV7(value.expectedShiftId) ||\n    typeof value.cashReceivedMinor !== 'string' ||",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout-sync-executor.ts',
+              "    value.lines.length > 500",
+              "    value.lines.length > 200",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout-sync-executor.ts',
+              "export function createCheckoutSyncExecutor(api: ApiClient): SyncOperationExecutor {",
+              "export interface CheckoutSyncExecutorOptions {\n  readonly onUnauthenticated?: (() => void) | undefined;\n}\n\nexport function createCheckoutSyncExecutor(\n  api: ApiClient,\n  options: CheckoutSyncExecutorOptions = {},\n): SyncOperationExecutor {",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/checkout-sync-executor.ts',
+              "        if (failure.action === 'retry-same' || failure.action === 'reauthenticate') {\n          return { outcome: 'retry', reason: failure.code } as const;\n        }",
+              "        if (failure.action === 'reauthenticate') {\n          options.onUnauthenticated?.();\n          return { outcome: 'retry', reason: failure.code } as const;\n        }\n        if (failure.action === 'retry-same') {\n          return { outcome: 'retry', reason: failure.code } as const;\n        }",
+          )
+
+          # Hook transfers ambiguous checkout ownership into IndexedDB when a
+          # partition was supplied. Legacy/unit callers without one retain the old behavior.
+          replace_once(
+              'apps/pos-web/src/hooks/use-checkout.ts',
+              "import { runCheckout } from '../lib/checkout-submit';",
+              "import { runCheckout } from '../lib/checkout-submit';\nimport { enqueueOfflineCheckout } from '../lib/offline-checkout';\nimport type { QueuePartition } from '@korvi/domain';",
+          )
+          replace_once(
+              'apps/pos-web/src/hooks/use-checkout.ts',
+              "    readonly terminalId: string;\n    readonly lines: readonly CartLine[];",
+              "    readonly terminalId: string;\n    readonly expectedShiftId: string;\n    readonly lines: readonly CartLine[];",
+          )
+          replace_once(
+              'apps/pos-web/src/hooks/use-checkout.ts',
+              "export function useCheckout(api: ApiClient, onUnauthenticated: () => void): CheckoutHandle {",
+              "export function useCheckout(\n  api: ApiClient,\n  onUnauthenticated: () => void,\n  offlinePartition?: QueuePartition,\n): CheckoutHandle {",
+          )
+          replace_once(
+              'apps/pos-web/src/hooks/use-checkout.ts',
+              "      readonly terminalId: string;\n      readonly lines: readonly CartLine[];",
+              "      readonly terminalId: string;\n      readonly expectedShiftId: string;\n      readonly lines: readonly CartLine[];",
+          )
+          replace_once(
+              'apps/pos-web/src/hooks/use-checkout.ts',
+              "      void runCheckout(api, owned, input, dispatch, onUnauthenticated);",
+              "      void runCheckout(\n        api,\n        owned,\n        input,\n        dispatch,\n        onUnauthenticated,\n        undefined,\n        offlinePartition === undefined\n          ? undefined\n          : (intent) => enqueueOfflineCheckout(offlinePartition, intent),\n      );",
+          )
+          replace_once(
+              'apps/pos-web/src/hooks/use-checkout.ts',
+              "    [api, onUnauthenticated],",
+              "    [api, offlinePartition, onUnauthenticated],",
+          )
+
+          write('apps/pos-web/src/hooks/use-offline-sale-sync.ts', r'''\'use client\';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { QueuePartition } from '@korvi/domain';
+import type { ApiClient } from '../lib/api';
+import { syncOfflineCheckouts, type OfflineSaleReviewCase } from '../lib/offline-checkout';
+
+export interface OfflineSaleSyncState {
+  readonly status: 'idle' | 'syncing' | 'ready' | 'failed';
+  readonly pendingCount: number;
+  readonly needsReview: readonly OfflineSaleReviewCase[];
+}
+
+const INITIAL: OfflineSaleSyncState = { status: 'idle', pendingCount: 0, needsReview: [] };
+
+export function useOfflineSaleSync(
+  api: ApiClient,
+  partition: QueuePartition,
+  onUnauthenticated: () => void,
+): { readonly state: OfflineSaleSyncState; readonly retry: () => void } {
+  const [state, setState] = useState<OfflineSaleSyncState>(INITIAL);
+  const running = useRef(false);
+  const mounted = useRef(true);
+
+  const run = useCallback(() => {
+    if (running.current) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    running.current = true;
+    setState((current) => ({ ...current, status: 'syncing' }));
+    void syncOfflineCheckouts(api, partition, onUnauthenticated)
+      .then((snapshot) => {
+        if (!mounted.current) return;
+        setState({
+          status: 'ready',
+          pendingCount: snapshot.pendingCount,
+          needsReview: snapshot.needsReview,
+        });
+      })
+      .catch(() => {
+        if (!mounted.current) return;
+        setState((current) => ({ ...current, status: 'failed' }));
+      })
+      .finally(() => {
+        running.current = false;
+      });
+  }, [api, onUnauthenticated, partition]);
+
+  useEffect(() => {
+    mounted.current = true;
+    run();
+    const online = () => run();
+    globalThis.addEventListener('online', online);
+    const timer = globalThis.setInterval(run, 60_000);
+    return () => {
+      mounted.current = false;
+      globalThis.removeEventListener('online', online);
+      globalThis.clearInterval(timer);
+    };
+  }, [run]);
+
+  return { state, retry: run };
+}
+'''.replace("\\'use client\\';", "'use client';"))
+
+          # Production cashier wiring.
+          replace_once(
+              'apps/pos-web/src/components/cashier-screen.tsx',
+              "import { CardSurface } from '@korvi/ui';",
+              "import { Button, CardSurface } from '@korvi/ui';",
+          )
+          replace_once(
+              'apps/pos-web/src/components/cashier-screen.tsx',
+              "import { useCheckout } from '../hooks/use-checkout';",
+              "import { useCheckout } from '../hooks/use-checkout';\nimport { useOfflineSaleSync } from '../hooks/use-offline-sale-sync';",
+          )
+          old_setup = """  const search = useProductSearch(productSource);\n  const checkout = useCheckout(api, onExpired);\n  const [cash, setCash] = useState('');\n"""
+          new_setup = """  const search = useProductSearch(productSource);\n  const queuePartition = useMemo(\n    () => ({\n      tenantId: principal.tenant.id,\n      branchId: terminal.branchId,\n      terminalId: terminal.id,\n    }),\n    [principal.tenant.id, terminal.branchId, terminal.id],\n  );\n  const checkout = useCheckout(api, onExpired, queuePartition);\n  const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired);\n  const [cash, setCash] = useState('');\n"""
+          replace_once('apps/pos-web/src/components/cashier-screen.tsx', old_setup, new_setup)
+          replace_once(
+              'apps/pos-web/src/components/cashier-screen.tsx',
+              "    if (checkout.state.phase === 'succeeded') {\n      clearDraft();\n      return;\n    }",
+              "    if (checkout.state.phase === 'succeeded' || checkout.state.phase === 'queued') {\n      clearDraft();\n      return;\n    }",
+          )
+          replace_once(
+              'apps/pos-web/src/components/cashier-screen.tsx',
+              "    checkout.submit({\n      terminalId: terminal.id,\n      lines: cart.lines,",
+              "    checkout.submit({\n      terminalId: terminal.id,\n      expectedShiftId: shift.id,\n      lines: cart.lines,",
+          )
+          replace_once(
+              'apps/pos-web/src/components/cashier-screen.tsx',
+              "          {durableState.status === 'failed' ? (\n            <StatusNote tone=\"warning\" className=\"mb-3\" live>",
+              "          {offlineSync.state.needsReview.length > 0 ? (\n            <StatusNote tone=\"warning\" className=\"mb-3\" live>\n              توجد {offlineSync.state.needsReview.length} عملية بيع دون اتصال رفضها الخادم وتحتاج\n              مراجعة. لم تُحذف ولم تُحوّل إلى بيع معتمد محلياً.\n            </StatusNote>\n          ) : null}\n          {offlineSync.state.pendingCount > 0 ? (\n            <StatusNote tone=\"info\" className=\"mb-3\" live>\n              توجد {offlineSync.state.pendingCount} عملية محفوظة محلياً بانتظار التسوية مع الخادم.\n            </StatusNote>\n          ) : null}\n          {offlineSync.state.status === 'failed' ? (\n            <StatusNote tone=\"warning\" className=\"mb-3\" live>\n              تعذّرت قراءة حالة مزامنة العمليات المحلية. ستبقى العمليات في التخزين المحلي حتى إعادة\n              المحاولة.\n            </StatusNote>\n          ) : null}\n          {durableState.status === 'failed' ? (\n            <StatusNote tone=\"warning\" className=\"mb-3\" live>",
+          )
+          old_render = """          {completed === null ? (\n            <CardSurface className=\"flex min-h-0 flex-1 flex-col p-4\">\n"""
+          new_render = """          {checkout.state.phase === 'queued' && checkout.state.intent !== null ? (\n            <CardSurface className=\"flex min-h-0 flex-1 flex-col gap-4 p-4\">\n              <StatusNote tone=\"warning\" live>\n                تم حفظ البيع محلياً بنفس معرّف العملية وسيُرسل للخادم دون تغيير عند عودة الاتصال.\n                هذه ليست فاتورة ضريبية معتمدة بعد؛ المخزون والضريبة والحسابات تبقى بانتظار سلطة\n                الخادم.\n              </StatusNote>\n              <div className=\"rounded-lg border border-border bg-muted/40 p-4 text-sm\">\n                <p className=\"font-semibold\">بيع دون اتصال — محفوظ بأمان</p>\n                <p className=\"mt-2 break-all text-muted-foreground\">\n                  معرّف العملية: {checkout.state.intent.operationId}\n                </p>\n                <p className=\"mt-1 text-muted-foreground\">المبلغ المستلم: {cash} ر.س</p>\n              </div>\n              <Button size=\"lg\" onClick={newSale}>\n                بدء بيع جديد\n              </Button>\n            </CardSurface>\n          ) : completed === null ? (\n            <CardSurface className=\"flex min-h-0 flex-1 flex-col p-4\">\n"""
+          replace_once('apps/pos-web/src/components/cashier-screen.tsx', old_render, new_render)
+
+          # Gate 44 executor tests now exercise the shift replay precondition.
+          replace_once(
+              'apps/pos-web/src/lib/__tests__/checkout-sync-executor.test.ts',
+              "const TERMINAL_ID = '018f5000-0000-7000-8000-000000000002';\nconst PRODUCT_ID",
+              "const TERMINAL_ID = '018f5000-0000-7000-8000-000000000002';\nconst SHIFT_ID = '018f5000-0000-7000-8000-000000000004';\nconst PRODUCT_ID",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/__tests__/checkout-sync-executor.test.ts',
+              "  terminalId: TERMINAL_ID,\n  cashReceivedMinor: '1150',",
+              "  terminalId: TERMINAL_ID,\n  expectedShiftId: SHIFT_ID,\n  cashReceivedMinor: '1150',",
+          )
+          replace_once(
+              'apps/pos-web/src/lib/__tests__/checkout-sync-executor.test.ts',
+              "    expect(isCheckoutQueuePayload({ ...PAYLOAD, cashReceivedMinor: '11.50' })).toBe(false);",
+              "    expect(isCheckoutQueuePayload({ ...PAYLOAD, expectedShiftId: undefined })).toBe(false);\n    expect(isCheckoutQueuePayload({ ...PAYLOAD, cashReceivedMinor: '11.50' })).toBe(false);",
+          )
+
+          write('apps/pos-web/src/lib/__tests__/offline-checkout.test.ts', r'''import { describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../api';
+import { createCheckoutFlight } from '../checkout-flight';
+import { checkoutQueueOperation } from '../offline-checkout';
+import { runCheckout } from '../checkout-submit';
+import { checkoutReducer, initialCheckoutState } from '../checkout';
+import type { CheckoutEvent } from '../checkout';
+
+const OPERATION_ID = '018f5000-0001-7000-8000-000000000001';
+const TERMINAL_ID = '018f5000-0000-7000-8000-000000000002';
+const PRODUCT_ID = '018f5000-0000-7000-8000-000000000003';
+const SHIFT_ID = '018f5000-0000-7000-8000-000000000004';
+
+const INTENT = {
+  operationId: OPERATION_ID,
+  terminalId: TERMINAL_ID,
+  expectedShiftId: SHIFT_ID,
+  cashReceivedMinor: '1150',
+  lines: [{ productId: PRODUCT_ID, quantityScaled: '1000' }],
+} as const;
+
+describe('offline checkout ownership transfer', () => {
+  it('derives one deterministic queue envelope from the immutable UUIDv7 intent', () => {
+    const first = checkoutQueueOperation(INTENT);
+    const second = checkoutQueueOperation(INTENT);
+    expect(second).toEqual(first);
+    expect(first.id).toBe(OPERATION_ID);
+    expect(first.kind).toBe('sale.checkout');
+    expect(first.payload).toEqual(INTENT);
+    expect(first.enqueuedAt).toMatch(/^20\d\d-/);
+  });
+
+  it('queues an unanswered request before unlocking the till', async () => {
+    const flight = createCheckoutFlight();
+    const events: CheckoutEvent[] = [];
+    const queued = vi.fn(async () => undefined);
+    await runCheckout(
+      { checkout: async () => Promise.reject(new ApiError(0, 'network', null)) },
+      flight,
+      {
+        terminalId: TERMINAL_ID,
+        expectedShiftId: SHIFT_ID,
+        lines: [
+          {
+            productId: PRODUCT_ID,
+            sku: 'A',
+            nameAr: 'أ',
+            nameEn: null,
+            productType: 'unit',
+            unitLabel: 'حبة',
+            unitPriceMinor: '1150',
+            vatBasisPoints: 1500,
+            quantityScaled: '1000',
+          },
+        ],
+        cashReceivedMinor: '1150',
+      },
+      (event) => events.push(event),
+      () => undefined,
+      () => OPERATION_ID,
+      queued,
+    );
+    expect(queued).toHaveBeenCalledTimes(1);
+    expect(queued.mock.calls[0]?.[0]).toEqual(INTENT);
+    expect(flight.pending()).toBeNull();
+    const state = events.reduce(checkoutReducer, initialCheckoutState);
+    expect(state.phase).toBe('queued');
+    expect(state.attemptOutstanding).toBe(false);
+    expect(state.intent).toEqual(INTENT);
+  });
+
+  it('keeps the original intent locked when local durability also fails', async () => {
+    const flight = createCheckoutFlight();
+    const events: CheckoutEvent[] = [];
+    await runCheckout(
+      { checkout: async () => Promise.reject(new ApiError(0, 'network', null)) },
+      flight,
+      {
+        terminalId: TERMINAL_ID,
+        expectedShiftId: SHIFT_ID,
+        lines: [
+          {
+            productId: PRODUCT_ID,
+            sku: 'A',
+            nameAr: 'أ',
+            nameEn: null,
+            productType: 'unit',
+            unitLabel: 'حبة',
+            unitPriceMinor: '1150',
+            vatBasisPoints: 1500,
+            quantityScaled: '1000',
+          },
+        ],
+        cashReceivedMinor: '1150',
+      },
+      (event) => events.push(event),
+      () => undefined,
+      () => OPERATION_ID,
+      async () => Promise.reject(new Error('IndexedDB unavailable')),
+    );
+    expect(flight.outstanding()).toBe(true);
+    expect(flight.pending()?.operationId).toBe(OPERATION_ID);
+    const state = events.reduce(checkoutReducer, initialCheckoutState);
+    expect(state.phase).toBe('failed');
+    expect(state.attemptOutstanding).toBe(true);
+    expect(state.failure?.code).toBe('offline-queue-unavailable');
+  });
+});
+''')
+
+          PY
+
+      - name: Format Gate 45 source
+        run: |
+          npx --no-install prettier --write \
+            apps/api/src/checkout/service.ts \
+            apps/api/src/routes/business.ts \
+            apps/api/src/routes/validation.ts \
+            apps/pos-web/src/lib/api-types.ts \
+            apps/pos-web/src/lib/api.ts \
+            apps/pos-web/src/lib/checkout.ts \
+            apps/pos-web/src/lib/checkout-submit.ts \
+            apps/pos-web/src/lib/offline-store.ts \
+            apps/pos-web/src/lib/offline-checkout.ts \
+            apps/pos-web/src/lib/checkout-sync-executor.ts \
+            apps/pos-web/src/hooks/use-checkout.ts \
+            apps/pos-web/src/hooks/use-offline-sale-sync.ts \
+            apps/pos-web/src/components/cashier-screen.tsx \
+            apps/pos-web/src/lib/__tests__/checkout-sync-executor.test.ts \
+            apps/pos-web/src/lib/__tests__/offline-checkout.test.ts
+          git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api apps/pos-web
+          if git diff --cached --quiet; then
+            echo 'No implementation diff to commit.'
+            exit 0
+          fi
+          git commit -m 'feat(offline): wire durable checkout reconciliation'
+          git push origin HEAD:review/offline-45-reconciliation
