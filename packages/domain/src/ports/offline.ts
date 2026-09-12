@@ -72,12 +72,7 @@ export interface TransactionQueuePort {
     token: string,
     nextAttemptAt: string,
   ): Promise<void>;
-  rejectClaim(
-    partition: QueuePartition,
-    id: string,
-    token: string,
-    reason: string,
-  ): Promise<void>;
+  rejectClaim(partition: QueuePartition, id: string, token: string, reason: string): Promise<void>;
   markSettled(partition: QueuePartition, id: string): Promise<void>;
   markRejected(partition: QueuePartition, id: string, reason: string): Promise<void>;
 }

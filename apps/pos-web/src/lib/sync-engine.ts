@@ -33,7 +33,10 @@ function emptyReport(stopReason: SyncPushReport['stopReason']): SyncPushReport {
 }
 
 function safeReason(reason: string): string {
-  const normalized = reason.trim().replace(/[^a-z0-9._:-]/gi, '-').slice(0, 200);
+  const normalized = reason
+    .trim()
+    .replace(/[^a-z0-9._:-]/gi, '-')
+    .slice(0, 200);
   return normalized === '' ? 'unspecified' : normalized;
 }
 
