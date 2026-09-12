@@ -26,7 +26,7 @@ jobs:
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Harden queue encoding proof harness and build boundary
+      - name: Harden canonical queue payload and regression proof
         shell: bash
         run: |
           set -euo pipefail
@@ -35,43 +35,38 @@ jobs:
 
           store = Path('apps/pos-web/src/lib/offline-store.ts')
           text = store.read_text()
-          needle = "      return `[${value.map((entry) => canonicalJson(entry, seen)).join(',')}]`;"
-          replacement = """      const entries: string[] = [];
-                for (let index = 0; index < value.length; index += 1) {
-                  if (!Object.prototype.hasOwnProperty.call(value, index)) {
-                    throw new OfflineStoreError(
-                      'corrupt',
-                      'Queue payload arrays cannot contain holes.',
-                    );
-                  }
-                  entries.push(canonicalJson(value[index], seen));
+          old = "return `[${value.map((entry) => canonicalJson(entry, seen)).join(',')}]`;"
+          if old in text:
+              replacement = """const entries: string[] = [];
+              for (let index = 0; index < value.length; index += 1) {
+                if (!Object.prototype.hasOwnProperty.call(value, index)) {
+                  throw new OfflineStoreError(
+                    'corrupt',
+                    'Queue payload arrays cannot contain holes.',
+                  );
                 }
-                return `[${entries.join(',')}]`;"""
-          if needle not in text:
-              raise SystemExit('canonical array expression did not match expected source')
-          store.write_text(text.replace(needle, replacement, 1))
+                entries.push(canonicalJson(value[index], seen));
+              }
+              return `[${entries.join(',')}]`;"""
+              store.write_text(text.replace(old, replacement, 1))
+          elif 'Queue payload arrays cannot contain holes.' not in text:
+              raise SystemExit('canonical array implementation is neither original nor hardened')
 
           tests = Path('apps/pos-web/src/lib/__tests__/offline-store.test.ts')
           text = tests.read_text()
-          anchor = "    expect(() => serializeQueuePayload({ value: undefined })).toThrow(OfflineStoreError);"
-          addition = """    expect(() => serializeQueuePayload({ value: undefined })).toThrow(OfflineStoreError);
+          marker = "const sparse = new Array<unknown>(2);"
+          if marker not in text:
+              anchor = "expect(() => serializeQueuePayload({ value: undefined })).toThrow(OfflineStoreError);"
+              if anchor not in text:
+                  raise SystemExit('queue payload regression anchor did not match expected source')
+              addition = """expect(() => serializeQueuePayload({ value: undefined })).toThrow(OfflineStoreError);
               const sparse = new Array<unknown>(2);
               sparse[1] = 'present';
               expect(() => serializeQueuePayload(sparse)).toThrow(OfflineStoreError);"""
-          if anchor not in text:
-              raise SystemExit('queue payload regression anchor did not match expected source')
-          tests.write_text(text.replace(anchor, addition, 1))
-
-          workflow = Path('.github/workflows/gate-43-ordered-queue-proof.yml')
-          text = workflow.read_text()
-          vite = "          npx vite build scripts/gate43-browser \\\n"
-          build = "          npm run build --workspace=@korvi/domain\n" + vite
-          if vite not in text:
-              raise SystemExit('Gate 43 Vite build line did not match expected workflow')
-          workflow.write_text(text.replace(vite, build, 1))
+              tests.write_text(text.replace(anchor, addition, 1))
           PY
 
-      - name: Format exact Gate 43 sources
+      - name: Format exact Gate 43 source files
         run: |
           npx prettier --write \
             packages/domain/src/ports/offline.ts \
@@ -79,14 +74,12 @@ jobs:
             apps/pos-web/src/lib/__tests__/offline-store.test.ts \
             scripts/gate43-browser/index.html \
             scripts/gate43-browser/main.ts \
-            scripts/gate43-queue-proof.mjs \
-            .github/workflows/gate-43-ordered-queue-proof.yml
+            scripts/gate43-queue-proof.mjs
 
-      - name: Commit hardened formatted implementation and remove helper
+      - name: Commit source-only hardening when needed
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/gate43-hardening-helper.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
@@ -95,12 +88,10 @@ jobs:
             apps/pos-web/src/lib/__tests__/offline-store.test.ts \
             scripts/gate43-browser/index.html \
             scripts/gate43-browser/main.ts \
-            scripts/gate43-queue-proof.mjs \
-            .github/workflows/gate-43-ordered-queue-proof.yml \
-            .github/workflows/gate43-hardening-helper.yml
+            scripts/gate43-queue-proof.mjs
           if git diff --cached --quiet; then
-            echo 'No hardening changes were produced.' >&2
-            exit 1
+            echo 'Gate 43 source files are already hardened and formatted.'
+            exit 0
           fi
           git commit -m 'fix(offline): harden durable queue encoding and formatting'
           git push origin HEAD:review/offline-43-ordered-queue-run
