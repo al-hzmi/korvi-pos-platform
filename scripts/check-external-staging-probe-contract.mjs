@@ -17,6 +17,14 @@ assert.match(
   'external staging probe must retain an independent scheduled execution path',
 );
 assert.ok(
+  workflow.includes('- apps/api/package.json'),
+  'external staging probe must run when API runtime dependencies change',
+);
+assert.ok(
+  workflow.includes('- package-lock.json'),
+  'external staging probe must run when the exact runtime dependency graph changes',
+);
+assert.ok(
   workflow.includes('https://korvi-staging-api.onrender.com'),
   'external probe must target the canonical staging API origin',
 );

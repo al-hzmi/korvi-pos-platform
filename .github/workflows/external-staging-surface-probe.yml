@@ -9,6 +9,8 @@ on:
       - scripts/external-staging-probe.mjs
       - scripts/check-external-staging-probe-contract.mjs
       - scripts/check-invariants.sh
+      - apps/api/package.json
+      - package-lock.json
       - apps/api/src/runtime/**
       - apps/api/src/routes/health.ts
       - apps/api/src/server.ts

@@ -1,0 +1,98 @@
+name: One-shot Zod Lock Refresh
+
+on:
+  push:
+    branches:
+      - review/operations-50-production-readiness
+    paths:
+      - .github/workflows/refresh-zod-lock.yml
+
+concurrency:
+  group: one-shot-zod-lock-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    name: Refresh exact Zod pin and lockfile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact triggering revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package-manager authority
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Refresh exact Zod dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install \
+            --workspace @korvi/api \
+            --save-exact \
+            --package-lock-only \
+            --ignore-scripts \
+            --registry=https://registry.npmjs.org \
+            zod@4.6.3
+
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const api = JSON.parse(fs.readFileSync('apps/api/package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          if (api.dependencies?.zod !== '4.6.3') {
+            throw new Error('API manifest did not pin zod@4.6.3');
+          }
+          if (lock.packages?.['apps/api']?.dependencies?.zod !== '4.6.3') {
+            throw new Error('workspace lock metadata did not pin zod@4.6.3');
+          }
+          const installed = lock.packages?.['node_modules/zod'];
+          if (installed?.version !== '4.6.3') {
+            throw new Error('lockfile did not resolve zod@4.6.3');
+          }
+          if (installed.resolved !== 'https://registry.npmjs.org/zod/-/zod-4.6.3.tgz') {
+            throw new Error('lockfile resolved Zod from an unexpected source');
+          }
+          if (!installed.integrity?.startsWith('sha512-')) {
+            throw new Error('lockfile lost Zod integrity metadata');
+          }
+          NODE
+
+          npm ci --ignore-scripts --registry=https://registry.npmjs.org
+          npm ls zod --workspace @korvi/api --depth=0
+
+      - name: Commit only the generated dependency refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/refresh-zod-lock.yml
+
+          mapfile -t changed < <(git status --porcelain | sed -E 's/^.. //' | sort)
+          expected=(
+            '.github/workflows/refresh-zod-lock.yml'
+            'apps/api/package.json'
+            'package-lock.json'
+          )
+          if [ "${changed[*]}" != "${expected[*]}" ]; then
+            printf 'Unexpected Zod lock-refresh diff:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          fi
+
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/package.json package-lock.json .github/workflows/refresh-zod-lock.yml
+          git commit -m 'chore(deps): update zod to 4.6.3'
+          git push origin HEAD:review/operations-50-production-readiness
