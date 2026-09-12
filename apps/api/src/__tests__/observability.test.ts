@@ -49,9 +49,7 @@ describe('production observability boundary', () => {
       loadConfig({ NODE_ENV: 'test', METRICS_AUTH_TOKEN: METRICS_TOKEN }),
     );
     app.get('/v1/items/:itemId', async () => ({ ok: true }));
-    app.get('/ready', async (_request, reply) =>
-      reply.code(503).send({ status: 'not_ready' }),
-    );
+    app.get('/ready', async (_request, reply) => reply.code(503).send({ status: 'not_ready' }));
 
     const business = await app.inject({
       method: 'GET',
