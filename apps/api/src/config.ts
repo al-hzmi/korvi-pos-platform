@@ -68,7 +68,10 @@ const schema = z
     METRICS_AUTH_TOKEN: z.string().min(32).max(512).optional(),
   })
   .superRefine((value, context) => {
-    if (value.NODE_ENV === 'production' && (value.BOOTSTRAP_SIGNING_KEY ?? '').trim() === '') {
+    const bootstrapSigningKey = value.BOOTSTRAP_SIGNING_KEY;
+    const metricsAuthToken = value.METRICS_AUTH_TOKEN;
+
+    if (value.NODE_ENV === 'production' && (bootstrapSigningKey ?? '').trim() === '') {
       context.addIssue({
         code: 'custom',
         path: ['BOOTSTRAP_SIGNING_KEY'],
@@ -83,11 +86,40 @@ const schema = z
         message: 'is required in production; refusing to accept writes from an unknown origin',
       });
     }
-    if (value.NODE_ENV === 'production' && (value.METRICS_AUTH_TOKEN ?? '').trim() === '') {
+    if (value.NODE_ENV === 'production' && (metricsAuthToken ?? '').trim() === '') {
       context.addIssue({
         code: 'custom',
         path: ['METRICS_AUTH_TOKEN'],
         message: 'is required in production; operations telemetry must be authenticated',
+      });
+    }
+
+    if (value.NODE_ENV !== 'production') return;
+
+    if (bootstrapSigningKey !== undefined && bootstrapSigningKey !== bootstrapSigningKey.trim()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['BOOTSTRAP_SIGNING_KEY'],
+        message: 'must be a canonical secret without leading or trailing whitespace',
+      });
+    }
+    if (metricsAuthToken !== undefined && metricsAuthToken !== metricsAuthToken.trim()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['METRICS_AUTH_TOKEN'],
+        message: 'must be a canonical secret without leading or trailing whitespace',
+      });
+    }
+    if (
+      bootstrapSigningKey !== undefined &&
+      metricsAuthToken !== undefined &&
+      bootstrapSigningKey === metricsAuthToken
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['METRICS_AUTH_TOKEN'],
+        message:
+          'must use a credential independent from BOOTSTRAP_SIGNING_KEY; security domains cannot share a production secret',
       });
     }
   });
