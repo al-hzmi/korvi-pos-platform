@@ -124,7 +124,13 @@ async function anonymousMetricsCheck(origin, retry) {
   );
   const headers = safeHeaders(response);
   if (response.status !== 401) throw new ProbeFailure(`${checkName}_status`);
-  if (!headers.cacheControl.toLowerCase().split(',').map((value) => value.trim()).includes('no-store')) {
+  if (
+    !headers.cacheControl
+      .toLowerCase()
+      .split(',')
+      .map((value) => value.trim())
+      .includes('no-store')
+  ) {
     throw new ProbeFailure(`${checkName}_cache_control`);
   }
   if (!headers.contentType.toLowerCase().includes('application/json')) {
@@ -153,7 +159,8 @@ async function webCheck(origin, retry) {
 async function main() {
   const apiOrigin = publicHttpsOrigin('KORVI_PROBE_API_ORIGIN');
   const webOrigin = publicHttpsOrigin('KORVI_PROBE_WEB_ORIGIN');
-  const evidencePath = process.env.KORVI_PROBE_EVIDENCE_PATH ?? 'artifacts/external-staging-probe.json';
+  const evidencePath =
+    process.env.KORVI_PROBE_EVIDENCE_PATH ?? 'artifacts/external-staging-probe.json';
   const retry = {
     timeoutMs: positiveInteger('KORVI_PROBE_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
     maxAttempts: positiveInteger('KORVI_PROBE_MAX_ATTEMPTS', DEFAULT_MAX_ATTEMPTS),
@@ -179,10 +186,15 @@ async function main() {
     evidence.checks.push(await anonymousMetricsCheck(apiOrigin, retry));
     evidence.checks.push(await webCheck(webOrigin, retry));
     await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
-    console.log('[ok] external staging surface: health, database readiness, metrics refusal, web root');
+    console.log(
+      '[ok] external staging surface: health, database readiness, metrics refusal, web root',
+    );
   } catch (error) {
     evidence.checks.push({
-      name: error instanceof ProbeFailure ? error.message.replace('external staging probe failed: ', '') : 'unknown',
+      name:
+        error instanceof ProbeFailure
+          ? error.message.replace('external staging probe failed: ', '')
+          : 'unknown',
       result: 'FAIL',
     });
     await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });

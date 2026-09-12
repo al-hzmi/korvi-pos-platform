@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const [workflow, probe] = await Promise.all([
-  readFile(new URL('../.github/workflows/external-staging-surface-probe.yml', import.meta.url), 'utf8'),
+  readFile(
+    new URL('../.github/workflows/external-staging-surface-probe.yml', import.meta.url),
+    'utf8',
+  ),
   readFile(new URL('./external-staging-probe.mjs', import.meta.url), 'utf8'),
 ]);
 
@@ -10,7 +13,10 @@ assert.ok(
   workflow.includes('review/operations-50-production-readiness'),
   'external staging probe must run when its review surface changes',
 );
-assert.ok(workflow.includes('workflow_dispatch:'), 'external staging probe must be manually runnable');
+assert.ok(
+  workflow.includes('workflow_dispatch:'),
+  'external staging probe must be manually runnable',
+);
 assert.match(
   workflow,
   /schedule:\n\s+- cron: '[^']+'/,
@@ -82,4 +88,6 @@ assert.doesNotMatch(
   'probe implementation must remain anonymous and secret-free',
 );
 
-console.log('[ok] external staging probe contract: public TLS, liveness, readiness, protected metrics, web');
+console.log(
+  '[ok] external staging probe contract: public TLS, liveness, readiness, protected metrics, web',
+);
