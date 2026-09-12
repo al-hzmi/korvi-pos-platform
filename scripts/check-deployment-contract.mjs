@@ -31,11 +31,7 @@ function serviceBlock(name) {
   assert.notEqual(markerIndex, -1, `render.yaml must define ${name}`);
 
   const serviceStart = blueprint.lastIndexOf('  - type:', markerIndex);
-  assert.notEqual(
-    serviceStart,
-    -1,
-    `render.yaml service ${name} must have a service boundary`,
-  );
+  assert.notEqual(serviceStart, -1, `render.yaml service ${name} must have a service boundary`);
 
   const nextService = blueprint.indexOf('\n  - type:', markerIndex + marker.length);
   const databases = blueprint.indexOf('\ndatabases:', markerIndex + marker.length);
