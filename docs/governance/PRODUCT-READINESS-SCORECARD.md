@@ -2,11 +2,11 @@
 
 Status: **ACTIVE GOVERNANCE DENOMINATOR (v1)**
 
-Evidence baseline: `f501be797165cf1190eac6b8bdd4a95c683648e0`
+Evidence baseline: `e979a997b2d72562a1f34d5b6c2fc734c1ef60e2`
 
 Snapshot date: 2026-09-12
 
-Current evidence-backed progress: **86 / 100** (`43 / 50` gates closed)
+Current evidence-backed progress: **88 / 100** (`44 / 50` gates closed)
 
 > This score measures implementation progress toward the current sellable Korvi
 > POS production target. It is not permission to ship. Critical release gates
@@ -50,7 +50,6 @@ The numeric score is subordinate to release safety. Production release remains
 
 - full ZATCA Phase 2 issuance/reporting for the target regulatory scope,
   including the real non-exportable production signing authority proof;
-- the promised offline-first sales path and reconciliation;
 - required actual-browser / accessibility / Human Gates for the active strike;
 - independent review where the governance model requires it;
 - production operations evidence (backup/restore, observability, incident
@@ -142,7 +141,7 @@ saleable.
 | 39 | CSID lifecycle, cryptographic stamp and QR tags 6-9 are implemented | OPEN | CSID/XAdES/QR implementation and internal cryptographic/PostgreSQL evidence exist on the review lineage; the required live Azure Key Vault EC-HSM/P-256K non-exportable custody/sign/verify proof is still open, so no production sealing closure is claimed |
 | 40 | FATOORA reporting, retry and reconciliation are implemented and proven | OPEN | Internal implementation/evidence is green on `cdb911284ae0a6f02a6c9d6407695b90dcc9de45`: CI `34658671978`, PostgreSQL proof `34658671974`, 16/16 migrations, zero drift, durable one-shot/ambiguity/reconciliation proof and 2,385 passed tests; sequential production closure remains blocked by Gate 39 |
 
-### Pillar I — Offline-first resilience (8 / 10)
+### Pillar I — Offline-first resilience (10 / 10)
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
@@ -150,7 +149,7 @@ saleable.
 | 42 | IndexedDB/local durable store contains the required catalogue and sale state | CLOSED | Final governance SHA `21f839f2...`; exact-head CI `34662360647` and actual Chrome full-process-restart durability proof `34662360724` succeeded; artifact `10288355298` digest `03ad4d6f...` proves catalogue/draft persistence, tenant/branch/terminal/user/shift isolation, Arabic/barcode search and corruption refusal without making cache an HTTP authority |
 | 43 | Persistent ordered transaction queue survives restart/outage | CLOSED | Production queue on `d6d24a0e...`; CI `34663187823` and actual Chrome browser+origin outage/restart proof `34663187862` succeeded; artifact `10288466519` digest `f0dc3f79...` proves v1→v2 preservation, UUIDv7 ordering, exact-envelope idempotency, immutable/cross-partition collision refusal, durable settled/rejected outcomes, partition isolation, payload persistence and corruption refusal |
 | 44 | Sync engine retries/reporting without loss, duplication or reordering | CLOSED | Durable leased/fenced sync engine on `f501be79...`; exact-head CI `34664871538` and actual Chrome process+origin restart proof `34664871536` succeeded; artifact `10288890491` digest `2faba8ac...` proves v2→v3 preservation, atomic single-owner claim, active-lease blocking, same-operation crash recovery, durable attempts/backoff, stale-token refusal, no overtaking, acknowledgement-before-advance and retained terminal rows |
-| 45 | Conflict/reconciliation policy and a real offline sale/reconnect workflow are proven | OPEN | Explicitly undecided/unproven in offline architecture |
+| 45 | Conflict/reconciliation policy and a real offline sale/reconnect workflow are proven | CLOSED | Exact-head Chrome/PostgreSQL 17 proof on `e979a997...`: CI `34685965135` and Gate 45 proof `34685965214` succeeded; artifact `10295731642` digest `ae7d80bf...` proves two durable ordered offline sales, legitimate server-side stock divergence, oldest-command one-time settlement, deterministic `needs-review` for the `insufficient-stock` conflict, PostgreSQL sale/invoice/movement counts `1|0`, accepted stock movement `-1000`, exact final stock reconciliation `11 - 10 - 1 = 0`, and no browser-created financial/tax/stock authority |
 
 ### Pillar J — Release engineering, staging and field readiness (6 / 10)
 
@@ -174,14 +173,14 @@ Closed gates by pillar:
 - F: 4
 - G: 4
 - H: 3
-- I: 4
+- I: 5
 - J: 3
 
-Total: `43 / 50` gates.
+Total: `44 / 50` gates.
 
-`43 × 2 = 86`.
+`44 × 2 = 88`.
 
-**Canonical evidence-backed overall progress: 86 / 100.**
+**Canonical evidence-backed overall progress: 88 / 100.**
 
 This replaces the historical `58 / 100` baseline because the old number had no
 stable denominator. Progress now moves only when a named gate closes from the
@@ -197,12 +196,10 @@ opportunities are:
    exact review lineage; only then may Gate 39 be closed;
 2. after Gate 39 closes, promote/re-run the already internally green Gate 40
    FATOORA reporting/retry/reconciliation evidence on the final release lineage;
-3. close Gate 45 with concrete conflict/reconciliation policy and a real
-   offline sale → reconnect → server-authoritative reconciliation proof, using
-   the durable Gate 43 queue and Gate 44 leased/fenced sync engine without
-   weakening financial, stock, tax, identity or authorization authority;
-4. obtain the required independent/Human Gates for inventory and purchasing;
-5. complete production operations plus controlled merchant field validation.
+3. obtain the required independent/Human Gates for inventory and purchasing,
+   which are still required for Gates 30, 35 and the current-head Gate 49;
+4. complete production operations, backup/restore, observability/incident
+   evidence and controlled merchant field validation for Gate 50.
 
 No direct SQL fixture, fake stock, weakened permission, fabricated browser
 claim, skipped regulatory requirement or temporary production bypass may be

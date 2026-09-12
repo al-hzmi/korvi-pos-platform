@@ -1,12 +1,12 @@
 # Offline — implementation boundary
 
-ADR-0005 defines the offline-first architecture. Gates 41–44 are now implemented and proven; Gate 45 remains open and must preserve the same authority, ordering and reconciliation guarantees.
+ADR-0005 defines the offline-first architecture. Gates 41–45 are now implemented and proven with the same authority, ordering and reconciliation guarantees preserved end to end.
 
 ## The guarantee we are building toward
 
 A terminal keeps selling with no network, for as long as the outage lasts, and reconciles afterwards with nothing lost and nothing reordered.
 
-Gates 41–44 establish browser availability, durable local cashier state, the persistent immutable operation queue and the ordered retry/acknowledgement engine. They do **not** yet claim the complete cashier offline-sale workflow is production-closed: concrete conflict/reconciliation policy and the real offline sale → reconnect → server-authoritative reconciliation proof belong to Gate 45.
+Gates 41–44 establish browser availability, durable local cashier state, the persistent immutable operation queue and the ordered retry/acknowledgement engine. Gate 45 closes the complete cashier offline-sale workflow with an explicit fail-closed conflict policy and a real sale → outage → reconnect → server-authoritative reconciliation proof. The browser remains a durable intent holder, never financial, tax, stock, identity or authorization authority.
 
 ## Pieces, and where they live
 
@@ -14,7 +14,7 @@ Gates 41–44 establish browser availability, durable local cashier state, the p
 - **IndexedDB** — versioned durable store for cashier catalogue snapshots and in-progress sale state — Gate 42 CLOSED.
 - **Transaction queue** — durable ordered immutable record of operations that must reach the server — Gate 43 CLOSED.
 - **Sync engine** — leased/fenced oldest-first drain with durable retry/reporting and acknowledgement-before-advance — Gate 44 CLOSED.
-- **Conflict handling** — resolves divergence and proves the real offline-sale/reconnect workflow — Gate 45 OPEN.
+- **Conflict handling** — preserves definitive server refusals as `needs-review` and proves the real offline-sale/reconnect workflow — Gate 45 CLOSED.
 
 ## Gate 41 implementation boundary
 
@@ -98,10 +98,33 @@ Gate 44 implementation proof on `f501be797165cf1190eac6b8bdd4a95c683648e0`:
 - both settled rows remained in durable storage rather than disappearing after acknowledgement;
 - proof artifact `10288890491`, SHA-256 `2faba8ac4fc40e5f80f9423a5fcdcb964d610bb0cba2ecfe9aa41a4b2941969f`.
 
+## Gate 45 real offline sale and reconciliation boundary
+
+A cashier checkout may transfer ownership from the foreground request to the durable queue only after IndexedDB confirms that the **exact immutable checkout intent** has been written. If both the network result and local durability are unavailable, the original checkout remains locked under the same operation id; the till cannot silently mint a replacement sale.
+
+Every delayed `sale.checkout` carries `expectedShiftId` only as a replay precondition. It does not let the browser select financial authority: the server still derives the current open shift, cashier, branch, catalogue price, VAT, stock and settlement. A delayed command may not move cash into a replacement shift. Conversely, if an earlier request actually committed but its response was lost, idempotency is resolved before requiring today's open shift, so the original committed sale can still be recovered exactly after its original shift closes.
+
+Conflict policy is deliberately asymmetric because financial truth is not mergeable local state:
+
+- a successful exact replay becomes durably `settled` only after the server acknowledges the authoritative sale;
+- transport/session ambiguity remains the **same operation** and is retried by the Gate 44 leased/fenced engine;
+- a definitive business refusal such as `insufficient-stock` becomes immutable `rejected` / `needs-review`; the browser does not convert it into a local sale, local invoice, local VAT fact or local stock movement;
+- `keep-local` and `keep-remote` are therefore not automatic financial conflict outcomes. Any later operator tooling must preserve the rejected evidence and require a new explicit server-authorized commercial action where appropriate.
+
+Exact Gate 45 closure evidence on `e979a997b2d72562a1f34d5b6c2fc734c1ef60e2`:
+
+- full CI `34685965135` passed dependency pins, audit, formatting, lint, invariants, Prisma generation, production build, typecheck and the complete test suite;
+- actual Chrome/PostgreSQL 17 proof `34685965214` used a fresh persistent cashier profile, a real server-authorized shift and the production IndexedDB/queue/sync path;
+- while Chrome was offline, two distinct UUIDv7 sales were durably queued in order without creating local financial truth; a legitimate inventory adjustment through Korvi's authenticated inventory authority changed server stock from `11` units to `1` unit;
+- after reconnect on the **same browser profile and IndexedDB**, the oldest queued sale settled exactly once and the second was refused as `insufficient-stock` and retained as `needs-review`;
+- PostgreSQL evidence is `sales 1|0`, `invoices 1|0`, sale inventory movements `1|0`, with the accepted movement exactly `-1000`; final stock reconciles exactly as `11 - 10 - 1 = 0` units;
+- artifact `10295731642`, SHA-256 `ae7d80bf8d1d31107793cac9b634d539f1fe9816e19bdad24059448482c27570`, contains sanitized authority/proof records and screenshots of the first queued sale, second queued sale and reconnected `needs-review` state;
+- proof authority records Chrome `152.0.7977.82`, PostgreSQL `17.11`, all `16/16` migrations applied with zero drift, and a restricted application role with `NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOINHERIT/NOREPLICATION/NOBYPASSRLS`.
+
 ## Retry
 
 `RetryPolicy` is centralized rather than scattered timers: five minutes initially, doubling to a six-hour ceiling, at most eight attempts. Gate 44 applies that policy through durable `nextAttemptAt` scheduling, leased claims and fenced state transitions. Ambiguity therefore preserves the exact operation identity instead of manufacturing a replacement command.
 
-## Next real blocker
+## Offline pillar status
 
-Gate 45 must define and prove concrete reconciliation policy for the synchronized entities and close the complete real cashier workflow: sale composed while disconnected → durable queue → reconnect → server-authoritative checkout/repricing/stock/tax result → deterministic cashier/operator outcome. Conflicts must resolve to an explicit `keep-local`, `keep-remote` or `needs-review` policy only where that outcome is semantically valid; financial, stock, tax, identity and authorization authority must remain on the server and must never be guessed from stale local state.
+The v1 offline-first resilience pillar is now closed across Gates 41–45: application shell availability, durable local catalogue/draft state, immutable ordered queue, leased/fenced retry engine and the real cashier sale/reconnect/conflict path are all evidence-backed. This closure does not weaken any other release blocker: ZATCA production signing/reporting, independent/Human Gates and production operations remain governed separately by the product readiness scorecard.
