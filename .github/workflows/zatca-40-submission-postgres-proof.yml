@@ -1,0 +1,158 @@
+name: ZATCA 40 Submission PostgreSQL Proof
+
+on:
+  push:
+    branches:
+      - review/zatca-40-submission-pipeline
+    paths:
+      - 'packages/database/prisma/**'
+      - 'packages/database/src/zatca/**'
+      - 'packages/database/src/__tests__/zatca-invoice-submission-live.test.ts'
+      - 'packages/domain/src/zatca/submission.ts'
+      - 'apps/api/src/zatca/invoice-submission-http-client.ts'
+      - 'apps/api/src/zatca/invoice-submission-service.ts'
+      - 'apps/api/src/zatca/invoice-submission-infrastructure.ts'
+      - 'apps/api/src/zatca/encrypted-fatoora-credential-store.ts'
+      - 'apps/api/src/zatca/fatoora-vault-config.ts'
+      - 'apps/api/src/__tests__/zatca-invoice-submission-http-client.test.ts'
+      - 'apps/api/src/__tests__/zatca-invoice-submission-service.test.ts'
+      - 'docs/decisions/ADR-0034-zatca-reporting-clearance-and-ambiguity-boundary.md'
+      - '.github/workflows/zatca-40-submission-postgres-proof.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://korvi_app:korvi_gate40_ci@localhost:5432/korvi_gate40
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_app:korvi_gate40_ci@localhost:5432/korvi_gate40
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_gate40
+      PROOF_LOG: artifacts/zatca-40-submission-postgres-proof.txt
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_gate40
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_gate40"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - name: Prove no self-mutating helper remains
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .github/workflows/gate40-repair-once.yml
+          test ! -e .github/workflows/gate40-service-format-once.yml
+          test ! -e .github/workflows/gate40-format-domain-once.yml
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Establish restricted application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_app LOGIN PASSWORD 'korvi_gate40_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_gate40 TO korvi_app;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_app;
+          SQL
+          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='korvi_app'")"
+          test "$flags" = 'f|f|f|f|f|f'
+          printf 'commit=%s\napp_role_flags=%s\n' "$GITHUB_SHA" "$flags" | tee "$PROOF_LOG"
+
+      - name: Apply all sixteen migrations as application role
+        run: |
+          set -euo pipefail
+          count="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          test "$count" = '16'
+          npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
+          ledger="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
+          test "$ledger" = '16|16'
+          echo "migration_ledger=$ledger" | tee -a "$PROOF_LOG"
+
+      - name: Prove schema drift is zero
+        working-directory: packages/database
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code 2>&1 | tee -a "../../$PROOF_LOG"
+
+      - name: Prove queue security invariants
+        run: |
+          set -euo pipefail
+          rls="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT relrowsecurity::text || '|' || relforcerowsecurity::text FROM pg_class WHERE oid='zatca_invoice_submissions'::regclass")"
+          test "$rls" = 'true|true'
+          policies="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='zatca_invoice_submissions' AND policyname='zatca_invoice_submissions_isolation'")"
+          test "$policies" = '1'
+          trigger_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_invoice_submissions'::regclass AND tgname='zatca_invoice_submission_guard' AND NOT tgisinternal")"
+          test "$trigger_count" = '1'
+          plaintext="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_invoice_submissions' AND lower(column_name) IN ('secret','password','binarysecuritytoken','privatekey','otp')")"
+          test "$plaintext" = '0'
+          printf 'queue_rls=%s\nqueue_policy_count=%s\nqueue_transition_guard=%s\nplaintext_secret_columns=%s\n' "$rls" "$policies" "$trigger_count" "$plaintext" | tee -a "$PROOF_LOG"
+
+      - name: Generate and build
+        run: |
+          npm run db:generate
+          npm run build
+
+      - name: Run durable submission PostgreSQL concurrency proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run packages/database/src/__tests__/zatca-invoice-submission-live.test.ts 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run transition-before-send and ambiguity proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run apps/api/src/__tests__/zatca-invoice-submission-service.test.ts 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run one-shot transport contract proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install vitest run apps/api/src/__tests__/zatca-invoice-submission-http-client.test.ts 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Run full verification against PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run verify 2>&1 | tee -a "$PROOF_LOG"
+          git diff --check
+
+      - name: Preserve proof log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zatca-40-submission-postgres-proof-${{ github.sha }}
+          path: artifacts/zatca-40-submission-postgres-proof.txt
+          if-no-files-found: error
+          retention-days: 30

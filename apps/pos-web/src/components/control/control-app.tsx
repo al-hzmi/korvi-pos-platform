@@ -1,13 +1,15 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
-import { ControlNav } from './control-nav';
+import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './control-nav';
 import { DashboardPanel } from './dashboard-panel';
+import { InventoryPanel } from './inventory-panel';
 import { MembersPanel } from './members-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
+import { PurchasingPanel } from './purchasing-panel';
 import { SettingsPanel } from './settings-panel';
 import { LoginScreen } from '../login-screen';
 import { Screen } from '../screen';
@@ -53,6 +55,10 @@ function sectionTitle(section: ControlSection): string {
       return 'الرئيسية';
     case 'products':
       return 'المنتجات';
+    case 'inventory':
+      return 'المخزون';
+    case 'purchasing':
+      return 'المشتريات';
     case 'branches':
       return 'الفروع والصناديق';
     case 'staff':
@@ -62,20 +68,47 @@ function sectionTitle(section: ControlSection): string {
   }
 }
 
+/** Preserve an unresolved command across every browser's unload contract. */
+export function preserveCommandBeforeUnload(event: BeforeUnloadEvent): void {
+  event.preventDefault();
+  // Firefox and older Chromium releases still require the legacy signal in
+  // addition to preventDefault() before they show the browser-owned warning.
+  event.returnValue = true;
+}
+
 function Section({
   section,
   api,
   principal,
+  onCommandLockChange,
 }: {
   readonly section: ControlSection;
   readonly api: ApiClient;
   readonly principal: Principal;
+  readonly onCommandLockChange: (locked: boolean) => void;
 }): JSX.Element {
   switch (section) {
     case 'home':
       return <DashboardPanel api={api} />;
     case 'products':
       return <ProductsPanel api={api} canWrite={hasPermission(principal, 'product.write')} />;
+    case 'inventory':
+      return (
+        <InventoryPanel
+          api={api}
+          preferredBranchId={principal.branchId}
+          permissions={principal.permissions}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
+    case 'purchasing':
+      return (
+        <PurchasingPanel
+          api={api}
+          permissions={principal.permissions}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
     case 'branches':
       return <BranchesPanel api={api} />;
     case 'staff':
@@ -96,9 +129,19 @@ function Workspace({
   readonly principal: Principal;
   readonly onSignOut: () => void;
 }): JSX.Element {
-  const [section, setSection] = useState<ControlSection>('home');
-  const permitted = hasPermission(principal, 'report.read');
+  const initialSection = firstAuthorizedSection(principal.permissions);
+  const [section, setSection] = useState<ControlSection>(() => initialSection ?? 'home');
+  const [commandLocked, setCommandLocked] = useState(false);
+  const activeSection = canAccessControlSection(section, principal.permissions)
+    ? section
+    : initialSection;
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
+
+  useEffect(() => {
+    if (!commandLocked) return undefined;
+    window.addEventListener('beforeunload', preserveCommandBeforeUnload);
+    return () => window.removeEventListener('beforeunload', preserveCommandBeforeUnload);
+  }, [commandLocked]);
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
@@ -111,19 +154,28 @@ function Workspace({
           <span className="hidden text-sm font-medium text-foreground md:inline">
             {principal.user.displayName}
           </span>
-          <a
-            href="/"
-            className="inline-flex h-touch items-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            نقطة البيع
-          </a>
-          <Button variant="ghost" size="sm" onClick={onSignOut}>
+          {commandLocked ? (
+            <span
+              aria-disabled="true"
+              className="inline-flex h-touch cursor-not-allowed items-center rounded-md border border-input px-4 text-sm text-muted-foreground"
+            >
+              نقطة البيع
+            </span>
+          ) : (
+            <a
+              href="/"
+              className="inline-flex h-touch items-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              نقطة البيع
+            </a>
+          )}
+          <Button variant="ghost" disabled={commandLocked} onClick={onSignOut}>
             خروج
           </Button>
         </div>
       </header>
 
-      {!permitted ? (
+      {activeSection === null ? (
         <main className="mx-auto w-full max-w-lg p-6">
           <CardSurface className="flex flex-col gap-4 p-6">
             <StatusNote tone="warning" live>
@@ -142,8 +194,9 @@ function Workspace({
           <aside className="w-full shrink-0 lg:w-64" aria-label="التنقل">
             <CardSurface className="p-2">
               <ControlNav
-                active={section}
+                active={activeSection}
                 permissions={principal.permissions}
+                locked={commandLocked}
                 onSelect={setSection}
               />
             </CardSurface>
@@ -151,15 +204,21 @@ function Workspace({
 
           <main className="flex min-h-0 flex-1 flex-col gap-4">
             <div>
-              <h1 className="text-2xl font-semibold text-foreground">{sectionTitle(section)}</h1>
-              {section === 'branches' || section === 'staff' || section === 'settings' ? (
+              <h1 className="text-2xl font-semibold text-foreground">
+                {sectionTitle(activeSection)}
+              </h1>
+              {activeSection === 'inventory' ||
+              activeSection === 'purchasing' ||
+              activeSection === 'branches' ||
+              activeSection === 'staff' ||
+              activeSection === 'settings' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
                   إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
                 </p>
               ) : null}
             </div>
 
-            {section === 'home' && canReadOnboarding ? (
+            {activeSection === 'home' && canReadOnboarding ? (
               <OnboardingPanel
                 api={api}
                 permissions={principal.permissions}
@@ -167,7 +226,12 @@ function Workspace({
               />
             ) : null}
 
-            <Section section={section} api={api} principal={principal} />
+            <Section
+              section={activeSection}
+              api={api}
+              principal={principal}
+              onCommandLockChange={setCommandLocked}
+            />
           </main>
         </div>
       )}

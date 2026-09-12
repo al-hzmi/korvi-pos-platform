@@ -19,6 +19,18 @@ const config: NextConfig = {
   // pointing at the real TSX during development.
   transpilePackages: ['@korvi/ui'],
   typedRoutes: true,
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [{ source: '/v1/:path*', destination: `${apiOrigin}/v1/:path*` }];
   },

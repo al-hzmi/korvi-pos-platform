@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, CHECKOUT_TIMEOUT_MS, createApiClient } from '../api';
+import {
+  ApiError,
+  CHECKOUT_TIMEOUT_MS,
+  createApiClient,
+  INVENTORY_COMMAND_TIMEOUT_MS,
+  PURCHASING_COMMAND_TIMEOUT_MS,
+} from '../api';
 
 interface Recorded {
   readonly url: string;
@@ -153,6 +159,90 @@ describe('the API client', () => {
       expect(response.replayed).toBe(false);
       // The timer must be cleared, or the next tick aborts a settled request.
       expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('classifies an unanswered stock command as ambiguous', async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = (_url: string, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      const attempt = createApiClient(hung).inventoryAdjust({
+        operationId: 'stock-op-1',
+        branchId: 'branch-1',
+        reason: 'تلف',
+        lines: [{ productId: 'product-1', deltaQuantityScaled: '-1000' }],
+      });
+      const caught = attempt.catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(INVENTORY_COMMAND_TIMEOUT_MS + 1);
+      const error = await caught;
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).code).toBe('timeout');
+      expect((error as ApiError).ambiguous).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('classifies an unanswered cost bootstrap as ambiguous', async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = (_url: string, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      const attempt = createApiClient(hung).inventoryCostBootstrap({
+        operationId: 'cost-op-1',
+        branchId: 'branch-1',
+        productId: 'product-1',
+        totalValueMinor: '9007199254740993',
+        expectedStockRevision: '12',
+        expectedCostRevision: '8',
+        expectedUnknownPositiveQuantityScaled: '3000',
+      });
+      const caught = attempt.catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(INVENTORY_COMMAND_TIMEOUT_MS + 1);
+      const error = await caught;
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).code).toBe('timeout');
+      expect((error as ApiError).ambiguous).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('classifies an unanswered purchase receipt as ambiguous', async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = (_url: string, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      const attempt = createApiClient(hung).receivePurchaseOrder({
+        operationId: 'receipt-op-1',
+        purchaseOrderId: 'order-1',
+        reference: null,
+        lines: [{ purchaseOrderLineId: 'line-1', acceptedQuantityScaled: '1000' }],
+      });
+      const caught = attempt.catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(PURCHASING_COMMAND_TIMEOUT_MS + 1);
+      const error = await caught;
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).code).toBe('timeout');
+      expect((error as ApiError).ambiguous).toBe(true);
     } finally {
       vi.useRealTimers();
     }

@@ -146,6 +146,7 @@ describe('the public bootstrap door', () => {
 describe('the signing key as configuration', () => {
   it('is optional outside production and demanded in it', () => {
     const key = 'k'.repeat(40);
+    const metricsToken = 'm'.repeat(40);
     expect(loadConfig({ NODE_ENV: 'test' }).BOOTSTRAP_SIGNING_KEY).toBeUndefined();
     expect(loadConfig({ NODE_ENV: 'test', BOOTSTRAP_SIGNING_KEY: key }).BOOTSTRAP_SIGNING_KEY).toBe(
       key,
@@ -157,7 +158,12 @@ describe('the signing key as configuration', () => {
       /BOOTSTRAP_SIGNING_KEY/,
     );
     expect(() =>
-      loadConfig({ NODE_ENV: 'production', APP_ORIGINS: ORIGIN, BOOTSTRAP_SIGNING_KEY: key }),
+      loadConfig({
+        NODE_ENV: 'production',
+        APP_ORIGINS: ORIGIN,
+        BOOTSTRAP_SIGNING_KEY: key,
+        METRICS_AUTH_TOKEN: metricsToken,
+      }),
     ).not.toThrow();
   });
 

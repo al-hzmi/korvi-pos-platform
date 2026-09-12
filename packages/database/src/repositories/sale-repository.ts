@@ -458,6 +458,14 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             netMinor: BigInt(line.netMinor),
             vatMinor: BigInt(line.vatMinor),
             totalMinor: BigInt(line.totalMinor),
+            // A new line has no historical ambiguity: if it does not produce a
+            // tracked-stock movement its inventory basis is explicitly unknown.
+            // Tracked lines are replaced below, in this same transaction, by
+            // the exact basis their sale movement consumed.
+            costKnownQuantityScaled: 0n,
+            costUnknownQuantityScaled: BigInt(line.quantityScaled),
+            costValueMinor: 0n,
+            costProvenance: 'unknown',
           })),
         });
 
@@ -526,11 +534,58 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
           });
         }
 
+        // A checkout already refuses duplicate product lines. Assert the
+        // same invariant again at the persistence boundary so every tracked
+        // movement has exactly one immutable sale line on which to freeze its
+        // original cost basis.
+        const saleLineByProduct = new Map(
+          sale.lines
+            .filter((line) => line.productId !== null)
+            .map((line) => [line.productId as string, line] as const),
+        );
+        if (
+          saleLineByProduct.size !== sale.lines.filter((line) => line.productId !== null).length
+        ) {
+          throw new DatabaseError('A sale cannot contain duplicate product lines at persistence.');
+        }
+
         for (const movement of inventory) {
-          // The guard is in the UPDATE, not in a prior read: two tills selling
-          // the last unit both saw one in stock, and only this can tell them
-          // apart. A refusal aborts the whole transaction.
-          await applyMovementWithin(tx, tenant, movement, allowNegativeStock);
+          const saleLine = saleLineByProduct.get(movement.productId);
+          if (saleLine === undefined) {
+            throw new DatabaseError(
+              'A sale stock movement has no matching sale line for cost basis.',
+            );
+          }
+          const movementQuantity = BigInt(movement.quantityScaled);
+          const lineQuantity = BigInt(saleLine.quantityScaled);
+          if (movementQuantity >= 0n || -movementQuantity !== lineQuantity) {
+            throw new DatabaseError(
+              'Sale movement cost basis does not reconcile to its sale line.',
+            );
+          }
+
+          // The guard is in the stock UPDATE, not in a prior read: two tills
+          // selling the last unit both saw one in stock, and only the mutation
+          // can tell them apart. Costing runs under the same locked stock row.
+          const applied = await applyMovementWithin(
+            tx,
+            tenant,
+            movement,
+            allowNegativeStock,
+            saleLine.id,
+          );
+
+          // Frozen before commit. A future return reads these four fields from
+          // the original sale line and never consults today's branch average.
+          await tx.saleLine.update({
+            where: { tenantId_id: { tenantId: tenant, id: saleLine.id } },
+            data: {
+              costKnownQuantityScaled: applied.cost.knownQuantityScaled,
+              costUnknownQuantityScaled: applied.cost.unknownQuantityScaled,
+              costValueMinor: applied.cost.knownValueMinor,
+              costProvenance: applied.cost.provenance,
+            },
+          });
         }
 
         if (cashMovement !== null) {

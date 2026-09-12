@@ -22,9 +22,12 @@ const actorFor = (role: RoleName): Actor => ({
 });
 
 describe('permission catalogue', () => {
-  it('lists seventeen distinct permissions', () => {
-    expect(PERMISSIONS).toHaveLength(17);
-    expect(new Set(PERMISSIONS).size).toBe(17);
+  it('lists twenty-three distinct permissions', () => {
+    // Twenty-one after Strike 5B added purchasing authority. Strike 5C adds
+    // two distinct cost capabilities: seeing merchant cost and changing
+    // valuation are not the same decision (ADR-0024 §8).
+    expect(PERMISSIONS).toHaveLength(23);
+    expect(new Set(PERMISSIONS).size).toBe(23);
   });
 
   it('grants the owner every permission', () => {
@@ -61,6 +64,13 @@ describe('least privilege', () => {
       'product.write',
       'report.read',
       'shift.cash-movement',
+      'inventory.transfer',
+      'inventory.cost.read',
+      'inventory.cost.manage',
+      // A till neither orders from suppliers nor signs for a delivery.
+      'purchasing.read',
+      'purchasing.manage',
+      'purchasing.receive',
     ] as const) {
       expect(can(cashier, forbidden), forbidden).toBe(false);
       expect(() => requirePermission(cashier, forbidden)).toThrow(PermissionDeniedError);
@@ -83,12 +93,14 @@ describe('least privilege', () => {
     }
   });
 
-  it('keeps a manager out of settings and user administration', () => {
+  it('grants manager costing authority but keeps settings and users administrative', () => {
     const manager = actorFor('manager');
     expect(can(manager, 'settings.manage')).toBe(false);
     expect(can(manager, 'users.manage')).toBe(false);
     expect(can(manager, 'zatca.manage')).toBe(false);
     expect(can(manager, 'sale.refund')).toBe(true);
+    expect(can(manager, 'inventory.cost.read')).toBe(true);
+    expect(can(manager, 'inventory.cost.manage')).toBe(true);
   });
 
   it('gives an admin everything except what only an owner holds', () => {

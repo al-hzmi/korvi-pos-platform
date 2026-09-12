@@ -1,4 +1,4 @@
-import { ELECTRONIC_SCHEMES } from '@korvi/domain';
+import { ELECTRONIC_SCHEMES, allocateOriginalSaleReturnBasis } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import {
   DatabaseError,
@@ -233,6 +233,10 @@ interface SaleLineRow {
   netMinor: bigint;
   vatMinor: bigint;
   totalMinor: bigint;
+  costKnownQuantityScaled: bigint;
+  costUnknownQuantityScaled: bigint;
+  costValueMinor: bigint;
+  costProvenance: string;
 }
 
 interface ReturnedAggregateRow {
@@ -254,6 +258,26 @@ interface ReturnedAggregateRow {
 function big(value: bigint | string | null): bigint {
   if (value === null) return 0n;
   return typeof value === 'bigint' ? value : BigInt(value);
+}
+
+function returnCostProvenance(
+  original: string,
+  knownQuantityScaled: bigint,
+  unknownQuantityScaled: bigint,
+): 'historical-unknown' | 'unknown' | 'recorded' | 'mixed' {
+  if (
+    original !== 'historical-unknown' &&
+    original !== 'unknown' &&
+    original !== 'recorded' &&
+    original !== 'mixed'
+  ) {
+    throw new DatabaseError('The original sale line carries an invalid cost provenance.');
+  }
+  if (knownQuantityScaled === 0n) {
+    return original === 'historical-unknown' ? 'historical-unknown' : 'unknown';
+  }
+  if (unknownQuantityScaled === 0n) return 'recorded';
+  return 'mixed';
 }
 
 /**
@@ -594,6 +618,59 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
         // Pure, and inside the lock. Its refusals roll everything back.
         const plan = input.plan(stateFrom(sale, lines, returned, invoice?.invoiceNumber ?? null));
 
+        // A return never consults today's moving average. The original sale
+        // line froze the exact basis that left inventory, and the sale-row lock
+        // above serializes every return so cumulative prefix allocation cannot
+        // race another partial return of the same line.
+        const originalById = new Map(lines.map((line) => [line.id, line] as const));
+        const preparedReturnLines = plan.lines.map((line, index) => {
+          const id = input.lineIds[index];
+          if (id === undefined) {
+            throw new DatabaseError('A return line was planned without an id to write it under.');
+          }
+          const original = originalById.get(line.saleLineId);
+          if (original === undefined) {
+            throw new DatabaseError('A return line has no original sale line under the sale lock.');
+          }
+          if (line.productId !== original.productId) {
+            throw new DatabaseError('A return plan changed the product identity of its sale line.');
+          }
+          if (
+            original.costKnownQuantityScaled < 0n ||
+            original.costUnknownQuantityScaled < 0n ||
+            original.costValueMinor < 0n ||
+            original.costKnownQuantityScaled + original.costUnknownQuantityScaled !==
+              original.quantityScaled ||
+            (original.costKnownQuantityScaled === 0n && original.costValueMinor !== 0n)
+          ) {
+            throw new DatabaseError(
+              'The original sale line carries an invalid immutable cost basis.',
+            );
+          }
+
+          const previousQuantity = big(returned.get(line.saleLineId)?.quantityScaled ?? null);
+          const allocation = allocateOriginalSaleReturnBasis(
+            {
+              knownQuantityScaled: original.costKnownQuantityScaled,
+              unknownQuantityScaled: original.costUnknownQuantityScaled,
+              knownValueMinor: original.costValueMinor,
+            },
+            previousQuantity,
+            BigInt(line.quantityScaled),
+          );
+          const cost = {
+            knownQuantityScaled: allocation.knownQuantityScaled,
+            unknownQuantityScaled: allocation.unknownQuantityScaled,
+            knownValueMinor: allocation.knownValueMinor,
+            provenance: returnCostProvenance(
+              original.costProvenance,
+              allocation.knownQuantityScaled,
+              allocation.unknownQuantityScaled,
+            ),
+          };
+          return { id, line, cost };
+        });
+
         const number = await allocateReturnNumber(tx, tenant, input.branchId);
 
         await assertShiftUsable(tx, tenant, {
@@ -632,32 +709,30 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
         });
 
         await tx.returnLine.createMany({
-          data: plan.lines.map((line, index) => {
-            const id = input.lineIds[index];
-            if (id === undefined) {
-              throw new DatabaseError('A return line was planned without an id to write it under.');
-            }
-            return {
-              id,
-              tenantId: tenant,
-              returnId: input.returnId,
-              saleLineId: line.saleLineId,
-              lineNumber: line.lineNumber,
-              productId: line.productId,
-              sku: line.sku,
-              nameAr: line.nameAr,
-              nameEn: line.nameEn,
-              productType: line.productType,
-              vatBasisPoints: Number(line.vatBasisPoints),
-              quantityScaled: BigInt(line.quantityScaled),
-              grossMinor: BigInt(line.grossMinor),
-              lineDiscountMinor: BigInt(line.lineDiscountMinor),
-              basketDiscountMinor: BigInt(line.basketDiscountMinor),
-              netMinor: BigInt(line.netMinor),
-              vatMinor: BigInt(line.vatMinor),
-              totalMinor: BigInt(line.totalMinor),
-            };
-          }),
+          data: preparedReturnLines.map(({ id, line, cost }) => ({
+            id,
+            tenantId: tenant,
+            returnId: input.returnId,
+            saleLineId: line.saleLineId,
+            lineNumber: line.lineNumber,
+            productId: line.productId,
+            sku: line.sku,
+            nameAr: line.nameAr,
+            nameEn: line.nameEn,
+            productType: line.productType,
+            vatBasisPoints: Number(line.vatBasisPoints),
+            quantityScaled: BigInt(line.quantityScaled),
+            grossMinor: BigInt(line.grossMinor),
+            lineDiscountMinor: BigInt(line.lineDiscountMinor),
+            basketDiscountMinor: BigInt(line.basketDiscountMinor),
+            netMinor: BigInt(line.netMinor),
+            vatMinor: BigInt(line.vatMinor),
+            totalMinor: BigInt(line.totalMinor),
+            costKnownQuantityScaled: cost.knownQuantityScaled,
+            costUnknownQuantityScaled: cost.unknownQuantityScaled,
+            costValueMinor: cost.knownValueMinor,
+            costProvenance: cost.provenance,
+          })),
         });
 
         /*
@@ -677,7 +752,8 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
         const consumed = new Set(sold.map((row) => row.productId));
 
         let movement = 0;
-        for (const line of plan.lines) {
+        for (const preparedLine of preparedReturnLines) {
+          const { id: returnLineId, line, cost } = preparedLine;
           if (line.productId === null || !consumed.has(line.productId)) continue;
           const id = input.inventoryIds[movement];
           movement += 1;
@@ -703,6 +779,12 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               occurredAt: input.issuedAt,
             },
             true,
+            returnLineId,
+            {
+              knownQuantityScaled: cost.knownQuantityScaled,
+              unknownQuantityScaled: cost.unknownQuantityScaled,
+              knownValueMinor: cost.knownValueMinor,
+            },
           );
         }
 

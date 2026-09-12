@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changeMinor, formatMinor, parseSarToMinor } from '../money';
+import { changeMinor, formatMinor, parseSarToMinor, parseSarToPostgresMinor } from '../money';
 
 /**
  * The conversion between what a cashier types and what crosses the wire.
@@ -40,6 +40,7 @@ describe('parseSarToMinor', () => {
     ['.5', 'format'],
     ['1.234', 'precision'],
     ['0.001', 'precision'],
+    ['90071992547409.93', 'format'],
   ])('refuses %s', (input, reason) => {
     const parsed = parseSarToMinor(input);
     expect(parsed.ok).toBe(false);
@@ -53,6 +54,25 @@ describe('parseSarToMinor', () => {
       expect(parsed.ok && /^[0-9]+$/.test(parsed.value)).toBe(true);
     }
     expect(parseSarToMinor('0.1').ok && parseSarToMinor('0.1')).toEqual({ ok: true, value: '10' });
+  });
+});
+
+describe('parseSarToPostgresMinor', () => {
+  it.each([
+    ['90071992547409.93', '9007199254740993'],
+    ['92233720368547758.07', '9223372036854775807'],
+  ])('reads %s exactly as %s halalas', (input, expected) => {
+    const parsed = parseSarToPostgresMinor(input);
+    expect(parsed.ok && parsed.value).toBe(expected);
+  });
+
+  it.each([
+    ['92233720368547758.08', 'format'],
+    ['100000000000000000.00', 'format'],
+  ])('refuses %s at the PostgreSQL boundary', (input, reason) => {
+    const parsed = parseSarToPostgresMinor(input);
+    expect(parsed.ok).toBe(false);
+    expect(!parsed.ok && parsed.reason).toBe(reason);
   });
 });
 

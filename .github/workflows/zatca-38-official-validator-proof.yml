@@ -1,0 +1,168 @@
+name: ZATCA 38 Official Validator Boundary Proof
+
+on:
+  push:
+    branches:
+      - review/zatca-38-official-boundary
+      - strike/5c-costing-authority
+    paths:
+      - packages/domain/src/zatca/phase2.ts
+      - packages/domain/src/zatca/__tests__/phase2.test.ts
+      - packages/domain/src/index.ts
+      - scripts/zatca-38-c14n-proof.mjs
+      - scripts/zatca-38-official-validator-assert.mjs
+      - .github/workflows/zatca-38-official-validator-proof.yml
+      - docs/architecture/zatca.md
+      - docs/decisions/ADR-0032-zatca-gate38-official-validation-boundary.md
+      - docs/governance/PRODUCT-READINESS-SCORECARD.md
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  official-validator-boundary:
+    name: Official ZATCA / unsigned Gate 38 boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PROOF_DIR: artifacts/zatca-38-official
+      ZATCA_PORTAL_ORIGIN: https://sandbox.zatca.gov.sa
+      ZATCA_EXPECTED_VALIDATOR: https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal/validate-e-invoice/invoice/validate
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Build production ZATCA domain and run Gate 38 regressions
+        run: |
+          npm run build -w @korvi/domain
+          npx vitest run packages/domain/src/zatca/__tests__/phase2.test.ts
+
+      - name: Generate the exact unsigned Gate 38 XML from production code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROOF_DIR"
+          umask 077
+          node scripts/zatca-38-c14n-proof.mjs \
+            "$RUNNER_TEMP/korvi-invoice.xml" \
+            "$RUNNER_TEMP/korvi-hash.txt"
+          test -s "$RUNNER_TEMP/korvi-invoice.xml"
+          base64 -w0 "$RUNNER_TEMP/korvi-invoice.xml" > "$RUNNER_TEMP/korvi-invoice.b64"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "xml_bytes=$(wc -c < "$RUNNER_TEMP/korvi-invoice.xml")"
+            echo "invoice_hash=$(cat "$RUNNER_TEMP/korvi-hash.txt")"
+          } > "$PROOF_DIR/authority.txt"
+
+      - name: Resolve the live official public validator authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          curl --fail --show-error --location \
+            --retry 3 --retry-all-errors \
+            --connect-timeout 20 --max-time 120 \
+            -A "$ua" \
+            "$ZATCA_PORTAL_ORIGIN/env-config.js" \
+            --output "$RUNNER_TEMP/zatca-env.js"
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const text = readFileSync(`${process.env.RUNNER_TEMP}/zatca-env.js`, 'utf8');
+          const match = /REACT_APP_API_URL\s*:\s*["']([^"']+)["']/.exec(text);
+          if (match === null) throw new Error('Official portal REACT_APP_API_URL was not found.');
+          const actual = match[1].replace(/\/$/, '');
+          const expected = process.env.ZATCA_EXPECTED_VALIDATOR;
+          if (actual !== expected) {
+            throw new Error(`Official validator authority changed: ${actual}`);
+          }
+          writeFileSync(`${process.env.RUNNER_TEMP}/zatca-validator-url.txt`, actual, { mode: 0o600 });
+          console.log(`official_validator_authority=${actual}`);
+          NODE
+          echo "validator_authority=$(cat "$RUNNER_TEMP/zatca-validator-url.txt")" >> "$PROOF_DIR/authority.txt"
+
+      - name: Submit through the official Portal Validator request contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(cat "$RUNNER_TEMP/zatca-validator-url.txt")"
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          http_code="$(curl --silent --show-error --location \
+            --connect-timeout 20 --max-time 180 \
+            -A "$ua" \
+            -H 'Content-Type: text/plain' \
+            -H 'accepted-language: en' \
+            -H 'Accept-Language: en' \
+            -H "Origin: $ZATCA_PORTAL_ORIGIN" \
+            -H "Referer: $ZATCA_PORTAL_ORIGIN/Compliance" \
+            --data-binary @"$RUNNER_TEMP/korvi-invoice.b64" \
+            --output "$RUNNER_TEMP/zatca-response.json" \
+            --write-out '%{http_code}' \
+            "$url")"
+          echo "validator_http_status=$http_code" | tee -a "$PROOF_DIR/authority.txt"
+          if [ "$http_code" != '200' ]; then
+            echo 'Official ZATCA validator did not return HTTP 200.' >&2
+            cat "$RUNNER_TEMP/zatca-response.json" >&2 || true
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/zatca-response.json" "$PROOF_DIR/response.json"
+
+      - name: Assert exact Gate 39-only residual set
+        run: |
+          node scripts/zatca-38-official-validator-assert.mjs \
+            "$RUNNER_TEMP/zatca-response.json" \
+            "$PROOF_DIR/proof.txt"
+
+      - name: Prove unexpected ZATCA findings fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = `${process.env.RUNNER_TEMP}/zatca-response.json`;
+          const response = JSON.parse(readFileSync(path, 'utf8'));
+          response.warnings.push({
+            category: 'BR_KSA_WARNING',
+            code: 'BR-KSA-SYNTHETIC-UNEXPECTED',
+            message: 'Synthetic negative-control finding; never returned by ZATCA.',
+          });
+          writeFileSync(`${process.env.RUNNER_TEMP}/zatca-negative-control.json`, JSON.stringify(response), {
+            mode: 0o600,
+          });
+          NODE
+          if node scripts/zatca-38-official-validator-assert.mjs \
+            "$RUNNER_TEMP/zatca-negative-control.json" \
+            "$RUNNER_TEMP/negative-control-proof.txt"; then
+            echo 'Boundary assertion accepted an unexpected ZATCA finding.' >&2
+            exit 1
+          fi
+          echo '[zatca38] negative control rejected as required'
+
+      - name: Preserve sanitized official acceptance proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zatca-38-official-validator-${{ github.sha }}
+          path: |
+            artifacts/zatca-38-official/authority.txt
+            artifacts/zatca-38-official/proof.txt
+            artifacts/zatca-38-official/response.json
+          if-no-files-found: error
+          retention-days: 30
