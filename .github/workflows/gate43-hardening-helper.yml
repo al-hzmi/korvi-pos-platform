@@ -1,0 +1,106 @@
+name: Gate 43 Hardening Helper
+
+on:
+  push:
+    branches:
+      - review/offline-43-ordered-queue-run
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/offline-43-ordered-queue-run
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Harden canonical queue payload and add regression proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          store = Path('apps/pos-web/src/lib/offline-store.ts')
+          text = store.read_text()
+          old = """    if (Array.isArray(value)) {
+              return `[${value.map((entry) => canonicalJson(entry, seen)).join(',')}]`;
+            }
+          """
+          new = """    if (Array.isArray(value)) {
+              const entries: string[] = [];
+              for (let index = 0; index < value.length; index += 1) {
+                if (!Object.prototype.hasOwnProperty.call(value, index)) {
+                  throw new OfflineStoreError(
+                    'corrupt',
+                    'Queue payload arrays cannot contain holes.',
+                  );
+                }
+                entries.push(canonicalJson(value[index], seen));
+              }
+              return `[${entries.join(',')}]`;
+            }
+          """
+          if old not in text:
+              raise SystemExit('canonical array block did not match expected source')
+          store.write_text(text.replace(old, new, 1))
+
+          tests = Path('apps/pos-web/src/lib/__tests__/offline-store.test.ts')
+          text = tests.read_text()
+          anchor = """    expect(() => serializeQueuePayload({ value: undefined })).toThrow(OfflineStoreError);
+          """
+          addition = """    expect(() => serializeQueuePayload({ value: undefined })).toThrow(OfflineStoreError);
+            const sparse = new Array<unknown>(2);
+            sparse[1] = 'present';
+            expect(() => serializeQueuePayload(sparse)).toThrow(OfflineStoreError);
+          """
+          if anchor not in text:
+              raise SystemExit('queue payload regression anchor did not match expected source')
+          tests.write_text(text.replace(anchor, addition, 1))
+          PY
+
+      - name: Format exact Gate 43 sources
+        run: |
+          npx prettier --write \
+            packages/domain/src/ports/offline.ts \
+            apps/pos-web/src/lib/offline-store.ts \
+            apps/pos-web/src/lib/__tests__/offline-store.test.ts \
+            scripts/gate43-browser/index.html \
+            scripts/gate43-browser/main.ts \
+            scripts/gate43-queue-proof.mjs \
+            .github/workflows/gate-43-ordered-queue-proof.yml
+
+      - name: Commit hardened formatted implementation and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/gate43-hardening-helper.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            packages/domain/src/ports/offline.ts \
+            apps/pos-web/src/lib/offline-store.ts \
+            apps/pos-web/src/lib/__tests__/offline-store.test.ts \
+            scripts/gate43-browser/index.html \
+            scripts/gate43-browser/main.ts \
+            scripts/gate43-queue-proof.mjs \
+            .github/workflows/gate-43-ordered-queue-proof.yml \
+            .github/workflows/gate43-hardening-helper.yml
+          if git diff --cached --quiet; then
+            echo 'No hardening changes were produced.' >&2
+            exit 1
+          fi
+          git commit -m 'fix(offline): harden durable queue encoding and formatting'
+          git push origin HEAD:review/offline-43-ordered-queue-run
