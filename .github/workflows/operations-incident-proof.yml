@@ -4,15 +4,6 @@ on:
   push:
     branches:
       - review/operations-50-production-readiness
-    paths:
-      - '.github/workflows/operations-incident-proof.yml'
-      - 'apps/api/src/config.ts'
-      - 'apps/api/src/index.ts'
-      - 'apps/api/src/server.ts'
-      - 'apps/api/src/runtime/observability.ts'
-      - 'apps/api/src/runtime/readiness.ts'
-      - 'apps/api/src/runtime/shutdown.ts'
-      - 'packages/database/**'
   workflow_dispatch:
 
 concurrency:
