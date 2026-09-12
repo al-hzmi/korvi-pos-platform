@@ -61,6 +61,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm run build --workspace=@korvi/domain
           npx vite build scripts/gate43-browser \
             --outDir "$GITHUB_WORKSPACE/artifacts/gate43-harness" \
             --emptyOutDir
