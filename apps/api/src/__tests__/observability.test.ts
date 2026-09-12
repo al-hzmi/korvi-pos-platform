@@ -3,11 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../config.js';
 import { registerOperationalObservability } from '../runtime/observability.js';
 
-const METRICS_TOKEN = 'korvi-observability-test-token-000000000000000000000000';
+const METRICS_TOKEN = `observability-${'x'.repeat(48)}`;
+const BOOTSTRAP_KEY = `bootstrap-${'y'.repeat(48)}`;
+const REQUEST_COUNTER =
+  'korvi_http_requests_total{method="GET",route="/v1/items/:itemId",status_class="2xx"} 1';
+const DURATION_COUNT =
+  'korvi_http_request_duration_seconds_count{method="GET",route="/v1/items/:itemId"} 1';
+const NOT_READY_COUNTER = 'korvi_readiness_responses_total{result="not_ready"} 1';
 const PRODUCTION_BASE = {
   NODE_ENV: 'production',
   APP_ORIGINS: 'https://pos.example',
-  BOOTSTRAP_SIGNING_KEY: 'bootstrap-signing-key-for-observability-tests-000000',
+  BOOTSTRAP_SIGNING_KEY: BOOTSTRAP_KEY,
 } as const;
 
 describe('production observability boundary', () => {
@@ -17,15 +23,18 @@ describe('production observability boundary', () => {
       loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: 'too-short' }),
     ).toThrow(/METRICS_AUTH_TOKEN/);
 
-    const config = loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: METRICS_TOKEN });
+    const config = loadConfig({
+      ...PRODUCTION_BASE,
+      METRICS_AUTH_TOKEN: METRICS_TOKEN,
+    });
     expect(config.METRICS_AUTH_TOKEN).toBe(METRICS_TOKEN);
   });
 
   it('does not echo a rejected metrics credential in configuration errors', () => {
     const rejected = 'recognizable-secret';
-    expect(() => loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: rejected })).toThrow(
-      /METRICS_AUTH_TOKEN/,
-    );
+    expect(() =>
+      loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: rejected }),
+    ).toThrow(/METRICS_AUTH_TOKEN/);
     try {
       loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: rejected });
     } catch (error) {
@@ -40,7 +49,9 @@ describe('production observability boundary', () => {
       loadConfig({ NODE_ENV: 'test', METRICS_AUTH_TOKEN: METRICS_TOKEN }),
     );
     app.get('/v1/items/:itemId', async () => ({ ok: true }));
-    app.get('/ready', async (_request, reply) => reply.code(503).send({ status: 'not_ready' }));
+    app.get('/ready', async (_request, reply) =>
+      reply.code(503).send({ status: 'not_ready' }),
+    );
 
     const business = await app.inject({
       method: 'GET',
@@ -72,13 +83,9 @@ describe('production observability boundary', () => {
     expect(metrics.statusCode).toBe(200);
     expect(metrics.headers['cache-control']).toBe('no-store');
     expect(metrics.headers['content-type']).toContain('text/plain');
-    expect(metrics.body).toContain(
-      'korvi_http_requests_total{method="GET",route="/v1/items/:itemId",status_class="2xx"} 1',
-    );
-    expect(metrics.body).toContain(
-      'korvi_http_request_duration_seconds_count{method="GET",route="/v1/items/:itemId"} 1',
-    );
-    expect(metrics.body).toContain('korvi_readiness_responses_total{result="not_ready"} 1');
+    expect(metrics.body).toContain(REQUEST_COUNTER);
+    expect(metrics.body).toContain(DURATION_COUNT);
+    expect(metrics.body).toContain(NOT_READY_COUNTER);
     expect(metrics.body).not.toContain('private-merchant-item');
     expect(metrics.body).not.toContain('private-query-value');
     expect(metrics.body).not.toContain(METRICS_TOKEN);
