@@ -5,6 +5,7 @@ import { checkoutQueueOperation } from '../offline-checkout';
 import { runCheckout } from '../checkout-submit';
 import { checkoutReducer, initialCheckoutState } from '../checkout';
 import type { CheckoutEvent } from '../checkout';
+import type { CheckoutIntent } from '../checkout-flight';
 
 const OPERATION_ID = '018f5000-0001-7000-8000-000000000001';
 const TERMINAL_ID = '018f5000-0000-7000-8000-000000000002';
@@ -45,7 +46,7 @@ describe('offline checkout ownership transfer', () => {
   it('queues an unanswered request before unlocking the till', async () => {
     const flight = createCheckoutFlight();
     const events: CheckoutEvent[] = [];
-    const queued = vi.fn(async () => undefined);
+    const queued = vi.fn(async (_intent: CheckoutIntent) => undefined);
     await runCheckout(
       { checkout: async () => Promise.reject(new ApiError(0, 'network', null)) },
       flight,
