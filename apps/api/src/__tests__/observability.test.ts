@@ -93,15 +93,12 @@ describe('production observability boundary', () => {
     await app.close();
   });
 
-  it(
-    'keeps the scrape route absent when observability credentials are not configured',
-    async () => {
-      const app = Fastify({ logger: false });
-      registerOperationalObservability(app, loadConfig({ NODE_ENV: 'test' }));
-      const response = await app.inject({ method: 'GET', url: '/metrics' });
-      expect(response.statusCode).toBe(404);
-      expect(response.headers['x-request-id']).toBeTruthy();
-      await app.close();
-    },
-  );
+  it('omits the scrape route without observability credentials', async () => {
+    const app = Fastify({ logger: false });
+    registerOperationalObservability(app, loadConfig({ NODE_ENV: 'test' }));
+    const response = await app.inject({ method: 'GET', url: '/metrics' });
+    expect(response.statusCode).toBe(404);
+    expect(response.headers['x-request-id']).toBeTruthy();
+    await app.close();
+  });
 });
