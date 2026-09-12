@@ -19,9 +19,9 @@ const PRODUCTION_BASE = {
 describe('production observability boundary', () => {
   it('requires a protected metrics credential in production configuration', () => {
     expect(() => loadConfig(PRODUCTION_BASE)).toThrow(/METRICS_AUTH_TOKEN/);
-    expect(() =>
-      loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: 'too-short' }),
-    ).toThrow(/METRICS_AUTH_TOKEN/);
+    expect(() => loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: 'too-short' })).toThrow(
+      /METRICS_AUTH_TOKEN/,
+    );
 
     const config = loadConfig({
       ...PRODUCTION_BASE,
@@ -32,9 +32,9 @@ describe('production observability boundary', () => {
 
   it('does not echo a rejected metrics credential in configuration errors', () => {
     const rejected = 'recognizable-secret';
-    expect(() =>
-      loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: rejected }),
-    ).toThrow(/METRICS_AUTH_TOKEN/);
+    expect(() => loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: rejected })).toThrow(
+      /METRICS_AUTH_TOKEN/,
+    );
     try {
       loadConfig({ ...PRODUCTION_BASE, METRICS_AUTH_TOKEN: rejected });
     } catch (error) {
