@@ -181,7 +181,11 @@ try {
     `document.readyState === 'complete' || document.readyState === 'interactive'`,
     'initial cashier document',
   );
-  assert.equal(await evaluate('window.isSecureContext'), true, 'Loopback must be a secure context.');
+  assert.equal(
+    await evaluate('window.isSecureContext'),
+    true,
+    'Loopback must be a secure context.',
+  );
   await waitFor(
     `(async () => {
       if (!('serviceWorker' in navigator)) return false;
@@ -208,7 +212,11 @@ try {
   );
   assert.notEqual(activeCache, undefined, 'Active shell cache must exist.');
   const activeUrls = activeCache.urls.map((value) => new URL(value));
-  assert.equal(activeUrls.some((url) => url.pathname === '/'), true, 'Cashier HTML must be cached.');
+  assert.equal(
+    activeUrls.some((url) => url.pathname === '/'),
+    true,
+    'Cashier HTML must be cached.',
+  );
   assert.equal(
     activeUrls.some((url) => url.pathname === '/__korvi_internal__/shell-complete'),
     true,
