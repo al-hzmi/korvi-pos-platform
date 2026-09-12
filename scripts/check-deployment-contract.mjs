@@ -88,7 +88,7 @@ assert.equal(
 );
 assert.match(
   buildScript,
-  /if \[ "\$1" = api \] && \[ "\$\{KORVI_ENVIRONMENT:-\}" = staging \]; then\n  bash scripts\/deploy\/staging-migrate\.sh\nfi/,
+  /if \[ "\$1" = api \] && \[ "\$\{KORVI_ENVIRONMENT:-\}" = staging \]; then\n {2}bash scripts\/deploy\/staging-migrate\.sh\nfi/,
   'API staging build must invoke the guarded migration stage',
 );
 
