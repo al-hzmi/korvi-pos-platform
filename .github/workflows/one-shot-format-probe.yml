@@ -1,0 +1,72 @@
+name: One-shot Probe Formatting
+
+on:
+  push:
+    branches:
+      - review/operations-50-production-readiness
+    paths:
+      - .github/workflows/one-shot-format-probe.yml
+
+concurrency:
+  group: one-shot-probe-format
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    name: Format external probe sources exactly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact triggering revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile without package scripts
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+
+      - name: Format only the external probe sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install prettier --write \
+            scripts/check-external-staging-probe-contract.mjs \
+            scripts/external-staging-probe.mjs
+
+          mapfile -t changed < <(git status --porcelain | sed -E 's/^.. //' | sort)
+          expected=(
+            'scripts/check-external-staging-probe-contract.mjs'
+            'scripts/external-staging-probe.mjs'
+          )
+          if [ "${changed[*]}" != "${expected[*]}" ]; then
+            printf 'Unexpected formatting diff:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          fi
+
+          npx --no-install prettier --check \
+            scripts/check-external-staging-probe-contract.mjs \
+            scripts/external-staging-probe.mjs
+          git diff --check
+
+      - name: Commit generated formatting only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/check-external-staging-probe-contract.mjs \
+            scripts/external-staging-probe.mjs
+          git commit -m 'style(ops): format external staging probe'
+          git push origin HEAD:review/operations-50-production-readiness
