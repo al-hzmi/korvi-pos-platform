@@ -2,11 +2,11 @@
 
 Status: **ACTIVE GOVERNANCE DENOMINATOR (v1)**
 
-Evidence baseline: `8324844e707b8302e23ebfa246ce6d1f198aea15`
+Evidence baseline: `1d5e36b3aed0590ad29e1e2422adda4e0e10b053`
 
-Snapshot date: 2026-09-10
+Snapshot date: 2026-09-12
 
-Current evidence-backed progress: **78 / 100** (`39 / 50` gates closed)
+Current evidence-backed progress: **80 / 100** (`40 / 50` gates closed)
 
 > This score measures implementation progress toward the current sellable Korvi
 > POS production target. It is not permission to ship. Critical release gates
@@ -48,7 +48,8 @@ this denominator retroactively.
 The numeric score is subordinate to release safety. Production release remains
 **BLOCKED** while any of these are open:
 
-- full ZATCA Phase 2 issuance/reporting for the target regulatory scope;
+- full ZATCA Phase 2 issuance/reporting for the target regulatory scope,
+  including the real non-exportable production signing authority proof;
 - the promised offline-first sales path and reconciliation;
 - required actual-browser / accessibility / Human Gates for the active strike;
 - independent review where the governance model requires it;
@@ -138,15 +139,15 @@ saleable.
 | 36 | ZATCA Phase 1 simplified QR tags 1-5 are deterministic and UTF-8 byte-correct | CLOSED | `docs/architecture/zatca.md`; TLV tests |
 | 37 | Required QR is carried through the thermal receipt generation path | CLOSED | receipt renderer and printing suites |
 | 38 | Compliant UBL XML, canonicalisation and invoice hash are implemented for Phase 2 | CLOSED | Production UBL/hash authority on `95c64450...`; exact-head full CI `34405601428` and official ZATCA public-validator boundary proof `34405601489` succeeded on `8324844e...`; official response contained no UBL/XSD/EN16931/KSA content finding, only exact Gate 39 signature/QR residuals; ADR-0032 |
-| 39 | CSID lifecycle, cryptographic stamp and QR tags 6-9 are implemented | OPEN | ADR-0032 preserves this as a hard sealing boundary; real CSID/XAdES/QR 6-9 implementation and ZATCA validation remain required |
-| 40 | FATOORA reporting, retry and reconciliation are implemented and proven | OPEN | Architecture defined; production authority not yet implemented/proven |
+| 39 | CSID lifecycle, cryptographic stamp and QR tags 6-9 are implemented | OPEN | CSID/XAdES/QR implementation and internal cryptographic/PostgreSQL evidence exist on the review lineage; the required live Azure Key Vault EC-HSM/P-256K non-exportable custody/sign/verify proof is still open, so no production sealing closure is claimed |
+| 40 | FATOORA reporting, retry and reconciliation are implemented and proven | OPEN | Internal implementation/evidence is green on `cdb911284ae0a6f02a6c9d6407695b90dcc9de45`: CI `34658671978`, PostgreSQL proof `34658671974`, 16/16 migrations, zero drift, durable one-shot/ambiguity/reconciliation proof and 2,385 passed tests; sequential production closure remains blocked by Gate 39 |
 
-### Pillar I — Offline-first resilience (0 / 10)
+### Pillar I — Offline-first resilience (2 / 10)
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
-| 41 | Service Worker keeps the cashier application shell usable without network | OPEN | `docs/architecture/offline.md` marks implementation deferred |
-| 42 | IndexedDB/local durable store contains the required catalogue and sale state | OPEN | Boundary/ports exist; durable browser implementation is not closed |
+| 41 | Service Worker keeps the cashier application shell usable without network | CLOSED | Production worker on `1d5e36b3...`; exact-head CI `34660345695` green; actual Chrome hard-outage proof `34660345691` stopped the web server, disabled browser HTTP cache, served the root document plus 21 Next assets from the worker, proved `/v1/*` bypass/no CacheStorage authority, and preserved artifact `10286767699` with digest `d55bdd5f...` |
+| 42 | IndexedDB/local durable store contains the required catalogue and sale state | OPEN | Boundary exists; versioned durable browser implementation, upgrade/failure handling and browser persistence proof remain required |
 | 43 | Persistent ordered transaction queue survives restart/outage | OPEN | Port/RetryPolicy architecture only |
 | 44 | Sync engine retries/reporting without loss, duplication or reordering | OPEN | Port/architecture only |
 | 45 | Conflict/reconciliation policy and a real offline sale/reconnect workflow are proven | OPEN | Explicitly undecided/unproven in offline architecture |
@@ -155,8 +156,8 @@ saleable.
 
 | # | Gate | State | Evidence |
 |---|---|---|---|
-| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Push CI `34378535126` and PR CI `34378542051` succeeded on `e8d2f918...`; clean Gate 38 candidate CI `34405601428` also succeeded on `8324844e...` |
-| 47 | Restricted-role PostgreSQL 17 proof applies all migrations, detects drift and runs live/full verification | CLOSED | Exact-head PostgreSQL workflow `34378535285` succeeded on `e8d2f918...`; 12/12 migrations, no drift, live/full verification green |
+| 46 | Exact-head CI enforces dependency pins, audit, format, lint, invariants, build, typecheck and tests | CLOSED | Current Gate 41 exact-head CI `34660345695` succeeded on `1d5e36b3...`; earlier cashier/Phase-2 release-track CI evidence remains retained |
+| 47 | Restricted-role PostgreSQL 17 proof applies all migrations, detects drift and runs live/full verification | CLOSED | Gate 40 PostgreSQL proof `34658671974` succeeded with 16/16 migrations, zero drift, restricted application role and full verification; earlier release-track PostgreSQL evidence retained |
 | 48 | Matching-SHA API/web staging deployment is live and health-checked | CLOSED | Render staging matching-sha deployment evidence retained from the active release track |
 | 49 | Current-head independent review and all required Human Gates are complete | OPEN | No fresh independent approval/Human Gate is claimed |
 | 50 | Production operations and controlled field validation are complete | OPEN | Backup/restore, production observability/incident evidence and the planned controlled merchant field rollout are not closed |
@@ -173,14 +174,14 @@ Closed gates by pillar:
 - F: 4
 - G: 4
 - H: 3
-- I: 0
+- I: 1
 - J: 3
 
-Total: `39 / 50` gates.
+Total: `40 / 50` gates.
 
-`39 × 2 = 78`.
+`40 × 2 = 80`.
 
-**Canonical evidence-backed overall progress: 78 / 100.**
+**Canonical evidence-backed overall progress: 80 / 100.**
 
 This replaces the historical `58 / 100` baseline because the old number had no
 stable denominator. Progress now moves only when a named gate closes from the
@@ -191,17 +192,18 @@ evidence required by that gate.
 The score must move only when a named open gate closes. The nearest legitimate
 opportunities are:
 
-1. implement and prove Gate 39: real CSID lifecycle, cryptographic stamp/XAdES
-   sealing and Phase 2 QR tags 6-9, then validate the sealed simplified invoice
-   through the official ZATCA acceptance path;
-2. implement and prove Gate 40 FATOORA reporting/retry/reconciliation after the
-   sealed-invoice authority is stable;
-3. obtain the required independent current-head review and Human Gate for the
-   inventory/purchasing/costing browser workflows;
-4. implement and prove the offline-first browser persistence, ordered queue,
-   sync and reconciliation gates;
-5. complete independent release review plus production operations and controlled
-   merchant field validation.
+1. complete Gate 39's remaining real-provider proof: Azure Key Vault Premium
+   EC-HSM/P-256K, non-exportable custody and remote ES256K sign/verify on the
+   exact review lineage; only then may Gate 39 be closed;
+2. after Gate 39 closes, promote/re-run the already internally green Gate 40
+   FATOORA reporting/retry/reconciliation evidence on the final release lineage;
+3. implement and prove Gate 42: versioned IndexedDB durability for the required
+   cashier catalogue and sale state, including upgrade, quota/failure and
+   restart boundaries;
+4. then close the ordered durable queue, sync and reconciliation Gates 43–45
+   without weakening financial, inventory, tax or idempotency authority;
+5. obtain the required independent/Human Gates and complete production
+   operations plus controlled merchant field validation.
 
 No direct SQL fixture, fake stock, weakened permission, fabricated browser
 claim, skipped regulatory requirement or temporary production bypass may be

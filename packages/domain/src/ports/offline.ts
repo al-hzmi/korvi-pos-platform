@@ -1,13 +1,14 @@
 /**
- * Offline boundary — declared in Phase 0, implemented later (ADR-0005).
+ * Offline boundary — declared in Phase 0 and implemented gate by gate (ADR-0005).
  *
- * The shape is fixed now so that the sale path is written against a queue from
- * the first line of Phase 1, rather than being retrofitted for offline once it
- * already assumes a live server. Retrofitting is where ordering guarantees get
- * lost.
+ * The shape is fixed so that the sale path is written against a queue rather
+ * than being retrofitted for offline after it already assumes a live server.
+ * Retrofitting is where ordering guarantees get lost.
  *
- * Nothing here is implemented yet: no IndexedDB, no Service Worker, no sync
- * loop. Those are Phase 1+.
+ * Gate 41 has now closed the Service Worker application-shell prerequisite.
+ * IndexedDB durability, the transaction queue, the sync loop and conflict
+ * reconciliation remain separate open gates; nothing in this port claims those
+ * capabilities are implemented before their evidence exists.
  */
 
 export type QueueItemState = 'pending' | 'in-flight' | 'settled' | 'rejected';
