@@ -5,6 +5,7 @@ on:
     branches:
       - strike/5c-costing-authority
       - review/ops-dr-rehearsal
+      - review/operations-50-production-readiness
     paths:
       - '.github/workflows/operations-dr-postgres.yml'
       - 'scripts/dr-sentinel.mjs'
@@ -16,7 +17,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -24,7 +25,7 @@ permissions:
 jobs:
   restore-proof:
     name: PostgreSQL 17 / logical backup / isolated restore / application proof
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
       SOURCE_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_dr_source
@@ -50,7 +51,7 @@ jobs:
           - 5432:5432
 
     steps:
-      - name: Check out
+      - name: Check out exact commit
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Node
@@ -59,14 +60,18 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Verify package manager and install
+      - name: Verify package manager and install exact lockfile
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
+          date +%s > artifacts/rehearsal-started-epoch
           node scripts/verify-package-manager.mjs
           npm ci --registry=https://registry.npmjs.org
-          printf 'commit=%s\n' "$GITHUB_SHA" | tee "$PROOF_LOG"
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'runner_image=%s\n' "${ImageOS:-unknown}"
+          } | tee "$PROOF_LOG"
 
       - name: Create restricted source role and migrate source
         shell: bash
@@ -88,15 +93,16 @@ jobs:
           test "$source_flags" = 'f|f|f|f|f|f'
           echo "source_app_role_flags=$source_flags" | tee -a "$PROOF_LOG"
 
-          migration_directories="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          test "$migration_directories" -eq 12
+          migration_directories="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          test "$migration_directories" -ge 1
           echo "migration_directories=$migration_directories" | tee -a "$PROOF_LOG"
+          printf '%s' "$migration_directories" > artifacts/expected-migration-count
 
           DATABASE_URL="$SOURCE_URL" npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
           DATABASE_URL="$SOURCE_URL" npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
 
           source_ledger="$(psql "$SOURCE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE \"finished_at\" IS NOT NULL AND \"rolled_back_at\" IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
-          test "$source_ledger" = '12|12'
+          test "$source_ledger" = "${migration_directories}|${migration_directories}"
           echo "source_migration_ledger=$source_ledger" | tee -a "$PROOF_LOG"
 
       - name: Build runtime and create application-owned sentinel
@@ -128,13 +134,18 @@ jobs:
           echo "backup_client=$dump_client" | tee -a "$PROOF_LOG"
           echo "restore_client=$restore_client" | tee -a "$PROOF_LOG"
 
+          backup_started="$(date +%s)"
           docker run --rm --network host "$POSTGRES_TOOL_IMAGE" \
             pg_dump "$SOURCE_ADMIN_URL" \
             --format=custom \
             --compress=6 \
             --no-owner \
             --no-privileges > artifacts/korvi-dr.dump
+          backup_finished="$(date +%s)"
           test -s artifacts/korvi-dr.dump
+          echo "backup_elapsed_seconds=$((backup_finished - backup_started))" | tee -a "$PROOF_LOG"
+          echo "backup_size_bytes=$(stat -c '%s' artifacts/korvi-dr.dump)" | tee -a "$PROOF_LOG"
+
           docker run --rm -i "$POSTGRES_TOOL_IMAGE" \
             pg_restore --list < artifacts/korvi-dr.dump > artifacts/korvi-dr.list
           grep -q 'TABLE.*tenants' artifacts/korvi-dr.list
@@ -182,8 +193,9 @@ jobs:
           DATABASE_URL: ${{ env.RESTORE_URL }}
         run: |
           set -euo pipefail
+          expected_migrations="$(cat artifacts/expected-migration-count)"
           restored_ledger="$(psql "$RESTORE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FILTER (WHERE \"finished_at\" IS NOT NULL AND \"rolled_back_at\" IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
-          test "$restored_ledger" = '12|12'
+          test "$restored_ledger" = "${expected_migrations}|${expected_migrations}"
           echo "restored_migration_ledger=$restored_ledger" | tee -a "$PROOF_LOG"
 
           restored_ownership="$(psql "$RESTORE_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname='public'")"
@@ -235,19 +247,37 @@ jobs:
           set -euo pipefail
           npm run verify 2>&1 | tee -a "$PROOF_LOG"
           git diff --check
+          rehearsal_started="$(cat artifacts/rehearsal-started-epoch)"
+          rehearsal_finished="$(date +%s)"
+          echo "full_recovery_rehearsal_elapsed_seconds=$((rehearsal_finished - rehearsal_started))" | tee -a "$PROOF_LOG"
+          echo 'isolated_restore_application_verification=PASS' | tee -a "$PROOF_LOG"
 
       - name: Remove data-bearing rehearsal material
         if: always()
         shell: bash
         run: |
           rm -f artifacts/korvi-dr.dump artifacts/korvi-dr.list artifacts/dr-sentinel.json \
-            artifacts/source-rls.txt artifacts/source-policies.txt
+            artifacts/source-rls.txt artifacts/source-policies.txt artifacts/expected-migration-count \
+            artifacts/rehearsal-started-epoch
 
-      - name: Preserve DR proof log only
+      - name: Reject secrets or data-bearing backup material in retained proof
         if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e artifacts/korvi-dr.dump
+          test ! -e artifacts/korvi-dr.list
+          test ! -e artifacts/dr-sentinel.json
+          if grep -Eqi 'postgresql://|PASSWORD[ =]|BEGIN (EC |RSA |)PRIVATE KEY|session[_-]?cookie|authorization:' "$PROOF_LOG"; then
+            echo 'Potential credential/private material detected in retained DR proof.' >&2
+            exit 1
+          fi
+
+      - name: Preserve sanitized DR proof log only
+        if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: operations-dr-proof-${{ github.sha }}
           path: artifacts/operations-dr-proof.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
