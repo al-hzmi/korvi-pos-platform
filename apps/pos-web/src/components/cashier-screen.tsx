@@ -16,11 +16,13 @@ import { autoAddCandidate } from '../lib/search';
 import { parseSarToMinor } from '../lib/money';
 import { useCart } from '../hooks/use-cart';
 import { useCheckout } from '../hooks/use-checkout';
+import { useDurableSaleDraft } from '../hooks/use-durable-sale-draft';
 import { useProductSearch } from '../hooks/use-product-search';
 import type { JSX } from 'react';
 import type { PriceMode } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
 import type { Principal, ProductSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
+import type { OfflineSaleScope } from '../lib/offline-store';
 
 /**
  * Where a cashier spends the whole day.
@@ -62,18 +64,73 @@ export function CashierScreen({
   const search = useProductSearch(api);
   const checkout = useCheckout(api, onExpired);
   const [cash, setCash] = useState('');
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const cashInput = useRef<HTMLInputElement>(null);
+
+  const durableScope = useMemo<OfflineSaleScope>(
+    () => ({
+      tenantId: principal.tenant.id,
+      branchId: terminal.branchId,
+      terminalId: terminal.id,
+      userId: principal.user.id,
+      shiftId: shift.id,
+    }),
+    [principal.tenant.id, principal.user.id, shift.id, terminal.branchId, terminal.id],
+  );
+  const durableDraft = useDurableSaleDraft(durableScope);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
   const parsedCash = parseSarToMinor(cash);
   const cashMinor = parsedCash.ok ? parsedCash.value : null;
-  const locked = intentLocked(checkout.state);
+  const durabilityLoading = !draftHydrated;
+  const locked = intentLocked(checkout.state) || durabilityLoading;
   const outstanding = checkout.state.attemptOutstanding;
 
   const focusSearch = useCallback(() => {
     searchInput.current?.focus();
   }, []);
+
+  useEffect(() => {
+    setDraftHydrated(false);
+  }, [durableScope]);
+
+  useEffect(() => {
+    if (draftHydrated || durableDraft.state.status === 'loading') return;
+    if (durableDraft.state.status === 'ready' && durableDraft.state.draft !== null) {
+      cart.dispatch({ type: 'replace', lines: durableDraft.state.draft.lines });
+      setCash(durableDraft.state.draft.cash);
+    }
+    // A failed local store must never masquerade as durable. It does not,
+    // however, revoke the server's online sale authority; the warning below
+    // stays visible and the cashier can continue online.
+    setDraftHydrated(true);
+  }, [cart, draftHydrated, durableDraft.state]);
+
+  useEffect(() => {
+    if (!draftHydrated || durableDraft.state.status !== 'ready') return;
+    if (checkout.state.phase === 'succeeded') {
+      durableDraft.clear();
+      return;
+    }
+    if (cart.lines.length === 0 && cash === '') {
+      durableDraft.clear();
+      return;
+    }
+    durableDraft.persist({
+      lines: cart.lines,
+      cash,
+      priceMode,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [
+    cart.lines,
+    cash,
+    checkout.state.phase,
+    draftHydrated,
+    durableDraft,
+    priceMode,
+  ]);
 
   // The opening grid. A till that shows nothing until somebody types looks
   // broken, and in a shop with a short catalogue the cashier should not have
@@ -117,13 +174,14 @@ export function CashierScreen({
   }, [checkout.state.failure]);
 
   const newSale = useCallback(() => {
+    durableDraft.clear();
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
     // Once, between customers — not once per item.
     search.browse();
     focusSearch();
-  }, [checkout, cart, search, focusSearch]);
+  }, [checkout, cart, durableDraft, search, focusSearch]);
 
   const submit = useCallback(() => {
     if (cashMinor === null) return;
@@ -152,6 +210,11 @@ export function CashierScreen({
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
         <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
+          {durableDraft.state.status === 'failed' ? (
+            <StatusNote tone="warning" className="mb-3" live>
+              التخزين المحلي غير متاح. البيع المتصل يعمل، لكن لا تعتمد على استعادة السلة بعد إغلاق الصفحة.
+            </StatusNote>
+          ) : null}
           <ProductPanel
             term={search.term}
             state={search.state}
@@ -169,6 +232,11 @@ export function CashierScreen({
         >
           {completed === null ? (
             <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
+              {durabilityLoading ? (
+                <StatusNote tone="info" className="mb-3" live>
+                  جاري استعادة حالة البيع المحلية…
+                </StatusNote>
+              ) : null}
               {outstanding ? (
                 <StatusNote tone="warning" className="mb-3" live>
                   العملية معلّقة ولم تُحسم. السلة والمبلغ مقفلان حتى تُعاد بنفس العملية.
