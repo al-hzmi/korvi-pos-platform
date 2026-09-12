@@ -50,7 +50,7 @@ function envEntries(block) {
   const envIndex = block.indexOf('    envVars:\n');
   assert.notEqual(envIndex, -1, 'service must define envVars');
   const envBlock = block.slice(envIndex + '    envVars:\n'.length);
-  const entryPattern = /^      - key: ([A-Z][A-Z0-9_]*)\n((?:        .+\n?)*)/gm;
+  const entryPattern = /^ {6}- key: ([A-Z][A-Z0-9_]*)\n((?: {8}.+\n?)*)/gm;
   const entries = new Map();
 
   for (const match of envBlock.matchAll(entryPattern)) {
@@ -81,25 +81,25 @@ for (const [name, block] of [
 }
 
 const apiEnv = envEntries(api);
-assert.match(apiEnv.get('NODE_ENV') ?? '', /^        value: production$/m);
-assert.match(apiEnv.get('KORVI_ENVIRONMENT') ?? '', /^        value: staging$/m);
+assert.match(apiEnv.get('NODE_ENV') ?? '', /^ {8}value: production$/m);
+assert.match(apiEnv.get('KORVI_ENVIRONMENT') ?? '', /^ {8}value: staging$/m);
 
 for (const key of requiredSecrets) {
   const definition = apiEnv.get(key);
   assert.ok(definition, `staging API must provision production secret ${key}`);
-  assert.match(definition, /^        generateValue: true$/m, `${key} must be provider-generated`);
-  assert.doesNotMatch(definition, /^        value:/m, `${key} must never be hardcoded`);
+  assert.match(definition, /^ {8}generateValue: true$/m, `${key} must be provider-generated`);
+  assert.doesNotMatch(definition, /^ {8}value:/m, `${key} must never be hardcoded`);
   assert.doesNotMatch(
     definition,
-    /^        sync:/m,
+    /^ {8}sync:/m,
     `${key} must not depend on an ignored Blueprint sync`,
   );
 }
 
 assert.ok(apiEnv.has('DATABASE_URL'), 'staging API must declare DATABASE_URL');
 assert.ok(apiEnv.has('APP_ORIGINS'), 'staging API must declare APP_ORIGINS');
-assert.match(apiEnv.get('DATABASE_URL') ?? '', /^        sync: false$/m);
-assert.match(apiEnv.get('APP_ORIGINS') ?? '', /^        sync: false$/m);
+assert.match(apiEnv.get('DATABASE_URL') ?? '', /^ {8}sync: false$/m);
+assert.match(apiEnv.get('APP_ORIGINS') ?? '', /^ {8}sync: false$/m);
 
 console.log(
   `[ok] deployment contract: ${requiredSecrets.length} production secrets, controlled same-branch staging`,
