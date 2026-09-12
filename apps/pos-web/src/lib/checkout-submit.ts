@@ -18,6 +18,7 @@ import type { CheckoutFlight, CheckoutIntent } from './checkout-flight';
  */
 export interface CheckoutSubmission {
   readonly terminalId: string;
+  readonly expectedShiftId?: string;
   readonly lines: readonly CartLine[];
   readonly cashReceivedMinor: string;
 }
@@ -26,6 +27,15 @@ export interface CheckoutRunner {
   checkout(intent: CheckoutIntent): Promise<CheckoutResponse>;
 }
 
+export type AmbiguousCheckoutQueue = (intent: CheckoutIntent) => Promise<void>;
+
+const OFFLINE_QUEUE_UNAVAILABLE = {
+  code: 'offline-queue-unavailable',
+  message:
+    'تعذّر حفظ العملية المعلّقة محلياً. لا تبدأ بيعاً جديداً؛ أعد المحاولة بنفس العملية حتى يتأكد وضعها.',
+  action: 'retry-same',
+} as const;
+
 export function runCheckout(
   api: CheckoutRunner,
   flight: CheckoutFlight,
@@ -33,12 +43,14 @@ export function runCheckout(
   dispatch: (event: CheckoutEvent) => void,
   onUnauthenticated: () => void,
   mint: () => string = newId,
+  queueAmbiguous?: AmbiguousCheckoutQueue,
 ): Promise<void> {
   // Claimed synchronously, before anything can await and before the renderer
   // is involved. A second call in this tick gets null and sends nothing.
   const intent = flight.begin(() => ({
     operationId: mint(),
     terminalId: input.terminalId,
+    ...(input.expectedShiftId === undefined ? {} : { expectedShiftId: input.expectedShiftId }),
     cashReceivedMinor: input.cashReceivedMinor,
     lines: cartToRequestLines(input.lines),
   }));
@@ -56,12 +68,24 @@ export function runCheckout(
       flight.settle('succeeded');
       dispatch({ type: 'succeeded', sale: response.sale, replayed: response.replayed });
     })
-    .catch((error: unknown) => {
+    .catch(async (error: unknown) => {
       const failure = describeFailure(error);
       if (failure.action === 'reauthenticate') {
         flight.reset();
         onUnauthenticated();
         return;
+      }
+      if (failure.action === 'retry-same' && queueAmbiguous !== undefined) {
+        try {
+          await queueAmbiguous(intent);
+          flight.reset();
+          dispatch({ type: 'queued', intent });
+          return;
+        } catch {
+          flight.settle('ambiguous');
+          dispatch({ type: 'failed', failure: OFFLINE_QUEUE_UNAVAILABLE });
+          return;
+        }
       }
       flight.settle(outcomeFor(failure.action));
       dispatch({ type: 'failed', failure });

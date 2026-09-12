@@ -158,6 +158,8 @@ export interface CheckoutResponse {
 export interface CheckoutRequest {
   readonly operationId: string;
   readonly terminalId: string;
+  /** Delayed/offline replay precondition. The server derives the active shift and only compares. */
+  readonly expectedShiftId?: string;
   readonly cashReceivedMinor: string;
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
 }

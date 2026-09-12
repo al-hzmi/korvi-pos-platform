@@ -5,11 +5,13 @@ import { createCheckoutSyncExecutor, isCheckoutQueuePayload } from '../checkout-
 
 const OPERATION_ID = '018f5000-0001-7000-8000-000000000001';
 const TERMINAL_ID = '018f5000-0000-7000-8000-000000000002';
+const SHIFT_ID = '018f5000-0000-7000-8000-000000000004';
 const PRODUCT_ID = '018f5000-0000-7000-8000-000000000003';
 
 const PAYLOAD = {
   operationId: OPERATION_ID,
   terminalId: TERMINAL_ID,
+  expectedShiftId: SHIFT_ID,
   cashReceivedMinor: '1150',
   lines: [{ productId: PRODUCT_ID, quantityScaled: '1000' }],
 } as const;
@@ -34,6 +36,7 @@ describe('checkout queue executor', () => {
   it('accepts only exact replayable checkout payloads', () => {
     expect(isCheckoutQueuePayload(PAYLOAD)).toBe(true);
     expect(isCheckoutQueuePayload({ ...PAYLOAD, operationId: 'not-a-uuid' })).toBe(false);
+    expect(isCheckoutQueuePayload({ ...PAYLOAD, expectedShiftId: undefined })).toBe(false);
     expect(isCheckoutQueuePayload({ ...PAYLOAD, cashReceivedMinor: '11.50' })).toBe(false);
     expect(isCheckoutQueuePayload({ ...PAYLOAD, lines: [] })).toBe(false);
     expect(

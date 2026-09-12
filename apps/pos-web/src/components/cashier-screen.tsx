@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CardSurface } from '@korvi/ui';
+import { Button, CardSurface } from '@korvi/ui';
 import { TopBar } from './top-bar';
 import { canOpenControlCentre } from './control/control-nav';
 import { ProductPanel } from './product-panel';
@@ -17,6 +17,7 @@ import { autoAddCandidate } from '../lib/search';
 import { parseSarToMinor } from '../lib/money';
 import { useCart } from '../hooks/use-cart';
 import { useCheckout } from '../hooks/use-checkout';
+import { useOfflineSaleSync } from '../hooks/use-offline-sale-sync';
 import { useDurableSaleDraft } from '../hooks/use-durable-sale-draft';
 import { useProductSearch } from '../hooks/use-product-search';
 import type { JSX } from 'react';
@@ -67,7 +68,16 @@ export function CashierScreen({
     [api, principal.tenant.id],
   );
   const search = useProductSearch(productSource);
-  const checkout = useCheckout(api, onExpired);
+  const queuePartition = useMemo(
+    () => ({
+      tenantId: principal.tenant.id,
+      branchId: terminal.branchId,
+      terminalId: terminal.id,
+    }),
+    [principal.tenant.id, terminal.branchId, terminal.id],
+  );
+  const checkout = useCheckout(api, onExpired, queuePartition);
+  const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired);
   const [cash, setCash] = useState('');
   const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -118,7 +128,7 @@ export function CashierScreen({
 
   useEffect(() => {
     if (!draftHydrated || durableState.status !== 'ready') return;
-    if (checkout.state.phase === 'succeeded') {
+    if (checkout.state.phase === 'succeeded' || checkout.state.phase === 'queued') {
       clearDraft();
       return;
     }
@@ -198,6 +208,7 @@ export function CashierScreen({
     if (cashMinor === null) return;
     checkout.submit({
       terminalId: terminal.id,
+      expectedShiftId: shift.id,
       lines: cart.lines,
       cashReceivedMinor: cashMinor,
     });
@@ -221,6 +232,23 @@ export function CashierScreen({
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
         <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
+          {offlineSync.state.needsReview.length > 0 ? (
+            <StatusNote tone="warning" className="mb-3" live>
+              توجد {offlineSync.state.needsReview.length} عملية بيع دون اتصال رفضها الخادم وتحتاج
+              مراجعة. لم تُحذف ولم تُحوّل إلى بيع معتمد محلياً.
+            </StatusNote>
+          ) : null}
+          {offlineSync.state.pendingCount > 0 ? (
+            <StatusNote tone="info" className="mb-3" live>
+              توجد {offlineSync.state.pendingCount} عملية محفوظة محلياً بانتظار التسوية مع الخادم.
+            </StatusNote>
+          ) : null}
+          {offlineSync.state.status === 'failed' ? (
+            <StatusNote tone="warning" className="mb-3" live>
+              تعذّرت قراءة حالة مزامنة العمليات المحلية. ستبقى العمليات في التخزين المحلي حتى إعادة
+              المحاولة.
+            </StatusNote>
+          ) : null}
           {durableState.status === 'failed' ? (
             <StatusNote tone="warning" className="mb-3" live>
               التخزين المحلي غير متاح. البيع المتصل يعمل، لكن لا تعتمد على استعادة السلة بعد إغلاق
@@ -242,7 +270,25 @@ export function CashierScreen({
           className="flex min-h-0 w-full shrink-0 flex-col lg:w-[26rem]"
           aria-label={`السلة والدفع — ${drawerLabel}`}
         >
-          {completed === null ? (
+          {checkout.state.phase === 'queued' && checkout.state.intent !== null ? (
+            <CardSurface className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+              <StatusNote tone="warning" live>
+                تم حفظ البيع محلياً بنفس معرّف العملية وسيُرسل للخادم دون تغيير عند عودة الاتصال.
+                هذه ليست فاتورة ضريبية معتمدة بعد؛ المخزون والضريبة والحسابات تبقى بانتظار سلطة
+                الخادم.
+              </StatusNote>
+              <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm">
+                <p className="font-semibold">بيع دون اتصال — محفوظ بأمان</p>
+                <p className="mt-2 break-all text-muted-foreground">
+                  معرّف العملية: {checkout.state.intent.operationId}
+                </p>
+                <p className="mt-1 text-muted-foreground">المبلغ المستلم: {cash} ر.س</p>
+              </div>
+              <Button size="lg" onClick={newSale}>
+                بدء بيع جديد
+              </Button>
+            </CardSurface>
+          ) : completed === null ? (
             <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
               {durabilityLoading ? (
                 <StatusNote tone="info" className="mb-3" live>

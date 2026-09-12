@@ -113,6 +113,7 @@ export interface KorviOfflineStore extends TransactionQueuePort {
   loadSaleDraft(scope: OfflineSaleScope): Promise<OfflineSaleDraft | null>;
   deleteSaleDraft(scope: OfflineSaleScope): Promise<void>;
   queueCount(partition: QueuePartition): Promise<number>;
+  rejected(partition: QueuePartition, limit?: number): Promise<readonly QueuedOperation[]>;
   describe(): OfflineStoreDescription;
   close(): void;
 }
@@ -734,6 +735,51 @@ async function listPendingQueuedOperations(
   }
 }
 
+async function listRejectedQueuedOperations(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  limit: number,
+): Promise<readonly QueuedOperation[]> {
+  const partitionKey = queuePartitionKey(partition);
+  const bounded = Math.min(Math.max(Math.trunc(limit), 1), MAX_QUEUE_READ);
+  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readonly');
+  const done = transactionDone(transaction);
+  const index = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE).index(QUEUE_ORDER_INDEX);
+  const range = IDBKeyRange.bound([partitionKey, ''], [partitionKey, '\uffff']);
+  const request = index.openCursor(range, 'next');
+  const operations: QueuedOperation[] = [];
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      request.onerror = () => reject(classifyIndexedDbError(request.error));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor === null || operations.length >= bounded) {
+          resolve();
+          return;
+        }
+        try {
+          const operation = decodeStoredQueueRow(cursor.value, partition).operation;
+          if (operation.state === 'rejected') operations.push(operation);
+          if (operations.length >= bounded) {
+            resolve();
+            return;
+          }
+          cursor.continue();
+        } catch (error) {
+          transaction.abort();
+          reject(classifyIndexedDbError(error));
+        }
+      };
+    });
+    await done;
+    return operations;
+  } catch (error) {
+    await done.catch(() => undefined);
+    throw classifyIndexedDbError(error);
+  }
+}
+
 function validateClaimRequest(request: QueueClaimRequest): number {
   const nowMs = Date.parse(request.now);
   const leaseMs = Date.parse(request.leaseUntil);
@@ -1103,6 +1149,10 @@ export async function openKorviOfflineStore(factory?: IDBFactory): Promise<Korvi
 
     async markRejected(partition, id, reason) {
       await transitionQueuedOperation(database, partition, id, 'rejected', reason);
+    },
+
+    async rejected(partition, limit = 100) {
+      return listRejectedQueuedOperations(database, partition, limit);
     },
 
     async queueCount(partition) {

@@ -392,6 +392,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           json({
             operationId: request.operationId,
             terminalId: request.terminalId,
+            ...(request.expectedShiftId === undefined
+              ? {}
+              : { expectedShiftId: request.expectedShiftId }),
             cashReceivedMinor: request.cashReceivedMinor,
             lines: request.lines.map((line) => ({
               productId: line.productId,

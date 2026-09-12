@@ -17,11 +17,13 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
     !isUuidV7(value.operationId) ||
     typeof value.terminalId !== 'string' ||
     !isUuidV7(value.terminalId) ||
+    typeof value.expectedShiftId !== 'string' ||
+    !isUuidV7(value.expectedShiftId) ||
     typeof value.cashReceivedMinor !== 'string' ||
     !INTEGER.test(value.cashReceivedMinor) ||
     !Array.isArray(value.lines) ||
     value.lines.length === 0 ||
-    value.lines.length > 500
+    value.lines.length > 200
   ) {
     return false;
   }
@@ -36,7 +38,14 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
   );
 }
 
-export function createCheckoutSyncExecutor(api: ApiClient): SyncOperationExecutor {
+export interface CheckoutSyncExecutorOptions {
+  readonly onUnauthenticated?: (() => void) | undefined;
+}
+
+export function createCheckoutSyncExecutor(
+  api: ApiClient,
+  options: CheckoutSyncExecutorOptions = {},
+): SyncOperationExecutor {
   return {
     async execute(operation: QueuedOperation) {
       if (operation.kind !== 'sale.checkout') {
@@ -57,7 +66,11 @@ export function createCheckoutSyncExecutor(api: ApiClient): SyncOperationExecuto
           return { outcome: 'retry', reason: 'unexpected-client-failure' } as const;
         }
         const failure = describeFailure(error);
-        if (failure.action === 'retry-same' || failure.action === 'reauthenticate') {
+        if (failure.action === 'reauthenticate') {
+          options.onUnauthenticated?.();
+          return { outcome: 'retry', reason: failure.code } as const;
+        }
+        if (failure.action === 'retry-same') {
           return { outcome: 'retry', reason: failure.code } as const;
         }
         return { outcome: 'rejected', reason: failure.code } as const;
