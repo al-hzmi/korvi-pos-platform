@@ -235,7 +235,7 @@ try {
   const pidText = (await readFile(webPidFile, 'utf8')).trim();
   const webPid = Number(pidText);
   assert.equal(Number.isSafeInteger(webPid) && webPid > 1, true, 'Web PID must be safe.');
-  process.kill(webPid, 'SIGTERM');
+  process.kill(-webPid, 'SIGTERM');
   await waitForServerDown(`${baseUrl}/`);
   record('web_server_hard_stop=PASS');
 
