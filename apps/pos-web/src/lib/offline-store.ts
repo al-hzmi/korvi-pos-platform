@@ -1,6 +1,8 @@
 import {
   isUuidV7,
   type PriceMode,
+  type QueueClaimRequest,
+  type QueueClaimResult,
   type QueueOperationInput,
   type QueuedOperation,
   type QueuePartition,
@@ -10,7 +12,7 @@ import type { ProductSummary } from './api-types';
 import type { CartLine } from './cart';
 
 export const OFFLINE_DB_NAME = 'korvi-pos-offline';
-export const OFFLINE_DB_VERSION = 2;
+export const OFFLINE_DB_VERSION = 3;
 export const OFFLINE_CATALOGUE_STORE = 'catalogue-v1';
 export const OFFLINE_SALE_DRAFT_STORE = 'sale-drafts-v1';
 export const OFFLINE_TRANSACTION_QUEUE_STORE = 'transaction-queue-v1';
@@ -23,6 +25,7 @@ const MAX_LOCAL_SEARCH_RESULTS = 50;
 const MAX_QUEUE_READ = 500;
 const MAX_QUEUE_PAYLOAD_BYTES = 256 * 1024;
 const MAX_REJECTION_REASON_LENGTH = 2_048;
+const MAX_QUEUE_LEASE_MS = 5 * 60 * 1000;
 const QUEUE_KIND_PATTERN = /^[a-z][a-z0-9.-]{0,99}$/;
 
 export type OfflineStoreErrorCode =
@@ -77,6 +80,9 @@ interface StoredQueuedOperation {
   readonly state: QueuedOperation['state'];
   readonly attempts: number;
   readonly enqueuedAt: string;
+  readonly nextAttemptAt: string;
+  readonly leaseUntil: string | null;
+  readonly claimToken: string | null;
   readonly rejectionReason: string | null;
 }
 
@@ -445,6 +451,9 @@ function toStoredQueueRow(
     state: 'pending',
     attempts: 0,
     enqueuedAt: operation.enqueuedAt,
+    nextAttemptAt: operation.enqueuedAt,
+    leaseUntil: null,
+    claimToken: null,
     rejectionReason: null,
   };
 }
@@ -472,6 +481,16 @@ function decodeStoredQueueRow(
     value.attempts < 0 ||
     typeof value.enqueuedAt !== 'string' ||
     !Number.isFinite(Date.parse(value.enqueuedAt)) ||
+    typeof value.nextAttemptAt !== 'string' ||
+    !Number.isFinite(Date.parse(value.nextAttemptAt)) ||
+    !(
+      value.leaseUntil === null ||
+      (typeof value.leaseUntil === 'string' && Number.isFinite(Date.parse(value.leaseUntil)))
+    ) ||
+    !(
+      value.claimToken === null ||
+      (typeof value.claimToken === 'string' && isUuidV7(value.claimToken))
+    ) ||
     !(value.rejectionReason === null || typeof value.rejectionReason === 'string')
   ) {
     throw new OfflineStoreError('corrupt', 'Queued operation failed structural validation.');
@@ -482,9 +501,11 @@ function decodeStoredQueueRow(
       (value.rejectionReason === null ||
         value.rejectionReason.trim() === '' ||
         value.rejectionReason.length > MAX_REJECTION_REASON_LENGTH)) ||
-    (value.state !== 'rejected' && value.rejectionReason !== null)
+    (value.state !== 'rejected' && value.rejectionReason !== null) ||
+    (value.state === 'in-flight' && (value.claimToken === null || value.leaseUntil === null)) ||
+    (value.state !== 'in-flight' && (value.claimToken !== null || value.leaseUntil !== null))
   ) {
-    throw new OfflineStoreError('corrupt', 'Queued operation terminal metadata is inconsistent.');
+    throw new OfflineStoreError('corrupt', 'Queued operation lifecycle metadata is inconsistent.');
   }
 
   const payload = parseQueuePayload(value.payloadJson);
@@ -504,6 +525,8 @@ function decodeStoredQueueRow(
       ...input,
       state: value.state,
       attempts: value.attempts,
+      nextAttemptAt: value.nextAttemptAt,
+      leaseUntil: value.leaseUntil,
       rejectionReason: value.rejectionReason,
     },
   };
@@ -525,6 +548,29 @@ function createQueueSchema(database: IDBDatabase): void {
   queue.createIndex(QUEUE_ID_INDEX, 'id', { unique: true });
 }
 
+function migrateQueueLifecycleV3(transaction: IDBTransaction): void {
+  const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+  const request = store.openCursor();
+  request.onerror = () => transaction.abort();
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (cursor === null) return;
+    const row = cursor.value as Record<string, unknown>;
+    if (typeof row['enqueuedAt'] !== 'string') {
+      transaction.abort();
+      return;
+    }
+    cursor.update({
+      ...row,
+      state: row['state'] === 'in-flight' ? 'pending' : row['state'],
+      nextAttemptAt: row['enqueuedAt'],
+      leaseUntil: null,
+      claimToken: null,
+    });
+    cursor.continue();
+  };
+}
+
 function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
@@ -533,6 +579,8 @@ function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
     request.onupgradeneeded = (event) => {
       if (event.oldVersion < 1) createBaseSchema(request.result);
       if (event.oldVersion < 2) createQueueSchema(request.result);
+      if (event.oldVersion < 3 && event.oldVersion >= 2 && request.transaction !== null)
+        migrateQueueLifecycleV3(request.transaction);
     };
     request.onblocked = () => {
       if (settled) return;
@@ -686,6 +734,158 @@ async function listPendingQueuedOperations(
   }
 }
 
+function validateClaimRequest(request: QueueClaimRequest): number {
+  const nowMs = Date.parse(request.now);
+  const leaseMs = Date.parse(request.leaseUntil);
+  if (
+    !isUuidV7(request.token) ||
+    !Number.isFinite(nowMs) ||
+    !Number.isFinite(leaseMs) ||
+    leaseMs <= nowMs ||
+    leaseMs - nowMs > MAX_QUEUE_LEASE_MS
+  )
+    throw new OfflineStoreError('corrupt', 'Invalid queue claim lease.');
+  return nowMs;
+}
+async function claimNextQueuedOperation<TPayload>(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  input: QueueClaimRequest,
+): Promise<QueueClaimResult<TPayload>> {
+  const nowMs = validateClaimRequest(input);
+  const key = queuePartitionKey(partition);
+  const tx = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+  const done = transactionDone(tx);
+  const req = tx
+    .objectStore(OFFLINE_TRANSACTION_QUEUE_STORE)
+    .index(QUEUE_ORDER_INDEX)
+    .openCursor(IDBKeyRange.bound([key, ''], [key, '\uffff']), 'next');
+  let result: QueueClaimResult<TPayload> = { status: 'empty' };
+  await new Promise<void>((resolve, reject) => {
+    req.onerror = () => reject(classifyIndexedDbError(req.error));
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (cursor === null) {
+        resolve();
+        return;
+      }
+      try {
+        const decoded = decodeStoredQueueRow(cursor.value, partition);
+        if (decoded.operation.state === 'settled' || decoded.operation.state === 'rejected') {
+          cursor.continue();
+          return;
+        }
+        if (
+          decoded.operation.state === 'pending' &&
+          Date.parse(decoded.operation.nextAttemptAt) > nowMs
+        ) {
+          result = {
+            status: 'blocked',
+            reason: 'retry-delay',
+            until: decoded.operation.nextAttemptAt,
+          };
+          resolve();
+          return;
+        }
+        if (decoded.operation.state === 'in-flight') {
+          const until = decoded.operation.leaseUntil;
+          if (until === null) throw new OfflineStoreError('corrupt', 'Missing queue lease.');
+          if (Date.parse(until) > nowMs) {
+            result = { status: 'blocked', reason: 'active-lease', until };
+            resolve();
+            return;
+          }
+        }
+        const attempts = decoded.operation.attempts + 1;
+        cursor.update({
+          ...decoded.stored,
+          state: 'in-flight',
+          attempts,
+          leaseUntil: input.leaseUntil,
+          claimToken: input.token,
+          rejectionReason: null,
+        } satisfies StoredQueuedOperation);
+        result = {
+          status: 'claimed',
+          claim: {
+            token: input.token,
+            operation: {
+              ...decoded.operation,
+              state: 'in-flight',
+              attempts,
+              leaseUntil: input.leaseUntil,
+            } as QueuedOperation<TPayload>,
+          },
+        };
+        resolve();
+      } catch (error) {
+        tx.abort();
+        reject(classifyIndexedDbError(error));
+      }
+    };
+  });
+  await done;
+  return result;
+}
+async function transitionClaim(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  id: string,
+  token: string,
+  target: 'settled' | 'rejected' | 'pending',
+  value: string | null,
+): Promise<void> {
+  if (!isUuidV7(token)) throw new OfflineStoreError('corrupt', 'Invalid claim token.');
+  const reason = target === 'rejected' ? (value?.trim() ?? null) : null;
+  if (
+    target === 'rejected' &&
+    (reason === null || reason === '' || reason.length > MAX_REJECTION_REASON_LENGTH)
+  )
+    throw new OfflineStoreError('corrupt', 'Invalid rejection reason.');
+  if (target === 'pending' && (value === null || !Number.isFinite(Date.parse(value))))
+    throw new OfflineStoreError('corrupt', 'Invalid retry timestamp.');
+  const tx = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+  const done = transactionDone(tx);
+  const store = tx.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+  const req = store.get(queueRecordKey(partition, id));
+  let failure: OfflineStoreError | null = null;
+  req.onerror = () => {
+    failure = classifyIndexedDbError(req.error);
+    tx.abort();
+  };
+  req.onsuccess = () => {
+    try {
+      if (req.result === undefined) {
+        failure = new OfflineStoreError('conflict', 'Queue operation missing.');
+        tx.abort();
+        return;
+      }
+      const decoded = decodeStoredQueueRow(req.result, partition);
+      if (decoded.operation.state !== 'in-flight' || decoded.stored.claimToken !== token) {
+        failure = new OfflineStoreError('conflict', 'Stale queue claim.');
+        tx.abort();
+        return;
+      }
+      store.put({
+        ...decoded.stored,
+        state: target,
+        nextAttemptAt: target === 'pending' ? value! : decoded.stored.nextAttemptAt,
+        leaseUntil: null,
+        claimToken: null,
+        rejectionReason: target === 'rejected' ? reason : null,
+      } satisfies StoredQueuedOperation);
+    } catch (error) {
+      failure = classifyIndexedDbError(error);
+      tx.abort();
+    }
+  };
+  try {
+    await done;
+  } catch (error) {
+    if (failure !== null) throw failure;
+    throw classifyIndexedDbError(error);
+  }
+}
 async function loadQueuedOperation<TPayload>(
   database: IDBDatabase,
   partition: QueuePartition,
@@ -752,6 +952,11 @@ async function transitionQueuedOperation(
           );
           transaction.abort();
         }
+        return;
+      }
+      if (decoded.operation.state === 'in-flight') {
+        failure = new OfflineStoreError('conflict', 'Claim token required.');
+        transaction.abort();
         return;
       }
       if (decoded.operation.state === 'settled' || decoded.operation.state === 'rejected') {
@@ -877,6 +1082,19 @@ export async function openKorviOfflineStore(factory?: IDBFactory): Promise<Korvi
 
     async get<TPayload = unknown>(partition: QueuePartition, id: string) {
       return loadQueuedOperation<TPayload>(database, partition, id);
+    },
+
+    async claimNext<TPayload = unknown>(partition: QueuePartition, request: QueueClaimRequest) {
+      return claimNextQueuedOperation<TPayload>(database, partition, request);
+    },
+    async settleClaim(partition, id, token) {
+      await transitionClaim(database, partition, id, token, 'settled', null);
+    },
+    async retryClaim(partition, id, token, nextAttemptAt) {
+      await transitionClaim(database, partition, id, token, 'pending', nextAttemptAt);
+    },
+    async rejectClaim(partition, id, token, reason) {
+      await transitionClaim(database, partition, id, token, 'rejected', reason);
     },
 
     async markSettled(partition, id) {
