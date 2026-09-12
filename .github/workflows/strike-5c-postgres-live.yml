@@ -3,6 +3,7 @@ name: Strike 5C PostgreSQL Live Proof
 on:
   push:
     branches:
+      - review/operations-50-production-readiness
       - strike/5c-costing-authority
   workflow_dispatch:
 
@@ -94,28 +95,13 @@ jobs:
           fi
           echo "app_role_flags=$role_flags" | tee -a "$PROOF_LOG"
 
-      - name: Apply exactly twelve migrations
+      - name: Apply migrations and prove exact ledger/schema
         shell: bash
         env:
           DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
         run: |
           set -euo pipefail
-          migration_directories="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          if [ "$migration_directories" -ne 12 ]; then
-            echo "Expected exactly 12 migration directories, got $migration_directories" >&2
-            exit 1
-          fi
-
-          npm exec -w @korvi/database -- prisma migrate deploy 2>&1 | tee -a "$PROOF_LOG"
-          npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
-
-          applied="$(psql "$KORVI_TEST_DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
-            "SELECT count(*) FILTER (WHERE \"finished_at\" IS NOT NULL AND \"rolled_back_at\" IS NULL)::text || '|' || count(*)::text FROM \"_prisma_migrations\"")"
-          if [ "$applied" != '12|12' ]; then
-            echo "Expected 12 successful migration ledger rows and no others, got $applied" >&2
-            exit 1
-          fi
-          echo "migration_ledger=$applied" | tee -a "$PROOF_LOG"
+          bash scripts/prove-migration-state.sh 2>&1 | tee -a "$PROOF_LOG"
 
           table_ownership="$(psql "$KORVI_TEST_DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
             "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname = 'public'")"
@@ -124,18 +110,6 @@ jobs:
             exit 1
           fi
           echo "public_table_ownership=$table_ownership" | tee -a "$PROOF_LOG"
-
-      - name: Prove schema has no drift
-        shell: bash
-        working-directory: packages/database
-        env:
-          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
-        run: |
-          set -euo pipefail
-          npx --no-install prisma migrate diff \
-            --from-config-datasource \
-            --to-schema prisma/schema.prisma \
-            --exit-code 2>&1 | tee -a "../../$PROOF_LOG"
 
       - name: Build live test runtime
         run: |

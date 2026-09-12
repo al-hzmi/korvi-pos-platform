@@ -2,14 +2,23 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const DEPLOYMENT_BRANCH = 'strike/5c-costing-authority';
+const REVIEW_BRANCH = 'review/operations-50-production-readiness';
 const API_SERVICE = 'korvi-staging-api';
 const WEB_SERVICE = 'korvi-staging-web';
+const MIGRATION_PROOF_WORKFLOWS = [
+  '../.github/workflows/gate-20-cashier-sale-proof.yml',
+  '../.github/workflows/stage-5d-browser-proof.yml',
+  '../.github/workflows/strike-5c-postgres-live.yml',
+];
 
-const [configSource, blueprint, buildScript] = await Promise.all([
-  readFile(new URL('../apps/api/src/config.ts', import.meta.url), 'utf8'),
-  readFile(new URL('../render.yaml', import.meta.url), 'utf8'),
-  readFile(new URL('./deploy/build.sh', import.meta.url), 'utf8'),
-]);
+const [configSource, blueprint, buildScript, migrationProofScript, ...migrationWorkflows] =
+  await Promise.all([
+    readFile(new URL('../apps/api/src/config.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../render.yaml', import.meta.url), 'utf8'),
+    readFile(new URL('./deploy/build.sh', import.meta.url), 'utf8'),
+    readFile(new URL('./prove-migration-state.sh', import.meta.url), 'utf8'),
+    ...MIGRATION_PROOF_WORKFLOWS.map((path) => readFile(new URL(path, import.meta.url), 'utf8')),
+  ]);
 
 const secretDeclaration = configSource.match(
   /export const PRODUCTION_REQUIRED_SECRET_ENV_KEYS = \[([\s\S]*?)\] as const;/,
@@ -113,6 +122,39 @@ assert.ok(apiEnv.has('APP_ORIGINS'), 'staging API must declare APP_ORIGINS');
 assert.match(apiEnv.get('DATABASE_URL') ?? '', /^ {8}sync: false$/m);
 assert.match(apiEnv.get('APP_ORIGINS') ?? '', /^ {8}sync: false$/m);
 
+assert.ok(
+  migrationProofScript.includes('SELECT migration_name, checksum FROM'),
+  'shared migration proof must compare migration names and checksums',
+);
+assert.match(
+  migrationProofScript,
+  /prisma migrate diff[\s\S]*--exit-code/,
+  'shared migration proof must fail on schema drift',
+);
+assert.doesNotMatch(
+  migrationProofScript,
+  /migration_directories[^\n]*(?:-eq|-ne)\s+[0-9]+/,
+  'shared migration proof must not pin a literal migration count',
+);
+
+for (const [index, workflow] of migrationWorkflows.entries()) {
+  const path = MIGRATION_PROOF_WORKFLOWS[index];
+  assert.ok(path, 'migration proof workflow path must exist');
+  assert.ok(
+    workflow.includes(`      - ${REVIEW_BRANCH}`),
+    `${path} must run on the operations review branch before promotion`,
+  );
+  assert.ok(
+    workflow.includes('bash scripts/prove-migration-state.sh'),
+    `${path} must use the shared source-driven migration proof`,
+  );
+  assert.doesNotMatch(
+    workflow,
+    /migration_directories[^\n]*(?:-eq|-ne)\s+[0-9]+|Expected (?:exactly )?[0-9]+ (?:successful )?migration/i,
+    `${path} must not hardcode a migration-count release assumption`,
+  );
+}
+
 console.log(
-  `[ok] deployment contract: ${requiredSecrets.length} production secrets, controlled promotion staging`,
+  `[ok] deployment contract: ${requiredSecrets.length} production secrets, controlled promotion staging, source-driven migration proofs`,
 );

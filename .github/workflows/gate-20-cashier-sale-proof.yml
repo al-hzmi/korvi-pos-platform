@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - review/gate20-cashier-sale-browser
+      - review/operations-50-production-readiness
       - strike/5c-costing-authority
   workflow_dispatch:
 
@@ -97,22 +98,9 @@ jobs:
           fi
           echo "app_role_flags=$role_flags" | tee -a "$KORVI_BROWSER_ARTIFACT_DIR/authority.txt"
 
-      - name: Apply migrations and prove schema
+      - name: Apply migrations and prove exact ledger/schema
         shell: bash
-        working-directory: packages/database
-        run: |
-          set -euo pipefail
-          migration_directories="$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          if [ "$migration_directories" -ne 12 ]; then
-            echo "Expected exactly 12 migration directories, got $migration_directories" >&2
-            exit 1
-          fi
-          npx --no-install prisma migrate deploy
-          npx --no-install prisma migrate status
-          npx --no-install prisma migrate diff \
-            --from-config-datasource \
-            --to-schema prisma/schema.prisma \
-            --exit-code
+        run: bash scripts/prove-migration-state.sh
 
       - name: Build actual browser runtime
         run: |
