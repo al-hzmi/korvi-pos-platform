@@ -1,0 +1,1027 @@
+name: Gate 44 Implementation Helper
+
+on:
+  push:
+    branches:
+      - review/offline-44-sync-engine
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out Gate 44 branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: review/offline-44-sync-engine
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Implement durable claim and sync boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > packages/domain/src/ports/offline.ts <<'EOF'
+          /**
+           * Offline boundary — declared in Phase 0 and implemented gate by gate (ADR-0005).
+           *
+           * Gates 41–43 establish the application shell, durable IndexedDB substrate and
+           * persistent ordered queue. Gate 44 adds an atomic leased claim boundary plus
+           * retry scheduling so multiple tabs/processes cannot duplicate or overtake a
+           * financial command. Concrete conflict resolution and the complete cashier
+           * reconnect workflow remain Gate 45 and are not inferred from this contract.
+           */
+
+          export interface QueuePartition {
+            readonly tenantId: string;
+            readonly branchId: string;
+            readonly terminalId: string;
+          }
+
+          export type QueueItemState = 'pending' | 'in-flight' | 'settled' | 'rejected';
+
+          /** Immutable command envelope accepted by the durable queue. */
+          export interface QueueOperationInput<TPayload = unknown> {
+            /** UUIDv7 — the id *is* the ordering key (ADR-0003). */
+            readonly id: string;
+            readonly kind: string;
+            readonly payload: TPayload;
+            readonly enqueuedAt: string;
+          }
+
+          /** Durable queue projection. Payload and identity never change after enqueue. */
+          export interface QueuedOperation<TPayload = unknown> extends QueueOperationInput<TPayload> {
+            readonly state: QueueItemState;
+            /** Number of durable worker claims, including crash-recovery reclaims. */
+            readonly attempts: number;
+            /** Earliest instant at which this item may be claimed again. */
+            readonly nextAttemptAt: string;
+            /** Present only while a worker owns a live claim. */
+            readonly leaseUntil: string | null;
+            readonly rejectionReason: string | null;
+          }
+
+          export interface QueueClaimRequest {
+            /** UUIDv7 fencing token generated for this exact worker claim. */
+            readonly token: string;
+            readonly now: string;
+            readonly leaseUntil: string;
+          }
+
+          export interface QueueClaim<TPayload = unknown> {
+            readonly token: string;
+            readonly operation: QueuedOperation<TPayload>;
+          }
+
+          export type QueueClaimResult<TPayload = unknown> =
+            | { readonly status: 'claimed'; readonly claim: QueueClaim<TPayload> }
+            | { readonly status: 'empty' }
+            | {
+                readonly status: 'blocked';
+                readonly reason: 'retry-delay' | 'active-lease';
+                readonly until: string;
+              };
+
+          export interface TransactionQueuePort {
+            /**
+             * Idempotent for the exact same immutable envelope. Reusing an id with a
+             * different partition, kind, payload or enqueue timestamp must be refused.
+             */
+            enqueue<TPayload>(
+              partition: QueuePartition,
+              operation: QueueOperationInput<TPayload>,
+            ): Promise<void>;
+            /** Oldest-first by UUIDv7, so replay order matches what happened. */
+            pending(partition: QueuePartition, limit: number): Promise<readonly QueuedOperation[]>;
+            get<TPayload = unknown>(
+              partition: QueuePartition,
+              id: string,
+            ): Promise<QueuedOperation<TPayload> | null>;
+            /**
+             * Atomically claims the oldest unresolved operation. A retry delay or active
+             * lease on that oldest operation blocks all later operations; there is no
+             * overtaking. Expired in-flight leases are reclaimed with the same command id.
+             */
+            claimNext<TPayload = unknown>(
+              partition: QueuePartition,
+              request: QueueClaimRequest,
+            ): Promise<QueueClaimResult<TPayload>>;
+            settleClaim(partition: QueuePartition, id: string, token: string): Promise<void>;
+            retryClaim(
+              partition: QueuePartition,
+              id: string,
+              token: string,
+              nextAttemptAt: string,
+            ): Promise<void>;
+            rejectClaim(
+              partition: QueuePartition,
+              id: string,
+              token: string,
+              reason: string,
+            ): Promise<void>;
+            /** Direct terminal transitions are allowed only for unclaimed pending rows. */
+            markSettled(partition: QueuePartition, id: string): Promise<void>;
+            markRejected(partition: QueuePartition, id: string, reason: string): Promise<void>;
+          }
+
+          /** Retry policy for the reconciliation queue. */
+          export interface RetryPolicy {
+            readonly maxAttempts: number;
+            readonly initialDelayMs: number;
+            readonly backoffFactor: number;
+            readonly maxDelayMs: number;
+          }
+
+          export const DEFAULT_RETRY_POLICY: RetryPolicy = {
+            maxAttempts: 8,
+            initialDelayMs: 5 * 60 * 1000,
+            backoffFactor: 2,
+            maxDelayMs: 6 * 60 * 60 * 1000,
+          };
+
+          export function nextRetryDelayMs(policy: RetryPolicy, attempt: number): number {
+            const raw = policy.initialDelayMs * policy.backoffFactor ** Math.max(0, attempt - 1);
+            return Math.min(raw, policy.maxDelayMs);
+          }
+
+          export type SyncAttemptResult =
+            | { readonly outcome: 'settled' }
+            | { readonly outcome: 'retry'; readonly reason: string }
+            | { readonly outcome: 'rejected'; readonly reason: string };
+
+          export interface SyncOperationExecutor {
+            execute(operation: QueuedOperation): Promise<SyncAttemptResult>;
+          }
+
+          export type SyncPushStopReason =
+            | 'empty'
+            | 'retry-delay'
+            | 'active-lease'
+            | 'rejected'
+            | 'retry-exhausted'
+            | 'batch-limit'
+            | 'already-running';
+
+          export interface SyncPushReport {
+            readonly claimed: number;
+            readonly settled: number;
+            readonly retried: number;
+            readonly rejected: number;
+            readonly stopReason: SyncPushStopReason;
+            readonly blockedUntil: string | null;
+          }
+
+          export interface PushSyncEnginePort {
+            push(): Promise<SyncPushReport>;
+          }
+
+          export type ConflictResolution = 'keep-local' | 'keep-remote' | 'needs-review';
+
+          /** Full bidirectional/conflict surface reserved for Gate 45. */
+          export interface SyncEnginePort extends PushSyncEnginePort {
+            pull(): Promise<void>;
+            resolve(id: string, resolution: ConflictResolution): Promise<void>;
+          }
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/pos-web/src/lib/offline-store.ts')
+          text = path.read_text()
+
+          text = text.replace(
+              "  type QueueOperationInput,\n  type QueuedOperation,\n  type QueuePartition,\n  type TransactionQueuePort,",
+              "  type QueueClaimRequest,\n  type QueueClaimResult,\n  type QueueOperationInput,\n  type QueuedOperation,\n  type QueuePartition,\n  type TransactionQueuePort,",
+              1,
+          )
+          text = text.replace("export const OFFLINE_DB_VERSION = 2;", "export const OFFLINE_DB_VERSION = 3;", 1)
+          text = text.replace(
+              "const MAX_REJECTION_REASON_LENGTH = 2_048;\nconst QUEUE_KIND_PATTERN",
+              "const MAX_REJECTION_REASON_LENGTH = 2_048;\nconst MAX_QUEUE_LEASE_MS = 5 * 60 * 1000;\nconst QUEUE_KIND_PATTERN",
+              1,
+          )
+
+          old = """  readonly attempts: number;
+            readonly enqueuedAt: string;
+            readonly rejectionReason: string | null;
+          }
+          """
+          new = """  readonly attempts: number;
+            readonly enqueuedAt: string;
+            readonly nextAttemptAt: string;
+            readonly leaseUntil: string | null;
+            readonly claimToken: string | null;
+            readonly rejectionReason: string | null;
+          }
+          """
+          if old not in text:
+              raise SystemExit('StoredQueuedOperation shape anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = """    attempts: 0,
+              enqueuedAt: operation.enqueuedAt,
+              rejectionReason: null,
+          """
+          new = """    attempts: 0,
+              enqueuedAt: operation.enqueuedAt,
+              nextAttemptAt: operation.enqueuedAt,
+              leaseUntil: null,
+              claimToken: null,
+              rejectionReason: null,
+          """
+          if old not in text:
+              raise SystemExit('queue row enqueue anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = """    typeof value.enqueuedAt !== 'string' ||
+              !Number.isFinite(Date.parse(value.enqueuedAt)) ||
+              !(value.rejectionReason === null || typeof value.rejectionReason === 'string')
+          """
+          new = """    typeof value.enqueuedAt !== 'string' ||
+              !Number.isFinite(Date.parse(value.enqueuedAt)) ||
+              typeof value.nextAttemptAt !== 'string' ||
+              !Number.isFinite(Date.parse(value.nextAttemptAt)) ||
+              !(value.leaseUntil === null ||
+                (typeof value.leaseUntil === 'string' && Number.isFinite(Date.parse(value.leaseUntil)))) ||
+              !(value.claimToken === null ||
+                (typeof value.claimToken === 'string' && isUuidV7(value.claimToken))) ||
+              !(value.rejectionReason === null || typeof value.rejectionReason === 'string')
+          """
+          if old not in text:
+              raise SystemExit('queue row structural validation anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = """  if (
+              (value.state === 'rejected' &&
+                (value.rejectionReason === null ||
+                  value.rejectionReason.trim() === '' ||
+                  value.rejectionReason.length > MAX_REJECTION_REASON_LENGTH)) ||
+              (value.state !== 'rejected' && value.rejectionReason !== null)
+            ) {
+              throw new OfflineStoreError('corrupt', 'Queued operation terminal metadata is inconsistent.');
+            }
+          """
+          new = """  if (
+              (value.state === 'rejected' &&
+                (value.rejectionReason === null ||
+                  value.rejectionReason.trim() === '' ||
+                  value.rejectionReason.length > MAX_REJECTION_REASON_LENGTH)) ||
+              (value.state !== 'rejected' && value.rejectionReason !== null) ||
+              (value.state === 'in-flight' && (value.claimToken === null || value.leaseUntil === null)) ||
+              (value.state !== 'in-flight' && (value.claimToken !== null || value.leaseUntil !== null))
+            ) {
+              throw new OfflineStoreError('corrupt', 'Queued operation lifecycle metadata is inconsistent.');
+            }
+          """
+          if old not in text:
+              raise SystemExit('queue lifecycle validation anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = """      state: value.state,
+                attempts: value.attempts,
+                rejectionReason: value.rejectionReason,
+          """
+          new = """      state: value.state,
+                attempts: value.attempts,
+                nextAttemptAt: value.nextAttemptAt,
+                leaseUntil: value.leaseUntil,
+                rejectionReason: value.rejectionReason,
+          """
+          if old not in text:
+              raise SystemExit('queue projection anchor missing')
+          text = text.replace(old, new, 1)
+
+          insert_after = """function createQueueSchema(database: IDBDatabase): void {
+            const queue = database.createObjectStore(OFFLINE_TRANSACTION_QUEUE_STORE, {
+              keyPath: 'queueKey',
+            });
+            queue.createIndex(QUEUE_PARTITION_INDEX, 'partitionKey', { unique: false });
+            queue.createIndex(QUEUE_ORDER_INDEX, ['partitionKey', 'id'], { unique: true });
+            queue.createIndex(QUEUE_ID_INDEX, 'id', { unique: true });
+          }
+          """
+          addition = insert_after + """
+          function migrateQueueLifecycleV3(transaction: IDBTransaction): void {
+            const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+            const request = store.openCursor();
+            request.onerror = () => transaction.abort();
+            request.onsuccess = () => {
+              const cursor = request.result;
+              if (cursor === null) return;
+              const value = cursor.value as unknown;
+              if (
+                typeof value !== 'object' ||
+                value === null ||
+                !('enqueuedAt' in value) ||
+                typeof (value as { enqueuedAt?: unknown }).enqueuedAt !== 'string'
+              ) {
+                transaction.abort();
+                return;
+              }
+              const row = value as Record<string, unknown>;
+              const previousState = row['state'];
+              cursor.update({
+                ...row,
+                state: previousState === 'in-flight' ? 'pending' : previousState,
+                nextAttemptAt: row['enqueuedAt'],
+                leaseUntil: null,
+                claimToken: null,
+              });
+              cursor.continue();
+            };
+          }
+          """
+          if insert_after not in text:
+              raise SystemExit('queue schema anchor missing')
+          text = text.replace(insert_after, addition, 1)
+
+          old = """    request.onupgradeneeded = (event) => {
+                if (event.oldVersion < 1) createBaseSchema(request.result);
+                if (event.oldVersion < 2) createQueueSchema(request.result);
+              };
+          """
+          new = """    request.onupgradeneeded = (event) => {
+                if (event.oldVersion < 1) createBaseSchema(request.result);
+                if (event.oldVersion < 2) createQueueSchema(request.result);
+                if (event.oldVersion < 3 && event.oldVersion >= 2 && request.transaction !== null) {
+                  migrateQueueLifecycleV3(request.transaction);
+                }
+              };
+          """
+          if old not in text:
+              raise SystemExit('upgrade anchor missing')
+          text = text.replace(old, new, 1)
+
+          marker = """async function loadQueuedOperation<TPayload>(
+          """
+          if marker not in text:
+              raise SystemExit('loadQueuedOperation marker missing')
+
+          claim_impl = r'''
+          function validateClaimRequest(request: QueueClaimRequest): { readonly nowMs: number } {
+            const nowMs = Date.parse(request.now);
+            const leaseUntilMs = Date.parse(request.leaseUntil);
+            if (
+              !isUuidV7(request.token) ||
+              !Number.isFinite(nowMs) ||
+              !Number.isFinite(leaseUntilMs) ||
+              leaseUntilMs <= nowMs ||
+              leaseUntilMs - nowMs > MAX_QUEUE_LEASE_MS
+            ) {
+              throw new OfflineStoreError('corrupt', 'Queue claim request is invalid or exceeds the lease limit.');
+            }
+            return { nowMs };
+          }
+
+          async function claimNextQueuedOperation<TPayload>(
+            database: IDBDatabase,
+            partition: QueuePartition,
+            claimRequest: QueueClaimRequest,
+          ): Promise<QueueClaimResult<TPayload>> {
+            const { nowMs } = validateClaimRequest(claimRequest);
+            const partitionKey = queuePartitionKey(partition);
+            const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+            const done = transactionDone(transaction);
+            const index = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE).index(QUEUE_ORDER_INDEX);
+            const range = IDBKeyRange.bound([partitionKey, ''], [partitionKey, '\uffff']);
+            const request = index.openCursor(range, 'next');
+            let result: QueueClaimResult<TPayload> = { status: 'empty' };
+
+            try {
+              await new Promise<void>((resolve, reject) => {
+                request.onerror = () => reject(classifyIndexedDbError(request.error));
+                request.onsuccess = () => {
+                  const cursor = request.result;
+                  if (cursor === null) {
+                    resolve();
+                    return;
+                  }
+                  try {
+                    const decoded = decodeStoredQueueRow(cursor.value, partition);
+                    if (decoded.operation.state === 'settled' || decoded.operation.state === 'rejected') {
+                      cursor.continue();
+                      return;
+                    }
+                    if (decoded.operation.state === 'pending') {
+                      const dueMs = Date.parse(decoded.operation.nextAttemptAt);
+                      if (dueMs > nowMs) {
+                        result = {
+                          status: 'blocked',
+                          reason: 'retry-delay',
+                          until: decoded.operation.nextAttemptAt,
+                        };
+                        resolve();
+                        return;
+                      }
+                    } else {
+                      const leaseUntil = decoded.operation.leaseUntil;
+                      if (leaseUntil === null) {
+                        throw new OfflineStoreError('corrupt', 'In-flight queue operation has no lease.');
+                      }
+                      if (Date.parse(leaseUntil) > nowMs) {
+                        result = { status: 'blocked', reason: 'active-lease', until: leaseUntil };
+                        resolve();
+                        return;
+                      }
+                    }
+
+                    const attempts = decoded.operation.attempts + 1;
+                    const stored: StoredQueuedOperation = {
+                      ...decoded.stored,
+                      state: 'in-flight',
+                      attempts,
+                      leaseUntil: claimRequest.leaseUntil,
+                      claimToken: claimRequest.token,
+                      rejectionReason: null,
+                    };
+                    cursor.update(stored);
+                    result = {
+                      status: 'claimed',
+                      claim: {
+                        token: claimRequest.token,
+                        operation: {
+                          ...decoded.operation,
+                          state: 'in-flight',
+                          attempts,
+                          leaseUntil: claimRequest.leaseUntil,
+                        } as QueuedOperation<TPayload>,
+                      },
+                    };
+                    resolve();
+                  } catch (error) {
+                    transaction.abort();
+                    reject(classifyIndexedDbError(error));
+                  }
+                };
+              });
+              await done;
+              return result;
+            } catch (error) {
+              await done.catch(() => undefined);
+              throw classifyIndexedDbError(error);
+            }
+          }
+
+          async function transitionClaimedQueuedOperation(
+            database: IDBDatabase,
+            partition: QueuePartition,
+            id: string,
+            token: string,
+            target: 'settled' | 'rejected' | 'pending',
+            value: string | null,
+          ): Promise<void> {
+            if (!isUuidV7(token)) {
+              throw new OfflineStoreError('corrupt', 'Queue claim token must be a canonical UUIDv7 value.');
+            }
+            const normalizedReason = target === 'rejected' ? value?.trim() ?? null : null;
+            if (
+              target === 'rejected' &&
+              (normalizedReason === null || normalizedReason === '' || normalizedReason.length > MAX_REJECTION_REASON_LENGTH)
+            ) {
+              throw new OfflineStoreError(
+                'corrupt',
+                `Queue rejection reason must be 1-${String(MAX_REJECTION_REASON_LENGTH)} characters.`,
+              );
+            }
+            if (target === 'pending' && (value === null || !Number.isFinite(Date.parse(value)))) {
+              throw new OfflineStoreError('corrupt', 'Queue retry schedule must be a valid timestamp.');
+            }
+
+            const key = queueRecordKey(partition, id);
+            const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+            const done = transactionDone(transaction);
+            const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+            const request = store.get(key);
+            let failure: OfflineStoreError | null = null;
+
+            request.onerror = () => {
+              failure = classifyIndexedDbError(request.error);
+              transaction.abort();
+            };
+            request.onsuccess = () => {
+              try {
+                if (request.result === undefined) {
+                  failure = new OfflineStoreError('conflict', 'Queue operation does not exist in this partition.');
+                  transaction.abort();
+                  return;
+                }
+                const decoded = decodeStoredQueueRow(request.result, partition);
+                if (decoded.operation.state !== 'in-flight' || decoded.stored.claimToken !== token) {
+                  failure = new OfflineStoreError('conflict', 'Queue claim is stale or no longer owns this operation.');
+                  transaction.abort();
+                  return;
+                }
+                store.put({
+                  ...decoded.stored,
+                  state: target,
+                  nextAttemptAt: target === 'pending' ? value! : decoded.stored.nextAttemptAt,
+                  leaseUntil: null,
+                  claimToken: null,
+                  rejectionReason: target === 'rejected' ? normalizedReason : null,
+                } satisfies StoredQueuedOperation);
+              } catch (error) {
+                failure = classifyIndexedDbError(error);
+                transaction.abort();
+              }
+            };
+
+            try {
+              await done;
+            } catch (error) {
+              if (failure !== null) throw failure;
+              throw classifyIndexedDbError(error);
+            }
+          }
+
+          '''
+          text = text.replace(marker, claim_impl + marker, 1)
+
+          old = """      if (decoded.operation.state === 'settled' || decoded.operation.state === 'rejected') {
+                failure = new OfflineStoreError(
+                  'conflict',
+                  'A terminal queue operation cannot transition to a different terminal outcome.',
+                );
+                transaction.abort();
+                return;
+              }
+          """
+          new = """      if (decoded.operation.state === 'in-flight') {
+                failure = new OfflineStoreError(
+                  'conflict',
+                  'An actively claimed queue operation requires its fencing token.',
+                );
+                transaction.abort();
+                return;
+              }
+              if (decoded.operation.state === 'settled' || decoded.operation.state === 'rejected') {
+                failure = new OfflineStoreError(
+                  'conflict',
+                  'A terminal queue operation cannot transition to a different terminal outcome.',
+                );
+                transaction.abort();
+                return;
+              }
+          """
+          if old not in text:
+              raise SystemExit('direct terminal transition anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = """    async get<TPayload = unknown>(partition: QueuePartition, id: string) {
+                return loadQueuedOperation<TPayload>(database, partition, id);
+              },
+
+              async markSettled(partition, id) {
+          """
+          new = """    async get<TPayload = unknown>(partition: QueuePartition, id: string) {
+                return loadQueuedOperation<TPayload>(database, partition, id);
+              },
+
+              async claimNext<TPayload = unknown>(partition: QueuePartition, request: QueueClaimRequest) {
+                return claimNextQueuedOperation<TPayload>(database, partition, request);
+              },
+
+              async settleClaim(partition, id, token) {
+                await transitionClaimedQueuedOperation(database, partition, id, token, 'settled', null);
+              },
+
+              async retryClaim(partition, id, token, nextAttemptAt) {
+                await transitionClaimedQueuedOperation(database, partition, id, token, 'pending', nextAttemptAt);
+              },
+
+              async rejectClaim(partition, id, token, reason) {
+                await transitionClaimedQueuedOperation(database, partition, id, token, 'rejected', reason);
+              },
+
+              async markSettled(partition, id) {
+          """
+          if old not in text:
+              raise SystemExit('queue method insertion anchor missing')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+          cat > apps/pos-web/src/lib/sync-engine.ts <<'EOF'
+          import {
+            DEFAULT_RETRY_POLICY,
+            newId,
+            nextRetryDelayMs,
+            type PushSyncEnginePort,
+            type QueuePartition,
+            type RetryPolicy,
+            type SyncOperationExecutor,
+            type SyncPushReport,
+            type TransactionQueuePort,
+          } from '@korvi/domain';
+
+          export const DEFAULT_SYNC_LEASE_MS = 60_000;
+          export const DEFAULT_SYNC_BATCH_LIMIT = 100;
+
+          export interface QueuePushSyncOptions {
+            readonly retryPolicy?: RetryPolicy;
+            readonly leaseMs?: number;
+            readonly batchLimit?: number;
+            readonly now?: () => Date;
+            readonly mintClaimToken?: () => string;
+          }
+
+          function emptyReport(stopReason: SyncPushReport['stopReason']): SyncPushReport {
+            return {
+              claimed: 0,
+              settled: 0,
+              retried: 0,
+              rejected: 0,
+              stopReason,
+              blockedUntil: null,
+            };
+          }
+
+          function safeReason(reason: string): string {
+            const normalized = reason.trim().replace(/[^a-z0-9._:-]/gi, '-').slice(0, 200);
+            return normalized === '' ? 'unspecified' : normalized;
+          }
+
+          function validateOptions(policy: RetryPolicy, leaseMs: number, batchLimit: number): void {
+            if (
+              !Number.isInteger(policy.maxAttempts) ||
+              policy.maxAttempts < 1 ||
+              !Number.isFinite(policy.initialDelayMs) ||
+              policy.initialDelayMs < 0 ||
+              !Number.isFinite(policy.backoffFactor) ||
+              policy.backoffFactor < 1 ||
+              !Number.isFinite(policy.maxDelayMs) ||
+              policy.maxDelayMs < policy.initialDelayMs ||
+              !Number.isInteger(leaseMs) ||
+              leaseMs < 1 ||
+              leaseMs > 5 * 60 * 1000 ||
+              !Number.isInteger(batchLimit) ||
+              batchLimit < 1 ||
+              batchLimit > 500
+            ) {
+              throw new Error('Invalid queue sync configuration.');
+            }
+          }
+
+          export function createQueuePushSyncEngine(
+            queue: TransactionQueuePort,
+            partition: QueuePartition,
+            executor: SyncOperationExecutor,
+            options: QueuePushSyncOptions = {},
+          ): PushSyncEnginePort {
+            const policy = options.retryPolicy ?? DEFAULT_RETRY_POLICY;
+            const leaseMs = options.leaseMs ?? DEFAULT_SYNC_LEASE_MS;
+            const batchLimit = options.batchLimit ?? DEFAULT_SYNC_BATCH_LIMIT;
+            const now = options.now ?? (() => new Date());
+            const mintClaimToken = options.mintClaimToken ?? newId;
+            validateOptions(policy, leaseMs, batchLimit);
+            let running = false;
+
+            return {
+              async push(): Promise<SyncPushReport> {
+                if (running) return emptyReport('already-running');
+                running = true;
+                const report = {
+                  claimed: 0,
+                  settled: 0,
+                  retried: 0,
+                  rejected: 0,
+                };
+
+                try {
+                  for (let index = 0; index < batchLimit; index += 1) {
+                    const claimNow = now();
+                    if (!Number.isFinite(claimNow.getTime())) {
+                      throw new Error('Sync clock returned an invalid instant.');
+                    }
+                    const claimResult = await queue.claimNext(partition, {
+                      token: mintClaimToken(),
+                      now: claimNow.toISOString(),
+                      leaseUntil: new Date(claimNow.getTime() + leaseMs).toISOString(),
+                    });
+
+                    if (claimResult.status === 'empty') {
+                      return { ...report, stopReason: 'empty', blockedUntil: null };
+                    }
+                    if (claimResult.status === 'blocked') {
+                      return {
+                        ...report,
+                        stopReason: claimResult.reason,
+                        blockedUntil: claimResult.until,
+                      };
+                    }
+
+                    const { token, operation } = claimResult.claim;
+                    report.claimed += 1;
+                    let outcome;
+                    try {
+                      outcome = await executor.execute(operation);
+                    } catch {
+                      outcome = { outcome: 'retry', reason: 'executor-error' } as const;
+                    }
+
+                    if (outcome.outcome === 'settled') {
+                      await queue.settleClaim(partition, operation.id, token);
+                      report.settled += 1;
+                      continue;
+                    }
+
+                    if (outcome.outcome === 'rejected') {
+                      await queue.rejectClaim(
+                        partition,
+                        operation.id,
+                        token,
+                        safeReason(outcome.reason),
+                      );
+                      report.rejected += 1;
+                      return { ...report, stopReason: 'rejected', blockedUntil: null };
+                    }
+
+                    if (operation.attempts >= policy.maxAttempts) {
+                      await queue.rejectClaim(
+                        partition,
+                        operation.id,
+                        token,
+                        `retry-exhausted:${safeReason(outcome.reason)}`,
+                      );
+                      report.rejected += 1;
+                      return { ...report, stopReason: 'retry-exhausted', blockedUntil: null };
+                    }
+
+                    const retryBase = now();
+                    if (!Number.isFinite(retryBase.getTime())) {
+                      throw new Error('Sync clock returned an invalid instant.');
+                    }
+                    const retryAt = new Date(
+                      retryBase.getTime() + nextRetryDelayMs(policy, operation.attempts),
+                    ).toISOString();
+                    await queue.retryClaim(partition, operation.id, token, retryAt);
+                    report.retried += 1;
+                    return { ...report, stopReason: 'retry-delay', blockedUntil: retryAt };
+                  }
+
+                  return { ...report, stopReason: 'batch-limit', blockedUntil: null };
+                } finally {
+                  running = false;
+                }
+              },
+            };
+          }
+          EOF
+
+          cat > apps/pos-web/src/lib/checkout-sync-executor.ts <<'EOF'
+          import { isUuidV7, type QueuedOperation, type SyncOperationExecutor } from '@korvi/domain';
+          import { ApiError, type ApiClient } from './api';
+          import type { CheckoutRequest } from './api-types';
+          import { describeFailure } from './failures';
+
+          const INTEGER = /^(0|[1-9][0-9]*)$/;
+          const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
+
+          function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+            return typeof value === 'object' && value !== null;
+          }
+
+          export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest {
+            if (
+              !isRecord(value) ||
+              typeof value.operationId !== 'string' ||
+              !isUuidV7(value.operationId) ||
+              typeof value.terminalId !== 'string' ||
+              !isUuidV7(value.terminalId) ||
+              typeof value.cashReceivedMinor !== 'string' ||
+              !INTEGER.test(value.cashReceivedMinor) ||
+              !Array.isArray(value.lines) ||
+              value.lines.length === 0 ||
+              value.lines.length > 500
+            ) {
+              return false;
+            }
+            return value.lines.every(
+              (line) =>
+                isRecord(line) &&
+                typeof line.productId === 'string' &&
+                isUuidV7(line.productId) &&
+                typeof line.quantityScaled === 'string' &&
+                POSITIVE_INTEGER.test(line.quantityScaled),
+            );
+          }
+
+          export function createCheckoutSyncExecutor(api: ApiClient): SyncOperationExecutor {
+            return {
+              async execute(operation: QueuedOperation) {
+                if (operation.kind !== 'sale.checkout') {
+                  return { outcome: 'rejected', reason: 'unsupported-operation-kind' } as const;
+                }
+                if (!isCheckoutQueuePayload(operation.payload)) {
+                  return { outcome: 'rejected', reason: 'corrupt-checkout-payload' } as const;
+                }
+                if (operation.payload.operationId !== operation.id) {
+                  return { outcome: 'rejected', reason: 'operation-id-mismatch' } as const;
+                }
+
+                try {
+                  await api.checkout(operation.payload);
+                  return { outcome: 'settled' } as const;
+                } catch (error) {
+                  if (!(error instanceof ApiError)) {
+                    return { outcome: 'retry', reason: 'unexpected-client-failure' } as const;
+                  }
+                  const failure = describeFailure(error);
+                  if (failure.action === 'retry-same' || failure.action === 'reauthenticate') {
+                    return { outcome: 'retry', reason: failure.code } as const;
+                  }
+                  return { outcome: 'rejected', reason: failure.code } as const;
+                }
+              },
+            };
+          }
+          EOF
+
+          cat > apps/pos-web/src/lib/__tests__/sync-engine.test.ts <<'EOF'
+          import type {
+            QueueClaimRequest,
+            QueueClaimResult,
+            QueueOperationInput,
+            QueuedOperation,
+            QueuePartition,
+            SyncAttemptResult,
+            TransactionQueuePort,
+          } from '@korvi/domain';
+          import { describe, expect, it } from 'vitest';
+          import { createQueuePushSyncEngine } from '../sync-engine';
+
+          const PARTITION: QueuePartition = {
+            tenantId: '018f4000-0000-7000-8000-000000000001',
+            branchId: '018f4000-0000-7000-8000-000000000002',
+            terminalId: '018f4000-0000-7000-8000-000000000003',
+          };
+
+          const OPERATION: QueuedOperation = {
+            id: '018f4000-0001-7000-8000-000000000001',
+            kind: 'sale.checkout',
+            payload: { operationId: '018f4000-0001-7000-8000-000000000001' },
+            enqueuedAt: '2026-09-12T01:00:00.000Z',
+            state: 'in-flight',
+            attempts: 1,
+            nextAttemptAt: '2026-09-12T01:00:00.000Z',
+            leaseUntil: '2026-09-12T01:01:00.000Z',
+            rejectionReason: null,
+          };
+
+          class QueueDouble implements TransactionQueuePort {
+            public claimResult: QueueClaimResult = {
+              status: 'claimed',
+              claim: {
+                token: '018f4000-0002-7000-8000-000000000001',
+                operation: OPERATION,
+              },
+            };
+            public readonly events: string[] = [];
+            enqueue<TPayload>(_p: QueuePartition, _o: QueueOperationInput<TPayload>) {
+              return Promise.resolve();
+            }
+            pending() {
+              return Promise.resolve([]);
+            }
+            get<TPayload = unknown>() {
+              return Promise.resolve(null as QueuedOperation<TPayload> | null);
+            }
+            claimNext<TPayload = unknown>(_p: QueuePartition, _r: QueueClaimRequest) {
+              this.events.push('claim');
+              return Promise.resolve(this.claimResult as QueueClaimResult<TPayload>);
+            }
+            settleClaim() {
+              this.events.push('settle');
+              this.claimResult = { status: 'empty' };
+              return Promise.resolve();
+            }
+            retryClaim(_p: QueuePartition, _id: string, _token: string, nextAttemptAt: string) {
+              this.events.push(`retry:${nextAttemptAt}`);
+              this.claimResult = { status: 'blocked', reason: 'retry-delay', until: nextAttemptAt };
+              return Promise.resolve();
+            }
+            rejectClaim(_p: QueuePartition, _id: string, _token: string, reason: string) {
+              this.events.push(`reject:${reason}`);
+              this.claimResult = { status: 'empty' };
+              return Promise.resolve();
+            }
+            markSettled() {
+              return Promise.resolve();
+            }
+            markRejected() {
+              return Promise.resolve();
+            }
+          }
+
+          describe('queue push sync engine', () => {
+            it('settles a claimed operation and then observes an empty queue', async () => {
+              const queue = new QueueDouble();
+              const executor = { execute: async (): Promise<SyncAttemptResult> => ({ outcome: 'settled' }) };
+              const engine = createQueuePushSyncEngine(queue, PARTITION, executor, {
+                now: () => new Date('2026-09-12T01:00:00.000Z'),
+                mintClaimToken: () => '018f4000-0002-7000-8000-000000000001',
+              });
+              const report = await engine.push();
+              expect(report).toMatchObject({ claimed: 1, settled: 1, stopReason: 'empty' });
+              expect(queue.events).toEqual(['claim', 'settle', 'claim']);
+            });
+
+            it('persists retry delay and never asks for a later item in the same push', async () => {
+              const queue = new QueueDouble();
+              const engine = createQueuePushSyncEngine(
+                queue,
+                PARTITION,
+                { execute: async () => ({ outcome: 'retry', reason: 'network' }) },
+                {
+                  retryPolicy: {
+                    maxAttempts: 3,
+                    initialDelayMs: 1_000,
+                    backoffFactor: 2,
+                    maxDelayMs: 10_000,
+                  },
+                  now: () => new Date('2026-09-12T01:00:00.000Z'),
+                  mintClaimToken: () => '018f4000-0002-7000-8000-000000000001',
+                },
+              );
+              const report = await engine.push();
+              expect(report.stopReason).toBe('retry-delay');
+              expect(report.blockedUntil).toBe('2026-09-12T01:00:01.000Z');
+              expect(queue.events).toEqual(['claim', 'retry:2026-09-12T01:00:01.000Z']);
+            });
+
+            it('turns the final known retryable response into an explicit terminal review reason', async () => {
+              const queue = new QueueDouble();
+              queue.claimResult = {
+                status: 'claimed',
+                claim: {
+                  token: '018f4000-0002-7000-8000-000000000001',
+                  operation: { ...OPERATION, attempts: 3 },
+                },
+              };
+              const engine = createQueuePushSyncEngine(
+                queue,
+                PARTITION,
+                { execute: async () => ({ outcome: 'retry', reason: 'server unavailable' }) },
+                {
+                  retryPolicy: {
+                    maxAttempts: 3,
+                    initialDelayMs: 1,
+                    backoffFactor: 2,
+                    maxDelayMs: 10,
+                  },
+                  now: () => new Date('2026-09-12T01:00:00.000Z'),
+                  mintClaimToken: () => '018f4000-0002-7000-8000-000000000001',
+                },
+              );
+              const report = await engine.push();
+              expect(report.stopReason).toBe('retry-exhausted');
+              expect(queue.events).toEqual(['claim', 'reject:retry-exhausted:server-unavailable']);
+            });
+          });
+          EOF
+
+      - name: Format Gate 44 sources
+        run: |
+          npx prettier --write \
+            packages/domain/src/ports/offline.ts \
+            apps/pos-web/src/lib/offline-store.ts \
+            apps/pos-web/src/lib/sync-engine.ts \
+            apps/pos-web/src/lib/checkout-sync-executor.ts \
+            apps/pos-web/src/lib/__tests__/sync-engine.test.ts
+
+      - name: Verify Gate 44 source boundary
+        run: |
+          npm run build --workspace=@korvi/domain
+          npm run typecheck --workspace=@korvi/pos-web
+          npx vitest run \
+            apps/pos-web/src/lib/__tests__/offline-store.test.ts \
+            apps/pos-web/src/lib/__tests__/sync-engine.test.ts
+
+      - name: Commit source implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            packages/domain/src/ports/offline.ts \
+            apps/pos-web/src/lib/offline-store.ts \
+            apps/pos-web/src/lib/sync-engine.ts \
+            apps/pos-web/src/lib/checkout-sync-executor.ts \
+            apps/pos-web/src/lib/__tests__/sync-engine.test.ts
+          git diff --cached --check
+          git commit -m 'feat(offline): add durable leased sync engine'
+          git push origin HEAD:review/offline-44-sync-engine
