@@ -69,39 +69,57 @@ export interface AuthRouteOptions {
   readonly loginAdmission?: LoginAdmissionController;
 }
 
+function admissionController(config: ApiConfig): LoginAdmissionController {
+  const globalLimit = config.AUTH_LOGIN_GLOBAL_LIMIT;
+  const identityLimit = config.AUTH_LOGIN_IDENTITY_LIMIT;
+  const windowMs = config.AUTH_LOGIN_WINDOW_MS;
+  const maxConcurrent = config.AUTH_LOGIN_MAX_CONCURRENT;
+  const maxTrackedIdentities = config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES;
+
+  const allAbsent =
+    globalLimit === undefined &&
+    identityLimit === undefined &&
+    windowMs === undefined &&
+    maxConcurrent === undefined &&
+    maxTrackedIdentities === undefined;
+
+  // A few pre-admission live fixtures hand-build NODE_ENV=test config objects.
+  // They may use the controller's finite defaults, but no deployed environment
+  // may do so: loadConfig resolves every value and production fails closed even
+  // if a caller constructs ApiConfig manually instead of using that parser.
+  if (allAbsent) {
+    if (config.NODE_ENV !== 'test') {
+      throw new Error('Login admission policy is required outside NODE_ENV=test.');
+    }
+    return createLoginAdmissionController();
+  }
+
+  // Never combine explicit operator intent with hidden defaults. A partial
+  // policy is an invalid deployment/test configuration, not a cue to guess.
+  if (
+    globalLimit === undefined ||
+    identityLimit === undefined ||
+    windowMs === undefined ||
+    maxConcurrent === undefined ||
+    maxTrackedIdentities === undefined
+  ) {
+    throw new Error('Login admission policy must define all five controls together.');
+  }
+
+  return createLoginAdmissionController({
+    globalLimit,
+    identityLimit,
+    windowMs,
+    maxConcurrent,
+    maxTrackedIdentities,
+  });
+}
+
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptions): void {
   const { service, guards, config } = options;
   // One controller per server process. Creating it inside the handler would
   // reset counters on every request and turn the protection into decoration.
-  //
-  // Older live-test fixtures predate the admission fields and therefore have
-  // all five values absent at runtime even though ApiConfig now requires them.
-  // In that one all-absent case we keep the controller's secure finite defaults
-  // instead of disabling protection or crashing before the route exists. A
-  // partially configured policy is still passed through and fails closed in
-  // createLoginAdmissionController, so a real deployment cannot silently mix
-  // defaults with a malformed override.
-  const admissionFields = [
-    config.AUTH_LOGIN_GLOBAL_LIMIT,
-    config.AUTH_LOGIN_IDENTITY_LIMIT,
-    config.AUTH_LOGIN_WINDOW_MS,
-    config.AUTH_LOGIN_MAX_CONCURRENT,
-    config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
-  ];
-  const hasNoAdmissionOverrides = admissionFields.every((value) => value === undefined);
-  const loginAdmission =
-    options.loginAdmission ??
-    createLoginAdmissionController(
-      hasNoAdmissionOverrides
-        ? undefined
-        : {
-            globalLimit: config.AUTH_LOGIN_GLOBAL_LIMIT,
-            identityLimit: config.AUTH_LOGIN_IDENTITY_LIMIT,
-            windowMs: config.AUTH_LOGIN_WINDOW_MS,
-            maxConcurrent: config.AUTH_LOGIN_MAX_CONCURRENT,
-            maxTrackedIdentities: config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
-          },
-    );
+  const loginAdmission = options.loginAdmission ?? admissionController(config);
 
   app.post('/v1/auth/login', async (request, reply) => {
     const parsed = loginBody.safeParse(request.body);
