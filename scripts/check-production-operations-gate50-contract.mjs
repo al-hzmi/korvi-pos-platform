@@ -151,6 +151,35 @@ expectFail('field validation not passed', (v) => {
 expectFail('placeholder evidence', (v) => {
   v.monitoring.routingRef = 'TBD';
 });
+expectFail('release checks cannot be padded with unrelated checks', (v) => {
+  v.release.requiredGreenChecks = [
+    'ci',
+    'postgres-live',
+    'browser-sale',
+    'browser-stage5d',
+    'dr',
+    'unrelated-check',
+  ];
+});
+expectFail('monitoring classes must include latency', (v) => {
+  v.monitoring.alertClasses = ['availability', 'readiness', '5xx', 'database'];
+});
+expectFail('secret rotation classes must include bootstrap', (v) => {
+  v.secretManagement.rotatedClasses = ['database-runtime', 'session', 'metrics-auth', 'other-secret'];
+});
+expectFail('field workflows must include offline sync', (v) => {
+  v.merchantFieldValidation.workflowsVerified = [
+    'sale',
+    'return',
+    'shift',
+    'inventory',
+    'purchase-receipt',
+    'unrelated-workflow',
+  ];
+});
+expectFail('critical evidence sets cannot contain duplicates', (v) => {
+  v.release.requiredGreenChecks.push('ci');
+});
 
 const workflow = fs.readFileSync(
   '.github/workflows/operations-gate-50-production-proof.yml',
