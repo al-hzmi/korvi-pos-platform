@@ -4,23 +4,6 @@ on:
   push:
     branches:
       - review/zatca-40-submission-pipeline
-    paths:
-      - 'packages/database/prisma/**'
-      - 'packages/database/src/zatca/**'
-      - 'packages/database/src/__tests__/zatca-invoice-submission-live.test.ts'
-      - 'packages/domain/src/zatca/submission.ts'
-      - 'apps/api/src/zatca/invoice-submission-http-client.ts'
-      - 'apps/api/src/zatca/invoice-submission-service.ts'
-      - 'apps/api/src/zatca/invoice-submission-infrastructure.ts'
-      - 'apps/api/src/zatca/encrypted-fatoora-credential-store.ts'
-      - 'apps/api/src/zatca/fatoora-vault-config.ts'
-      - 'apps/api/src/__tests__/zatca-invoice-submission-http-client.test.ts'
-      - 'apps/api/src/__tests__/zatca-invoice-submission-service.test.ts'
-      - 'docs/decisions/ADR-0034-zatca-reporting-clearance-and-ambiguity-boundary.md'
-      - 'scripts/prove-migration-state.sh'
-      - 'scripts/deploy/derive-psql-url.mjs'
-      - 'scripts/deploy/production-migrate.sh'
-      - '.github/workflows/zatca-40-submission-postgres-proof.yml'
   workflow_dispatch:
 
 concurrency:
