@@ -165,7 +165,12 @@ expectFail('monitoring classes must include latency', (v) => {
   v.monitoring.alertClasses = ['availability', 'readiness', '5xx', 'database'];
 });
 expectFail('secret rotation classes must include bootstrap', (v) => {
-  v.secretManagement.rotatedClasses = ['database-runtime', 'session', 'metrics-auth', 'other-secret'];
+  v.secretManagement.rotatedClasses = [
+    'database-runtime',
+    'session',
+    'metrics-auth',
+    'other-secret',
+  ];
 });
 expectFail('field workflows must include offline sync', (v) => {
   v.merchantFieldValidation.workflowsVerified = [
