@@ -42,6 +42,23 @@ const schema = z
       .max(24 * 30)
       .default(12),
 
+    /**
+     * Unauthenticated-login admission controls. These budgets are process-local
+     * by design: the API must protect its own CPU/thread-pool even if an outer
+     * edge limiter is missing or bypassed. They are tunable for production
+     * capacity, but every value is bounded and validated at boot.
+     */
+    AUTH_LOGIN_GLOBAL_LIMIT: z.coerce.number().int().min(10).max(10_000).default(120),
+    AUTH_LOGIN_IDENTITY_LIMIT: z.coerce.number().int().min(1).max(1_000).default(10),
+    AUTH_LOGIN_WINDOW_SECONDS: z.coerce.number().int().min(10).max(3_600).default(60),
+    AUTH_LOGIN_MAX_CONCURRENT: z.coerce.number().int().min(1).max(16).default(2),
+    AUTH_LOGIN_MAX_TRACKED_IDENTITIES: z.coerce
+      .number()
+      .int()
+      .min(64)
+      .max(100_000)
+      .default(4_096),
+
     /** Absent is legal: a server with no database still answers /health. */
     DATABASE_URL: z.string().min(1).optional(),
 
@@ -83,6 +100,14 @@ const schema = z
   .superRefine((value, context) => {
     const bootstrapSigningKey = value.BOOTSTRAP_SIGNING_KEY;
     const metricsAuthToken = value.METRICS_AUTH_TOKEN;
+
+    if (value.AUTH_LOGIN_IDENTITY_LIMIT > value.AUTH_LOGIN_GLOBAL_LIMIT) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUTH_LOGIN_IDENTITY_LIMIT'],
+        message: 'cannot exceed AUTH_LOGIN_GLOBAL_LIMIT',
+      });
+    }
 
     if (value.NODE_ENV === 'production' && (bootstrapSigningKey ?? '').trim() === '') {
       context.addIssue({
@@ -143,6 +168,11 @@ export interface ApiConfig {
   readonly LOG_LEVEL: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
   readonly APP_ORIGINS: readonly string[];
   readonly SESSION_TTL_SECONDS: number;
+  readonly AUTH_LOGIN_GLOBAL_LIMIT: number;
+  readonly AUTH_LOGIN_IDENTITY_LIMIT: number;
+  readonly AUTH_LOGIN_WINDOW_MS: number;
+  readonly AUTH_LOGIN_MAX_CONCURRENT: number;
+  readonly AUTH_LOGIN_MAX_TRACKED_IDENTITIES: number;
   readonly DATABASE_URL: string | undefined;
   /** Never logged, never echoed, never persisted. */
   readonly BOOTSTRAP_SIGNING_KEY: string | undefined;
@@ -174,6 +204,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     LOG_LEVEL: value.LOG_LEVEL,
     APP_ORIGINS: configured.length > 0 ? configured : DEVELOPMENT_ORIGINS,
     SESSION_TTL_SECONDS: value.SESSION_TTL_HOURS * 3600,
+    AUTH_LOGIN_GLOBAL_LIMIT: value.AUTH_LOGIN_GLOBAL_LIMIT,
+    AUTH_LOGIN_IDENTITY_LIMIT: value.AUTH_LOGIN_IDENTITY_LIMIT,
+    AUTH_LOGIN_WINDOW_MS: value.AUTH_LOGIN_WINDOW_SECONDS * 1_000,
+    AUTH_LOGIN_MAX_CONCURRENT: value.AUTH_LOGIN_MAX_CONCURRENT,
+    AUTH_LOGIN_MAX_TRACKED_IDENTITIES: value.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
     DATABASE_URL: value.DATABASE_URL,
     BOOTSTRAP_SIGNING_KEY: value.BOOTSTRAP_SIGNING_KEY,
     METRICS_AUTH_TOKEN: value.METRICS_AUTH_TOKEN,
