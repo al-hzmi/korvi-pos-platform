@@ -1,0 +1,67 @@
+name: Production Operations Gate 50 Proof
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  production-operations-proof:
+    name: Exact-SHA production operations evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PROOF_DIR: artifacts/operations-gate-50
+      GATE50_EVIDENCE_JSON: ${{ secrets.GATE50_EVIDENCE_JSON }}
+
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Assert encrypted evidence bundle is configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GATE50_EVIDENCE_JSON:-}" ]; then
+            echo 'Required GitHub secret GATE50_EVIDENCE_JSON is not configured.' >&2
+            exit 1
+          fi
+
+      - name: Verify production operations evidence against exact release SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROOF_DIR"
+          EVIDENCE_FILE="$RUNNER_TEMP/gate50-evidence.json"
+          umask 077
+          printf '%s' "$GATE50_EVIDENCE_JSON" > "$EVIDENCE_FILE"
+          node scripts/verify-production-operations-gate50.mjs \
+            "$EVIDENCE_FILE" \
+            "$GITHUB_SHA" > "$PROOF_DIR/proof.json"
+          rm -f "$EVIDENCE_FILE"
+          cat "$PROOF_DIR/proof.json"
+
+      - name: Reject secret-bearing proof output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --binary-files=without-match -Ei -- \
+            'postgres(ql)?://[^[:space:]:@]+:[^[:space:]@]+@|BEGIN [A-Z ]*PRIVATE KEY|sk_live_|AKIA[0-9A-Z]{16}|"(password|secret|token|privateKey|connectionString|databaseUrl)"[[:space:]]*:' \
+            "$PROOF_DIR"; then
+            echo 'Secret-bearing material leaked into Gate 50 proof output.' >&2
+            exit 1
+          fi
+
+      - name: Upload sanitized Gate 50 proof
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-operations-gate-50-${{ github.sha }}
+          path: artifacts/operations-gate-50/proof.json
+          if-no-files-found: error
+          retention-days: 30
