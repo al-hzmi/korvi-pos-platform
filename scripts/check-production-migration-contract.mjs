@@ -58,6 +58,21 @@ assert.equal(
   'production migration must never drop the entire query string because it can contain TLS policy',
 );
 
+const commandSqlStrings = [
+  ...migrationScript.matchAll(/--command(?:\s*\\)?\s*\n?\s*"([^"]*)"/gs),
+].map((match) => match[1]);
+assert.equal(
+  commandSqlStrings.some(
+    (sql) => sql.includes(":'runtime_role'") || sql.includes(":'database_name'"),
+  ),
+  false,
+  'psql variables must be evaluated from stdin, not passed literally through --command/-c',
+);
+assert.ok(
+  (migrationScript.match(/<<'SQL'/g) ?? []).length >= 5,
+  'variableized PostgreSQL authority checks must use psql stdin so --set substitution is active',
+);
+
 const derivedPsqlUrl = derivePsqlUrl(
   'postgresql://korvi_migrator:p%40ss@db.example:5432/korvi?schema=merchant&connection_limit=5&sslmode=verify-full&sslrootcert=%2Fcerts%2Fca.pem&application_name=korvi-migrate',
 );
@@ -185,5 +200,5 @@ assert.doesNotMatch(
 );
 
 console.log(
-  '[ok] production migration contract: restricted migrator, TLS-safe URL derivation, isolated authority, non-owner runtime, immutable migration ledger',
+  '[ok] production migration contract: restricted migrator, TLS-safe URL derivation, psql-safe variable evaluation, isolated authority, non-owner runtime, immutable migration ledger',
 );
