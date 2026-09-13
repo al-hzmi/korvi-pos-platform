@@ -3,6 +3,18 @@ import fs from 'node:fs';
 const workflowPath = '.github/workflows/zatca-39-azure-hsm-custody-proof.yml';
 const workflow = fs.readFileSync(workflowPath, 'utf8');
 
+const remoteEs256kSign =
+  /az keyvault key sign[\s\S]*--algorithm ES256K/.test(workflow) ||
+  (/\/sign\?api-version=/.test(workflow) &&
+    /json\.dumps\(\{'alg': 'ES256K', 'value': sys\.argv\[1\]\}\)/.test(workflow));
+
+const remoteEs256kVerify =
+  /az keyvault key verify[\s\S]*--algorithm ES256K/.test(workflow) ||
+  (/\/verify\?api-version=/.test(workflow) &&
+    /json\.dumps\(\{'alg': 'ES256K', 'digest': sys\.argv\[1\], 'value': sys\.argv\[2\]\}\)/.test(
+      workflow,
+    ));
+
 const required = [
   ['manual live-proof dispatch', /workflow_dispatch:/],
   ['OIDC token permission', /id-token:\s*write/],
@@ -18,8 +30,6 @@ const required = [
   ['private EC component refusal', /private_d_present/],
   ['sign and verify key operations', /\{'sign', 'verify'\}\.issubset/],
   ['version-pinned key assertion', /versionPinned/],
-  ['remote ES256K sign', /az keyvault key sign[\s\S]*--algorithm ES256K/],
-  ['remote ES256K verify', /az keyvault key verify[\s\S]*--algorithm ES256K/],
   ['independent public-key verification', /crypto\.verify\(/],
   ['private-material artifact scan', /BEGIN \(EC \|RSA \|\)PRIVATE KEY/],
   ['sanitized Premium vault artifact', /artifacts\/zatca-39-azure-hsm\/vault-metadata\.json/],
@@ -28,6 +38,13 @@ const required = [
 ];
 
 const failures = required.filter(([, pattern]) => !pattern.test(workflow));
+
+if (!remoteEs256kSign) {
+  failures.push(['remote ES256K sign']);
+}
+if (!remoteEs256kVerify) {
+  failures.push(['remote ES256K verify']);
+}
 
 if (failures.length > 0) {
   for (const [description] of failures) {
