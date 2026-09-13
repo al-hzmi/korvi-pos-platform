@@ -198,7 +198,7 @@ jobs:
           # Their DDL setup is a migration-plane concern and is exercised in the
           # next step under the restricted migrator. Every other application
           # live test runs here under the exact production runtime boundary.
-          fault_pattern='rolls back pool, evidence, audit and idempotency when the final write fails|rolls back document, ledger, balance, audit and idempotency when a write fails late|a failure after the write rolls back the access change and its audit|rolls back the whole establishment when it fails after writing|Q: a late failure rolls back receipt, stock, cost, audit and idempotency|T: a failure after the reservation undoes the reservation too'
+          fault_pattern='rolls back pool, evidence, audit and idempotency when the final write fails|rolls back document, ledger, balance, audit and idempotency when a write fails late|a failure after the write rolls back the access change and its audit|rolls back the whole establishment when it fails after writing|Q: a late failure rolls back receipt, stock, cost, audit and idempotency|a failure after the reservation undoes the reservation too'
           runtime_pattern="^(?!.*(${fault_pattern})).*$"
 
           {
@@ -238,7 +238,7 @@ jobs:
             apps/api/src/__tests__/purchasing-receiving-live.test.ts
             apps/api/src/__tests__/tenant-lifecycle-live.test.ts
           )
-          fault_pattern='rolls back pool, evidence, audit and idempotency when the final write fails|rolls back document, ledger, balance, audit and idempotency when a write fails late|a failure after the write rolls back the access change and its audit|rolls back the whole establishment when it fails after writing|Q: a late failure rolls back receipt, stock, cost, audit and idempotency|T: a failure after the reservation undoes the reservation too'
+          fault_pattern='rolls back pool, evidence, audit and idempotency when the final write fails|rolls back document, ledger, balance, audit and idempotency when a write fails late|a failure after the write rolls back the access change and its audit|rolls back the whole establishment when it fails after writing|Q: a late failure rolls back receipt, stock, cost, audit and idempotency|a failure after the reservation undoes the reservation too'
           printf 'migration_fault_harness_file=%s\n' "${fault_files[@]}" | tee -a "$PROOF_LOG"
           npx --no-install vitest run "${fault_files[@]}" \
             --testNamePattern "$fault_pattern" 2>&1 | tee -a "$PROOF_LOG"
