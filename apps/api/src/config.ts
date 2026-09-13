@@ -52,12 +52,7 @@ const schema = z
     AUTH_LOGIN_IDENTITY_LIMIT: z.coerce.number().int().min(1).max(1_000).default(10),
     AUTH_LOGIN_WINDOW_SECONDS: z.coerce.number().int().min(10).max(3_600).default(60),
     AUTH_LOGIN_MAX_CONCURRENT: z.coerce.number().int().min(1).max(16).default(2),
-    AUTH_LOGIN_MAX_TRACKED_IDENTITIES: z.coerce
-      .number()
-      .int()
-      .min(64)
-      .max(100_000)
-      .default(4_096),
+    AUTH_LOGIN_MAX_TRACKED_IDENTITIES: z.coerce.number().int().min(64).max(100_000).default(4_096),
 
     /** Absent is legal: a server with no database still answers /health. */
     DATABASE_URL: z.string().min(1).optional(),
