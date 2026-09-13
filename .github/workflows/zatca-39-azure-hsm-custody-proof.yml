@@ -5,8 +5,6 @@ on:
   push:
     branches:
       - strike/5c-costing-authority
-    paths:
-      - .github/workflows/zatca-39-azure-hsm-custody-proof.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
