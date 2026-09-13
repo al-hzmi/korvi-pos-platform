@@ -1,0 +1,16 @@
+name: Scratch Zod 4.6.5 Metadata Probe
+
+on:
+  push:
+    branches:
+      - scratch/zod-4-6-5-metadata
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Read authoritative npm metadata
+        run: npm view zod@4.6.5 dist.integrity dist.tarball --registry=https://registry.npmjs.org --json
