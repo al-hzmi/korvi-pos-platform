@@ -1,0 +1,27 @@
+name: Diagnostic Prettier Authority Contract
+
+on:
+  push:
+    branches:
+      - diag/prettier-authority-contract-20260914
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Print exact formatted contract
+        run: |
+          npx --no-install prettier --write scripts/check-production-migration-contract.mjs
+          printf '%s\n' '---BEGIN-FORMATTED-CONTRACT---'
+          cat scripts/check-production-migration-contract.mjs
+          printf '%s\n' '---END-FORMATTED-CONTRACT---'
