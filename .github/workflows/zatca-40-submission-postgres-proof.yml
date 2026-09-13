@@ -18,6 +18,8 @@ on:
       - 'apps/api/src/__tests__/zatca-invoice-submission-service.test.ts'
       - 'docs/decisions/ADR-0034-zatca-reporting-clearance-and-ambiguity-boundary.md'
       - 'scripts/prove-migration-state.sh'
+      - 'scripts/deploy/derive-psql-url.mjs'
+      - 'scripts/deploy/production-migrate.sh'
       - '.github/workflows/zatca-40-submission-postgres-proof.yml'
   workflow_dispatch:
 
@@ -33,9 +35,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      DATABASE_URL: postgresql://korvi_app:korvi_gate40_ci@localhost:5432/korvi_gate40
-      KORVI_TEST_DATABASE_URL: postgresql://korvi_app:korvi_gate40_ci@localhost:5432/korvi_gate40
+      MIGRATION_DATABASE_URL: postgresql://korvi_migrator:korvi_gate40_migrator_ci@localhost:5432/korvi_gate40?schema=public
+      DATABASE_URL: postgresql://korvi_runtime:korvi_gate40_runtime_ci@localhost:5432/korvi_gate40
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:korvi_gate40_runtime_ci@localhost:5432/korvi_gate40
       POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_gate40
+      PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime
       PROOF_LOG: artifacts/zatca-40-submission-postgres-proof.txt
 
     services:
@@ -74,46 +78,95 @@ jobs:
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Establish restricted application role
+      - name: Establish separate restricted migration and runtime roles
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
           psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
-          CREATE ROLE korvi_app LOGIN PASSWORD 'korvi_gate40_ci'
+          CREATE ROLE korvi_migrator LOGIN PASSWORD 'korvi_gate40_migrator_ci'
             NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
-          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_gate40 TO korvi_app;
-          GRANT USAGE, CREATE ON SCHEMA public TO korvi_app;
+          CREATE ROLE korvi_runtime LOGIN PASSWORD 'korvi_gate40_runtime_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          ALTER DATABASE korvi_gate40 OWNER TO korvi_migrator;
           SQL
-          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command "SELECT rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='korvi_app'")"
-          test "$flags" = 'f|f|f|f|f|f'
-          printf 'commit=%s\napp_role_flags=%s\n' "$GITHUB_SHA" "$flags" | tee "$PROOF_LOG"
 
-      - name: Apply migrations and prove exact ledger / checksums / schema
+          migrator_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls,
+                    (SELECT count(*)::integer FROM pg_auth_members WHERE member=r.oid)
+               FROM pg_roles r WHERE rolname='korvi_migrator'")"
+          runtime_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls,
+                    (SELECT count(*)::integer FROM pg_auth_members WHERE member=r.oid)
+               FROM pg_roles r WHERE rolname='korvi_runtime'")"
+          test "$migrator_flags" = 'f|f|f|f|f|f|0'
+          test "$runtime_flags" = 'f|f|f|f|f|f|0'
+          printf 'commit=%s\nmigration_role_flags=%s\nruntime_role_flags=%s\n' \
+            "$GITHUB_SHA" "$migrator_flags" "$runtime_flags" | tee "$PROOF_LOG"
+
+      - name: Apply migrations through restricted production authority
+        shell: bash
+        env:
+          NODE_ENV: production
+          KORVI_ENVIRONMENT: production
+        run: |
+          set -euo pipefail
+          bash scripts/deploy/production-migrate.sh 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Prove runtime authority and queue security invariants
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/prove-migration-state.sh 2>&1 | tee -a "$PROOF_LOG"
+          table_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner)
+               FROM pg_tables WHERE schemaname='public'")"
+          test "$table_ownership" = '1|korvi_migrator'
 
-      - name: Prove queue security invariants
-        run: |
-          set -euo pipefail
-          rls="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT relrowsecurity::text || '|' || relforcerowsecurity::text FROM pg_class WHERE oid='zatca_invoice_submissions'::regclass")"
+          runtime_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tableowner='korvi_runtime'")"
+          test "$runtime_ownership" = '0'
+
+          boundary="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT has_database_privilege('korvi_runtime','korvi_gate40','CONNECT'),
+                    has_database_privilege('korvi_runtime','korvi_gate40','TEMPORARY'),
+                    has_schema_privilege('korvi_runtime','public','USAGE'),
+                    has_schema_privilege('korvi_runtime','public','CREATE'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','SELECT'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','INSERT'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','UPDATE'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','DELETE')")"
+          test "$boundary" = 't|f|t|f|t|f|f|f'
+
+          rls="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT relrowsecurity::text || '|' || relforcerowsecurity::text FROM pg_class WHERE oid='zatca_invoice_submissions'::regclass")"
           test "$rls" = 'true|true'
-          policies="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='zatca_invoice_submissions' AND policyname='zatca_invoice_submissions_isolation'")"
+          policies="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='zatca_invoice_submissions' AND policyname='zatca_invoice_submissions_isolation'")"
           test "$policies" = '1'
-          trigger_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_invoice_submissions'::regclass AND tgname='zatca_invoice_submission_guard' AND NOT tgisinternal")"
+          trigger_count="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_invoice_submissions'::regclass AND tgname='zatca_invoice_submission_guard' AND NOT tgisinternal")"
           test "$trigger_count" = '1'
-          plaintext="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_invoice_submissions' AND lower(column_name) IN ('secret','password','binarysecuritytoken','privatekey','otp')")"
+          plaintext="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_invoice_submissions' AND lower(column_name) IN ('secret','password','binarysecuritytoken','privatekey','otp')")"
           test "$plaintext" = '0'
-          printf 'queue_rls=%s\nqueue_policy_count=%s\nqueue_transition_guard=%s\nplaintext_secret_columns=%s\n' "$rls" "$policies" "$trigger_count" "$plaintext" | tee -a "$PROOF_LOG"
+
+          {
+            echo "public_table_ownership=$table_ownership"
+            echo "runtime_public_table_ownership=$runtime_ownership"
+            echo "runtime_boundary=$boundary"
+            echo "queue_rls=$rls"
+            echo "queue_policy_count=$policies"
+            echo "queue_transition_guard=$trigger_count"
+            echo "plaintext_secret_columns=$plaintext"
+            echo 'migration_runtime_identity_separation=PASS'
+          } | tee -a "$PROOF_LOG"
 
       - name: Generate and build
         run: |
           npm run db:generate
           npm run build
 
-      - name: Run durable submission PostgreSQL concurrency proof
+      - name: Run durable submission PostgreSQL concurrency proof as restricted runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -131,8 +184,26 @@ jobs:
           set -euo pipefail
           npx --no-install vitest run apps/api/src/__tests__/zatca-invoice-submission-http-client.test.ts 2>&1 | tee -a "$PROOF_LOG"
 
-      - name: Run full verification against PostgreSQL
+      - name: Re-prove runtime boundary after submission proof
         shell: bash
+        run: |
+          set -euo pipefail
+          boundary="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT has_database_privilege('korvi_runtime','korvi_gate40','CONNECT'),
+                    has_database_privilege('korvi_runtime','korvi_gate40','TEMPORARY'),
+                    has_schema_privilege('korvi_runtime','public','USAGE'),
+                    has_schema_privilege('korvi_runtime','public','CREATE'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','SELECT'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','INSERT'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','UPDATE'),
+                    has_table_privilege('korvi_runtime','public._prisma_migrations','DELETE')")"
+          test "$boundary" = 't|f|t|f|t|f|f|f'
+          echo 'runtime_boundary_after_submission_proof=PASS' | tee -a "$PROOF_LOG"
+
+      - name: Run full verification with live hooks disabled
+        shell: bash
+        env:
+          KORVI_TEST_DATABASE_URL: ''
         run: |
           set -euo pipefail
           npm run verify 2>&1 | tee -a "$PROOF_LOG"
