@@ -13,6 +13,22 @@ export const PRODUCTION_REQUIRED_SECRET_ENV_KEYS = [
   'METRICS_AUTH_TOKEN',
 ] as const;
 
+function configuredOrigins(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== '');
+}
+
+function isExactHttpsOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'https:' && url.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Environment parsing, once, at the edge.
  *
@@ -54,7 +70,11 @@ const schema = z
     AUTH_LOGIN_MAX_CONCURRENT: z.coerce.number().int().min(1).max(16).default(2),
     AUTH_LOGIN_MAX_TRACKED_IDENTITIES: z.coerce.number().int().min(64).max(100_000).default(4_096),
 
-    /** Absent is legal: a server with no database still answers /health. */
+    /**
+     * Optional outside production so local health-only/test processes remain
+     * useful. Production refuses to boot without the authoritative database:
+     * a liveness-only platform check must never advertise an unusable ERP API.
+     */
     DATABASE_URL: z.string().min(1).optional(),
 
     /**
@@ -112,13 +132,16 @@ const schema = z
           'is required in production; owner bootstrap cannot be served without a signing key',
       });
     }
-    if (value.NODE_ENV === 'production' && (value.APP_ORIGINS ?? '').trim() === '') {
+
+    const origins = configuredOrigins(value.APP_ORIGINS);
+    if (value.NODE_ENV === 'production' && origins.length === 0) {
       context.addIssue({
         code: 'custom',
         path: ['APP_ORIGINS'],
         message: 'is required in production; refusing to accept writes from an unknown origin',
       });
     }
+
     if (value.NODE_ENV === 'production' && (metricsAuthToken ?? '').trim() === '') {
       context.addIssue({
         code: 'custom',
@@ -127,8 +150,39 @@ const schema = z
       });
     }
 
+    const databaseUrl = value.DATABASE_URL;
+    if (value.NODE_ENV === 'production' && (databaseUrl ?? '').trim() === '') {
+      context.addIssue({
+        code: 'custom',
+        path: ['DATABASE_URL'],
+        message:
+          'is required in production; refusing to advertise a live API without its authoritative database',
+      });
+    }
+
     if (value.NODE_ENV !== 'production') return;
 
+    if (origins.some((origin) => !isExactHttpsOrigin(origin))) {
+      context.addIssue({
+        code: 'custom',
+        path: ['APP_ORIGINS'],
+        message: 'must contain exact HTTPS origins only',
+      });
+    }
+    if (new Set(origins).size !== origins.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['APP_ORIGINS'],
+        message: 'must not contain duplicate origins',
+      });
+    }
+    if (databaseUrl !== undefined && databaseUrl !== databaseUrl.trim()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['DATABASE_URL'],
+        message: 'must be canonical without leading or trailing whitespace',
+      });
+    }
     if (bootstrapSigningKey !== undefined && bootstrapSigningKey !== bootstrapSigningKey.trim()) {
       context.addIssue({
         code: 'custom',
@@ -195,10 +249,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     throw new Error(`Invalid environment: ${detail}`);
   }
   const value = parsed.data;
-  const configured = (value.APP_ORIGINS ?? '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter((origin) => origin !== '');
+  const configured = configuredOrigins(value.APP_ORIGINS);
 
   return {
     NODE_ENV: value.NODE_ENV,

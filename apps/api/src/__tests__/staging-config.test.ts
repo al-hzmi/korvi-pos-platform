@@ -41,9 +41,16 @@ describe('isolated staging configuration', () => {
     'https://user:password@korvi-web.example',
     'https://korvi-web.example#fragment',
   ])('refuses the non-canonical origin %s without echoing it', (APP_ORIGINS) => {
-    expect(() => loadStagingConfig({ ...environment, APP_ORIGINS })).toThrow(
-      'Staging APP_ORIGINS must contain exact HTTPS origins.',
-    );
+    let thrown: Error | undefined;
+
+    try {
+      loadStagingConfig({ ...environment, APP_ORIGINS });
+    } catch (error) {
+      thrown = error instanceof Error ? error : new Error('non-Error thrown');
+    }
+
+    expect(thrown?.message).toContain('APP_ORIGINS: must contain exact HTTPS origins only');
+    expect(thrown?.message).not.toContain(APP_ORIGINS);
   });
 
   it('allows explicitly listed HTTPS origins', () => {

@@ -4,6 +4,7 @@ import { loadConfig } from '../config.js';
 const productionEnvironment = {
   NODE_ENV: 'production',
   APP_ORIGINS: 'https://korvi.example',
+  DATABASE_URL: 'postgresql://korvi_test@localhost:5432/korvi_test',
   BOOTSTRAP_SIGNING_KEY: 'bootstrap-config-test-key-000000000000000000000001',
   METRICS_AUTH_TOKEN: 'metrics-config-test-token-0000000000000000000000002',
 };
@@ -65,6 +66,63 @@ describe('production secret configuration', () => {
     expect(thrown?.message).not.toContain(shared);
   });
 
+  it('refuses to boot production without the authoritative database', () => {
+    const env: NodeJS.ProcessEnv = { ...productionEnvironment };
+    delete env['DATABASE_URL'];
+
+    expect(() => loadConfig(env)).toThrow(
+      'DATABASE_URL: is required in production; refusing to advertise a live API without its authoritative database',
+    );
+  });
+
+  it('refuses non-canonical database URL whitespace without echoing the URL', () => {
+    const databaseUrl = ` ${productionEnvironment.DATABASE_URL} `;
+    let thrown: Error | undefined;
+
+    try {
+      loadConfig({ ...productionEnvironment, DATABASE_URL: databaseUrl });
+    } catch (error) {
+      thrown = error instanceof Error ? error : new Error('non-Error thrown');
+    }
+
+    expect(thrown?.message).toContain(
+      'DATABASE_URL: must be canonical without leading or trailing whitespace',
+    );
+    expect(thrown?.message).not.toContain(databaseUrl);
+    expect(thrown?.message).not.toContain(productionEnvironment.DATABASE_URL);
+  });
+
+  it.each([
+    ',,,',
+    '*',
+    'http://korvi.example',
+    'https://korvi.example/',
+    'https://korvi.example/path',
+    'https://korvi.example?token=private',
+    'https://user:password@korvi.example',
+    'https://korvi.example#fragment',
+  ])('refuses unusable production APP_ORIGINS value %s', (APP_ORIGINS) => {
+    expect(() => loadConfig({ ...productionEnvironment, APP_ORIGINS })).toThrow();
+  });
+
+  it('refuses duplicate production origins', () => {
+    expect(() =>
+      loadConfig({
+        ...productionEnvironment,
+        APP_ORIGINS: 'https://one.example, https://one.example',
+      }),
+    ).toThrow('APP_ORIGINS: must not contain duplicate origins');
+  });
+
+  it('accepts multiple exact HTTPS production origins', () => {
+    const config = loadConfig({
+      ...productionEnvironment,
+      APP_ORIGINS: 'https://one.example, https://two.example',
+    });
+
+    expect(config.APP_ORIGINS).toEqual(['https://one.example', 'https://two.example']);
+  });
+
   it('does not impose production-only separation on local development', () => {
     const shared = 'shared-local-config-test-secret-00000000000000000000001';
     const config = loadConfig({
@@ -76,5 +134,6 @@ describe('production secret configuration', () => {
     expect(config.isProduction).toBe(false);
     expect(config.BOOTSTRAP_SIGNING_KEY).toBe(shared);
     expect(config.METRICS_AUTH_TOKEN).toBe(shared);
+    expect(config.DATABASE_URL).toBeUndefined();
   });
 });
