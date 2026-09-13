@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+
 const prismaOnlySearchParameters = new Set([
   'schema',
   'connection_limit',
@@ -26,7 +28,7 @@ export function derivePsqlUrl(value) {
   return url.toString();
 }
 
-if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const value = process.env.MIGRATION_DATABASE_URL;
   if (!value) {
     process.stderr.write('[x] migration database URL is missing\n');
