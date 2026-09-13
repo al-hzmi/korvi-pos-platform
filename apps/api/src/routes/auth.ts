@@ -91,15 +91,17 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   const hasNoAdmissionOverrides = admissionFields.every((value) => value === undefined);
   const loginAdmission =
     options.loginAdmission ??
-    (hasNoAdmissionOverrides
-      ? createLoginAdmissionController()
-      : createLoginAdmissionController({
-          globalLimit: config.AUTH_LOGIN_GLOBAL_LIMIT,
-          identityLimit: config.AUTH_LOGIN_IDENTITY_LIMIT,
-          windowMs: config.AUTH_LOGIN_WINDOW_MS,
-          maxConcurrent: config.AUTH_LOGIN_MAX_CONCURRENT,
-          maxTrackedIdentities: config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
-        }));
+    createLoginAdmissionController(
+      hasNoAdmissionOverrides
+        ? undefined
+        : {
+            globalLimit: config.AUTH_LOGIN_GLOBAL_LIMIT,
+            identityLimit: config.AUTH_LOGIN_IDENTITY_LIMIT,
+            windowMs: config.AUTH_LOGIN_WINDOW_MS,
+            maxConcurrent: config.AUTH_LOGIN_MAX_CONCURRENT,
+            maxTrackedIdentities: config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
+          },
+    );
 
   app.post('/v1/auth/login', async (request, reply) => {
     const parsed = loginBody.safeParse(request.body);
