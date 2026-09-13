@@ -57,7 +57,14 @@
   "merchantFieldValidation": {
     "cohortRef": "TBD",
     "releaseSha": "TBD",
-    "workflowsVerified": ["sale", "return", "shift", "inventory", "purchase-receipt", "offline-sync"],
+    "workflowsVerified": [
+      "sale",
+      "return",
+      "shift",
+      "inventory",
+      "purchase-receipt",
+      "offline-sync"
+    ],
     "rollbackCriteriaRef": "TBD",
     "completedAtUtc": "TBD",
     "result": "TBD",

@@ -12,7 +12,14 @@ const base = {
   release: {
     sha: SHA,
     verifiedAtUtc: '2026-09-13T10:00:00Z',
-    requiredGreenChecks: ['ci', 'postgres-live', 'browser-sale', 'browser-stage5d', 'dr', 'incident'],
+    requiredGreenChecks: [
+      'ci',
+      'postgres-live',
+      'browser-sale',
+      'browser-stage5d',
+      'dr',
+      'incident',
+    ],
   },
   database: {
     provider: 'ExampleProvider',
@@ -88,7 +95,9 @@ function expectPass(name, mutate = () => {}) {
   try {
     validateGate50Evidence(value, { expectedSha: SHA });
   } catch (error) {
-    throw new Error(`${name} unexpectedly failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${name} unexpectedly failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -105,20 +114,47 @@ function expectFail(name, mutate) {
 }
 
 expectPass('complete production evidence');
-expectFail('staging evidence', (v) => { v.environment = 'staging'; });
-expectFail('synthetic evidence', (v) => { v.synthetic = true; });
-expectFail('free database plan', (v) => { v.database.plan = 'free'; });
-expectFail('missing HA', (v) => { v.database.highAvailability = false; });
-expectFail('RPO miss', (v) => { v.recovery.measuredRpoMinutes = 16; });
-expectFail('RTO miss', (v) => { v.recovery.measuredRtoMinutes = 61; });
-expectFail('secret-like field name', (v) => { v.monitoring.apiToken = 'redacted'; });
-expectFail('secret-like value', (v) => { v.database.backups.evidenceRef = 'postgresql://user:pass@example/db'; });
-expectFail('release SHA mismatch', (v) => { v.release.sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; });
-expectFail('field-validation SHA mismatch', (v) => { v.merchantFieldValidation.releaseSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; });
-expectFail('field validation not passed', (v) => { v.merchantFieldValidation.result = 'FAIL'; });
-expectFail('placeholder evidence', (v) => { v.monitoring.routingRef = 'TBD'; });
+expectFail('staging evidence', (v) => {
+  v.environment = 'staging';
+});
+expectFail('synthetic evidence', (v) => {
+  v.synthetic = true;
+});
+expectFail('free database plan', (v) => {
+  v.database.plan = 'free';
+});
+expectFail('missing HA', (v) => {
+  v.database.highAvailability = false;
+});
+expectFail('RPO miss', (v) => {
+  v.recovery.measuredRpoMinutes = 16;
+});
+expectFail('RTO miss', (v) => {
+  v.recovery.measuredRtoMinutes = 61;
+});
+expectFail('secret-like field name', (v) => {
+  v.monitoring.apiToken = 'redacted';
+});
+expectFail('secret-like value', (v) => {
+  v.database.backups.evidenceRef = 'postgresql://user:pass@example/db';
+});
+expectFail('release SHA mismatch', (v) => {
+  v.release.sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+});
+expectFail('field-validation SHA mismatch', (v) => {
+  v.merchantFieldValidation.releaseSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+});
+expectFail('field validation not passed', (v) => {
+  v.merchantFieldValidation.result = 'FAIL';
+});
+expectFail('placeholder evidence', (v) => {
+  v.monitoring.routingRef = 'TBD';
+});
 
-const workflow = fs.readFileSync('.github/workflows/operations-gate-50-production-proof.yml', 'utf8');
+const workflow = fs.readFileSync(
+  '.github/workflows/operations-gate-50-production-proof.yml',
+  'utf8',
+);
 const requiredWorkflowFragments = [
   'workflow_dispatch:',
   'permissions:\n  contents: read',
@@ -129,7 +165,8 @@ const requiredWorkflowFragments = [
   'production-operations-gate-50-${{ github.sha }}',
 ];
 for (const fragment of requiredWorkflowFragments) {
-  if (!workflow.includes(fragment)) throw new Error(`Gate 50 workflow contract missing: ${fragment}`);
+  if (!workflow.includes(fragment))
+    throw new Error(`Gate 50 workflow contract missing: ${fragment}`);
 }
 if (/\bpull_request\s*:/.test(workflow) || /\bpush\s*:/.test(workflow)) {
   throw new Error('Gate 50 production proof must remain manually dispatched');
