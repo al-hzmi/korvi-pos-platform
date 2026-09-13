@@ -19,9 +19,16 @@ if [[ ! "$runtime_role" =~ ^[a-z_][a-z0-9_]{0,62}$ ]]; then
   fail 'PRODUCTION_RUNTIME_DB_ROLE must be a canonical PostgreSQL identifier'
 fi
 
-# Never print the migration URL. Strip query parameters only for psql; Prisma
-# receives the original URL inside the migration-only subprocess below.
-psql_url="${MIGRATION_DATABASE_URL%%\?*}"
+# Prisma accepts a few client-only URL parameters that libpq/psql does not.
+# Remove only those parameters; never strip the entire query string because it
+# can carry transport-security controls such as sslmode, sslrootcert and
+# channel_binding. The helper never logs the credential on parse failures.
+if ! psql_url="$(
+  MIGRATION_DATABASE_URL="$MIGRATION_DATABASE_URL" \
+    node scripts/deploy/derive-psql-url.mjs
+)"; then
+  fail 'MIGRATION_DATABASE_URL is not a valid psql-compatible PostgreSQL URL'
+fi
 
 migration_user="$({
   psql "$psql_url" \
