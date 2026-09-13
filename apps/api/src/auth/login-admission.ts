@@ -124,7 +124,7 @@ export function createLoginAdmissionController(
       }
 
       const key = canonicalIdentity(tenantSlug, email);
-      let identity = currentBucket(identities.get(key), at);
+      const identity = currentBucket(identities.get(key), at);
       if (identity.count >= policy.identityLimit) {
         identities.delete(key);
         identities.set(key, identity);
