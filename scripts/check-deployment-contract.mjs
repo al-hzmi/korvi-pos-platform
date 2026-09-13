@@ -11,14 +11,21 @@ const MIGRATION_PROOF_WORKFLOWS = [
   '../.github/workflows/strike-5c-postgres-live.yml',
 ];
 
-const [configSource, blueprint, buildScript, migrationProofScript, ...migrationWorkflows] =
-  await Promise.all([
-    readFile(new URL('../apps/api/src/config.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../render.yaml', import.meta.url), 'utf8'),
-    readFile(new URL('./deploy/build.sh', import.meta.url), 'utf8'),
-    readFile(new URL('./prove-migration-state.sh', import.meta.url), 'utf8'),
-    ...MIGRATION_PROOF_WORKFLOWS.map((path) => readFile(new URL(path, import.meta.url), 'utf8')),
-  ]);
+const [
+  configSource,
+  blueprint,
+  buildScript,
+  migrationProofScript,
+  productionMigrationScript,
+  ...migrationWorkflows
+] = await Promise.all([
+  readFile(new URL('../apps/api/src/config.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../render.yaml', import.meta.url), 'utf8'),
+  readFile(new URL('./deploy/build.sh', import.meta.url), 'utf8'),
+  readFile(new URL('./prove-migration-state.sh', import.meta.url), 'utf8'),
+  readFile(new URL('./deploy/production-migrate.sh', import.meta.url), 'utf8'),
+  ...MIGRATION_PROOF_WORKFLOWS.map((path) => readFile(new URL(path, import.meta.url), 'utf8')),
+]);
 
 const secretDeclaration = configSource.match(
   /export const PRODUCTION_REQUIRED_SECRET_ENV_KEYS = \[([\s\S]*?)\] as const;/,
@@ -136,6 +143,10 @@ assert.doesNotMatch(
   /migration_directories[^\n]*(?:-eq|-ne)\s+[0-9]+/,
   'shared migration proof must not pin a literal migration count',
 );
+assert.ok(
+  productionMigrationScript.includes('bash scripts/prove-migration-state.sh'),
+  'production migration wrapper must retain the shared source-driven migration proof',
+);
 
 for (const [index, workflow] of migrationWorkflows.entries()) {
   const path = MIGRATION_PROOF_WORKFLOWS[index];
@@ -144,9 +155,14 @@ for (const [index, workflow] of migrationWorkflows.entries()) {
     workflow.includes(`      - ${REVIEW_BRANCH}`),
     `${path} must run on the operations review branch before promotion`,
   );
+
+  const usesSharedProofDirectly = workflow.includes('bash scripts/prove-migration-state.sh');
+  const usesProductionWrapper =
+    path.endsWith('/strike-5c-postgres-live.yml') &&
+    workflow.includes('bash scripts/deploy/production-migrate.sh');
   assert.ok(
-    workflow.includes('bash scripts/prove-migration-state.sh'),
-    `${path} must use the shared source-driven migration proof`,
+    usesSharedProofDirectly || usesProductionWrapper,
+    `${path} must use the shared source-driven migration proof directly or through the guarded production wrapper`,
   );
   assert.doesNotMatch(
     workflow,
