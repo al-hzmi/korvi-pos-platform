@@ -13,6 +13,7 @@ const NOT_READY_COUNTER = 'korvi_readiness_responses_total{result="not_ready"} 1
 const PRODUCTION_BASE = {
   NODE_ENV: 'production',
   APP_ORIGINS: 'https://pos.example',
+  DATABASE_URL: 'postgresql://korvi_test@localhost:5432/korvi_test',
   BOOTSTRAP_SIGNING_KEY: BOOTSTRAP_KEY,
 } as const;
 
