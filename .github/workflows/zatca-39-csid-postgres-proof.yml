@@ -13,6 +13,7 @@ on:
       - 'apps/api/src/__tests__/zatca-*.test.ts'
       - 'package.json'
       - 'package-lock.json'
+      - 'scripts/prove-migration-state.sh'
       - '.github/workflows/zatca-39-csid-postgres-proof.yml'
   workflow_dispatch:
 
