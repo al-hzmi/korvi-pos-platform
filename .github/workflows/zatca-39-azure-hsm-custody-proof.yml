@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 10
     env:
       PROOF_DIR: artifacts/zatca-39-azure-hsm
+      AZURE_KEY_VAULT_API_VERSION: '2025-07-01'
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -217,7 +218,7 @@ jobs:
 
           curl --fail-with-body --silent --show-error \
             --request POST \
-            --url "${KEY_ID}/sign?api-version=2025-07-01" \
+            --url "${KEY_ID}/sign?api-version=${AZURE_KEY_VAULT_API_VERSION}" \
             --header "Authorization: Bearer ${TOKEN}" \
             --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/sign-body.json" \
@@ -247,7 +248,7 @@ jobs:
 
           curl --fail-with-body --silent --show-error \
             --request POST \
-            --url "${KEY_ID}/verify?api-version=2025-07-01" \
+            --url "${KEY_ID}/verify?api-version=${AZURE_KEY_VAULT_API_VERSION}" \
             --header "Authorization: Bearer ${TOKEN}" \
             --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/verify-body.json" \
