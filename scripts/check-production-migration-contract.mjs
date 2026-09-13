@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+const migrationScriptUrl = new URL('./deploy/production-migrate.sh', import.meta.url);
+const postgresWorkflowUrl = new URL(
+  '../.github/workflows/strike-5c-postgres-live.yml',
+  import.meta.url,
+);
+const runtimeConfigUrl = new URL('../apps/api/src/config.ts', import.meta.url);
+
 const [migrationScript, postgresWorkflow, runtimeConfig] = await Promise.all([
-  readFile(new URL('./deploy/production-migrate.sh', import.meta.url), 'utf8'),
-  readFile(new URL('../.github/workflows/strike-5c-postgres-live.yml', import.meta.url), 'utf8'),
-  readFile(new URL('../apps/api/src/config.ts', import.meta.url), 'utf8'),
+  readFile(migrationScriptUrl, 'utf8'),
+  readFile(postgresWorkflowUrl, 'utf8'),
+  readFile(runtimeConfigUrl, 'utf8'),
 ]);
 
 assert.ok(
@@ -33,7 +40,7 @@ assert.ok(
   'migration authority and runtime authority must be distinct roles',
 );
 assert.ok(
-  migrationScript.includes("f|f|f|f|f|f|0"),
+  migrationScript.includes('f|f|f|f|f|f|0'),
   'runtime role must prove no privileged flags or inherited role memberships',
 );
 assert.ok(
@@ -59,11 +66,11 @@ assert.match(
   'runtime must be unable to mutate the Prisma migration ledger',
 );
 assert.ok(
-  migrationScript.includes("runtime role must not own public tables"),
+  migrationScript.includes('runtime role must not own public tables'),
   'production migration must prove runtime is not a table owner',
 );
 assert.ok(
-  migrationScript.includes("t|f|t|f|t|f|f|f"),
+  migrationScript.includes('t|f|t|f|t|f|f|f'),
   'production migration must re-prove its runtime privilege boundary after grants',
 );
 
