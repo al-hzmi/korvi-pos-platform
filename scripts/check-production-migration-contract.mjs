@@ -52,9 +52,9 @@ assert.ok(
   migrationScript.includes('node scripts/deploy/derive-psql-url.mjs'),
   'production migration must derive the psql URL without weakening transport parameters',
 );
-assert.doesNotMatch(
-  migrationScript,
-  /MIGRATION_DATABASE_URL%%.*\\\?/, 
+assert.equal(
+  migrationScript.includes('MIGRATION_DATABASE_URL%%\\?*'),
+  false,
   'production migration must never drop the entire query string because it can contain TLS policy',
 );
 
