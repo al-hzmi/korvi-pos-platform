@@ -97,6 +97,7 @@ function expectPass(name, mutate = () => {}) {
   } catch (error) {
     throw new Error(
       `${name} unexpectedly failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
