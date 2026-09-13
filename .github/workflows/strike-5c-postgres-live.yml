@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Production-like authority split: migrations use an operations identity;
-      # application/live tests use a distinct non-owner, non-bypass runtime role.
-      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c?schema=public
+      # Production-like authority split: the provider administrator creates two
+      # restricted identities, then leaves the application path entirely.
+      MIGRATION_DATABASE_URL: postgresql://korvi_migrator:korvi_migrator_ci_5c@localhost:5432/korvi_5c?schema=public
       POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c
       KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:korvi_runtime_ci_5c@localhost:5432/korvi_5c
       DATABASE_URL: postgresql://korvi_runtime:korvi_runtime_ci_5c@localhost:5432/korvi_5c
@@ -80,27 +80,44 @@ jobs:
             echo 'migration_runtime_identity_separation=required'
           } | tee "$PROOF_LOG"
 
-      - name: Create restricted application runtime role
+      - name: Create restricted migration and application runtime roles
         shell: bash
         run: |
           set -euo pipefail
           psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_migrator
+            LOGIN PASSWORD 'korvi_migrator_ci_5c'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
           CREATE ROLE korvi_runtime
             LOGIN PASSWORD 'korvi_runtime_ci_5c'
             NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          ALTER DATABASE korvi_5c OWNER TO korvi_migrator;
           SQL
 
-          role_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+          migrator_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls,
+                    (SELECT count(*)::integer FROM pg_auth_members WHERE member = r.oid)
+               FROM pg_roles r WHERE r.rolname = 'korvi_migrator'")"
+          if [ "$migrator_flags" != 'f|f|f|f|f|f|0' ]; then
+            echo "Migration role has unsafe authority: $migrator_flags" >&2
+            exit 1
+          fi
+
+          runtime_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
             "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls,
                     (SELECT count(*)::integer FROM pg_auth_members WHERE member = r.oid)
                FROM pg_roles r WHERE r.rolname = 'korvi_runtime'")"
-          if [ "$role_flags" != 'f|f|f|f|f|f|0' ]; then
-            echo "Runtime role has unsafe authority: $role_flags" >&2
+          if [ "$runtime_flags" != 'f|f|f|f|f|f|0' ]; then
+            echo "Runtime role has unsafe authority: $runtime_flags" >&2
             exit 1
           fi
-          echo "runtime_role_flags=$role_flags" | tee -a "$PROOF_LOG"
 
-      - name: Apply migrations through separate production authority
+          {
+            echo "migration_role_flags=$migrator_flags"
+            echo "runtime_role_flags=$runtime_flags"
+          } | tee -a "$PROOF_LOG"
+
+      - name: Apply migrations through restricted production authority
         shell: bash
         env:
           NODE_ENV: production
@@ -117,8 +134,8 @@ jobs:
           table_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
             "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner)
                FROM pg_tables WHERE schemaname = 'public'")"
-          if [ "$table_ownership" != '1|postgres' ]; then
-            echo "Expected migration authority to own every public table, got $table_ownership" >&2
+          if [ "$table_ownership" != '1|korvi_migrator' ]; then
+            echo "Expected restricted migration authority to own every public table, got $table_ownership" >&2
             exit 1
           fi
 
@@ -148,6 +165,7 @@ jobs:
             echo "runtime_public_table_ownership=$runtime_ownership"
             echo "runtime_boundary=$boundary"
             echo 'migration_runtime_identity_separation=PASS'
+            echo 'restricted_migration_authority=PASS'
             echo 'runtime_migration_ledger_write=DENIED'
           } | tee -a "$PROOF_LOG"
 
