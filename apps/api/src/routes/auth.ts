@@ -73,15 +73,33 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   const { service, guards, config } = options;
   // One controller per server process. Creating it inside the handler would
   // reset counters on every request and turn the protection into decoration.
+  //
+  // Older live-test fixtures predate the admission fields and therefore have
+  // all five values absent at runtime even though ApiConfig now requires them.
+  // In that one all-absent case we keep the controller's secure finite defaults
+  // instead of disabling protection or crashing before the route exists. A
+  // partially configured policy is still passed through and fails closed in
+  // createLoginAdmissionController, so a real deployment cannot silently mix
+  // defaults with a malformed override.
+  const admissionFields = [
+    config.AUTH_LOGIN_GLOBAL_LIMIT,
+    config.AUTH_LOGIN_IDENTITY_LIMIT,
+    config.AUTH_LOGIN_WINDOW_MS,
+    config.AUTH_LOGIN_MAX_CONCURRENT,
+    config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
+  ];
+  const hasNoAdmissionOverrides = admissionFields.every((value) => value === undefined);
   const loginAdmission =
     options.loginAdmission ??
-    createLoginAdmissionController({
-      globalLimit: config.AUTH_LOGIN_GLOBAL_LIMIT,
-      identityLimit: config.AUTH_LOGIN_IDENTITY_LIMIT,
-      windowMs: config.AUTH_LOGIN_WINDOW_MS,
-      maxConcurrent: config.AUTH_LOGIN_MAX_CONCURRENT,
-      maxTrackedIdentities: config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
-    });
+    (hasNoAdmissionOverrides
+      ? createLoginAdmissionController()
+      : createLoginAdmissionController({
+          globalLimit: config.AUTH_LOGIN_GLOBAL_LIMIT,
+          identityLimit: config.AUTH_LOGIN_IDENTITY_LIMIT,
+          windowMs: config.AUTH_LOGIN_WINDOW_MS,
+          maxConcurrent: config.AUTH_LOGIN_MAX_CONCURRENT,
+          maxTrackedIdentities: config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES,
+        }));
 
   app.post('/v1/auth/login', async (request, reply) => {
     const parsed = loginBody.safeParse(request.body);
