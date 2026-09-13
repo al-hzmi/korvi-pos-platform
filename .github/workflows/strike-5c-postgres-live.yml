@@ -20,9 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c?schema=public
+      # Production-like authority split: migrations use an operations identity;
+      # application/live tests use a distinct non-owner, non-bypass runtime role.
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c?schema=public
       POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c
-      KORVI_TEST_DATABASE_URL: postgresql://korvi_app:korvi_app_ci_5c@localhost:5432/korvi_5c
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:korvi_runtime_ci_5c@localhost:5432/korvi_5c
+      DATABASE_URL: postgresql://korvi_runtime:korvi_runtime_ci_5c@localhost:5432/korvi_5c
+      PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime
       PROOF_LOG: artifacts/strike-5c-postgres-proof.txt
 
     services:
@@ -73,50 +77,86 @@ jobs:
             echo "commit=$GITHUB_SHA"
             echo "postgres_major=$server_major"
             echo "migration_directories=$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+            echo 'migration_runtime_identity_separation=required'
           } | tee "$PROOF_LOG"
 
-      - name: Create non-bypass migration and application role
+      - name: Create restricted application runtime role
         shell: bash
         run: |
           set -euo pipefail
           psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
-          CREATE ROLE korvi_app
-            LOGIN PASSWORD 'korvi_app_ci_5c'
+          CREATE ROLE korvi_runtime
+            LOGIN PASSWORD 'korvi_runtime_ci_5c'
             NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
-          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_5c TO korvi_app;
-          GRANT USAGE, CREATE ON SCHEMA public TO korvi_app;
           SQL
 
           role_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
-            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = 'korvi_app'")"
-          if [ "$role_flags" != 'f|f|f|f|f|f' ]; then
-            echo "Application role has unsafe authority: $role_flags" >&2
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls,
+                    (SELECT count(*)::integer FROM pg_auth_members WHERE member = r.oid)
+               FROM pg_roles r WHERE r.rolname = 'korvi_runtime'")"
+          if [ "$role_flags" != 'f|f|f|f|f|f|0' ]; then
+            echo "Runtime role has unsafe authority: $role_flags" >&2
             exit 1
           fi
-          echo "app_role_flags=$role_flags" | tee -a "$PROOF_LOG"
+          echo "runtime_role_flags=$role_flags" | tee -a "$PROOF_LOG"
 
-      - name: Apply migrations and prove exact ledger/schema
+      - name: Apply migrations through separate production authority
         shell: bash
         env:
-          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
+          NODE_ENV: production
+          KORVI_ENVIRONMENT: production
         run: |
           set -euo pipefail
-          bash scripts/prove-migration-state.sh 2>&1 | tee -a "$PROOF_LOG"
+          bash scripts/deploy/production-migrate.sh 2>&1 | tee -a "$PROOF_LOG"
 
-          table_ownership="$(psql "$KORVI_TEST_DATABASE_URL" --no-psqlrc --tuples-only --no-align --command \
-            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname = 'public'")"
-          if [ "$table_ownership" != '1|korvi_app' ]; then
-            echo "Expected the non-bypass application role to own every public table, got $table_ownership" >&2
+      - name: Prove migration owner and runtime least privilege
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          table_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner)
+               FROM pg_tables WHERE schemaname = 'public'")"
+          if [ "$table_ownership" != '1|postgres' ]; then
+            echo "Expected migration authority to own every public table, got $table_ownership" >&2
             exit 1
           fi
-          echo "public_table_ownership=$table_ownership" | tee -a "$PROOF_LOG"
+
+          runtime_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = 'korvi_runtime'")"
+          if [ "$runtime_ownership" != '0' ]; then
+            echo "Runtime role unexpectedly owns $runtime_ownership public table(s)" >&2
+            exit 1
+          fi
+
+          boundary="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT has_database_privilege('korvi_runtime', 'korvi_5c', 'CONNECT'),
+                    has_database_privilege('korvi_runtime', 'korvi_5c', 'TEMPORARY'),
+                    has_schema_privilege('korvi_runtime', 'public', 'USAGE'),
+                    has_schema_privilege('korvi_runtime', 'public', 'CREATE'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'SELECT'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'INSERT'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'UPDATE'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'DELETE')")"
+          if [ "$boundary" != 't|f|t|f|t|f|f|f' ]; then
+            echo "Runtime privilege boundary drifted: $boundary" >&2
+            exit 1
+          fi
+
+          {
+            echo "public_table_ownership=$table_ownership"
+            echo "runtime_public_table_ownership=$runtime_ownership"
+            echo "runtime_boundary=$boundary"
+            echo 'migration_runtime_identity_separation=PASS'
+            echo 'runtime_migration_ledger_write=DENIED'
+          } | tee -a "$PROOF_LOG"
 
       - name: Build live test runtime
         run: |
           npm run db:generate
           npm run build
 
-      - name: Run every live proof as the application role
+      - name: Run every live proof as the restricted runtime role
         shell: bash
         env:
           DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
@@ -134,7 +174,7 @@ jobs:
           } | tee -a "$PROOF_LOG"
           npx --no-install vitest run "${live_tests[@]}" 2>&1 | tee -a "$PROOF_LOG"
 
-      - name: Run full verification against PostgreSQL
+      - name: Run full verification against PostgreSQL as runtime
         shell: bash
         env:
           DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
