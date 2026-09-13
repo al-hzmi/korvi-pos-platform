@@ -73,10 +73,12 @@ jobs:
           payload = json.loads(source.read_text(encoding='utf-8'))
           configured_name = os.environ['AZURE_KEY_VAULT_NAME']
 
+          properties = payload.get('properties') or {}
           resource_id = payload.get('id')
           vault_name = payload.get('name')
-          sku_name = str((payload.get('sku') or {}).get('name') or '').lower()
-          vault_uri = payload.get('vaultUri') or (payload.get('properties') or {}).get('vaultUri')
+          sku = payload.get('sku') or properties.get('sku') or {}
+          sku_name = str(sku.get('name') or '').lower()
+          vault_uri = payload.get('vaultUri') or properties.get('vaultUri')
 
           if not isinstance(resource_id, str) or '/providers/microsoft.keyvault/vaults/' not in resource_id.lower():
               raise SystemExit('configured resource is not an Azure Key Vault vault')
