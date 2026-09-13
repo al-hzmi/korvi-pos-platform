@@ -163,11 +163,18 @@ export interface ApiConfig {
   readonly LOG_LEVEL: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
   readonly APP_ORIGINS: readonly string[];
   readonly SESSION_TTL_SECONDS: number;
-  readonly AUTH_LOGIN_GLOBAL_LIMIT: number;
-  readonly AUTH_LOGIN_IDENTITY_LIMIT: number;
-  readonly AUTH_LOGIN_WINDOW_MS: number;
-  readonly AUTH_LOGIN_MAX_CONCURRENT: number;
-  readonly AUTH_LOGIN_MAX_TRACKED_IDENTITIES: number;
+  /**
+   * `loadConfig` always resolves all five admission controls. They remain
+   * optional on this transport type only for old, hand-built NODE_ENV=test
+   * fixtures that do not exercise admission itself. `registerAuthRoutes`
+   * accepts the all-absent shape only in test and fails closed for production
+   * or any partial override, so no deployed runtime can inherit this seam.
+   */
+  readonly AUTH_LOGIN_GLOBAL_LIMIT?: number;
+  readonly AUTH_LOGIN_IDENTITY_LIMIT?: number;
+  readonly AUTH_LOGIN_WINDOW_MS?: number;
+  readonly AUTH_LOGIN_MAX_CONCURRENT?: number;
+  readonly AUTH_LOGIN_MAX_TRACKED_IDENTITIES?: number;
   readonly DATABASE_URL: string | undefined;
   /** Never logged, never echoed, never persisted. */
   readonly BOOTSTRAP_SIGNING_KEY: string | undefined;
