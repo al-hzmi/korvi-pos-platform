@@ -57,20 +57,23 @@ migration_facts="$({
 [ "$migration_facts" = 'f|f|f|f|f|f|0' ] || \
   fail 'migration role must be a dedicated non-superuser, non-bypass operations identity'
 
-runtime_facts="$({
+# psql does not perform :variable interpolation inside --command/-c arguments.
+# Feed SQL through stdin whenever a value is supplied with --set so quoting and
+# identifier handling remain psql-owned instead of being interpolated by bash.
+runtime_facts="$(
   psql "$psql_url" \
     --no-psqlrc \
     --tuples-only \
     --no-align \
     --set=ON_ERROR_STOP=1 \
-    --set=runtime_role="$runtime_role" \
-    --command \
-    "SELECT r.rolsuper, r.rolcreatedb, r.rolcreaterole, r.rolinherit,
-            r.rolreplication, r.rolbypassrls,
-            (SELECT count(*)::integer FROM pg_auth_members WHERE member = r.oid)
-       FROM pg_roles r
-      WHERE r.rolname = :'runtime_role'"
-})"
+    --set=runtime_role="$runtime_role" <<'SQL'
+SELECT r.rolsuper, r.rolcreatedb, r.rolcreaterole, r.rolinherit,
+       r.rolreplication, r.rolbypassrls,
+       (SELECT count(*)::integer FROM pg_auth_members WHERE member = r.oid)
+  FROM pg_roles r
+ WHERE r.rolname = :'runtime_role';
+SQL
+)"
 [ "$runtime_facts" = 'f|f|f|f|f|f|0' ] || \
   fail 'runtime role is missing or has unsafe role attributes/memberships'
 
@@ -130,61 +133,61 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT EXECUTE ON FUNCTIONS TO :"runtime_role";
 SQL
 
-runtime_ownership="$({
+runtime_ownership="$(
   psql "$psql_url" \
     --no-psqlrc \
     --tuples-only \
     --no-align \
     --set=ON_ERROR_STOP=1 \
-    --set=runtime_role="$runtime_role" \
-    --command \
-    "SELECT count(*)
-       FROM pg_tables
-      WHERE schemaname = 'public'
-        AND tableowner = :'runtime_role'"
-})"
+    --set=runtime_role="$runtime_role" <<'SQL'
+SELECT count(*)
+  FROM pg_tables
+ WHERE schemaname = 'public'
+   AND tableowner = :'runtime_role';
+SQL
+)"
 [ "$runtime_ownership" = '0' ] || fail 'runtime role must not own public tables'
 
-runtime_boundary="$({
+runtime_boundary="$(
   psql "$psql_url" \
     --no-psqlrc \
     --tuples-only \
     --no-align \
     --set=ON_ERROR_STOP=1 \
     --set=runtime_role="$runtime_role" \
-    --set=database_name="$database_name" \
-    --command \
-    "SELECT has_database_privilege(:'runtime_role', :'database_name', 'CONNECT'),
-            has_database_privilege(:'runtime_role', :'database_name', 'TEMPORARY'),
-            has_schema_privilege(:'runtime_role', 'public', 'USAGE'),
-            has_schema_privilege(:'runtime_role', 'public', 'CREATE'),
-            has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'SELECT'),
-            has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'INSERT'),
-            has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'UPDATE'),
-            has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'DELETE')"
-})"
+    --set=database_name="$database_name" <<'SQL'
+SELECT has_database_privilege(:'runtime_role', :'database_name', 'CONNECT'),
+       has_database_privilege(:'runtime_role', :'database_name', 'TEMPORARY'),
+       has_schema_privilege(:'runtime_role', 'public', 'USAGE'),
+       has_schema_privilege(:'runtime_role', 'public', 'CREATE'),
+       has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'SELECT'),
+       has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'INSERT'),
+       has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'UPDATE'),
+       has_table_privilege(:'runtime_role', 'public._prisma_migrations', 'DELETE');
+SQL
+)"
 [ "$runtime_boundary" = 't|f|t|f|t|f|f|f' ] || \
   fail 'runtime database authority does not match the production least-privilege contract'
 
-missing_dml="$({
+missing_dml="$(
   psql "$psql_url" \
     --no-psqlrc \
     --tuples-only \
     --no-align \
     --set=ON_ERROR_STOP=1 \
-    --set=runtime_role="$runtime_role" \
-    --command \
-    "SELECT count(*)
-       FROM pg_tables
-      WHERE schemaname = 'public'
-        AND tablename <> '_prisma_migrations'
-        AND NOT (
-          has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'SELECT')
-          AND has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'INSERT')
-          AND has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'UPDATE')
-          AND has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'DELETE')
-        )"
-})"
+    --set=runtime_role="$runtime_role" <<'SQL'
+SELECT count(*)
+  FROM pg_tables
+ WHERE schemaname = 'public'
+   AND tablename <> '_prisma_migrations'
+   AND NOT (
+     has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'SELECT')
+     AND has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'INSERT')
+     AND has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'UPDATE')
+     AND has_table_privilege(:'runtime_role', format('%I.%I', schemaname, tablename), 'DELETE')
+   );
+SQL
+)"
 [ "$missing_dml" = '0' ] || fail 'runtime role is missing required application-table DML privileges'
 
 printf '[ok] production database authority: exact migrations, restricted migrator, separate non-owner runtime, read-only migration ledger\n'
