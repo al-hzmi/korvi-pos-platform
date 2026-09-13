@@ -38,7 +38,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     process.stdout.write(derivePsqlUrl(value));
   } catch (error) {
-    process.stderr.write(`[x] ${error instanceof Error ? error.message : 'invalid migration database URL'}\n`);
+    process.stderr.write(
+      `[x] ${error instanceof Error ? error.message : 'invalid migration database URL'}\n`,
+    );
     process.exit(65);
   }
 }
