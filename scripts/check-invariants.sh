@@ -59,6 +59,13 @@ if ! bash scripts/check-staging-migration-contract.sh; then
   report "staging migration contract drift"
 fi
 
+# Production schema/migration authority must be isolated from the API runtime.
+# Keep the migration credential outside runtime config and prove that the
+# merchant runtime is a non-owner with no schema or migration-ledger authority.
+if ! node scripts/check-production-migration-contract.mjs; then
+  report "production migration/runtime authority contract drift"
+fi
+
 # Gate 39 is a hard release blocker. Keep the external proof harness mechanically
 # bound to Premium Key Vault, EC-HSM/P-256K, non-exportability and remote ES256K.
 if ! node scripts/check-zatca-39-hsm-proof-contract.mjs; then
