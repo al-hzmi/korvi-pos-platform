@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { derivePsqlUrl } from './deploy/derive-psql-url.mjs';
 
 const migrationScriptUrl = new URL('./deploy/production-migrate.sh', import.meta.url);
 const postgresWorkflowUrl = new URL(
@@ -47,6 +48,56 @@ assert.ok(
   migrationScript.includes('f|f|f|f|f|f|0'),
   'migration and runtime roles must prove no privileged flags or inherited memberships',
 );
+assert.ok(
+  migrationScript.includes('node scripts/deploy/derive-psql-url.mjs'),
+  'production migration must derive the psql URL without weakening transport parameters',
+);
+assert.doesNotMatch(
+  migrationScript,
+  /MIGRATION_DATABASE_URL%%.*\\\?/, 
+  'production migration must never drop the entire query string because it can contain TLS policy',
+);
+
+const derivedPsqlUrl = derivePsqlUrl(
+  'postgresql://korvi_migrator:p%40ss@db.example:5432/korvi?schema=merchant&connection_limit=5&sslmode=verify-full&sslrootcert=%2Fcerts%2Fca.pem&application_name=korvi-migrate',
+);
+const parsedPsqlUrl = new URL(derivedPsqlUrl);
+assert.equal(
+  parsedPsqlUrl.searchParams.has('schema'),
+  false,
+  'psql URL derivation must remove Prisma-only schema selection',
+);
+assert.equal(
+  parsedPsqlUrl.searchParams.has('connection_limit'),
+  false,
+  'psql URL derivation must remove Prisma-only pool controls',
+);
+assert.equal(
+  parsedPsqlUrl.searchParams.get('sslmode'),
+  'verify-full',
+  'psql URL derivation must preserve sslmode rather than silently weakening TLS',
+);
+assert.equal(
+  parsedPsqlUrl.searchParams.get('sslrootcert'),
+  '/certs/ca.pem',
+  'psql URL derivation must preserve certificate trust configuration',
+);
+assert.equal(
+  parsedPsqlUrl.searchParams.get('application_name'),
+  'korvi-migrate',
+  'psql URL derivation must preserve libpq-compatible observability parameters',
+);
+assert.match(
+  derivedPsqlUrl,
+  /^postgresql:\/\/korvi_migrator:p%40ss@db\.example:5432\/korvi\?/,
+  'psql URL derivation must preserve endpoint and encoded credentials',
+);
+assert.throws(
+  () => derivePsqlUrl('https://db.example/korvi?sslmode=verify-full'),
+  /must use the postgresql protocol/,
+  'psql URL derivation must reject non-PostgreSQL protocols',
+);
+
 assert.ok(
   migrationScript.includes('bash scripts/prove-migration-state.sh'),
   'production migration must use the source-driven exact migration proof',
@@ -134,5 +185,5 @@ assert.doesNotMatch(
 );
 
 console.log(
-  '[ok] production migration contract: restricted migrator, isolated authority, non-owner runtime, immutable migration ledger',
+  '[ok] production migration contract: restricted migrator, TLS-safe URL derivation, isolated authority, non-owner runtime, immutable migration ledger',
 );
