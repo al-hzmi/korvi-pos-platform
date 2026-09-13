@@ -34,12 +34,12 @@ export function assertDatabaseEvidence(
   actual: DatabaseEvidence,
   expected: DeploymentManifest,
 ): void {
-  if (actual.major !== 17) throw new Error('Staging requires the verified PostgreSQL major 17.');
+  if (actual.major !== 17) throw new Error('Deployment requires the verified PostgreSQL major 17.');
   if (actual.unsafeRole || actual.inheritedRoles !== 0) {
-    throw new Error('Staging requires a restricted application role without role memberships.');
+    throw new Error('Deployment requires a restricted application role without role memberships.');
   }
   if (actual.tenantContext !== '' || actual.loginContext !== '') {
-    throw new Error('Staging refuses a connection with a persistent tenant or login context.');
+    throw new Error('Deployment refuses a connection with a persistent tenant or login context.');
   }
   if (expected.migrations.length === 0 || expected.tables.length === 0) {
     throw new Error('Deployment manifest is empty.');
@@ -122,10 +122,21 @@ async function inspectDatabase(tx: TransactionClient): Promise<DatabaseEvidence>
   return { ...role, tables, migrations };
 }
 
-export async function verifyStagingDatabase(prisma: PrismaClient): Promise<void> {
+/**
+ * Exact-release database admission guard for every deployed runtime.
+ *
+ * The guard is deliberately read-only. Migration application belongs to the
+ * controlled deployment step; this function only proves that the runtime is
+ * about to serve against the exact checked-in ledger/schema, a restricted
+ * application role, clean tenant context and FORCE-RLS protected tenant tables.
+ */
+export async function verifyDeploymentDatabase(prisma: PrismaClient): Promise<void> {
   const expected = await readDeploymentManifest();
   await prisma.$transaction(
     async (tx) => assertDatabaseEvidence(await inspectDatabase(tx), expected),
     { isolationLevel: 'RepeatableRead', maxWait: 10_000, timeout: 15_000 },
   );
 }
+
+/** Compatibility name retained for the isolated staging entrypoint. */
+export const verifyStagingDatabase = verifyDeploymentDatabase;
