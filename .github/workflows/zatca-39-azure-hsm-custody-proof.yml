@@ -2,6 +2,11 @@ name: ZATCA 39 Azure HSM Custody Proof
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - strike/5c-costing-authority
+    paths:
+      - .github/workflows/zatca-39-azure-hsm-custody-proof.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -185,29 +190,74 @@ jobs:
           set -euo pipefail
           KEY_ID="$(cat /tmp/korvi-zatca-versioned-kid)"
           MESSAGE="korvi-zatca-gate-39:${GITHUB_SHA}"
-          DIGEST="$(printf '%s' "$MESSAGE" | openssl dgst -sha256 -binary | base64 -w0)"
-
-          SIGNATURE="$(az keyvault key sign \
-            --id "$KEY_ID" \
-            --algorithm ES256K \
-            --digest "$DIGEST" \
-            --only-show-errors \
-            --query value \
-            --output tsv)"
-          test -n "$SIGNATURE"
-
-          VERIFY_JSON="$(az keyvault key verify \
-            --id "$KEY_ID" \
-            --algorithm ES256K \
-            --digest "$DIGEST" \
-            --signature "$SIGNATURE" \
-            --only-show-errors \
-            --output json)"
-          python3 - "$VERIFY_JSON" <<'PY'
-          import json
+          DIGEST_B64URL="$(python3 - "$MESSAGE" <<'PY'
+          import base64
+          import hashlib
           import sys
+          digest = hashlib.sha256(sys.argv[1].encode('utf-8')).digest()
+          print(base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii'))
+          PY
+          )"
 
-          payload = json.loads(sys.argv[1])
+          TOKEN="$(az account get-access-token \
+            --resource https://vault.azure.net \
+            --query accessToken \
+            --output tsv)"
+          test -n "$TOKEN"
+
+          python3 - "$DIGEST_B64URL" "$RUNNER_TEMP/sign-body.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path(sys.argv[2]).write_text(
+              json.dumps({'alg': 'ES256K', 'value': sys.argv[1]}),
+              encoding='utf-8',
+          )
+          PY
+
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url "${KEY_ID}/sign?api-version=2025-07-01" \
+            --header "Authorization: Bearer ${TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/sign-body.json" \
+            --output "$RUNNER_TEMP/sign-response.json"
+
+          SIGNATURE="$(python3 - "$RUNNER_TEMP/sign-response.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+          signature = payload.get('value')
+          if not isinstance(signature, str) or not signature:
+              raise SystemExit('Azure Key Vault sign response did not contain a signature')
+          print(signature)
+          PY
+          )"
+
+          python3 - "$DIGEST_B64URL" "$SIGNATURE" "$RUNNER_TEMP/verify-body.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path(sys.argv[3]).write_text(
+              json.dumps({'alg': 'ES256K', 'digest': sys.argv[1], 'value': sys.argv[2]}),
+              encoding='utf-8',
+          )
+          PY
+
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url "${KEY_ID}/verify?api-version=2025-07-01" \
+            --header "Authorization: Bearer ${TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/verify-body.json" \
+            --output "$RUNNER_TEMP/verify-response.json"
+
+          python3 - "$RUNNER_TEMP/verify-response.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
           if payload.get('value') is not True:
               raise SystemExit(f'Azure remote verification failed: {payload!r}')
           PY
