@@ -15,7 +15,14 @@ A Gate 50 evidence bundle is accepted only when it binds to one full 40-characte
 - controlled merchant field validation on the same release SHA, including sale, return, shift, inventory, purchase receipt and offline synchronization, with rollback criteria and an explicit human approval reference;
 - exact-SHA CI, PostgreSQL live, DR, incident, external-surface and provider-production evidence references.
 
-Render Free staging is rejected mechanically. Synthetic evidence is rejected. A failed RPO/RTO target is rejected. Placeholder values are rejected. Secret-bearing field names and recognizable credential material are rejected before any proof can pass.
+The following identifier sets are contractual, not count-only checklists. Every named item below must be present exactly once. Additional legitimate evidence identifiers are allowed, but they cannot replace a required item or pad an incomplete set:
+
+- release checks: `ci`, `postgres-live`, `browser-sale`, `browser-stage5d`, `dr`, `incident`;
+- alert classes: `availability`, `readiness`, `5xx`, `latency`;
+- rotated secret classes: `database-runtime`, `session`, `metrics-auth`, `bootstrap`;
+- merchant workflows: `sale`, `return`, `shift`, `inventory`, `purchase-receipt`, `offline-sync`.
+
+Render Free staging is rejected mechanically. Synthetic evidence is rejected. A failed RPO/RTO target is rejected. Placeholder values are rejected. Duplicate critical identifiers are rejected. Secret-bearing field names and recognizable credential material are rejected before any proof can pass.
 
 ## How to prepare the evidence
 
