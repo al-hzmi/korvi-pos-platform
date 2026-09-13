@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const [migrationScript, postgresWorkflow, runtimeConfig] = await Promise.all([
+  readFile(new URL('./deploy/production-migrate.sh', import.meta.url), 'utf8'),
+  readFile(new URL('../.github/workflows/strike-5c-postgres-live.yml', import.meta.url), 'utf8'),
+  readFile(new URL('../apps/api/src/config.ts', import.meta.url), 'utf8'),
+]);
+
+assert.ok(
+  migrationScript.includes("[ \"${NODE_ENV:-}\" = 'production' ]"),
+  'production migration must refuse non-production NODE_ENV',
+);
+assert.ok(
+  migrationScript.includes("[ \"${KORVI_ENVIRONMENT:-}\" = 'production' ]"),
+  'production migration must require the explicit production deployment marker',
+);
+assert.ok(
+  migrationScript.includes('MIGRATION_DATABASE_URL is required'),
+  'production migration must require a migration-only database credential',
+);
+assert.ok(
+  migrationScript.includes('PRODUCTION_RUNTIME_DB_ROLE is required'),
+  'production migration must bind grants to an explicit runtime role',
+);
+assert.match(
+  migrationScript,
+  /\^\[a-z_\]\[a-z0-9_\]\{0,62\}\$/,
+  'runtime role interpolation must be restricted to canonical PostgreSQL identifiers',
+);
+assert.ok(
+  migrationScript.includes("[ \"$migration_user\" != \"$runtime_role\" ]"),
+  'migration authority and runtime authority must be distinct roles',
+);
+assert.ok(
+  migrationScript.includes("f|f|f|f|f|f|0"),
+  'runtime role must prove no privileged flags or inherited role memberships',
+);
+assert.ok(
+  migrationScript.includes('bash scripts/prove-migration-state.sh'),
+  'production migration must use the source-driven exact migration proof',
+);
+assert.ok(
+  migrationScript.indexOf('bash scripts/prove-migration-state.sh') <
+    migrationScript.indexOf('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES'),
+  'migration/schema proof must finish before runtime privileges are refreshed',
+);
+assert.ok(
+  migrationScript.includes('REVOKE CREATE ON SCHEMA public'),
+  'runtime must not retain schema-creation authority',
+);
+assert.ok(
+  migrationScript.includes('REVOKE TEMPORARY ON DATABASE'),
+  'runtime must not retain temporary-table authority without a demonstrated requirement',
+);
+assert.match(
+  migrationScript,
+  /REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER[\s\S]*_prisma_migrations/,
+  'runtime must be unable to mutate the Prisma migration ledger',
+);
+assert.ok(
+  migrationScript.includes("runtime role must not own public tables"),
+  'production migration must prove runtime is not a table owner',
+);
+assert.ok(
+  migrationScript.includes("t|f|t|f|t|f|f|f"),
+  'production migration must re-prove its runtime privilege boundary after grants',
+);
+
+assert.ok(
+  postgresWorkflow.includes('MIGRATION_DATABASE_URL: postgresql://postgres:'),
+  'PostgreSQL live proof must have a migration authority independent from runtime',
+);
+assert.ok(
+  postgresWorkflow.includes('KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:'),
+  'PostgreSQL live proof must execute application tests with a restricted runtime identity',
+);
+assert.ok(
+  postgresWorkflow.includes('PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime'),
+  'PostgreSQL live proof must bind grants to its runtime identity',
+);
+assert.ok(
+  postgresWorkflow.includes('bash scripts/deploy/production-migrate.sh'),
+  'PostgreSQL live proof must exercise the real production migration authority script',
+);
+assert.ok(
+  postgresWorkflow.includes('Run every live proof as the restricted runtime role'),
+  'all live application proofs must execute after dropping to runtime authority',
+);
+assert.ok(
+  postgresWorkflow.includes('migration_runtime_identity_separation=PASS'),
+  'proof log must record successful authority separation',
+);
+assert.ok(
+  postgresWorkflow.includes('runtime_migration_ledger_write=DENIED'),
+  'proof log must record migration-ledger write denial',
+);
+
+assert.doesNotMatch(
+  runtimeConfig,
+  /MIGRATION_DATABASE_URL|PRODUCTION_RUNTIME_DB_ROLE/,
+  'API runtime configuration must never accept migration-plane credentials or role authority',
+);
+
+console.log(
+  '[ok] production migration contract: isolated migration authority, non-owner runtime, immutable migration ledger',
+);
