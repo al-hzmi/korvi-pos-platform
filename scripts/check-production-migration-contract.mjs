@@ -40,8 +40,12 @@ assert.ok(
   'migration authority and runtime authority must be distinct roles',
 );
 assert.ok(
+  migrationScript.includes('migration role must be a dedicated non-superuser'),
+  'migration authority itself must be restricted rather than using a provider administrator',
+);
+assert.ok(
   migrationScript.includes('f|f|f|f|f|f|0'),
-  'runtime role must prove no privileged flags or inherited role memberships',
+  'migration and runtime roles must prove no privileged flags or inherited memberships',
 );
 assert.ok(
   migrationScript.includes('bash scripts/prove-migration-state.sh'),
@@ -51,6 +55,14 @@ assert.ok(
   migrationScript.indexOf('bash scripts/prove-migration-state.sh') <
     migrationScript.indexOf('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES'),
   'migration/schema proof must finish before runtime privileges are refreshed',
+);
+assert.ok(
+  migrationScript.includes('REVOKE TEMPORARY ON DATABASE :"database_name" FROM PUBLIC'),
+  'PUBLIC must not silently restore temporary-table authority to runtime',
+);
+assert.ok(
+  migrationScript.includes('REVOKE CREATE ON SCHEMA public FROM PUBLIC'),
+  'PUBLIC must not silently restore schema-creation authority to runtime',
 );
 assert.ok(
   migrationScript.includes('REVOKE CREATE ON SCHEMA public'),
@@ -75,12 +87,20 @@ assert.ok(
 );
 
 assert.ok(
-  postgresWorkflow.includes('MIGRATION_DATABASE_URL: postgresql://postgres:'),
-  'PostgreSQL live proof must have a migration authority independent from runtime',
+  postgresWorkflow.includes('MIGRATION_DATABASE_URL: postgresql://korvi_migrator:'),
+  'PostgreSQL live proof must use a dedicated restricted migration identity',
 );
 assert.ok(
   postgresWorkflow.includes('KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:'),
   'PostgreSQL live proof must execute application tests with a restricted runtime identity',
+);
+assert.ok(
+  postgresWorkflow.includes('CREATE ROLE korvi_migrator'),
+  'PostgreSQL live proof must create a restricted migration identity',
+);
+assert.ok(
+  postgresWorkflow.includes('ALTER DATABASE korvi_5c OWNER TO korvi_migrator'),
+  'PostgreSQL live proof must bind database ownership to the migration identity',
 );
 assert.ok(
   postgresWorkflow.includes('PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime'),
@@ -99,6 +119,10 @@ assert.ok(
   'proof log must record successful authority separation',
 );
 assert.ok(
+  postgresWorkflow.includes('restricted_migration_authority=PASS'),
+  'proof log must record that migration authority is itself restricted',
+);
+assert.ok(
   postgresWorkflow.includes('runtime_migration_ledger_write=DENIED'),
   'proof log must record migration-ledger write denial',
 );
@@ -110,5 +134,5 @@ assert.doesNotMatch(
 );
 
 console.log(
-  '[ok] production migration contract: isolated migration authority, non-owner runtime, immutable migration ledger',
+  '[ok] production migration contract: restricted migrator, isolated authority, non-owner runtime, immutable migration ledger',
 );
