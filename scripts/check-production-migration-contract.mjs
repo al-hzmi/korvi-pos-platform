@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const migrationScriptUrl = new URL('./deploy/production-migrate.sh', import.meta.url);
+const migrationScriptUrl = new URL(
+  './deploy/production-migrate.sh',
+  import.meta.url,
+);
 const postgresWorkflowUrl = new URL(
   '../.github/workflows/strike-5c-postgres-live.yml',
   import.meta.url,
@@ -57,7 +60,9 @@ assert.ok(
   'migration/schema proof must finish before runtime privileges are refreshed',
 );
 assert.ok(
-  migrationScript.includes('REVOKE TEMPORARY ON DATABASE :"database_name" FROM PUBLIC'),
+  migrationScript.includes(
+    'REVOKE TEMPORARY ON DATABASE :"database_name" FROM PUBLIC',
+  ),
   'PUBLIC must not silently restore temporary-table authority to runtime',
 );
 assert.ok(
@@ -87,11 +92,15 @@ assert.ok(
 );
 
 assert.ok(
-  postgresWorkflow.includes('MIGRATION_DATABASE_URL: postgresql://korvi_migrator:'),
+  postgresWorkflow.includes(
+    'MIGRATION_DATABASE_URL: postgresql://korvi_migrator:',
+  ),
   'PostgreSQL live proof must use a dedicated restricted migration identity',
 );
 assert.ok(
-  postgresWorkflow.includes('KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:'),
+  postgresWorkflow.includes(
+    'KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:',
+  ),
   'PostgreSQL live proof must execute application tests with a restricted runtime identity',
 );
 assert.ok(
