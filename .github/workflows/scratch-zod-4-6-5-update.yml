@@ -1,0 +1,65 @@
+name: Scratch Zod 4.6.5 Atomic Update
+
+on:
+  push:
+    branches:
+      - scratch/zod-4-6-5-metadata
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact strike candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/5c-costing-authority
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Guard exact parent and generate lockfile update
+        env:
+          EXPECTED_PARENT: f771ef89179e0d26c9f443a52d902bc90399432c
+          EXPECTED_ZOD_INTEGRITY: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_PARENT"
+
+          npm install --package-lock-only --workspace apps/api zod@4.6.5 --save-exact --registry=https://registry.npmjs.org
+
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = "apps/api/package.json"
+          test "${changed[1]}" = "package-lock.json"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const api = JSON.parse(fs.readFileSync('apps/api/package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const expectedIntegrity = process.env.EXPECTED_ZOD_INTEGRITY;
+          if (api.dependencies?.zod !== '4.6.5') throw new Error('api zod pin mismatch');
+          if (lock.packages?.['apps/api']?.dependencies?.zod !== '4.6.5') throw new Error('workspace lock pin mismatch');
+          const zod = lock.packages?.['node_modules/zod'];
+          if (zod?.version !== '4.6.5') throw new Error('lock zod version mismatch');
+          if (zod?.resolved !== 'https://registry.npmjs.org/zod/-/zod-4.6.5.tgz') throw new Error('lock zod tarball mismatch');
+          if (zod?.integrity !== expectedIntegrity) throw new Error('lock zod integrity mismatch');
+          NODE
+
+          git diff --check
+
+      - name: Commit and fast-forward strike branch
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-release-bot'
+          git config user.email 'korvi-release-bot@users.noreply.github.com'
+          git add apps/api/package.json package-lock.json
+          git commit -m 'chore(deps): bump zod to 4.6.5'
+          git push origin HEAD:refs/heads/strike/5c-costing-authority
