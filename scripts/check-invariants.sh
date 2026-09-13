@@ -65,6 +65,13 @@ if ! node scripts/check-zatca-39-hsm-proof-contract.mjs; then
   report "Gate 39 Azure HSM proof contract drift"
 fi
 
+# Gate 50 must not degrade into a narrative checklist. Keep the production
+# evidence verifier fail-closed for exact-SHA, HA/backup, RPO/RTO, monitoring,
+# secret rotation and merchant field-validation evidence.
+if ! node scripts/check-production-operations-gate50-contract.mjs; then
+  report "Gate 50 production-operations evidence contract drift"
+fi
+
 # One-shot dependency refresh workflows are privileged, write-enabled release
 # tools. They must never survive the exact refresh they were created for.
 if compgen -G '.github/workflows/refresh-*-lock.yml' >/dev/null; then
