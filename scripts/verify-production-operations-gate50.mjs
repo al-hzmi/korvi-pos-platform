@@ -11,6 +11,30 @@ const FORBIDDEN_SECRET_VALUE_RE =
   /(postgres(?:ql)?:\/\/[^\s:@]+:[^\s@]+@|-----BEGIN [A-Z ]*PRIVATE KEY-----|\bsk_live_[A-Za-z0-9]+\b|\bAKIA[0-9A-Z]{16}\b)/i;
 const PLACEHOLDER_RE = /^(?:tbd|todo|pending|unknown|n\/a|na|null|none|placeholder)$/i;
 
+const REQUIRED_RELEASE_GREEN_CHECKS = [
+  'ci',
+  'postgres-live',
+  'browser-sale',
+  'browser-stage5d',
+  'dr',
+  'incident',
+];
+const REQUIRED_ALERT_CLASSES = ['availability', 'readiness', '5xx', 'latency'];
+const REQUIRED_ROTATED_SECRET_CLASSES = [
+  'database-runtime',
+  'session',
+  'metrics-auth',
+  'bootstrap',
+];
+const REQUIRED_FIELD_WORKFLOWS = [
+  'sale',
+  'return',
+  'shift',
+  'inventory',
+  'purchase-receipt',
+  'offline-sync',
+];
+
 function fail(message) {
   throw new Error(message);
 }
@@ -59,6 +83,17 @@ function stringArray(value, label, { min = 1 } = {}) {
   return value.map((entry, index) => string(entry, `${label}[${index}]`));
 }
 
+function requiredStringSet(value, label, required) {
+  const values = stringArray(value, label, { min: required.length });
+  const normalized = values.map((entry) => entry.toLowerCase());
+  const unique = new Set(normalized);
+  if (unique.size !== normalized.length) fail(`${label} may not contain duplicate items`);
+  for (const requiredItem of required) {
+    if (!unique.has(requiredItem)) fail(`${label} missing required item: ${requiredItem}`);
+  }
+  return values;
+}
+
 function scanForSecrets(value, trail = '$') {
   if (Array.isArray(value)) {
     value.forEach((entry, index) => scanForSecrets(entry, `${trail}[${index}]`));
@@ -94,7 +129,11 @@ export function validateGate50Evidence(payload, { expectedSha } = {}) {
   if (expectedSha && releaseSha !== sha(expectedSha, 'expectedSha'))
     fail(`release.sha ${releaseSha} does not match expected SHA ${expectedSha}`);
   iso(release.verifiedAtUtc, 'release.verifiedAtUtc');
-  stringArray(release.requiredGreenChecks, 'release.requiredGreenChecks', { min: 5 });
+  requiredStringSet(
+    release.requiredGreenChecks,
+    'release.requiredGreenChecks',
+    REQUIRED_RELEASE_GREEN_CHECKS,
+  );
 
   const database = object(root.database, 'database');
   const provider = string(database.provider, 'database.provider');
@@ -137,7 +176,7 @@ export function validateGate50Evidence(payload, { expectedSha } = {}) {
 
   const monitoring = object(root.monitoring, 'monitoring');
   string(monitoring.provider, 'monitoring.provider');
-  stringArray(monitoring.alertClasses, 'monitoring.alertClasses', { min: 4 });
+  requiredStringSet(monitoring.alertClasses, 'monitoring.alertClasses', REQUIRED_ALERT_CLASSES);
   string(monitoring.routingRef, 'monitoring.routingRef');
   string(monitoring.onCallRole, 'monitoring.onCallRole');
   string(monitoring.escalationRef, 'monitoring.escalationRef');
@@ -153,7 +192,11 @@ export function validateGate50Evidence(payload, { expectedSha } = {}) {
     true,
   );
   boolean(secretManagement.leastPrivilege, 'secretManagement.leastPrivilege', true);
-  stringArray(secretManagement.rotatedClasses, 'secretManagement.rotatedClasses', { min: 4 });
+  requiredStringSet(
+    secretManagement.rotatedClasses,
+    'secretManagement.rotatedClasses',
+    REQUIRED_ROTATED_SECRET_CLASSES,
+  );
   iso(secretManagement.rotationTestAtUtc, 'secretManagement.rotationTestAtUtc');
   string(secretManagement.rotationEvidenceRef, 'secretManagement.rotationEvidenceRef');
 
@@ -162,7 +205,11 @@ export function validateGate50Evidence(payload, { expectedSha } = {}) {
   sha(field.releaseSha, 'merchantFieldValidation.releaseSha');
   if (field.releaseSha.toLowerCase() !== releaseSha)
     fail('merchantFieldValidation.releaseSha must equal release.sha');
-  stringArray(field.workflowsVerified, 'merchantFieldValidation.workflowsVerified', { min: 6 });
+  requiredStringSet(
+    field.workflowsVerified,
+    'merchantFieldValidation.workflowsVerified',
+    REQUIRED_FIELD_WORKFLOWS,
+  );
   string(field.rollbackCriteriaRef, 'merchantFieldValidation.rollbackCriteriaRef');
   iso(field.completedAtUtc, 'merchantFieldValidation.completedAtUtc');
   if (string(field.result, 'merchantFieldValidation.result').toUpperCase() !== 'PASS')
