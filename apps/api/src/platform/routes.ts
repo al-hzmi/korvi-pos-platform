@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import {
+  OwnerBootstrapRefusedError,
   PlanEntitlementRefusedError,
   TenantLifecycleRefusedError,
   TenantProvisioningError,
 } from '@korvi/database';
 import { CommercialEntitlementError, MAX_ENTITLEMENT_LIMIT } from '@korvi/domain';
 import { createLoginAdmissionController } from '../auth/login-admission.js';
+import { PlatformOwnerBootstrapUnavailableError } from './service.js';
 import type { PlatformAuth, PlatformPrincipal } from './auth.js';
 import type { PlatformService } from './service.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -14,6 +16,13 @@ const accessBody = z.object({ accessKey: z.string().min(1).max(512) }).strict();
 const tenantParams = z.object({ tenantId: z.string().uuid() }).strict();
 const operationBody = z.object({ operationId: z.string().trim().min(1).max(160) }).strict();
 const suspensionBody = operationBody.extend({ reason: z.string().trim().min(1).max(500) }).strict();
+const ownerBootstrapBody = z
+  .object({
+    operationId: z.string().trim().min(1).max(160),
+    email: z.string().trim().email().max(254),
+    displayName: z.string().trim().min(1).max(160),
+  })
+  .strict();
 const tenantListQuery = z
   .object({
     search: z.string().max(120).optional(),
@@ -132,6 +141,18 @@ function handlePlatformError(reply: FastifyReply, error: unknown): FastifyReply 
   if (error instanceof PlanEntitlementRefusedError) {
     const status = error.detail === 'unknown-tenant' ? 404 : 409;
     return reply.code(status).send({ error: error.detail.replace(/-/g, '_') });
+  }
+  if (error instanceof OwnerBootstrapRefusedError) {
+    const status =
+      error.detail === 'unknown-tenant'
+        ? 404
+        : error.detail === 'invalid-invitee'
+          ? 422
+          : 409;
+    return reply.code(status).send({ error: error.detail.replace(/-/g, '_') });
+  }
+  if (error instanceof PlatformOwnerBootstrapUnavailableError) {
+    return reply.code(503).send({ error: 'owner_bootstrap_unavailable' });
   }
   if (error instanceof CommercialEntitlementError || error instanceof RangeError) {
     return reply.code(422).send({ error: 'invalid_platform_request' });
@@ -308,6 +329,35 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
           entitlements,
         });
         return reply.code(200).send(wireCommercial(result));
+      } catch (error) {
+        const handled = handlePlatformError(reply, error);
+        if (handled !== null) return handled;
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/v1/platform/tenants/:tenantId/owner-bootstrap',
+    { preHandler: canManageTenants },
+    async (request, reply) => {
+      const params = tenantParams.safeParse(request.params);
+      const body = ownerBootstrapBody.safeParse(request.body);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      try {
+        const result = await service.issueOwnerBootstrap(
+          subject(request),
+          params.data.tenantId,
+          body.data,
+        );
+        // The capability is deliberately response-only: no persistence, no log,
+        // and no cache. The Platform UI moves it into a URL fragment so it never
+        // appears in an HTTP request or referrer (ADR-0021).
+        reply.header('cache-control', 'no-store');
+        reply.header('pragma', 'no-cache');
+        return reply.code(result.created ? 201 : 200).send(result);
       } catch (error) {
         const handled = handlePlatformError(reply, error);
         if (handled !== null) return handled;
