@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_CUSTOMER_PAGE, CustomerAdminRefusedError } from '@korvi/database/customers';
+import { CustomerAdminRefusedError, MAX_CUSTOMER_PAGE } from '@korvi/database';
 import { UUID } from './validation.js';
 import type { MerchantCustomerService } from '../customers/service.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
