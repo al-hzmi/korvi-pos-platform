@@ -210,19 +210,21 @@ export async function readMerchantPeriodReport(
            GROUP BY sl."vatBasisPoints"
            ORDER BY sl."vatBasisPoints" ASC`,
         tx.$queryRaw<TaxRow[]>`
-          SELECT COALESCE(rl."vatBasisPoints", 0) AS "vatBasisPoints",
+          SELECT COALESCE(rl."vatBasisPoints", sl."vatBasisPoints") AS "vatBasisPoints",
                  COALESCE(SUM(rl."netMinor"), 0)::bigint AS "netMinor",
                  COALESCE(SUM(rl."vatMinor"), 0)::bigint AS "vatMinor"
             FROM "return_lines" rl
             JOIN "returns" r
               ON r."tenantId" = rl."tenantId" AND r."id" = rl."returnId"
+            JOIN "sale_lines" sl
+              ON sl."tenantId" = rl."tenantId" AND sl."id" = rl."saleLineId"
            WHERE rl."tenantId" = ${tenant}::uuid
              AND r."status" = 'finalized'
              AND r."issuedAt" >= ${from}
              AND r."issuedAt" < ${to}
              AND (${branchId}::uuid IS NULL OR r."branchId" = ${branchId}::uuid)
-           GROUP BY COALESCE(rl."vatBasisPoints", 0)
-           ORDER BY COALESCE(rl."vatBasisPoints", 0) ASC`,
+           GROUP BY COALESCE(rl."vatBasisPoints", sl."vatBasisPoints")
+           ORDER BY COALESCE(rl."vatBasisPoints", sl."vatBasisPoints") ASC`,
         tx.$queryRaw<BranchAggregateRow[]>`
           SELECT s."branchId" AS "branchId",
                  COUNT(*)::bigint AS "documentCount",
