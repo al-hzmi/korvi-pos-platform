@@ -12,11 +12,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function recordedCall(input: string, init: RequestInit | undefined) {
+  return init === undefined ? { input } : { input, init };
+}
+
 describe('platform support-note web API', () => {
   it('reads the tenant-scoped support ledger with same-origin credentials', async () => {
     const calls: { readonly input: string; readonly init?: RequestInit }[] = [];
     const api = createPlatformApi(async (input, init) => {
-      calls.push({ input, init });
+      calls.push(recordedCall(input, init));
       return jsonResponse({
         items: [
           {
@@ -44,7 +48,7 @@ describe('platform support-note web API', () => {
   it('posts an idempotent support command without client-supplied actor authority', async () => {
     const calls: { readonly input: string; readonly init?: RequestInit }[] = [];
     const api = createPlatformApi(async (input, init) => {
-      calls.push({ input, init });
+      calls.push(recordedCall(input, init));
       return jsonResponse(
         {
           note: {
