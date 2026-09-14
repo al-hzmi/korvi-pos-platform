@@ -23,7 +23,7 @@ export interface ControlEntry {
 
 export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'home', label: 'الرئيسية', section: 'home', permission: 'report.read' },
-  { key: 'sales', label: 'المبيعات', section: null },
+  { key: 'sales', label: 'المبيعات', section: 'sales', permission: 'report.read' },
   { key: 'products', label: 'المنتجات', section: 'products', permission: 'product.read' },
   { key: 'inventory', label: 'المخزون', section: 'inventory', permission: 'inventory.read' },
   {
