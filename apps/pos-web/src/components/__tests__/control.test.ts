@@ -127,7 +127,7 @@ describe('control navigation', () => {
     ]);
   });
 
-  it('marks unbuilt modules unavailable rather than opening an empty page', () => {
+  it('has no placeholder navigation entries after the ZATCA surface is implemented', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, {
         active: 'home',
@@ -139,19 +139,17 @@ describe('control navigation', () => {
           'customer.read',
           'settings.manage',
           'users.manage',
+          'zatca.manage',
         ],
         onSelect: () => undefined,
       }),
     );
     const unbuilt = CONTROL_ENTRIES.filter((entry) => entry.section === null);
 
-    expect(unbuilt.length).toBeGreaterThan(0);
-    expect(markup.match(/disabled/g) ?? []).toHaveLength(unbuilt.length);
-    expect(markup.match(/غير مكتمل/g) ?? []).toHaveLength(unbuilt.length);
+    expect(unbuilt).toEqual([]);
+    expect(markup).not.toContain('غير مكتمل');
     expect(markup).not.toContain('قريباً');
-    for (const entry of unbuilt) {
-      expect(markup).toContain(entry.label);
-    }
+    expect(markup).toContain('/control/zatca');
   });
 
   it('marks built administration sections unauthorized without their permissions', () => {
