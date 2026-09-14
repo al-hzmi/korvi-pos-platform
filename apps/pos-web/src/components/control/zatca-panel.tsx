@@ -70,19 +70,11 @@ function shortId(value: string): string {
   return value.length <= 12 ? value : `${value.slice(0, 8)}…${value.slice(-4)}`;
 }
 
-function Metric({
-  label,
-  value,
-}: {
-  readonly label: string;
-  readonly value: string;
-}): JSX.Element {
+function Metric({ label, value }: { readonly label: string; readonly value: string }): JSX.Element {
   return (
     <div className="rounded-md border border-border bg-background p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums text-foreground" dir="ltr">
-        {value}
-      </p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-foreground" dir="ltr">{value}</p>
     </div>
   );
 }
@@ -203,9 +195,7 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                   return (
                     <tr key={terminal.terminalId}>
                       <td className="px-4 py-3">
-                        <span className="font-medium text-foreground">
-                          {terminal.label}
-                        </span>
+                        <span className="font-medium text-foreground">{terminal.label}</span>
                         <span className="ms-2 text-xs text-muted-foreground" dir="ltr">
                           {terminal.code}
                         </span>
@@ -245,9 +235,7 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                       <td className="px-4 py-3" dir="ltr">
                         {dateTime(terminal.complianceAcceptedAt)}
                       </td>
-                      <td className="px-4 py-3" dir="ltr">
-                        {dateTime(terminal.lastSeenAt)}
-                      </td>
+                      <td className="px-4 py-3" dir="ltr">{dateTime(terminal.lastSeenAt)}</td>
                     </tr>
                   );
                 })}
@@ -315,12 +303,8 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3" dir="ltr">
-                      {submission.authorityStatus ?? '—'}
-                    </td>
-                    <td className="px-4 py-3" dir="ltr">
-                      {submission.httpStatus ?? '—'}
-                    </td>
+                    <td className="px-4 py-3" dir="ltr">{submission.authorityStatus ?? '—'}</td>
+                    <td className="px-4 py-3" dir="ltr">{submission.httpStatus ?? '—'}</td>
                     <td className="px-4 py-3" dir="ltr">
                       {dateTime(
                         submission.resolvedAt ?? submission.requestStartedAt ?? submission.queuedAt,
