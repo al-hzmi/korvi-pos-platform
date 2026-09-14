@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      KORVI_BROWSER_BASE_URL: http://127.0.0.1:3000
+      KORVI_BROWSER_BASE_URL: http://localhost:3000
       KORVI_API_ORIGIN: http://127.0.0.1:65534
       KORVI_CHROME_DEBUG_PORT: '9222'
       KORVI_BROWSER_ARTIFACT_DIR: artifacts/gate41-offline-shell
