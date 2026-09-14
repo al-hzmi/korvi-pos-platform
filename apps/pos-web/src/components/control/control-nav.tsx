@@ -32,7 +32,7 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
     section: 'purchasing',
     permission: 'purchasing.read',
   },
-  { key: 'customers', label: 'العملاء', section: null },
+  { key: 'customers', label: 'العملاء', section: 'customers', permission: 'customer.read' },
   {
     key: 'branches',
     label: 'الفروع والصناديق',
