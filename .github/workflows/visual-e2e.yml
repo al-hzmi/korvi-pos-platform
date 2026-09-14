@@ -64,6 +64,7 @@ jobs:
           const TERMINAL_ID = '018fb000-0000-7000-8000-0000000000a2';
           const USER_ID = '018fb000-0000-7000-8000-0000000000a4';
           const SALE_ID = '018fb000-0000-7000-8000-0000000000a7';
+          const CUSTOMER_ID = '018fb000-0000-7000-8000-0000000000e1';
           const now = '2026-09-14T10:00:00.000Z';
 
           const tenant = {
@@ -88,7 +89,7 @@ jobs:
             email: 'owner@riyadah.test',
             displayName: 'محمد المدير',
             roles: ['owner'],
-            permissions: ['report.read'],
+            permissions: ['report.read', 'customer.read', 'customer.write'],
             maxDiscountBasisPoints: 10000n,
             branchId: BRANCH_ID,
           };
@@ -224,10 +225,7 @@ jobs:
                     branch: { id: BRANCH_ID, code: 'JED', nameAr: 'فرع جدة' },
                     terminal: { id: TERMINAL_ID, code: 'POS-01', label: 'الصندوق 1' },
                     cashier: { id: USER_ID, displayName: 'محمد المدير' },
-                    customer: {
-                      id: '018fb000-0000-7000-8000-0000000000e1',
-                      nameAr: 'شركة النخبة',
-                    },
+                    customer: { id: CUSTOMER_ID, nameAr: 'شركة النخبة' },
                     currency: 'SAR',
                     netMinor: '10000',
                     vatMinor: '1500',
@@ -257,7 +255,7 @@ jobs:
                   email: 'owner@riyadah.test',
                 },
                 customer: {
-                  id: '018fb000-0000-7000-8000-0000000000e1',
+                  id: CUSTOMER_ID,
                   nameAr: 'شركة النخبة',
                   phone: '0500000000',
                   vatNumber: '310111111100003',
@@ -322,6 +320,47 @@ jobs:
             },
           };
 
+          const customer = {
+            id: CUSTOMER_ID,
+            nameAr: 'شركة النخبة',
+            nameEn: 'Elite Co',
+            phone: '0500000000',
+            email: 'buyer@elite.test',
+            vatNumber: '310111111100003',
+            isActive: true,
+            createdAt: '2026-09-01T08:00:00.000Z',
+            updatedAt: now,
+          };
+
+          const customers = {
+            async list() {
+              return { items: [customer], nextCursor: null };
+            },
+            async detail(_subject, customerId) {
+              if (customerId !== CUSTOMER_ID) return null;
+              return {
+                ...customer,
+                salesCount: 1,
+                recentSales: [
+                  {
+                    id: SALE_ID,
+                    invoiceNumber: 'INV-2026-1001',
+                    status: 'finalized',
+                    issuedAt: now,
+                    currency: 'SAR',
+                    totalMinor: '11500',
+                  },
+                ],
+              };
+            },
+            async create() {
+              return { outcome: 'success', value: { customer, replayed: false } };
+            },
+            async update() {
+              return { outcome: 'success', value: { customer, replayed: false } };
+            },
+          };
+
           const config = loadConfig({
             NODE_ENV: 'test',
             LOG_LEVEL: 'fatal',
@@ -331,7 +370,7 @@ jobs:
             PLATFORM_ADMIN_ACTOR_REF: 'e2e-platform-operator',
           });
 
-          const app = buildServer(config, { auth, platform, salesRead });
+          const app = buildServer(config, { auth, platform, salesRead, customers });
           await app.listen({ host: '127.0.0.1', port: 3001 });
 
           const shutdown = async () => {
@@ -364,7 +403,6 @@ jobs:
       - name: Capture authenticated product surfaces
         run: |
           cat > .e2e/capture.py <<'PY'
-          import os
           import shutil
           from selenium import webdriver
           from selenium.webdriver.chrome.service import Service
@@ -407,7 +445,9 @@ jobs:
               wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'INV-2026-1001'))
               driver.save_screenshot('artifacts/browser/sales-desktop.png')
 
-              invoice = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'INV-2026-1001')]")))
+              invoice = wait.until(
+                  EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'INV-2026-1001')]") )
+              )
               invoice.click()
               wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'منتج تجريبي فاخر'))
               driver.save_screenshot('artifacts/browser/sales-detail-desktop.png')
@@ -416,6 +456,17 @@ jobs:
               driver.get(f'{base}/control/sales')
               wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'INV-2026-1001'))
               driver.save_screenshot('artifacts/browser/sales-mobile.png')
+
+              driver.set_window_size(1440, 1100)
+              driver.get(f'{base}/control/customers')
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'شركة النخبة'))
+              customer_row = wait.until(
+                  EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'شركة النخبة')]") )
+              )
+              customer_row.click()
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'INV-2026-1001'))
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), '1 عملية بيع'))
+              driver.save_screenshot('artifacts/browser/customers-desktop.png')
           finally:
               driver.quit()
           PY
@@ -425,7 +476,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: korvi-platform-sales-browser-proof-${{ github.sha }}
+          name: korvi-platform-sales-customers-browser-proof-${{ github.sha }}
           path: artifacts/browser
           if-no-files-found: error
           retention-days: 14
