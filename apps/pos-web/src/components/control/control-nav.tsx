@@ -82,7 +82,10 @@ export function ControlNav({
   locked = false,
 }: ControlNavProps): JSX.Element {
   return (
-    <nav aria-label="أقسام لوحة التحكم" className="flex flex-col gap-1">
+    <nav
+      aria-label="أقسام لوحة التحكم"
+      className="flex gap-1 overflow-x-auto overscroll-x-contain lg:flex-col lg:overflow-visible"
+    >
       {CONTROL_ENTRIES.map((entry) => {
         const built = entry.section !== null;
         const authorized =
@@ -96,9 +99,10 @@ export function ControlNav({
               ? 'عملية معلقة'
               : null;
         const className = cn(
-          'flex h-touch items-center justify-between rounded-md px-3 text-sm transition-colors',
+          'h-touch shrink-0 items-center justify-between gap-2 rounded-md px-3 text-sm transition-colors lg:w-full',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          authorized ? 'flex' : 'hidden lg:flex',
           authorized && !navigationLocked
             ? 'text-foreground hover:bg-accent'
             : 'cursor-not-allowed text-muted-foreground',
@@ -110,7 +114,7 @@ export function ControlNav({
           <>
             <span>{entry.label}</span>
             {badge === null ? null : (
-              <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <span className="hidden rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground lg:inline-flex">
                 {badge}
               </span>
             )}
