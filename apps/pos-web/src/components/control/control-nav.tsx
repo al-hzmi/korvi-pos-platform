@@ -139,7 +139,6 @@ export function ControlNav({
             key={entry.key}
             aria-current={authorized && entry.section === active ? 'page' : undefined}
             aria-disabled="true"
-            data-legacy-unavailable={built ? undefined : 'قريباً'}
             className={className}
           >
             {content}
