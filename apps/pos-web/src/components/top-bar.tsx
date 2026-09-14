@@ -64,7 +64,9 @@ export function TopBar({
         >
           <span
             aria-hidden="true"
-            className={online ? 'h-2 w-2 rounded-full bg-success' : 'h-2 w-2 rounded-full bg-warning'}
+            className={
+              online ? 'h-2 w-2 rounded-full bg-success' : 'h-2 w-2 rounded-full bg-warning'
+            }
           />
           {online ? 'وردية مفتوحة' : 'تشغيل محلي'}
         </span>
