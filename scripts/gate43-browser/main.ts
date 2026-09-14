@@ -67,7 +67,7 @@ const LEGACY_DRAFT: OfflineSaleDraft = {
     },
   ],
   cash: '20.00',
-  priceMode: 'inclusive',
+  priceMode: 'tax-inclusive',
   updatedAt: '2026-09-12T00:00:00.000Z',
 };
 
