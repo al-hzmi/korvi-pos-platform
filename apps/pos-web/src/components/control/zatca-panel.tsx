@@ -70,7 +70,13 @@ function shortId(value: string): string {
   return value.length <= 12 ? value : `${value.slice(0, 8)}…${value.slice(-4)}`;
 }
 
-function Metric({ label, value }: { readonly label: string; readonly value: string }): JSX.Element {
+function Metric({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}): JSX.Element {
   return (
     <div className="rounded-md border border-border bg-background p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -139,9 +145,12 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
       <CardSurface className="p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="font-semibold text-foreground">حالة التكامل مع هيئة الزكاة والضريبة والجمارك</h2>
+            <h2 className="font-semibold text-foreground">
+              حالة التكامل مع هيئة الزكاة والضريبة والجمارك
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              الحالة أدناه مشتقة من محاولات الربط وأدلة الامتثال ونتائج إرسال الفواتير المحفوظة في النظام.
+              الحالة أدناه مشتقة من محاولات الربط وأدلة الامتثال ونتائج إرسال الفواتير المحفوظة في
+              النظام.
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={() => void load()}>
@@ -153,7 +162,10 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
         </p>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <Metric label="أجهزة نقاط البيع" value={status.summary.terminalCount} />
-          <Metric label="أجهزة اجتازت الامتثال" value={status.summary.complianceReadyTerminalCount} />
+          <Metric
+            label="أجهزة اجتازت الامتثال"
+            value={status.summary.complianceReadyTerminalCount}
+          />
           <Metric label="إرسالات مقبولة" value={status.summary.acceptedSubmissionCount} />
           <Metric label="إرسالات غير محسومة" value={status.summary.unresolvedSubmissionCount} />
           <Metric label="إرسالات مرفوضة" value={status.summary.rejectedSubmissionCount} />
@@ -164,11 +176,14 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
         <div className="border-b border-border p-4">
           <h2 className="font-semibold text-foreground">حالة الأجهزة والربط</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            قبول الامتثال دليل محفوظ لعملية الامتثال، ولا يُقدَّم هنا على أنه فحص آني لصلاحية الشهادة.
+            قبول الامتثال دليل محفوظ لعملية الامتثال، ولا يُقدَّم هنا على أنه فحص آني لصلاحية
+            الشهادة.
           </p>
         </div>
         {status.terminals.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">لا توجد أجهزة مسجلة للمنشأة.</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            لا توجد أجهزة مسجلة للمنشأة.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-sm">
@@ -188,7 +203,9 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                   return (
                     <tr key={terminal.terminalId}>
                       <td className="px-4 py-3">
-                        <span className="font-medium text-foreground">{terminal.label}</span>
+                        <span className="font-medium text-foreground">
+                          {terminal.label}
+                        </span>
                         <span className="ms-2 text-xs text-muted-foreground" dir="ltr">
                           {terminal.code}
                         </span>
@@ -199,8 +216,11 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                         ) : null}
                       </td>
                       <td className="px-4 py-3">
-                        {provisioning === null ? 'لم يبدأ الربط' : PROVISIONING_LABEL[provisioning.state]}
-                        {provisioning?.rejectionCode === null || provisioning?.rejectionCode === undefined ? null : (
+                        {provisioning === null
+                          ? 'لم يبدأ الربط'
+                          : PROVISIONING_LABEL[provisioning.state]}
+                        {provisioning?.rejectionCode === null ||
+                        provisioning?.rejectionCode === undefined ? null : (
                           <div className="mt-1 text-xs text-destructive" dir="ltr">
                             {provisioning.rejectionCode}
                           </div>
@@ -213,10 +233,14 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {provisioning === null ? '—' : ENVIRONMENT_LABEL[provisioning.environment]}
+                        {provisioning === null
+                          ? '—'
+                          : ENVIRONMENT_LABEL[provisioning.environment]}
                       </td>
                       <td className="px-4 py-3" dir="ltr">
-                        {provisioning === null ? '—' : dateTime(provisioning.resolvedAt ?? provisioning.preparedAt)}
+                        {provisioning === null
+                          ? '—'
+                          : dateTime(provisioning.resolvedAt ?? provisioning.preparedAt)}
                       </td>
                       <td className="px-4 py-3" dir="ltr">
                         {dateTime(terminal.complianceAcceptedAt)}
@@ -244,11 +268,14 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
         <div className="border-b border-border p-4">
           <h2 className="font-semibold text-foreground">أحدث إرسالات الفواتير</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            تعرض آخر 25 عملية كما حُفظت في آلة الحالات الدائمة؛ الحالة غير المؤكدة لا تُحوَّل إلى نجاح أو فشل بالتخمين.
+            تعرض آخر 25 عملية كما حُفظت في آلة الحالات الدائمة؛ الحالة غير المؤكدة لا تُحوَّل إلى
+            نجاح أو فشل بالتخمين.
           </p>
         </div>
         {status.recentSubmissions.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">لا توجد إرسالات ZATCA محفوظة بعد.</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            لا توجد إرسالات ZATCA محفوظة بعد.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-sm">
@@ -266,7 +293,11 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
               <tbody className="divide-y divide-border">
                 {status.recentSubmissions.map((submission) => (
                   <tr key={submission.submissionId}>
-                    <td className="px-4 py-3 font-mono text-xs" dir="ltr" title={submission.invoiceId}>
+                    <td
+                      className="px-4 py-3 font-mono text-xs"
+                      dir="ltr"
+                      title={submission.invoiceId}
+                    >
                       {shortId(submission.invoiceId)}
                     </td>
                     <td className="px-4 py-3">{MODE_LABEL[submission.mode]}</td>
@@ -291,7 +322,9 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                       {submission.httpStatus ?? '—'}
                     </td>
                     <td className="px-4 py-3" dir="ltr">
-                      {dateTime(submission.resolvedAt ?? submission.requestStartedAt ?? submission.queuedAt)}
+                      {dateTime(
+                        submission.resolvedAt ?? submission.requestStartedAt ?? submission.queuedAt,
+                      )}
                     </td>
                   </tr>
                 ))}
