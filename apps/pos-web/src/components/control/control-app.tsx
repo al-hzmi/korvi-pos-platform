@@ -128,13 +128,15 @@ function Workspace({
 }: {
   readonly api: ApiClient;
   readonly principal: Principal;
-  readonly requestedSection: ControlSection;
+  readonly requestedSection?: ControlSection;
   readonly onSignOut: () => void;
 }): JSX.Element {
   const firstAllowedSection = firstAuthorizedSection(principal.permissions);
-  const activeSection = canAccessControlSection(requestedSection, principal.permissions)
-    ? requestedSection
-    : null;
+  const resolvedSection = requestedSection ?? firstAllowedSection;
+  const activeSection =
+    resolvedSection !== null && canAccessControlSection(resolvedSection, principal.permissions)
+      ? resolvedSection
+      : null;
   const [commandLocked, setCommandLocked] = useState(false);
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
 
@@ -184,7 +186,9 @@ function Workspace({
         <main className="mx-auto w-full max-w-lg p-6">
           <CardSurface className="flex flex-col gap-4 p-6">
             <StatusNote tone="warning" live>
-              لا تملك صلاحية فتح هذا القسم من لوحة التحكم. الخادم لم يمنح جلستك السلطة المطلوبة.
+              {requestedSection === undefined
+                ? 'لا تملك صلاحية الاطلاع على لوحة التحكم. راجع مدير المنشأة.'
+                : 'لا تملك صلاحية فتح هذا القسم من لوحة التحكم. الخادم لم يمنح جلستك السلطة المطلوبة.'}
             </StatusNote>
             <div className="flex flex-wrap justify-end gap-2">
               {firstAllowedSection === null ? (
@@ -266,7 +270,7 @@ export interface ControlSurfaceProps {
 export function ControlSurface({
   view,
   api,
-  section = 'home',
+  section,
   onAuthenticated,
   onRetrySession,
   onSignOut,
