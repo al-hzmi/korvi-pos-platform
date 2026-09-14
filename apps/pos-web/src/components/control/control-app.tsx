@@ -263,7 +263,8 @@ function Workspace({
                 </p>
               ) : activeSection === 'zatca' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  متابعة حالة الربط والامتثال وإرسال الفواتير من الأدلة الدائمة دون كشف مواد الاعتماد السرية.
+                  متابعة حالة الربط والامتثال وإرسال الفواتير من الأدلة الدائمة دون كشف مواد
+                  الاعتماد السرية.
                 </p>
               ) : activeSection === 'inventory' ||
                 activeSection === 'purchasing' ||
