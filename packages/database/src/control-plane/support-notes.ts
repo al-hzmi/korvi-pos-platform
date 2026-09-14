@@ -107,22 +107,6 @@ function publicNote(row: StoredSupportNote): PlatformSupportNote {
   };
 }
 
-async function tenantExists(
-  prisma: PrismaClient,
-  tenantId: string,
-  controlPlaneActorRef: string,
-): Promise<boolean> {
-  return withControlPlane(prisma, controlPlaneActorRef, async (tx) => {
-    const rows = await tx.$queryRaw<{ readonly id: string }[]>`
-      SELECT "id"
-      FROM "tenants"
-      WHERE "id" = ${tenantId}::uuid
-      LIMIT 1
-    `;
-    return rows.length === 1;
-  });
-}
-
 export async function listPlatformSupportNotes(
   prisma: PrismaClient,
   input: {
@@ -188,11 +172,18 @@ export async function createPlatformSupportNote(
   const body = noteBody(request.body);
   const requestHash = supportNoteHash({ tenantId, operationId, actorRef, body });
 
-  if (!(await tenantExists(prisma, tenantId, actorRef))) {
-    throw new PlatformSupportNoteRefusedError('unknown-tenant');
-  }
-
   return withControlPlane(prisma, actorRef, async (tx) => {
+    // Existence is established inside the same transaction that owns the
+    // idempotency decision and INSERT. A separate preflight transaction would
+    // leave a deletion race between "exists" and the foreign-key write.
+    const tenants = await tx.$queryRaw<{ readonly id: string }[]>`
+      SELECT "id"
+      FROM "tenants"
+      WHERE "id" = ${tenantId}::uuid
+      LIMIT 1
+    `;
+    if (tenants.length !== 1) throw new PlatformSupportNoteRefusedError('unknown-tenant');
+
     const existing = await tx.$queryRaw<StoredSupportNote[]>`
       SELECT "id", "tenantId", "operationId", "requestHash", "actorRef", "body", "createdAt"
       FROM "platform_support_notes"
