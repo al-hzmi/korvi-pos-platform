@@ -29,6 +29,13 @@ export interface DatabaseEvidence {
 
 const GLOBAL_TABLES = new Set(['global_catalog_items', 'permissions', '_prisma_migrations']);
 
+/**
+ * Control-plane-owned tables intentionally kept outside the merchant Prisma
+ * model. They remain part of the exact deployment contract and are still
+ * required to carry FORCE RLS and at least one policy.
+ */
+const CONTROL_PLANE_TABLES = ['platform_support_notes'] as const;
+
 /** Read-only deployment guard; this never repairs, migrates, grants or seeds. */
 export function assertDatabaseEvidence(
   actual: DatabaseEvidence,
@@ -84,7 +91,10 @@ export async function readDeploymentManifest(): Promise<DeploymentManifest> {
     })),
   );
   const schema = await readFile(new URL('schema.prisma', root), 'utf8');
-  const tables = [...schema.matchAll(/@@map\("([a-z_]+)"\)/g)].map((match) => match[1] ?? '');
+  const merchantTables = [...schema.matchAll(/@@map\("([a-z_]+)"\)/g)].map(
+    (match) => match[1] ?? '',
+  );
+  const tables = [...merchantTables, ...CONTROL_PLANE_TABLES];
   return { migrations, tables };
 }
 
