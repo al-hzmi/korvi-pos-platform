@@ -1,0 +1,42 @@
+name: One-shot sync ApiConfig fixture
+
+on:
+  push:
+    branches:
+      - tooling/api-config-fixture-sync
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: true
+      - name: Patch exact stale test fixture
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('apps/api/src/__tests__/tenant-lifecycle-live.test.ts')
+          text = path.read_text()
+          old = """  BOOTSTRAP_SIGNING_KEY: undefined,\n  METRICS_AUTH_TOKEN: undefined,\n  isProduction: false,\n"""
+          new = """  BOOTSTRAP_SIGNING_KEY: undefined,\n  METRICS_AUTH_TOKEN: undefined,\n  PLATFORM_ADMIN_ACCESS_KEY: undefined,\n  PLATFORM_SESSION_SIGNING_KEY: undefined,\n  PLATFORM_ADMIN_ACTOR_REF: undefined,\n  PLATFORM_SESSION_TTL_SECONDS: 4 * 3600,\n  isProduction: false,\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale fixture, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+      - name: Prove only intended file changed and syntax whitespace is clean
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "apps/api/src/__tests__/tenant-lifecycle-live.test.ts"
+          git diff --check
+          git diff -- apps/api/src/__tests__/tenant-lifecycle-live.test.ts
+      - name: Commit patched fixture on tooling branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/src/__tests__/tenant-lifecycle-live.test.ts
+          git commit -m 'test(api): sync lifecycle fixture with platform config'
+          git push origin HEAD:tooling/api-config-fixture-sync
