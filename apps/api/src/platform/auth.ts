@@ -2,7 +2,7 @@ import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 import { normalizeControlPlaneActor } from '@korvi/domain';
 import { readCookie } from '../auth/cookie.js';
 import type { ApiConfig } from '../config.js';
-import type { FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import type { FastifyReply, preHandlerAsyncHookHandler } from 'fastify';
 
 const PRODUCTION_COOKIE = '__Host-korvi_platform_session';
 const DEVELOPMENT_COOKIE = 'korvi_platform_session';

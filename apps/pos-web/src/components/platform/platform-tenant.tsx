@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { ApiError } from '../../lib/api';
 import {

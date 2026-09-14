@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createPlatformAuth } from '../platform/auth.js';
 import { registerPlatformRoutes } from '../platform/routes.js';
 import { loadConfig } from '../config.js';
