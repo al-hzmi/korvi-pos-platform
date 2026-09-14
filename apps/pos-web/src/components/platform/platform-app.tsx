@@ -315,6 +315,8 @@ function TenantDashboard({
   const [createOpen, setCreateOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [paging, setPaging] = useState(false);
+  const [pagingError, setPagingError] = useState<string | null>(null);
 
   const canManage = session.permissions.includes('platform.tenants.manage');
 
@@ -324,6 +326,8 @@ function TenantDashboard({
     const controller = new AbortController();
     let live = true;
     setState({ kind: 'loading' });
+    setPaging(false);
+    setPagingError(null);
     void api
       .tenants(
         {
@@ -361,6 +365,38 @@ function TenantDashboard({
       { shown: 0, active: 0, provisioning: 0, suspended: 0 },
     );
   }, [state]);
+
+  const loadMore = async () => {
+    if (state.kind !== 'ready' || state.page.nextCursor === null || paging) return;
+    setPaging(true);
+    setPagingError(null);
+    try {
+      const next = await api.tenants({
+        ...(appliedSearch === '' ? {} : { search: appliedSearch }),
+        ...(status === '' ? {} : { status }),
+        cursor: state.page.nextCursor,
+        limit: 100,
+      });
+      setState((current) => {
+        if (current.kind !== 'ready') return current;
+        return {
+          kind: 'ready',
+          page: {
+            items: [...current.page.items, ...next.items],
+            nextCursor: next.nextCursor,
+          },
+        };
+      });
+    } catch (error) {
+      if (error instanceof ApiError && error.unauthenticated) {
+        onSignedOut();
+        return;
+      }
+      setPagingError(errorMessage(error));
+    } finally {
+      setPaging(false);
+    }
+  };
 
   const logout = async () => {
     setLoggingOut(true);
@@ -479,41 +515,55 @@ function TenantDashboard({
             />
           ) : null}
           {state.kind === 'ready' && state.page.items.length > 0 ? (
-            <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-              <div className="hidden grid-cols-[minmax(220px,1.5fr)_minmax(150px,0.8fr)_140px_170px] gap-4 border-b border-border bg-muted/50 px-4 py-3 text-xs font-semibold text-muted-foreground md:grid">
-                <span>المنشأة</span>
-                <span>المعرّف</span>
-                <span>الحالة</span>
-                <span>تاريخ الإنشاء</span>
+            <>
+              <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+                <div className="hidden grid-cols-[minmax(220px,1.5fr)_minmax(150px,0.8fr)_140px_170px] gap-4 border-b border-border bg-muted/50 px-4 py-3 text-xs font-semibold text-muted-foreground md:grid">
+                  <span>المنشأة</span>
+                  <span>المعرّف</span>
+                  <span>الحالة</span>
+                  <span>تاريخ الإنشاء</span>
+                </div>
+                {state.page.items.map((tenant) => (
+                  <Link
+                    key={tenant.id}
+                    href={`/platform/tenants/${tenant.id}`}
+                    className="grid min-h-[76px] gap-3 border-b border-border/70 px-4 py-4 transition-colors last:border-b-0 hover:bg-muted/40 md:grid-cols-[minmax(220px,1.5fr)_minmax(150px,0.8fr)_140px_170px] md:items-center"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-card-foreground">
+                        {tenant.name}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground" dir="ltr">
+                        {tenant.vatNumber ?? 'بدون رقم ضريبي'}
+                      </p>
+                    </div>
+                    <span className="truncate font-mono text-xs text-muted-foreground" dir="ltr">
+                      {tenant.slug}
+                    </span>
+                    <div>
+                      <PlatformStatusBadge status={tenant.status} />
+                    </div>
+                    <time className="text-xs text-muted-foreground" dateTime={tenant.createdAt}>
+                      {new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium' }).format(
+                        new Date(tenant.createdAt),
+                      )}
+                    </time>
+                  </Link>
+                ))}
               </div>
-              {state.page.items.map((tenant) => (
-                <Link
-                  key={tenant.id}
-                  href={`/platform/tenants/${tenant.id}`}
-                  className="grid min-h-[76px] gap-3 border-b border-border/70 px-4 py-4 transition-colors last:border-b-0 hover:bg-muted/40 md:grid-cols-[minmax(220px,1.5fr)_minmax(150px,0.8fr)_140px_170px] md:items-center"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-card-foreground">
-                      {tenant.name}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground" dir="ltr">
-                      {tenant.vatNumber ?? 'بدون رقم ضريبي'}
-                    </p>
-                  </div>
-                  <span className="truncate font-mono text-xs text-muted-foreground" dir="ltr">
-                    {tenant.slug}
-                  </span>
-                  <div>
-                    <PlatformStatusBadge status={tenant.status} />
-                  </div>
-                  <time className="text-xs text-muted-foreground" dateTime={tenant.createdAt}>
-                    {new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium' }).format(
-                      new Date(tenant.createdAt),
-                    )}
-                  </time>
-                </Link>
-              ))}
-            </div>
+              {pagingError === null ? null : (
+                <div className="mt-3">
+                  <PlatformNotice tone="danger">{pagingError}</PlatformNotice>
+                </div>
+              )}
+              {state.page.nextCursor === null ? null : (
+                <div className="mt-4 flex justify-center">
+                  <Button variant="outline" loading={paging} onClick={() => void loadMore()}>
+                    تحميل المزيد
+                  </Button>
+                </div>
+              )}
+            </>
           ) : null}
         </section>
       </main>
