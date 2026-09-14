@@ -48,6 +48,8 @@ export function PlatformSupportNotes({
   const [busy, setBusy] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [pendingOperationId, setPendingOperationId] = useState<string | null>(null);
+  const [paging, setPaging] = useState(false);
+  const [pagingError, setPagingError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), []);
 
@@ -55,6 +57,8 @@ export function PlatformSupportNotes({
     const controller = new AbortController();
     let live = true;
     let authenticatedSession: PlatformSession | null = null;
+    setPaging(false);
+    setPagingError(null);
 
     void api
       .session({ signal: controller.signal })
@@ -111,6 +115,37 @@ export function PlatformSupportNotes({
       if (!(error instanceof ApiError) || !error.ambiguous) setPendingOperationId(null);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (state.kind !== 'ready' || state.page.nextCursor === null || paging) return;
+    setPaging(true);
+    setPagingError(null);
+    try {
+      const next = await api.supportNotes(tenantId, {
+        cursor: state.page.nextCursor,
+        limit: 50,
+      });
+      setState((current) => {
+        if (current.kind !== 'ready') return current;
+        return {
+          kind: 'ready',
+          session: current.session,
+          page: {
+            items: [...current.page.items, ...next.items],
+            nextCursor: next.nextCursor,
+          },
+        };
+      });
+    } catch (error) {
+      if (error instanceof ApiError && (error.unauthenticated || error.status === 403)) {
+        setState({ kind: 'hidden' });
+        return;
+      }
+      setPagingError(supportMessage(error));
+    } finally {
+      setPaging(false);
     }
   };
 
@@ -216,6 +251,23 @@ export function PlatformSupportNotes({
                       </li>
                     ))}
                   </ol>
+                )}
+                {pagingError === null ? null : (
+                  <div className="mt-3">
+                    <PlatformNotice tone="danger">{pagingError}</PlatformNotice>
+                  </div>
+                )}
+                {page.nextCursor === null ? null : (
+                  <div className="mt-4 flex justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      loading={paging}
+                      onClick={() => void loadMore()}
+                    >
+                      تحميل ملاحظات أقدم
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
