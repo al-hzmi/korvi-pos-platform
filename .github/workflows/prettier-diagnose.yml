@@ -1,33 +1,13 @@
-name: Prettier Fix
+name: Prettier Diagnostic Disabled
 
 on:
-  push:
-    branches:
-      - strike/product-routing-p0
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  fix:
+  disabled:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci --registry=https://registry.npmjs.org
-      - name: Apply canonical Prettier output
-        run: |
-          target=packages/database/src/__tests__/saas-schema.test.ts
-          npx prettier --write "$target"
-          if git diff --quiet -- "$target"; then
-            exit 0
-          fi
-          git diff --check -- "$target"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$target"
-          git commit -m "style(database): apply canonical prettier output"
-          git push origin HEAD:refs/heads/strike/product-routing-p0
+      - run: echo "Temporary diagnostic workflow disabled pending deletion"
