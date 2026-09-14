@@ -73,7 +73,7 @@ describe('offline store validation', () => {
         },
       ],
       cash: '50.00',
-      priceMode: 'inclusive',
+      priceMode: 'tax-inclusive',
       updatedAt: '2026-09-12T00:00:00.000Z',
     } as const;
 

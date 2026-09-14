@@ -169,7 +169,7 @@ function isCartLine(value: unknown): value is CartLine {
 }
 
 function isPriceMode(value: unknown): value is PriceMode {
-  return value === 'inclusive' || value === 'exclusive';
+  return value === 'tax-inclusive' || value === 'tax-exclusive';
 }
 
 export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
