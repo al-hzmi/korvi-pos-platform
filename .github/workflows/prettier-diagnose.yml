@@ -1,0 +1,25 @@
+name: Prettier Diagnose
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Print canonical Prettier diff
+        run: |
+          npx prettier --write packages/database/src/__tests__/saas-schema.test.ts
+          git diff -- packages/database/src/__tests__/saas-schema.test.ts
+          git diff --exit-code -- packages/database/src/__tests__/saas-schema.test.ts
