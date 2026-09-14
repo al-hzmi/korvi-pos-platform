@@ -571,7 +571,7 @@ function AuditPanel({ audit }: { readonly audit: PlatformAuditPage }): JSX.Eleme
                 </p>
               </div>
               <time
-                className="text-xs text-muted-foreground sm:text-left"
+                className="text-xs text-muted-foreground sm:text-start"
                 dateTime={entry.occurredAt}
               >
                 {new Intl.DateTimeFormat('ar-SA', {
@@ -695,7 +695,7 @@ function DetailView({
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">مصدر الحالة</dt>
-                  <dd className="max-w-[180px] truncate text-left font-mono text-xs" dir="ltr">
+                  <dd className="max-w-[180px] truncate text-start font-mono text-xs" dir="ltr">
                     {detail.tenant.lifecycleProvenance}
                   </dd>
                 </div>
