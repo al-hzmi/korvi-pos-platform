@@ -128,7 +128,7 @@ function Workspace({
 }: {
   readonly api: ApiClient;
   readonly principal: Principal;
-  readonly requestedSection?: ControlSection;
+  readonly requestedSection: ControlSection | undefined;
   readonly onSignOut: () => void;
 }): JSX.Element {
   const firstAllowedSection = firstAuthorizedSection(principal.permissions);
