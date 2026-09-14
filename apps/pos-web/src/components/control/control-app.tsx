@@ -17,24 +17,26 @@ import { StatusNote } from '../status-note';
 import { BlockedScreen } from '../terminal-picker';
 import { controlView } from '../../lib/control-view';
 import { createApiClient } from '../../lib/api';
+import { controlSectionHref } from '../../lib/control-routes';
 import { hasPermission } from '../../lib/session';
 import { useSession } from '../../hooks/use-session';
 import type { JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type { ControlView } from '../../lib/control-view';
+import type { ControlSection } from '../../lib/control-routes';
 import type { Principal } from '../../lib/api-types';
-import type { ControlSection } from './control-nav';
 
 /**
  * The owner's side of Korvi.
  *
- * The session boundary is the same one the till uses — same hook, same cookie,
- * same server, and the same refusal to call an unconfirmed logout a logout.
- * Hiding an administration entry is a courtesy; every `/v1/admin/**` route
- * checks its own permission again on the server.
+ * The route is now product authority for the visible section. Session, tenant,
+ * branch and permission authority still come exclusively from the server-backed
+ * principal. Native navigation is intentional while a command can be
+ * unresolved: beforeunload remains able to stop a destructive route change.
  */
 export interface ControlAppProps {
   readonly api?: ApiClient;
+  readonly section?: ControlSection;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -71,8 +73,6 @@ function sectionTitle(section: ControlSection): string {
 /** Preserve an unresolved command across every browser's unload contract. */
 export function preserveCommandBeforeUnload(event: BeforeUnloadEvent): void {
   event.preventDefault();
-  // Firefox and older Chromium releases still require the legacy signal in
-  // addition to preventDefault() before they show the browser-owned warning.
   event.returnValue = true;
 }
 
@@ -123,18 +123,19 @@ function Section({
 function Workspace({
   api,
   principal,
+  requestedSection,
   onSignOut,
 }: {
   readonly api: ApiClient;
   readonly principal: Principal;
+  readonly requestedSection: ControlSection;
   readonly onSignOut: () => void;
 }): JSX.Element {
-  const initialSection = firstAuthorizedSection(principal.permissions);
-  const [section, setSection] = useState<ControlSection>(() => initialSection ?? 'home');
+  const firstAllowedSection = firstAuthorizedSection(principal.permissions);
+  const activeSection = canAccessControlSection(requestedSection, principal.permissions)
+    ? requestedSection
+    : null;
   const [commandLocked, setCommandLocked] = useState(false);
-  const activeSection = canAccessControlSection(section, principal.permissions)
-    ? section
-    : initialSection;
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
 
   useEffect(() => {
@@ -142,6 +143,10 @@ function Workspace({
     window.addEventListener('beforeunload', preserveCommandBeforeUnload);
     return () => window.removeEventListener('beforeunload', preserveCommandBeforeUnload);
   }, [commandLocked]);
+
+  const navigateToSection = useCallback((target: ControlSection) => {
+    window.location.assign(controlSectionHref(target));
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
@@ -179,14 +184,25 @@ function Workspace({
         <main className="mx-auto w-full max-w-lg p-6">
           <CardSurface className="flex flex-col gap-4 p-6">
             <StatusNote tone="warning" live>
-              لا تملك صلاحية الاطلاع على لوحة التحكم. راجع مدير المنشأة.
+              لا تملك صلاحية فتح هذا القسم من لوحة التحكم. الخادم لم يمنح جلستك السلطة المطلوبة.
             </StatusNote>
-            <a
-              href="/"
-              className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              الانتقال إلى نقطة البيع
-            </a>
+            <div className="flex flex-wrap justify-end gap-2">
+              {firstAllowedSection === null ? (
+                <a
+                  href="/"
+                  className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  الانتقال إلى نقطة البيع
+                </a>
+              ) : (
+                <a
+                  href={controlSectionHref(firstAllowedSection)}
+                  className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  فتح أول قسم مصرح
+                </a>
+              )}
+            </div>
           </CardSurface>
         </main>
       ) : (
@@ -197,7 +213,6 @@ function Workspace({
                 active={activeSection}
                 permissions={principal.permissions}
                 locked={commandLocked}
-                onSelect={setSection}
               />
             </CardSurface>
           </aside>
@@ -222,7 +237,7 @@ function Workspace({
               <OnboardingPanel
                 api={api}
                 permissions={principal.permissions}
-                onNavigate={setSection}
+                onNavigate={navigateToSection}
               />
             ) : null}
 
@@ -242,19 +257,16 @@ function Workspace({
 export interface ControlSurfaceProps {
   readonly view: ControlView;
   readonly api: ApiClient;
+  readonly section: ControlSection;
   readonly onAuthenticated: (principal: Principal) => void;
   readonly onRetrySession: () => void;
   readonly onSignOut: () => void;
 }
 
-/**
- * The render half, separated from the session wiring so that every screen —
- * including the one that must never be the login form — can be rendered and
- * asserted on its own.
- */
 export function ControlSurface({
   view,
   api,
+  section,
   onAuthenticated,
   onRetrySession,
   onSignOut,
@@ -292,10 +304,17 @@ export function ControlSurface({
     return <LoginScreen api={api} onAuthenticated={onAuthenticated} notice={view.notice} />;
   }
 
-  return <Workspace api={api} principal={view.principal} onSignOut={onSignOut} />;
+  return (
+    <Workspace
+      api={api}
+      principal={view.principal}
+      requestedSection={section}
+      onSignOut={onSignOut}
+    />
+  );
 }
 
-export function ControlApp({ api: injected }: ControlAppProps = {}): JSX.Element {
+export function ControlApp({ api: injected, section = 'home' }: ControlAppProps = {}): JSX.Element {
   const api = useMemo(() => injected ?? createApiClient(), [injected]);
   const session = useSession(api);
 
@@ -307,6 +326,7 @@ export function ControlApp({ api: injected }: ControlAppProps = {}): JSX.Element
     <ControlSurface
       view={controlView(session.state)}
       api={api}
+      section={section}
       onAuthenticated={session.signedIn}
       onRetrySession={session.retry}
       onSignOut={signOut}
