@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
-import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './control-nav';
+import {
+  ControlNav,
+  controlSectionHref,
+  firstAuthorizedSection,
+  resolveControlRoute,
+} from './control-nav';
 import { DashboardPanel } from './dashboard-panel';
 import { InventoryPanel } from './inventory-panel';
 import { MembersPanel } from './members-panel';
@@ -25,16 +30,9 @@ import type { ControlView } from '../../lib/control-view';
 import type { Principal } from '../../lib/api-types';
 import type { ControlSection } from './control-nav';
 
-/**
- * The owner's side of Korvi.
- *
- * The session boundary is the same one the till uses — same hook, same cookie,
- * same server, and the same refusal to call an unconfirmed logout a logout.
- * Hiding an administration entry is a courtesy; every `/v1/admin/**` route
- * checks its own permission again on the server.
- */
 export interface ControlAppProps {
   readonly api?: ApiClient;
+  readonly requestedSection?: string | null;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -68,11 +66,8 @@ function sectionTitle(section: ControlSection): string {
   }
 }
 
-/** Preserve an unresolved command across every browser's unload contract. */
 export function preserveCommandBeforeUnload(event: BeforeUnloadEvent): void {
   event.preventDefault();
-  // Firefox and older Chromium releases still require the legacy signal in
-  // addition to preventDefault() before they show the browser-owned warning.
   event.returnValue = true;
 }
 
@@ -120,21 +115,59 @@ function Section({
   }
 }
 
+type RouteProblemRoute =
+  | { readonly kind: 'forbidden'; readonly section: ControlSection }
+  | { readonly kind: 'invalid' };
+
+function RouteProblem({
+  route,
+  fallback,
+}: {
+  readonly route: RouteProblemRoute;
+  readonly fallback: ControlSection | null;
+}): JSX.Element {
+  const message =
+    route.kind === 'forbidden'
+      ? `لا تملك صلاحية فتح قسم ${sectionTitle(route.section)} في هذه الجلسة.`
+      : 'رابط لوحة التحكم المطلوب غير معروف.';
+
+  return (
+    <CardSurface className="flex max-w-2xl flex-col gap-4 p-6">
+      <StatusNote tone="warning" live>
+        {message}
+      </StatusNote>
+      <p className="text-sm text-muted-foreground">
+        لم ننقلك إلى قسم آخر تلقائيًا حتى يبقى الرابط الحالي صريحًا وآمنًا عند التحديث والرجوع.
+      </p>
+      {fallback === null ? null : (
+        <div>
+          <a
+            href={controlSectionHref(fallback)}
+            className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            العودة إلى {sectionTitle(fallback)}
+          </a>
+        </div>
+      )}
+    </CardSurface>
+  );
+}
+
 function Workspace({
   api,
   principal,
   onSignOut,
+  requestedSection,
 }: {
   readonly api: ApiClient;
   readonly principal: Principal;
   readonly onSignOut: () => void;
+  readonly requestedSection: string | null;
 }): JSX.Element {
-  const initialSection = firstAuthorizedSection(principal.permissions);
-  const [section, setSection] = useState<ControlSection>(() => initialSection ?? 'home');
+  const route = resolveControlRoute(requestedSection, principal.permissions);
+  const fallbackSection = firstAuthorizedSection(principal.permissions);
+  const activeSection = route.kind === 'section' ? route.section : null;
   const [commandLocked, setCommandLocked] = useState(false);
-  const activeSection = canAccessControlSection(section, principal.permissions)
-    ? section
-    : initialSection;
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
 
   useEffect(() => {
@@ -175,7 +208,7 @@ function Workspace({
         </div>
       </header>
 
-      {activeSection === null ? (
+      {route.kind === 'none' ? (
         <main className="mx-auto w-full max-w-lg p-6">
           <CardSurface className="flex flex-col gap-4 p-6">
             <StatusNote tone="warning" live>
@@ -197,41 +230,50 @@ function Workspace({
                 active={activeSection}
                 permissions={principal.permissions}
                 locked={commandLocked}
-                onSelect={setSection}
               />
             </CardSurface>
           </aside>
 
           <main className="flex min-h-0 flex-1 flex-col gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                {sectionTitle(activeSection)}
-              </h1>
-              {activeSection === 'inventory' ||
-              activeSection === 'purchasing' ||
-              activeSection === 'branches' ||
-              activeSection === 'staff' ||
-              activeSection === 'settings' ? (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
-                </p>
-              ) : null}
-            </div>
+            {activeSection === null ? null : (
+              <div>
+                <h1 className="text-2xl font-semibold text-foreground">
+                  {sectionTitle(activeSection)}
+                </h1>
+                {activeSection === 'inventory' ||
+                activeSection === 'purchasing' ||
+                activeSection === 'branches' ||
+                activeSection === 'staff' ||
+                activeSection === 'settings' ? (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
+                  </p>
+                ) : null}
+              </div>
+            )}
+
+            {route.kind === 'invalid' || route.kind === 'forbidden' ? (
+              <RouteProblem route={route} fallback={fallbackSection} />
+            ) : null}
 
             {activeSection === 'home' && canReadOnboarding ? (
               <OnboardingPanel
                 api={api}
                 permissions={principal.permissions}
-                onNavigate={setSection}
+                onNavigate={(section) => {
+                  window.location.assign(controlSectionHref(section));
+                }}
               />
             ) : null}
 
-            <Section
-              section={activeSection}
-              api={api}
-              principal={principal}
-              onCommandLockChange={setCommandLocked}
-            />
+            {activeSection === null ? null : (
+              <Section
+                section={activeSection}
+                api={api}
+                principal={principal}
+                onCommandLockChange={setCommandLocked}
+              />
+            )}
           </main>
         </div>
       )}
@@ -245,19 +287,16 @@ export interface ControlSurfaceProps {
   readonly onAuthenticated: (principal: Principal) => void;
   readonly onRetrySession: () => void;
   readonly onSignOut: () => void;
+  readonly requestedSection?: string | null;
 }
 
-/**
- * The render half, separated from the session wiring so that every screen —
- * including the one that must never be the login form — can be rendered and
- * asserted on its own.
- */
 export function ControlSurface({
   view,
   api,
   onAuthenticated,
   onRetrySession,
   onSignOut,
+  requestedSection = null,
 }: ControlSurfaceProps): JSX.Element {
   if (view.kind === 'waiting') return <Waiting label={view.label} />;
 
@@ -292,10 +331,20 @@ export function ControlSurface({
     return <LoginScreen api={api} onAuthenticated={onAuthenticated} notice={view.notice} />;
   }
 
-  return <Workspace api={api} principal={view.principal} onSignOut={onSignOut} />;
+  return (
+    <Workspace
+      api={api}
+      principal={view.principal}
+      onSignOut={onSignOut}
+      requestedSection={requestedSection}
+    />
+  );
 }
 
-export function ControlApp({ api: injected }: ControlAppProps = {}): JSX.Element {
+export function ControlApp({
+  api: injected,
+  requestedSection = null,
+}: ControlAppProps = {}): JSX.Element {
   const api = useMemo(() => injected ?? createApiClient(), [injected]);
   const session = useSession(api);
 
@@ -310,6 +359,7 @@ export function ControlApp({ api: injected }: ControlAppProps = {}): JSX.Element
       onAuthenticated={session.signedIn}
       onRetrySession={session.retry}
       onSignOut={signOut}
+      requestedSection={requestedSection}
     />
   );
 }
