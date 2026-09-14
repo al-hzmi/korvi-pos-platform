@@ -1,0 +1,244 @@
+name: Reports Browser Proof
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - apps/api/src/routes/sales-read.ts
+      - apps/api/src/sales/read-service.ts
+      - apps/api/src/server.ts
+      - apps/pos-web/src/components/control/reports-panel.tsx
+      - apps/pos-web/src/components/control/control-app.tsx
+      - apps/pos-web/src/components/control/control-nav.tsx
+      - apps/pos-web/src/lib/control-routes.ts
+      - apps/pos-web/src/lib/reports-api.ts
+      - packages/database/src/reports/**
+      - .github/workflows/reports-browser-proof.yml
+      - .github/workflows/reports-postgres-proof.yml
+  workflow_dispatch:
+
+concurrency:
+  group: reports-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  browser-proof:
+    name: Authenticated merchant report surface
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Generate Prisma client and build browser dependencies
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+        run: |
+          npm run db:generate
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+          npm run build -w @korvi/ui
+          npm run build -w @korvi/api
+
+      - name: Write deterministic report fixture
+        run: |
+          mkdir -p .e2e artifacts/reports-browser
+          cat > .e2e/reports-server.mjs <<'EOF'
+          import { buildServer } from '../apps/api/dist/server.js';
+          import { loadConfig } from '../apps/api/dist/config.js';
+
+          const TENANT_ID = '018fb000-0000-7000-8000-00000000000a';
+          const BRANCH_ID = '018fb000-0000-7000-8000-0000000000a1';
+          const USER_ID = '018fb000-0000-7000-8000-0000000000a4';
+
+          const principal = {
+            tenantId: TENANT_ID,
+            tenantSlug: 'reports-proof',
+            userId: USER_ID,
+            sessionId: '018fb000-0000-7000-8000-0000000000a8',
+            email: 'owner@reports.test',
+            displayName: 'مالك التقارير',
+            roles: ['owner'],
+            permissions: ['report.read'],
+            maxDiscountBasisPoints: 10000n,
+            branchId: BRANCH_ID,
+          };
+
+          const auth = {
+            async login() {
+              return { outcome: 'failure', reason: 'bad-password' };
+            },
+            async authenticate(token) {
+              return token === 'reports-e2e'
+                ? { outcome: 'success', principal }
+                : { outcome: 'failure', reason: 'unknown-session' };
+            },
+            async logout() {
+              return true;
+            },
+            async logoutAll() {
+              return 1;
+            },
+          };
+
+          const totals = {
+            sales: { documentCount: '2', netMinor: '20000', vatMinor: '3000', totalMinor: '23000' },
+            returns: { documentCount: '1', netMinor: '2000', vatMinor: '300', totalMinor: '2300' },
+            net: { netMinor: '18000', vatMinor: '2700', totalMinor: '20700' },
+          };
+
+          const salesRead = {
+            async list() {
+              return { items: [], nextCursor: null };
+            },
+            async detail() {
+              return null;
+            },
+            async period(_subject, query) {
+              return {
+                fromInclusive: new Date(query.fromInclusive).toISOString(),
+                toExclusive: new Date(query.toExclusive).toISOString(),
+                branchId: query.branchId ?? null,
+                currency: 'SAR',
+                sales: totals.sales,
+                returns: totals.returns,
+                netAfterReturns: totals.net,
+                vatBreakdown: [
+                  {
+                    vatBasisPoints: 1500,
+                    salesNetMinor: '20000',
+                    salesVatMinor: '3000',
+                    returnsNetMinor: '2000',
+                    returnsVatMinor: '300',
+                    netTaxableMinor: '18000',
+                    netVatMinor: '2700',
+                  },
+                ],
+                availableBranches: [
+                  {
+                    id: BRANCH_ID,
+                    code: 'JED',
+                    nameAr: 'فرع جدة',
+                    nameEn: 'Jeddah Branch',
+                    isActive: true,
+                  },
+                ],
+                branchBreakdown: [
+                  {
+                    id: BRANCH_ID,
+                    code: 'JED',
+                    nameAr: 'فرع جدة',
+                    nameEn: 'Jeddah Branch',
+                    isActive: true,
+                    sales: totals.sales,
+                    returns: totals.returns,
+                    netAfterReturns: totals.net,
+                  },
+                ],
+              };
+            },
+          };
+
+          const config = loadConfig({
+            NODE_ENV: 'test',
+            LOG_LEVEL: 'fatal',
+            APP_ORIGINS: 'http://127.0.0.1:3000',
+          });
+          const app = buildServer(config, { auth, salesRead });
+          await app.listen({ host: '127.0.0.1', port: 3001 });
+
+          const shutdown = async () => {
+            await app.close();
+            process.exit(0);
+          };
+          process.on('SIGTERM', shutdown);
+          process.on('SIGINT', shutdown);
+          EOF
+
+      - name: Start Fastify and Next
+        run: |
+          node .e2e/reports-server.mjs > artifacts/reports-browser/api.log 2>&1 &
+          echo $! > .e2e/reports-api.pid
+          KORVI_API_ORIGIN=http://127.0.0.1:3001 npm run dev -w @korvi/pos-web -- --hostname 127.0.0.1 --port 3000 > artifacts/reports-browser/web.log 2>&1 &
+          echo $! > .e2e/reports-web.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000/control/reports >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat artifacts/reports-browser/api.log
+          cat artifacts/reports-browser/web.log
+          exit 1
+
+      - name: Install browser driver
+        run: python -m pip install --disable-pip-version-check selenium==4.35.0
+
+      - name: Prove report surface in Chrome
+        run: |
+          cat > .e2e/reports-capture.py <<'PY'
+          import shutil
+          from selenium import webdriver
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.chrome.service import Service
+          from selenium.webdriver.support import expected_conditions as EC
+          from selenium.webdriver.support.ui import WebDriverWait
+
+          base = 'http://127.0.0.1:3000'
+          options = webdriver.ChromeOptions()
+          options.add_argument('--headless=new')
+          options.add_argument('--no-sandbox')
+          options.add_argument('--disable-dev-shm-usage')
+          options.add_argument('--window-size=1440,1100')
+          chromedriver = shutil.which('chromedriver')
+          driver = webdriver.Chrome(
+              service=Service(chromedriver) if chromedriver else Service(),
+              options=options,
+          )
+          wait = WebDriverWait(driver, 25)
+
+          try:
+              driver.get(base)
+              driver.add_cookie({'name': 'korvi_session', 'value': 'reports-e2e', 'path': '/'})
+              driver.get(f'{base}/control/reports')
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'المبيعات المعتمدة'))
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'تفصيل ضريبة القيمة المضافة'))
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), '15%'))
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'فرع جدة'))
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'الصافي بعد المرتجعات'))
+              driver.save_screenshot('artifacts/reports-browser/reports-desktop.png')
+
+              driver.set_window_size(390, 844)
+              driver.get(f'{base}/control/reports')
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'تفصيل ضريبة القيمة المضافة'))
+              driver.save_screenshot('artifacts/reports-browser/reports-mobile.png')
+          finally:
+              driver.quit()
+          PY
+          python .e2e/reports-capture.py
+
+      - name: Upload report browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: korvi-reports-browser-proof-${{ github.sha }}
+          path: artifacts/reports-browser
+          if-no-files-found: error
+          retention-days: 14
