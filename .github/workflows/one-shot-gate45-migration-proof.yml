@@ -1,0 +1,62 @@
+name: One-shot Gate45 migration proof alignment
+
+on:
+  push:
+    branches:
+      - tooling/gate45-migration-proof-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: tooling/gate45-migration-proof-20260915
+      - name: Rewrite Gate45 migration authority step
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = '.github/workflows/gate-45-offline-reconciliation-proof.yml';
+          const source = fs.readFileSync(path, 'utf8');
+          const startMarker = '      - name: Apply every migration and prove zero drift\n';
+          const endMarker = '      - name: Build actual production API and POS\n';
+          const start = source.indexOf(startMarker);
+          const end = source.indexOf(endMarker, start + startMarker.length);
+          if (start < 0 || end < 0 || source.indexOf(startMarker, start + 1) !== -1) {
+            throw new Error('Gate45 migration step markers are not unique.');
+          }
+          const replacement = `      - name: Apply every migration and prove exact migration-history authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/prove-migration-state.sh
+          migration_directories="$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          ledger="$(psql "${DATABASE_URL%%\\?*}" --no-psqlrc --tuples-only --no-align --command \\
+            'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL;')"
+          if [ "$ledger" != "$migration_directories" ]; then
+            echo "Migration ledger mismatch after canonical proof: directories=$migration_directories ledger=$ledger" >&2
+            exit 1
+          fi
+          echo "migration_directories=$migration_directories" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+          echo "migration_ledger=$ledger" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+          echo 'migration_history_drift=none' | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+
+`;
+          fs.writeFileSync(path, source.slice(0, start) + replacement + source.slice(end));
+          NODE
+          git diff --check
+      - name: Commit exact workflow output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-proof-bot'
+          git config user.email 'korvi-proof-bot@users.noreply.github.com'
+          git add .github/workflows/gate-45-offline-reconciliation-proof.yml
+          git diff --cached --exit-code && { echo 'No changes produced' >&2; exit 1; } || true
+          git commit -m 'fix(ci): align Gate45 with migration-history authority'
+          git push origin HEAD:tooling/gate45-migration-proof-20260915
