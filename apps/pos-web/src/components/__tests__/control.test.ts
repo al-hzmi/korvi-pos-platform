@@ -136,6 +136,7 @@ describe('control navigation', () => {
           'product.read',
           'inventory.read',
           'purchasing.read',
+          'customer.read',
           'settings.manage',
           'users.manage',
         ],
