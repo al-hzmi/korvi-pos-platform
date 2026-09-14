@@ -301,10 +301,7 @@ export function createPlatformApi(fetchImpl?: Fetch): PlatformApi {
       );
     },
     createSupportNote(tenantId, input) {
-      return command(
-        `/v1/platform/tenants/${encodeURIComponent(tenantId)}/support-notes`,
-        input,
-      );
+      return command(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/support-notes`, input);
     },
   };
 }
