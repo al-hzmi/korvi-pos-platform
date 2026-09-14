@@ -23,14 +23,8 @@ export type CustomerCommandResult =
   | { readonly outcome: 'failure'; readonly reason: CustomerAdminRefusal };
 
 export interface MerchantCustomerService {
-  list(
-    principal: AuthenticatedPrincipal,
-    query: CustomerListQuery,
-  ): Promise<CustomerPage>;
-  detail(
-    principal: AuthenticatedPrincipal,
-    customerId: string,
-  ): Promise<CustomerDetail | null>;
+  list(principal: AuthenticatedPrincipal, query: CustomerListQuery): Promise<CustomerPage>;
+  detail(principal: AuthenticatedPrincipal, customerId: string): Promise<CustomerDetail | null>;
   create(
     principal: AuthenticatedPrincipal,
     request: CustomerCreateRequest,
