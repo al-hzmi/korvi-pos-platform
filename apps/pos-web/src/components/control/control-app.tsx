@@ -14,6 +14,7 @@ import { PurchasingPanel } from './purchasing-panel';
 import { ReportsPanel } from './reports-panel';
 import { SalesPanel } from './sales-panel';
 import { SettingsPanel } from './settings-panel';
+import { ZatcaPanel } from './zatca-panel';
 import { LoginScreen } from '../login-screen';
 import { Screen } from '../screen';
 import { StatusNote } from '../status-note';
@@ -76,6 +77,8 @@ function sectionTitle(section: ControlSection): string {
       return 'التقارير';
     case 'settings':
       return 'إعدادات المنشأة';
+    case 'zatca':
+      return 'ZATCA';
   }
 }
 
@@ -137,6 +140,8 @@ function Section({
       return <ReportsPanel />;
     case 'settings':
       return <SettingsPanel api={api} />;
+    case 'zatca':
+      return <ZatcaPanel />;
   }
 }
 
@@ -255,6 +260,10 @@ function Workspace({
                 <p className="mt-1 text-sm text-muted-foreground">
                   حركة المبيعات والمرتجعات والضريبة من القيم التاريخية المحفوظة في المستندات
                   المعتمدة.
+                </p>
+              ) : activeSection === 'zatca' ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  متابعة حالة الربط والامتثال وإرسال الفواتير من الأدلة الدائمة دون كشف مواد الاعتماد السرية.
                 </p>
               ) : activeSection === 'inventory' ||
                 activeSection === 'purchasing' ||
