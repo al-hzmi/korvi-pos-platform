@@ -11,6 +11,7 @@ import { MembersPanel } from './members-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
 import { PurchasingPanel } from './purchasing-panel';
+import { ReportsPanel } from './reports-panel';
 import { SalesPanel } from './sales-panel';
 import { SettingsPanel } from './settings-panel';
 import { LoginScreen } from '../login-screen';
@@ -71,6 +72,8 @@ function sectionTitle(section: ControlSection): string {
       return 'الفروع والصناديق';
     case 'staff':
       return 'الموظفون والصلاحيات';
+    case 'reports':
+      return 'التقارير';
     case 'settings':
       return 'إعدادات المنشأة';
   }
@@ -130,6 +133,8 @@ function Section({
       return (
         <MembersPanel api={api} canManageSettings={hasPermission(principal, 'settings.manage')} />
       );
+    case 'reports':
+      return <ReportsPanel />;
     case 'settings':
       return <SettingsPanel api={api} />;
   }
@@ -245,6 +250,11 @@ function Workspace({
                 <p className="mt-1 text-sm text-muted-foreground">
                   سجل الفواتير المعتمدة كما حُفظت وقت البيع، مع الضريبة والتسوية والمرتجعات
                   المرتبطة.
+                </p>
+              ) : activeSection === 'reports' ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  حركة المبيعات والمرتجعات والضريبة من القيم التاريخية المحفوظة في المستندات
+                  المعتمدة.
                 </p>
               ) : activeSection === 'inventory' ||
                 activeSection === 'purchasing' ||
