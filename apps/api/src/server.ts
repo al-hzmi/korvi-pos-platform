@@ -52,6 +52,7 @@ import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { PlatformService } from './platform/service.js';
+import type { PlatformSupportService } from './platform/support-service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
 import type { FastifyInstance } from 'fastify';
@@ -133,6 +134,12 @@ export interface ServerDeps {
    * production resolves the database-backed authority lazily.
    */
   readonly platform?: PlatformService;
+
+  /**
+   * Append-only internal support ledger for the SaaS control plane. It remains
+   * separate from lifecycle/commercial authority and from all merchant data.
+   */
+  readonly platformSupport?: PlatformSupportService;
 }
 
 class AuthUnavailableError extends Error {
@@ -292,6 +299,9 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
           allowWeightedItems: settings.allowWeightedItems,
           trackInventory: settings.trackInventory,
           allowNegativeStock: settings.allowNegativeStock,
+          // The persisted value, from the one settings model. A constant here
+          // would mean PATCH true, GET false — a read that contradicts the row
+          // it claims to describe.
           enableProductImages: settings.enableProductImages,
           receiptHeaderAr: settings.receiptHeaderAr,
           receiptFooterAr: settings.receiptFooterAr,
@@ -327,8 +337,14 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
   };
 }
 
+/**
+ * Product bootstrap, built once on first use. It is intentionally not part of
+ * the cashier BusinessDeps: cashier reads and back-office writes must not share
+ * an authority object merely because both mention products.
+ */
 function lazyCatalogService(config: ApiConfig): MerchantProductService {
   let built: MerchantProductService | null = null;
+
   const resolve = (): MerchantProductService => {
     if (built !== null) return built;
     const url = config.DATABASE_URL;
@@ -336,11 +352,19 @@ function lazyCatalogService(config: ApiConfig): MerchantProductService {
     built = createMerchantProductService(createPrismaClient(url));
     return built;
   };
-  return { create: (principal, input) => resolve().create(principal, input) };
+
+  return {
+    create: (principal, input) => resolve().create(principal, input),
+  };
 }
 
+/**
+ * Merchant stock authority, built once on first use like the others so /health
+ * never needs a database connection.
+ */
 function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
   let built: MerchantInventoryService | null = null;
+
   const resolve = (): MerchantInventoryService => {
     if (built !== null) return built;
     const url = config.DATABASE_URL;
@@ -348,6 +372,7 @@ function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
     built = createMerchantInventoryService({ prisma: createPrismaClient(url) });
     return built;
   };
+
   return {
     branches: (principal, query) => resolve().branches(principal, query),
     balances: (principal, query) => resolve().balances(principal, query),
@@ -359,8 +384,13 @@ function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
   };
 }
 
+/**
+ * Purchasing authority, built once on first use like the others so /health
+ * never needs a database connection.
+ */
 function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
   let built: MerchantPurchasingService | null = null;
+
   const resolve = (): MerchantPurchasingService => {
     if (built !== null) return built;
     const url = config.DATABASE_URL;
@@ -368,6 +398,7 @@ function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
     built = createMerchantPurchasingService({ prisma: createPrismaClient(url) });
     return built;
   };
+
   return {
     listBranches: (principal, query) => resolve().listBranches(principal, query),
     listProducts: (principal, query) => resolve().listProducts(principal, query),
@@ -383,23 +414,42 @@ function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
   };
 }
 
+/**
+ * Read-only onboarding authority, constructed lazily like the other database
+ * services so /health never needs a database connection.
+ */
 function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   let built: MerchantOnboardingService | null = null;
+
   const resolve = (): MerchantOnboardingService => {
     if (built !== null) return built;
+
     const url = config.DATABASE_URL;
-    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    if (url === undefined) {
+      throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    }
+
     const prisma = createPrismaClient(url);
     built = createMerchantOnboardingService({
       readReadiness: (scope) => readTenantOnboardingReadiness(prisma, scope),
     });
+
     return built;
   };
-  return { readReadiness: (principal) => resolve().readReadiness(principal) };
+
+  return {
+    readReadiness: (principal) => resolve().readReadiness(principal),
+  };
 }
 
+/**
+ * Read-only merchant sales history. Historical money, VAT and invoice fields
+ * come from their immutable stored rows; this service never recalculates them
+ * from the live catalogue.
+ */
 function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
   let built: MerchantSalesReadService | null = null;
+
   const resolve = (): MerchantSalesReadService => {
     if (built !== null) return built;
     const url = config.DATABASE_URL;
@@ -407,14 +457,21 @@ function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
     built = createMerchantSalesReadService(createPrismaClient(url));
     return built;
   };
+
   return {
     list: (principal, query) => resolve().list(principal, query),
     detail: (principal, saleId) => resolve().detail(principal, saleId),
   };
 }
 
+/**
+ * Platform control-plane persistence, built once on first use. This stays
+ * separate from merchant admin so neither authority can accidentally inherit
+ * the other's identity or RLS context.
+ */
 function lazyPlatformService(config: ApiConfig): PlatformService {
   let built: PlatformService | null = null;
+
   const resolve = (): PlatformService => {
     if (built !== null) return built;
     const url = config.DATABASE_URL;
@@ -422,6 +479,7 @@ function lazyPlatformService(config: ApiConfig): PlatformService {
     built = createPlatformService(createPrismaClient(url));
     return built;
   };
+
   return {
     listTenants: (actor, query) => resolve().listTenants(actor, query),
     getTenant: (actor, tenantId) => resolve().getTenant(actor, tenantId),
@@ -437,23 +495,41 @@ function lazyPlatformService(config: ApiConfig): PlatformService {
   };
 }
 
-function lazyPlatformSupportService(
-  config: ApiConfig,
-): ReturnType<typeof createPlatformSupportService> {
-  let built: ReturnType<typeof createPlatformSupportService> | null = null;
-  const resolve = (): ReturnType<typeof createPlatformSupportService> => {
+/**
+ * Platform support-note persistence, built once on first use. The service is a
+ * separate authority because lifecycle/commercial commands and an append-only
+ * support ledger have different mutation rules even though both use the same
+ * authenticated platform actor.
+ */
+function lazyPlatformSupportService(config: ApiConfig): PlatformSupportService {
+  let built: PlatformSupportService | null = null;
+
+  const resolve = (): PlatformSupportService => {
     if (built !== null) return built;
     const url = config.DATABASE_URL;
     if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
     built = createPlatformSupportService(createPrismaClient(url));
     return built;
   };
+
   return {
     list: (actor, tenantId, query) => resolve().list(actor, tenantId, query),
     create: (actor, tenantId, input) => resolve().create(actor, tenantId, input),
   };
 }
 
+/**
+ * The public bootstrap surface, or nothing.
+ *
+ * Two configuration facts have to hold before this route can be served at all:
+ * a database, and a signing key. Missing either is an operator's problem and
+ * the route says 503 — a deployment that quietly served bootstrap without a
+ * key would be serving a door with no lock.
+ *
+ * Built eagerly rather than lazily, because "is this configured" is the
+ * question the route needs answered at registration time, not on the first
+ * request from somebody holding a capability.
+ */
 function bootstrapServiceFor(config: ApiConfig): OwnerBootstrapService | null {
   const url = config.DATABASE_URL;
   const signingKey = config.BOOTSTRAP_SIGNING_KEY;
@@ -482,9 +558,15 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
         censor: '[Redacted]',
       },
     },
+    // The central Korvi generator, not crypto.randomUUID. A v4 carries no
+    // time, so a request log line could not be ordered against a sale that was
+    // rung up offline and synced later. Every identifier in the system comes
+    // from one place (ADR-0003).
     genReqId: () => newId(),
   });
 
+  // Install correlation and low-cardinality telemetry before any business route
+  // is registered so every request follows one operations contract.
   registerOperationalObservability(app, config);
 
   const service = deps.auth ?? lazyAuthService(config);
@@ -492,13 +574,20 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   const business = deps.business ?? lazyBusinessDeps(config);
   const platformAuth = createPlatformAuth(config);
 
+  // Before anything else: a state-changing request from an origin this
+  // deployment does not know never reaches a handler.
   app.addHook('onRequest', guards.enforceOrigin);
 
+  // A configuration gap must not read as a credential failure. Without a
+  // database the auth routes answer 503, which is what it is.
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     if (error instanceof AuthUnavailableError) {
       request.log.error('database-backed route unavailable; DATABASE_URL is missing');
       return reply.code(503).send({ error: 'unavailable' });
     }
+    // Adapter/database errors can contain hosts, credentials or query detail.
+    // Correlate by request id and safe error class rather than serializing the
+    // raw exception into production logs.
     request.log.error(
       { errorType: error.name, statusCode: error.statusCode ?? 500 },
       'request failed',
@@ -539,7 +628,7 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerPlatformSupportRoutes(app, {
     auth: platformAuth,
-    service: lazyPlatformSupportService(config),
+    service: deps.platformSupport ?? lazyPlatformSupportService(config),
   });
   return app;
 }
