@@ -100,18 +100,13 @@ jobs:
           fi
           echo "app_role_flags=$flags" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
 
-      - name: Apply every migration and prove zero drift
+      - name: Apply every migration and prove migration-history authority
         shell: bash
         working-directory: packages/database
         run: |
           set -euo pipefail
           migration_directories="$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
-          npx --no-install prisma migrate deploy
-          npx --no-install prisma migrate status
-          npx --no-install prisma migrate diff \
-            --from-config-datasource \
-            --to-schema prisma/schema.prisma \
-            --exit-code
+          bash ../../scripts/prove-migration-state.sh
           ledger="$(psql "${DATABASE_URL%%\?*}" --no-psqlrc --tuples-only --no-align --command \
             'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL;')"
           if [ "$ledger" != "$migration_directories" ]; then
@@ -120,7 +115,7 @@ jobs:
           fi
           echo "migration_directories=$migration_directories" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
           echo "migration_ledger=$ledger" | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
-          echo 'schema_drift=none' | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
+          echo 'migration_history_drift=none' | tee -a "$KORVI_GATE45_ARTIFACT_DIR/authority.txt"
 
       - name: Build actual production API and POS
         run: |
