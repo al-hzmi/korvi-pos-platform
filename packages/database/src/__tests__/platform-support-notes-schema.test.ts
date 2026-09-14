@@ -5,10 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migration = readFileSync(
-  join(
-    here,
-    '../../prisma/migrations/20260914115000_platform_support_notes/migration.sql',
-  ),
+  join(here, '../../prisma/migrations/20260914115000_platform_support_notes/migration.sql'),
   'utf8',
 );
 
@@ -22,15 +19,9 @@ function policyBody(name: string): string {
 describe('platform support-note storage boundary', () => {
   it('is FORCE-RLS protected and tenant-linked without joining the merchant ORM', () => {
     expect(migration).toContain('CREATE TABLE "platform_support_notes"');
-    expect(migration).toContain(
-      'ALTER TABLE "platform_support_notes" ENABLE ROW LEVEL SECURITY',
-    );
-    expect(migration).toContain(
-      'ALTER TABLE "platform_support_notes" FORCE ROW LEVEL SECURITY',
-    );
-    expect(migration).toContain(
-      'FOREIGN KEY ("tenantId") REFERENCES "tenants"("id")',
-    );
+    expect(migration).toContain('ALTER TABLE "platform_support_notes" ENABLE ROW LEVEL SECURITY');
+    expect(migration).toContain('ALTER TABLE "platform_support_notes" FORCE ROW LEVEL SECURITY');
+    expect(migration).toContain('FOREIGN KEY ("tenantId") REFERENCES "tenants"("id")');
   });
 
   it('admits reads only through the authenticated control-plane setting', () => {
@@ -51,9 +42,7 @@ describe('platform support-note storage boundary', () => {
   });
 
   it('has a tenant-scoped idempotency key and bounded note columns', () => {
-    expect(migration).toContain(
-      '"platform_support_notes_tenantId_operationId_key"',
-    );
+    expect(migration).toContain('"platform_support_notes_tenantId_operationId_key"');
     expect(migration).toContain('"operationId" VARCHAR(120) NOT NULL');
     expect(migration).toContain('"requestHash" CHAR(64) NOT NULL');
     expect(migration).toContain('"actorRef" VARCHAR(120) NOT NULL');
