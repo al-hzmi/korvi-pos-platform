@@ -1,0 +1,52 @@
+name: One-shot canonical offline price mode
+
+on:
+  push:
+    branches:
+      - tooling/offline-pricemode-canonical-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: tooling/offline-pricemode-canonical-20260915
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Apply exact canonical PriceMode edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const edits = [
+            ['apps/pos-web/src/lib/offline-store.ts', "return value === 'inclusive' || value === 'exclusive';", "return value === 'tax-inclusive' || value === 'tax-exclusive';"],
+            ['apps/pos-web/src/lib/__tests__/offline-store.test.ts', "priceMode: 'inclusive',", "priceMode: 'tax-inclusive',"],
+          ];
+          for (const [path, before, after] of edits) {
+            const source = fs.readFileSync(path, 'utf8');
+            const count = source.split(before).length - 1;
+            if (count !== 1) throw new Error(`${path}: expected exactly one target, got ${count}`);
+            fs.writeFileSync(path, source.replace(before, after));
+          }
+          NODE
+          npx --no-install prettier --write apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-store.test.ts
+          grep -R "priceMode: 'inclusive'\|priceMode: 'exclusive'\|value === 'inclusive'\|value === 'exclusive'" -n apps/pos-web/src/lib apps/pos-web/src/hooks apps/pos-web/src/components && exit 1 || true
+      - name: Commit exact output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name 'korvi-proof-bot'
+          git config user.email 'korvi-proof-bot@users.noreply.github.com'
+          git add apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-store.test.ts
+          git diff --cached --exit-code && { echo 'No changes produced' >&2; exit 1; } || true
+          git commit -m 'fix(offline): canonicalize durable draft price mode'
+          git push origin HEAD:tooling/offline-pricemode-canonical-20260915
