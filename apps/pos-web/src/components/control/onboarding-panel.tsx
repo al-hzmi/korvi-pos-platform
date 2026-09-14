@@ -56,6 +56,8 @@ function canOpen(section: ControlSection, permissions: readonly string[]): boole
     case 'sales':
     case 'reports':
       return permissions.includes('report.read');
+    case 'zatca':
+      return permissions.includes('zatca.manage');
     case 'home':
       return true;
   }
