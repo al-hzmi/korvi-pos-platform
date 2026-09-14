@@ -54,6 +54,7 @@ function canOpen(section: ControlSection, permissions: readonly string[]): boole
     case 'customers':
       return permissions.includes('customer.read');
     case 'sales':
+    case 'reports':
       return permissions.includes('report.read');
     case 'home':
       return true;
