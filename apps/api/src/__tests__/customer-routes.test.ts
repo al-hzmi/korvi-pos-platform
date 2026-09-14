@@ -99,7 +99,9 @@ function recordingCustomers() {
       };
     },
     async update(subject, customerId, request) {
-      calls.push(`update:${subject.tenantId}:${subject.userId}:${customerId}:${request.operationId}`);
+      calls.push(
+        `update:${subject.tenantId}:${subject.userId}:${customerId}:${request.operationId}`,
+      );
       if (customerId === OTHER_CUSTOMER_ID) {
         return { outcome: 'failure', reason: 'unknown-customer' };
       }
