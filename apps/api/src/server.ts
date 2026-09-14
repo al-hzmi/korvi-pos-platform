@@ -15,45 +15,48 @@ import {
   readTenantOnboardingReadiness,
 } from '@korvi/database';
 import { newId } from '@korvi/domain';
-import { createGuards } from './auth/guards.js';
-import { createCheckoutService } from './checkout/service.js';
-import { createReturnService } from './returns/service.js';
-import { createDrawerService } from './shifts/service.js';
-import { registerBusinessRoutes } from './routes/business.js';
 import { createMerchantAdminService } from './admin/service.js';
+import { createAuthService } from './auth/service.js';
+import { createGuards } from './auth/guards.js';
+import { createOwnerBootstrapService } from './bootstrap/service.js';
 import { createMerchantProductService } from './catalog/service.js';
+import { createCheckoutService } from './checkout/service.js';
+import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
-import { createMerchantPurchasingService } from './purchasing/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
-import { createMerchantSalesReadService } from './sales/read-service.js';
 import { createPlatformAuth } from './platform/auth.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { createPlatformService } from './platform/service.js';
 import { registerPlatformSupportRoutes } from './platform/support-routes.js';
 import { createPlatformSupportService } from './platform/support-service.js';
+import { createMerchantPurchasingService } from './purchasing/service.js';
+import { createReturnService } from './returns/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
-import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
-import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
-import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
-import { registerOnboardingRoutes } from './routes/onboarding.js';
-import { registerSalesReadRoutes } from './routes/sales-read.js';
-import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
-import { registerHealthRoutes } from './routes/health.js';
-import { createOwnerBootstrapService } from './bootstrap/service.js';
 import { registerBootstrapRoutes } from './routes/bootstrap.js';
+import { registerBusinessRoutes } from './routes/business.js';
+import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
+import { registerCustomerRoutes } from './routes/customers.js';
+import { registerHealthRoutes } from './routes/health.js';
+import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
+import { registerOnboardingRoutes } from './routes/onboarding.js';
+import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
+import { registerSalesReadRoutes } from './routes/sales-read.js';
 import { registerOperationalObservability } from './runtime/observability.js';
+import { createMerchantSalesReadService } from './sales/read-service.js';
+import { createDrawerService } from './shifts/service.js';
+import type { MerchantAdminService } from './admin/service.js';
 import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
-import type { MerchantAdminService } from './admin/service.js';
 import type { MerchantProductService } from './catalog/service.js';
+import type { MerchantCustomerService } from './customers/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
-import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
-import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
+import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { BusinessDeps } from './routes/business.js';
+import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { ApiConfig } from './config.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -81,64 +84,23 @@ export interface ServerDeps {
    * route off says so.
    */
   readonly bootstrap?: OwnerBootstrapService | null;
-  /**
-   * The merchant's own administration authority.
-   *
-   * Supplied by tests; built from DATABASE_URL on first use otherwise, for the
-   * same reason the two above are. It is a separate dependency rather than a
-   * member of `business` because the till and the back office are different
-   * surfaces with different permissions, and bundling them would make it
-   * easy to hand a cashier's route an administrator's service.
-   */
+  /** Merchant settings, branches, tills, members and roles. */
   readonly admin?: MerchantAdminService;
-  /**
-   * Narrow catalogue write used by onboarding and later back-office product
-   * creation. It is separate from cashier reads and requires product.write.
-   */
+  /** Narrow catalogue write used by onboarding and back-office product creation. */
   readonly catalog?: MerchantProductService;
-
-  /**
-   * Merchant stock authority: adjustments, counts and branch transfers.
-   *
-   * Separate from `catalog` because they are different permissions over
-   * different truths — one edits what a product *is*, the other moves how much
-   * of it exists — and sharing an object would make it easy to hand a
-   * catalogue route the stock ledger.
-   */
+  /** Merchant stock authority: adjustments, counts and branch transfers. */
   readonly inventory?: MerchantInventoryService;
-
-  /**
-   * Purchasing and receiving authority: suppliers, purchase orders, receipts.
-   *
-   * Separate from `inventory` because only one of its operations touches
-   * stock. Ordering goods and counting them are different authorities with
-   * different permissions, and sharing an object would blur the boundary this
-   * strike exists to draw (ADR-0024 §7).
-   */
+  /** Purchasing and receiving authority: suppliers, orders and receipts. */
   readonly purchasing?: MerchantPurchasingService;
-
-  /**
-   * Read-only onboarding readiness authority.
-   *
-   * Kept separate from merchant mutations so this surface cannot accidentally
-   * acquire write authority while it is only meant to explain readiness.
-   */
+  /** Read-only onboarding readiness authority. */
   readonly onboarding?: MerchantOnboardingService;
-
+  /** Merchant customer directory and mutation authority. */
+  readonly customers?: MerchantCustomerService;
   /** Read-only merchant sales history, authorized by report.read. */
   readonly salesRead?: MerchantSalesReadService;
-
-  /**
-   * Korvi's own SaaS control plane. This is not merchant administration and it
-   * never receives a merchant principal. Tests may inject an in-memory service;
-   * production resolves the database-backed authority lazily.
-   */
+  /** Korvi's own SaaS control plane, separate from merchant administration. */
   readonly platform?: PlatformService;
-
-  /**
-   * Append-only internal support ledger for the SaaS control plane. It remains
-   * separate from lifecycle/commercial authority and from all merchant data.
-   */
+  /** Append-only internal support ledger for the SaaS control plane. */
   readonly platformSupport?: PlatformSupportService;
 }
 
@@ -172,14 +134,6 @@ function lazyAuthService(config: ApiConfig): AuthService {
   };
 }
 
-/**
- * The cashier's persistence, built once, on first use.
- *
- * Same shape as the auth service above and for the same reason: a process that
- * only answers /health should not open a connection, and a missing
- * DATABASE_URL is an operator's problem reported as 503 rather than a
- * credential failure.
- */
 function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
   let built: BusinessDeps | null = null;
 
@@ -210,12 +164,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         idempotency,
         audit,
       }),
-      drawer: createDrawerService({
-        shifts,
-        terminals,
-        idempotency,
-        audit,
-      }),
+      drawer: createDrawerService({ shifts, terminals, idempotency, audit }),
       returns: createReturnService({
         returns: createReturnRepository(prisma),
         terminals,
@@ -268,13 +217,6 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
   };
 }
 
-/**
- * Merchant administration, built once, on first use.
- *
- * Reading settings goes through the same tenant repository the till uses, so
- * there is one definition of what a tenant's settings are rather than two that
- * can drift.
- */
 function lazyAdminService(config: ApiConfig): MerchantAdminService {
   let built: MerchantAdminService | null = null;
 
@@ -299,9 +241,6 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
           allowWeightedItems: settings.allowWeightedItems,
           trackInventory: settings.trackInventory,
           allowNegativeStock: settings.allowNegativeStock,
-          // The persisted value, from the one settings model. A constant here
-          // would mean PATCH true, GET false — a read that contradicts the row
-          // it claims to describe.
           enableProductImages: settings.enableProductImages,
           receiptHeaderAr: settings.receiptHeaderAr,
           receiptFooterAr: settings.receiptFooterAr,
@@ -337,11 +276,6 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
   };
 }
 
-/**
- * Product bootstrap, built once on first use. It is intentionally not part of
- * the cashier BusinessDeps: cashier reads and back-office writes must not share
- * an authority object merely because both mention products.
- */
 function lazyCatalogService(config: ApiConfig): MerchantProductService {
   let built: MerchantProductService | null = null;
 
@@ -353,15 +287,9 @@ function lazyCatalogService(config: ApiConfig): MerchantProductService {
     return built;
   };
 
-  return {
-    create: (principal, input) => resolve().create(principal, input),
-  };
+  return { create: (principal, input) => resolve().create(principal, input) };
 }
 
-/**
- * Merchant stock authority, built once on first use like the others so /health
- * never needs a database connection.
- */
 function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
   let built: MerchantInventoryService | null = null;
 
@@ -384,10 +312,6 @@ function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
   };
 }
 
-/**
- * Purchasing authority, built once on first use like the others so /health
- * never needs a database connection.
- */
 function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
   let built: MerchantPurchasingService | null = null;
 
@@ -414,39 +338,43 @@ function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
   };
 }
 
-/**
- * Read-only onboarding authority, constructed lazily like the other database
- * services so /health never needs a database connection.
- */
 function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   let built: MerchantOnboardingService | null = null;
 
   const resolve = (): MerchantOnboardingService => {
     if (built !== null) return built;
-
     const url = config.DATABASE_URL;
-    if (url === undefined) {
-      throw new AuthUnavailableError('DATABASE_URL is not configured.');
-    }
-
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
     const prisma = createPrismaClient(url);
     built = createMerchantOnboardingService({
       readReadiness: (scope) => readTenantOnboardingReadiness(prisma, scope),
     });
+    return built;
+  };
 
+  return { readReadiness: (principal) => resolve().readReadiness(principal) };
+}
+
+function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
+  let built: MerchantCustomerService | null = null;
+
+  const resolve = (): MerchantCustomerService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantCustomerService(createPrismaClient(url));
     return built;
   };
 
   return {
-    readReadiness: (principal) => resolve().readReadiness(principal),
+    list: (principal, query) => resolve().list(principal, query),
+    detail: (principal, customerId) => resolve().detail(principal, customerId),
+    create: (principal, request) => resolve().create(principal, request),
+    update: (principal, customerId, request) =>
+      resolve().update(principal, customerId, request),
   };
 }
 
-/**
- * Read-only merchant sales history. Historical money, VAT and invoice fields
- * come from their immutable stored rows; this service never recalculates them
- * from the live catalogue.
- */
 function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
   let built: MerchantSalesReadService | null = null;
 
@@ -464,11 +392,6 @@ function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
   };
 }
 
-/**
- * Platform control-plane persistence, built once on first use. This stays
- * separate from merchant admin so neither authority can accidentally inherit
- * the other's identity or RLS context.
- */
 function lazyPlatformService(config: ApiConfig): PlatformService {
   let built: PlatformService | null = null;
 
@@ -495,12 +418,6 @@ function lazyPlatformService(config: ApiConfig): PlatformService {
   };
 }
 
-/**
- * Platform support-note persistence, built once on first use. The service is a
- * separate authority because lifecycle/commercial commands and an append-only
- * support ledger have different mutation rules even though both use the same
- * authenticated platform actor.
- */
 function lazyPlatformSupportService(config: ApiConfig): PlatformSupportService {
   let built: PlatformSupportService | null = null;
 
@@ -518,18 +435,6 @@ function lazyPlatformSupportService(config: ApiConfig): PlatformSupportService {
   };
 }
 
-/**
- * The public bootstrap surface, or nothing.
- *
- * Two configuration facts have to hold before this route can be served at all:
- * a database, and a signing key. Missing either is an operator's problem and
- * the route says 503 — a deployment that quietly served bootstrap without a
- * key would be serving a door with no lock.
- *
- * Built eagerly rather than lazily, because "is this configured" is the
- * question the route needs answered at registration time, not on the first
- * request from somebody holding a capability.
- */
 function bootstrapServiceFor(config: ApiConfig): OwnerBootstrapService | null {
   const url = config.DATABASE_URL;
   const signingKey = config.BOOTSTRAP_SIGNING_KEY;
@@ -558,15 +463,9 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
         censor: '[Redacted]',
       },
     },
-    // The central Korvi generator, not crypto.randomUUID. A v4 carries no
-    // time, so a request log line could not be ordered against a sale that was
-    // rung up offline and synced later. Every identifier in the system comes
-    // from one place (ADR-0003).
     genReqId: () => newId(),
   });
 
-  // Install correlation and low-cardinality telemetry before any business route
-  // is registered so every request follows one operations contract.
   registerOperationalObservability(app, config);
 
   const service = deps.auth ?? lazyAuthService(config);
@@ -574,20 +473,13 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   const business = deps.business ?? lazyBusinessDeps(config);
   const platformAuth = createPlatformAuth(config);
 
-  // Before anything else: a state-changing request from an origin this
-  // deployment does not know never reaches a handler.
   app.addHook('onRequest', guards.enforceOrigin);
 
-  // A configuration gap must not read as a credential failure. Without a
-  // database the auth routes answer 503, which is what it is.
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     if (error instanceof AuthUnavailableError) {
       request.log.error('database-backed route unavailable; DATABASE_URL is missing');
       return reply.code(503).send({ error: 'unavailable' });
     }
-    // Adapter/database errors can contain hosts, credentials or query detail.
-    // Correlate by request id and safe error class rather than serializing the
-    // raw exception into production logs.
     request.log.error(
       { errorType: error.name, statusCode: error.statusCode ?? 500 },
       'request failed',
@@ -616,6 +508,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerOnboardingRoutes(app, {
     service: deps.onboarding ?? lazyOnboardingService(config),
+    guards,
+  });
+  registerCustomerRoutes(app, {
+    service: deps.customers ?? lazyCustomerService(config),
     guards,
   });
   registerSalesReadRoutes(app, {
