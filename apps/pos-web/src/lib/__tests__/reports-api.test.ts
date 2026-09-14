@@ -23,9 +23,13 @@ const payload = {
 
 describe('merchant reports API', () => {
   it('sends explicit offset-aware boundaries and never invents tenant authority', async () => {
-    const fetchImpl = vi.fn(async (_input: string, _init?: RequestInit) =>
-      new Response(JSON.stringify(payload), { status: 200 }),
-    );
+    let requestedUrl = '';
+    let requestedInit: RequestInit | undefined;
+    const fetchImpl = vi.fn(async (input: string, init?: RequestInit) => {
+      requestedUrl = input;
+      requestedInit = init;
+      return new Response(JSON.stringify(payload), { status: 200 });
+    });
     const api = createReportsApi(fetchImpl);
 
     await api.period({
@@ -34,12 +38,11 @@ describe('merchant reports API', () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(url).toContain('/v1/admin/reports/period?');
-    expect(url).toContain('from=2026-09-01T00%3A00%3A00%2B03%3A00');
-    expect(url).toContain('to=2026-10-01T00%3A00%3A00%2B03%3A00');
-    expect(url).not.toContain('tenant');
-    expect(init).toMatchObject({ method: 'GET', credentials: 'same-origin' });
+    expect(requestedUrl).toContain('/v1/admin/reports/period?');
+    expect(requestedUrl).toContain('from=2026-09-01T00%3A00%3A00%2B03%3A00');
+    expect(requestedUrl).toContain('to=2026-10-01T00%3A00%3A00%2B03%3A00');
+    expect(requestedUrl).not.toContain('tenant');
+    expect(requestedInit).toMatchObject({ method: 'GET', credentials: 'same-origin' });
   });
 
   it('maps Saudi civil dates without using the browser local timezone', () => {
