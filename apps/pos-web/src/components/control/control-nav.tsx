@@ -92,7 +92,7 @@ export function ControlNav({
           ? 'غير مكتمل'
           : !authorized
             ? 'غير مصرح'
-            : navigationLocked
+            : navigationLocked && entry.section !== active
               ? 'عملية معلقة'
               : null;
         const className = cn(
@@ -133,6 +133,7 @@ export function ControlNav({
         return (
           <span
             key={entry.key}
+            aria-current={authorized && entry.section === active ? 'page' : undefined}
             aria-disabled="true"
             data-legacy-unavailable={built ? undefined : 'قريباً'}
             className={className}
