@@ -274,7 +274,10 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
         continue;
       }
       if (row.cmd === 'INSERT') {
-        expect(row.with_check, `${row.tablename}.${row.policyname} has no WITH CHECK`).not.toBeNull();
+        expect(
+          row.with_check,
+          `${row.tablename}.${row.policyname} has no WITH CHECK`,
+        ).not.toBeNull();
         continue;
       }
       expect(row.qual, `${row.tablename}.${row.policyname} has no USING`).not.toBeNull();
