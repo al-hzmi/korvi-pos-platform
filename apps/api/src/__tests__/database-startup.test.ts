@@ -41,12 +41,16 @@ describe('database startup admission', () => {
     const failure = new Error('deployment database refused');
 
     await expect(
-      prepareApplicationDatabase(prisma, { isProduction: true }, {
-        verifyDeploymentDatabase: vi.fn(async () => {
-          throw failure;
-        }),
-        provisionPermissionCatalogue: catalogue,
-      }),
+      prepareApplicationDatabase(
+        prisma,
+        { isProduction: true },
+        {
+          verifyDeploymentDatabase: vi.fn(async () => {
+            throw failure;
+          }),
+          provisionPermissionCatalogue: catalogue,
+        },
+      ),
     ).rejects.toBe(failure);
     expect(catalogue).not.toHaveBeenCalled();
   });

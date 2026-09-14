@@ -140,6 +140,10 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
           netMinor: 10_000n,
           vatMinor: 1_500n,
           totalMinor: 11_500n,
+          costKnownQuantityScaled: 0n,
+          costUnknownQuantityScaled: 1000n,
+          costValueMinor: 0n,
+          costProvenance: 'unknown',
         },
       });
       await tx.return.create({
@@ -183,6 +187,10 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
           netMinor: 2_000n,
           vatMinor: 300n,
           totalMinor: 2_300n,
+          costKnownQuantityScaled: 0n,
+          costUnknownQuantityScaled: 200n,
+          costValueMinor: 0n,
+          costProvenance: 'unknown',
         },
       });
 
