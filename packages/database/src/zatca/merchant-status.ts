@@ -224,11 +224,7 @@ export async function readMerchantZatcaStatus(
     MAX_ZATCA_STATUS_TERMINALS,
     MAX_ZATCA_STATUS_TERMINALS,
   );
-  const submissionLimit = validatedLimit(
-    query.submissionLimit,
-    MAX_ZATCA_STATUS_SUBMISSIONS,
-    25,
-  );
+  const submissionLimit = validatedLimit(query.submissionLimit, MAX_ZATCA_STATUS_SUBMISSIONS, 25);
   const tenant = scope.tenantId as string;
 
   return withTenant(prisma, scope.tenantId, async (tx) => {
