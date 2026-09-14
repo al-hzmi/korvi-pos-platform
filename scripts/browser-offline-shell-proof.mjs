@@ -181,6 +181,11 @@ try {
     `document.readyState === 'complete' || document.readyState === 'interactive'`,
     'initial cashier document',
   );
+  const expectedOrigin = new URL(baseUrl).origin;
+  await waitFor(
+    `location.origin === ${JSON.stringify(expectedOrigin)}`,
+    'initial cashier navigation',
+  );
   assert.equal(
     await evaluate('window.isSecureContext'),
     true,

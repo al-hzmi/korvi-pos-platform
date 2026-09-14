@@ -12,7 +12,7 @@ import type { ProductSummary } from './api-types';
 import type { CartLine } from './cart';
 
 export const OFFLINE_DB_NAME = 'korvi-pos-offline';
-export const OFFLINE_DB_VERSION = 3;
+export const OFFLINE_DB_VERSION = 4;
 export const OFFLINE_CATALOGUE_STORE = 'catalogue-v1';
 export const OFFLINE_SALE_DRAFT_STORE = 'sale-drafts-v1';
 export const OFFLINE_TRANSACTION_QUEUE_STORE = 'transaction-queue-v1';
@@ -572,6 +572,23 @@ function migrateQueueLifecycleV3(transaction: IDBTransaction): void {
   };
 }
 
+function migrateDraftPriceModeV4(transaction: IDBTransaction): void {
+  const store = transaction.objectStore(OFFLINE_SALE_DRAFT_STORE);
+  const request = store.openCursor();
+  request.onerror = () => transaction.abort();
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (cursor === null) return;
+    const row = cursor.value as Record<string, unknown>;
+    if (row['priceMode'] === 'inclusive') {
+      cursor.update({ ...row, priceMode: 'tax-inclusive' });
+    } else if (row['priceMode'] === 'exclusive') {
+      cursor.update({ ...row, priceMode: 'tax-exclusive' });
+    }
+    cursor.continue();
+  };
+}
+
 function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
@@ -582,6 +599,8 @@ function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
       if (event.oldVersion < 2) createQueueSchema(request.result);
       if (event.oldVersion < 3 && event.oldVersion >= 2 && request.transaction !== null)
         migrateQueueLifecycleV3(request.transaction);
+      if (event.oldVersion < 4 && request.transaction !== null)
+        migrateDraftPriceModeV4(request.transaction);
     };
     request.onblocked = () => {
       if (settled) return;
