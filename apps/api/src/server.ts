@@ -96,7 +96,7 @@ export interface ServerDeps {
   readonly onboarding?: MerchantOnboardingService;
   /** Merchant customer directory and mutation authority. */
   readonly customers?: MerchantCustomerService;
-  /** Read-only merchant sales history, authorized by report.read. */
+  /** Read-only merchant sales history and financial reports, authorized by report.read. */
   readonly salesRead?: MerchantSalesReadService;
   /** Korvi's own SaaS control plane, separate from merchant administration. */
   readonly platform?: PlatformService;
@@ -388,6 +388,7 @@ function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
   return {
     list: (principal, query) => resolve().list(principal, query),
     detail: (principal, saleId) => resolve().detail(principal, saleId),
+    report: (principal, query) => resolve().report(principal, query),
   };
 }
 
