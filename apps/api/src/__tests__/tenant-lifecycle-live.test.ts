@@ -90,6 +90,10 @@ const CONFIG: ApiConfig = {
   // both routes are deliberately unconfigured here.
   BOOTSTRAP_SIGNING_KEY: undefined,
   METRICS_AUTH_TOKEN: undefined,
+  PLATFORM_ADMIN_ACCESS_KEY: undefined,
+  PLATFORM_SESSION_SIGNING_KEY: undefined,
+  PLATFORM_ADMIN_ACTOR_REF: undefined,
+  PLATFORM_SESSION_TTL_SECONDS: 4 * 3600,
   isProduction: false,
 };
 
