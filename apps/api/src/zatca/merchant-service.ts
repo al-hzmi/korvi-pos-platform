@@ -1,10 +1,7 @@
 import { readMerchantZatcaStatus } from '@korvi/database/zatca-merchant';
 import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
 import type { PrismaClient } from '@korvi/database';
-import type {
-  MerchantZatcaStatus,
-  MerchantZatcaStatusQuery,
-} from '@korvi/database/zatca-merchant';
+import type { MerchantZatcaStatus, MerchantZatcaStatusQuery } from '@korvi/database/zatca-merchant';
 import type { AuthenticatedPrincipal, TenantScope } from '@korvi/domain';
 
 export interface MerchantZatcaService {
