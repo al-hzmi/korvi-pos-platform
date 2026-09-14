@@ -9,16 +9,21 @@ import {
   suspendTenant,
 } from '@korvi/database';
 import type {
+  PlatformAuditPage,
   PlatformTenantDetail,
   PlatformTenantListQuery,
   PlatformTenantPage,
   PrismaClient,
+  ProvisionedTenant,
   TenantLifecycleResult,
   TenantPlanAssignmentResult,
-  ProvisionedTenant,
-  PlatformAuditEntry,
 } from '@korvi/database';
-import type { CommercialAccountState, EntitlementGrant, TenantLifecycleState, Vertical } from '@korvi/domain';
+import type {
+  CommercialAccountState,
+  EntitlementGrant,
+  TenantLifecycleState,
+  Vertical,
+} from '@korvi/domain';
 
 export interface PlatformActor {
   readonly controlPlaneActorRef: string;
@@ -47,7 +52,11 @@ export interface PlatformService {
   ): Promise<PlatformTenantPage>;
   getTenant(actor: PlatformActor, tenantId: string): Promise<PlatformTenantDetail | null>;
   createTenant(actor: PlatformActor, input: NewPlatformTenant): Promise<ProvisionedTenant>;
-  activateTenant(actor: PlatformActor, tenantId: string, operationId: string): Promise<TenantLifecycleResult>;
+  activateTenant(
+    actor: PlatformActor,
+    tenantId: string,
+    operationId: string,
+  ): Promise<TenantLifecycleResult>;
   suspendTenant(
     actor: PlatformActor,
     tenantId: string,
@@ -64,7 +73,11 @@ export interface PlatformService {
     tenantId: string,
     input: PlatformPlanAssignment,
   ): Promise<TenantPlanAssignmentResult>;
-  listAudit(tenantId: string, limit?: number): Promise<readonly PlatformAuditEntry[]>;
+  listAudit(
+    actor: PlatformActor,
+    tenantId: string,
+    input?: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<PlatformAuditPage | null>;
 }
 
 export function createPlatformService(prisma: PrismaClient): PlatformService {
@@ -120,8 +133,8 @@ export function createPlatformService(prisma: PrismaClient): PlatformService {
       });
     },
 
-    async listAudit(tenantId, limit) {
-      return listPlatformTenantAudit(prisma, tenantId, limit);
+    async listAudit(actor, tenantId, input = {}) {
+      return listPlatformTenantAudit(prisma, actor.controlPlaneActorRef, tenantId, input);
     },
   };
 }
