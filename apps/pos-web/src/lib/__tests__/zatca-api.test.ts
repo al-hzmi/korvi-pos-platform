@@ -39,20 +39,23 @@ describe('ZATCA merchant web client', () => {
     },
   );
 
-  it('preserves server authorization failures as ApiError instead of inventing state', async () => {
-    const fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'forbidden' }), {
-        status: 403,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
+  it(
+    'preserves server authorization failures as ApiError instead of inventing state',
+    async () => {
+      const fetch = vi.fn(async () =>
+        new Response(JSON.stringify({ error: 'forbidden' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
 
-    await expect(createZatcaApi(fetch).status()).rejects.toMatchObject({
-      name: 'ApiError',
-      status: 403,
-      code: 'forbidden',
-    } satisfies Partial<ApiError>);
-  });
+      await expect(createZatcaApi(fetch).status()).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 403,
+        code: 'forbidden',
+      } satisfies Partial<ApiError>);
+    },
+  );
 
   it('maps transport failure to the normal network failure contract', async () => {
     const fetch = vi.fn(async () => {
