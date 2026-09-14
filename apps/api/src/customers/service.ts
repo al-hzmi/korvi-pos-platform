@@ -40,7 +40,9 @@ function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
   return { tenantId: brandTenantId(principal.tenantId) };
 }
 
-async function attempt(work: () => Promise<CustomerMutationResult>): Promise<CustomerCommandResult> {
+async function attempt(
+  work: () => Promise<CustomerMutationResult>,
+): Promise<CustomerCommandResult> {
   try {
     return { outcome: 'success', value: await work() };
   } catch (error) {
