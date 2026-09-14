@@ -111,7 +111,7 @@ jobs:
             async detail() {
               return null;
             },
-            async period(_subject, query) {
+            async report(_subject, query) {
               return {
                 fromInclusive: new Date(query.fromInclusive).toISOString(),
                 toExclusive: new Date(query.toExclusive).toISOString(),
@@ -188,6 +188,20 @@ jobs:
           cat artifacts/reports-browser/web.log
           exit 1
 
+      - name: Prove same-origin session and report transport
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --cookie 'korvi_session=reports-e2e' \
+            http://127.0.0.1:3000/v1/auth/me \
+            | tee artifacts/reports-browser/session.json
+          curl --fail --silent --show-error \
+            --cookie 'korvi_session=reports-e2e' \
+            'http://127.0.0.1:3000/v1/admin/reports/period?from=2026-09-01T00%3A00%3A00%2B03%3A00&to=2026-10-01T00%3A00%3A00%2B03%3A00' \
+            | tee artifacts/reports-browser/period.json
+          grep -q '"vatBasisPoints":1500' artifacts/reports-browser/period.json
+          grep -q '"totalMinor":"20700"' artifacts/reports-browser/period.json
+
       - name: Install browser driver
         run: python -m pip install --disable-pip-version-check selenium==4.35.0
 
@@ -229,6 +243,11 @@ jobs:
               driver.get(f'{base}/control/reports')
               wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'تفصيل ضريبة القيمة المضافة'))
               driver.save_screenshot('artifacts/reports-browser/reports-mobile.png')
+          except Exception:
+              driver.save_screenshot('artifacts/reports-browser/reports-failure.png')
+              with open('artifacts/reports-browser/reports-failure.html', 'w', encoding='utf-8') as page:
+                  page.write(driver.page_source)
+              raise
           finally:
               driver.quit()
           PY
