@@ -169,7 +169,9 @@ describe('row-level security', () => {
     // Standard tenant policies protect merchant-owned rows for reads and
     // writes. Control-plane support notes are intentionally a separate
     // authority boundary and have their own dedicated policy tests.
-    const isolation = policyBodies().filter((body) => /^\w+_isolation" ON /.test(body));
+    const isolation = policyBodies().filter((body) =>
+      /^\w+_isolation" ON /.test(body),
+    );
     expect(isolation.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
     for (const body of isolation) {
       expect(body).toContain('USING');
@@ -190,7 +192,9 @@ describe('row-level security', () => {
 
     expect(loginResolution).toHaveLength(1);
     expect(controlPlaneRead).toHaveLength(2);
-    expect(controlPlaneRead.some((body) => body.startsWith('tenants_control_plane_read"'))).toBe(true);
+    expect(
+      controlPlaneRead.some((body) => body.startsWith('tenants_control_plane_read"')),
+    ).toBe(true);
     expect(
       controlPlaneRead.some((body) => body.startsWith('platform_support_notes_control_plane_read"')),
     ).toBe(true);
