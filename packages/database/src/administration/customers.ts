@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { newId } from '@korvi/domain';
-import { withTenant } from '../tenant-context.js';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
+import { withTenant } from '../tenant-context.js';
 import type { TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
@@ -133,12 +133,16 @@ function encodeCursor(value: CursorValue): string {
 
 function decodeCursor(cursor: string | undefined): CursorValue | null {
   if (cursor === undefined || cursor === '') return null;
-  if (cursor.length > MAX_CURSOR_BYTES) throw new CustomerAdminRefusedError('invalid-cursor');
+  if (cursor.length > MAX_CURSOR_BYTES) {
+    throw new CustomerAdminRefusedError('invalid-cursor');
+  }
+
   try {
     const raw = Buffer.from(cursor, 'base64url').toString('utf8');
     if (Buffer.from(raw, 'utf8').toString('base64url') !== cursor) {
       throw new CustomerAdminRefusedError('invalid-cursor');
     }
+
     const value: unknown = JSON.parse(raw);
     if (
       value === null ||
@@ -148,6 +152,7 @@ function decodeCursor(cursor: string | undefined): CursorValue | null {
     ) {
       throw new CustomerAdminRefusedError('invalid-cursor');
     }
+
     return {
       nameAr: (value as { nameAr: string }).nameAr,
       id: (value as { id: string }).id,
@@ -184,7 +189,7 @@ async function reserveOperation(
   operationId: string,
   requestHash: string,
   nextId: () => string,
-): Promise<{ readonly created: boolean; readonly replay: AdminCustomer | null }> {
+): Promise<{ readonly replay: AdminCustomer | null }> {
   const inserted = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO "idempotency_keys"
       ("id","tenantId","scope","operationId","status","requestHash","createdAt")
@@ -208,17 +213,24 @@ async function reserveOperation(
        AND "operationId" = ${operationId}
      FOR UPDATE`;
   const row = rows.at(0);
-  if (row === undefined) throw new DatabaseError('Customer idempotency reservation disappeared.');
-  if (row.requestHash !== requestHash) throw new CustomerAdminRefusedError('idempotency-conflict');
+  if (row === undefined) {
+    throw new DatabaseError('Customer idempotency reservation disappeared.');
+  }
+  if (row.requestHash !== requestHash) {
+    throw new CustomerAdminRefusedError('idempotency-conflict');
+  }
 
   if (row.status === 'completed') {
     if (row.resultType !== 'customer' || row.resultSnapshot === null) {
       throw new DatabaseError('Completed customer operation has no authoritative snapshot.');
     }
-    return { created: false, replay: row.resultSnapshot as AdminCustomer };
+    return { replay: row.resultSnapshot as AdminCustomer };
   }
-  if (inserted.length === 0) throw new CustomerAdminRefusedError('operation-in-progress');
-  return { created: true, replay: null };
+
+  if (inserted.length === 0) {
+    throw new CustomerAdminRefusedError('operation-in-progress');
+  }
+  return { replay: null };
 }
 
 async function completeOperation(
@@ -391,11 +403,15 @@ export async function createMerchantCustomer(
       requestHash,
       nextId,
     );
-    if (reservation.replay !== null) return { customer: reservation.replay, replayed: true };
+    if (reservation.replay !== null) {
+      return { customer: reservation.replay, replayed: true };
+    }
 
     await lockTenant(tx, tenant);
     if (request.phone !== null) {
-      const conflict = await tx.customer.findFirst({ where: { tenantId: tenant, phone: request.phone } });
+      const conflict = await tx.customer.findFirst({
+        where: { tenantId: tenant, phone: request.phone },
+      });
       if (conflict !== null) throw new CustomerAdminRefusedError('phone-taken');
     }
 
@@ -416,6 +432,7 @@ export async function createMerchantCustomer(
       },
     });
     const customer = asCustomer(row);
+
     await appendAudit(
       tx,
       tenant,
@@ -449,7 +466,9 @@ export async function updateMerchantCustomer(
     email: request.email ?? null,
     vatNumber: request.vatNumber ?? null,
     isActive: request.isActive ?? null,
-    fields: Object.keys(request).filter((key) => key !== 'operationId').sort(),
+    fields: Object.keys(request)
+      .filter((key) => key !== 'operationId')
+      .sort(),
   });
 
   return withTenant(prisma, scope.tenantId, async (tx) => {
@@ -461,10 +480,14 @@ export async function updateMerchantCustomer(
       requestHash,
       nextId,
     );
-    if (reservation.replay !== null) return { customer: reservation.replay, replayed: true };
+    if (reservation.replay !== null) {
+      return { customer: reservation.replay, replayed: true };
+    }
 
     await lockTenant(tx, tenant);
-    const existing = await tx.customer.findFirst({ where: { tenantId: tenant, id: customerId } });
+    const existing = await tx.customer.findFirst({
+      where: { tenantId: tenant, id: customerId },
+    });
     if (existing === null) throw new CustomerAdminRefusedError('unknown-customer');
 
     if (request.phone !== undefined && request.phone !== null && request.phone !== existing.phone) {
@@ -492,8 +515,11 @@ export async function updateMerchantCustomer(
     const row: CustomerRow | null = await tx.customer.findFirst({
       where: { tenantId: tenant, id: customerId },
     });
-    if (row === null) throw new DatabaseError('The customer just updated could not be read back.');
+    if (row === null) {
+      throw new DatabaseError('The customer just updated could not be read back.');
+    }
     const customer = asCustomer(row);
+
     await appendAudit(
       tx,
       tenant,
