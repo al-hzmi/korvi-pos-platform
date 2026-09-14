@@ -40,7 +40,7 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
     permission: 'settings.manage',
   },
   { key: 'staff', label: 'الموظفون والصلاحيات', section: 'staff', permission: 'users.manage' },
-  { key: 'reports', label: 'التقارير', section: null },
+  { key: 'reports', label: 'التقارير', section: 'reports', permission: 'report.read' },
   { key: 'settings', label: 'الإعدادات', section: 'settings', permission: 'settings.manage' },
   { key: 'zatca', label: 'ZATCA', section: null },
 ];
