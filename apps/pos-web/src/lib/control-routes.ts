@@ -1,15 +1,4 @@
-export type ControlSection =
-  | 'home'
-  | 'products'
-  | 'inventory'
-  | 'purchasing'
-  | 'branches'
-  | 'staff'
-  | 'settings';
-
-type ControlSectionHrefMap = Readonly<Record<ControlSection, string>>;
-
-export const CONTROL_SECTION_HREFS: ControlSectionHrefMap = {
+export const CONTROL_SECTION_HREFS = {
   home: '/control',
   products: '/control/products',
   inventory: '/control/inventory',
@@ -17,21 +6,24 @@ export const CONTROL_SECTION_HREFS: ControlSectionHrefMap = {
   branches: '/control/branches',
   staff: '/control/staff',
   settings: '/control/settings',
-};
+} as const;
 
-const CONTROL_SECTION_BY_SLUG: Readonly<Record<string, ControlSection>> = {
-  products: 'products',
-  inventory: 'inventory',
-  purchasing: 'purchasing',
-  branches: 'branches',
-  staff: 'staff',
-  settings: 'settings',
-};
+export type ControlSection = keyof typeof CONTROL_SECTION_HREFS;
 
 export function controlSectionHref(section: ControlSection): string {
   return CONTROL_SECTION_HREFS[section];
 }
 
 export function controlSectionFromSlug(slug: string): ControlSection | null {
-  return CONTROL_SECTION_BY_SLUG[slug] ?? null;
+  switch (slug) {
+    case 'products':
+    case 'inventory':
+    case 'purchasing':
+    case 'branches':
+    case 'staff':
+    case 'settings':
+      return slug;
+    default:
+      return null;
+  }
 }
