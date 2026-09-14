@@ -291,14 +291,15 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
       if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
-      const entitlements = body.data.entitlements.map((grant) => {
-        if (grant.kind === 'flag') return grant;
-        const limit = BigInt(grant.limit);
-        if (limit > MAX_ENTITLEMENT_LIMIT) throw new RangeError('entitlement limit exceeds BIGINT');
-        return { key: grant.key, kind: grant.kind, limit } as const;
-      });
-
       try {
+        const entitlements = body.data.entitlements.map((grant) => {
+          if (grant.kind === 'flag') return grant;
+          const limit = BigInt(grant.limit);
+          if (limit > MAX_ENTITLEMENT_LIMIT) {
+            throw new RangeError('entitlement limit exceeds BIGINT');
+          }
+          return { key: grant.key, kind: grant.kind, limit } as const;
+        });
         const result = await service.assignPlan(subject(request), params.data.tenantId, {
           operationId: body.data.operationId,
           planKey: body.data.planKey,
