@@ -161,7 +161,7 @@ export function PlatformOwnerBootstrap({ tenantId }: { readonly tenantId: string
           </form>
         ) : (
           <div className="mt-5 space-y-4">
-            <PlatformNotice tone="success">
+            <PlatformNotice tone="neutral">
               تم إصدار رابط التفعيل. لا يُحفظ الرابط الخام داخل قاعدة البيانات، وسيختفي من هذه
               الشاشة عند تحديث الصفحة.
             </PlatformNotice>
