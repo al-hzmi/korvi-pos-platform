@@ -7,18 +7,10 @@ export const MAX_ZATCA_STATUS_SUBMISSIONS = 50;
 
 export type MerchantZatcaEnvironment = 'sandbox' | 'simulation' | 'production';
 export type MerchantZatcaProvisioningState =
-  | 'prepared'
-  | 'in-flight'
-  | 'issued'
-  | 'rejected'
-  | 'uncertain';
+  'prepared' | 'in-flight' | 'issued' | 'rejected' | 'uncertain';
 export type MerchantZatcaSubmissionMode = 'reporting' | 'clearance';
 export type MerchantZatcaSubmissionState =
-  | 'pending'
-  | 'in-flight'
-  | 'accepted'
-  | 'rejected'
-  | 'uncertain';
+  'pending' | 'in-flight' | 'accepted' | 'rejected' | 'uncertain';
 export type MerchantZatcaUncertaintyReason = 'credential-store' | 'transport' | 'response-invalid';
 
 export interface MerchantZatcaStatusQuery {

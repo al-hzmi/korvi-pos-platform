@@ -4,22 +4,23 @@ import { createZatcaApi } from '../zatca-api';
 
 describe('ZATCA merchant web client', () => {
   it('uses the bounded read-only merchant status route with same-origin credentials', async () => {
-    const fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          summary: {
-            terminalCount: '1',
-            complianceReadyTerminalCount: '1',
-            acceptedSubmissionCount: '3',
-            rejectedSubmissionCount: '0',
-            unresolvedSubmissionCount: '0',
-          },
-          terminals: [],
-          terminalHasMore: false,
-          recentSubmissions: [],
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            summary: {
+              terminalCount: '1',
+              complianceReadyTerminalCount: '1',
+              acceptedSubmissionCount: '3',
+              rejectedSubmissionCount: '0',
+              unresolvedSubmissionCount: '0',
+            },
+            terminals: [],
+            terminalHasMore: false,
+            recentSubmissions: [],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
     );
 
     const result = await createZatcaApi(fetch).status();
@@ -37,11 +38,12 @@ describe('ZATCA merchant web client', () => {
   });
 
   it('preserves server authorization failures as ApiError instead of inventing state', async () => {
-    const fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'forbidden' }), {
-        status: 403,
-        headers: { 'content-type': 'application/json' },
-      }),
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: 'forbidden' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }),
     );
 
     await expect(createZatcaApi(fetch).status()).rejects.toMatchObject({

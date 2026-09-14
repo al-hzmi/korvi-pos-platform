@@ -74,7 +74,9 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
   return (
     <div className="rounded-md border border-border bg-background p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums text-foreground" dir="ltr">{value}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-foreground" dir="ltr">
+        {value}
+      </p>
     </div>
   );
 }
@@ -223,9 +225,7 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {provisioning === null
-                          ? '—'
-                          : ENVIRONMENT_LABEL[provisioning.environment]}
+                        {provisioning === null ? '—' : ENVIRONMENT_LABEL[provisioning.environment]}
                       </td>
                       <td className="px-4 py-3" dir="ltr">
                         {provisioning === null
@@ -235,7 +235,9 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                       <td className="px-4 py-3" dir="ltr">
                         {dateTime(terminal.complianceAcceptedAt)}
                       </td>
-                      <td className="px-4 py-3" dir="ltr">{dateTime(terminal.lastSeenAt)}</td>
+                      <td className="px-4 py-3" dir="ltr">
+                        {dateTime(terminal.lastSeenAt)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -303,8 +305,12 @@ export function ZatcaPanel({ api: injected }: ZatcaPanelProps = {}): JSX.Element
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3" dir="ltr">{submission.authorityStatus ?? '—'}</td>
-                    <td className="px-4 py-3" dir="ltr">{submission.httpStatus ?? '—'}</td>
+                    <td className="px-4 py-3" dir="ltr">
+                      {submission.authorityStatus ?? '—'}
+                    </td>
+                    <td className="px-4 py-3" dir="ltr">
+                      {submission.httpStatus ?? '—'}
+                    </td>
                     <td className="px-4 py-3" dir="ltr">
                       {dateTime(
                         submission.resolvedAt ?? submission.requestStartedAt ?? submission.queuedAt,
