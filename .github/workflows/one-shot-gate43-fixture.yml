@@ -1,0 +1,37 @@
+name: One-shot Gate43 canonical fixture
+
+on:
+  push:
+    branches:
+      - tooling/gate43-canonical-fixture-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: tooling/gate43-canonical-fixture-20260915
+      - name: Canonicalize legacy valid draft fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'scripts/gate43-browser/main.ts';
+          const source = fs.readFileSync(path, 'utf8');
+          const before = "  priceMode: 'inclusive',";
+          const after = "  priceMode: 'tax-inclusive',";
+          const count = source.split(before).length - 1;
+          if (count !== 1) throw new Error(`expected one legacy PriceMode fixture, got ${count}`);
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
+          git diff --check
+          git config user.name 'korvi-proof-bot'
+          git config user.email 'korvi-proof-bot@users.noreply.github.com'
+          git add scripts/gate43-browser/main.ts
+          git commit -m 'fix(ci): canonicalize Gate43 legacy draft fixture'
+          git push origin HEAD:tooling/gate43-canonical-fixture-20260915
