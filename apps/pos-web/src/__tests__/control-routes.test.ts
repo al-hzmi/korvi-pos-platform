@@ -12,6 +12,7 @@ const SECTIONS: readonly ControlSection[] = [
   'products',
   'inventory',
   'purchasing',
+  'customers',
   'branches',
   'staff',
   'settings',
@@ -25,9 +26,10 @@ describe('merchant control route authority', () => {
     expect(new Set(hrefs).size).toBe(SECTIONS.length);
     expect(controlSectionHref('home')).toBe('/control');
     expect(controlSectionHref('sales')).toBe('/control/sales');
+    expect(controlSectionHref('customers')).toBe('/control/customers');
   });
 
-  it('round-trips every non-home route slug including the stored-truth sales surface', () => {
+  it('round-trips every non-home route slug including stored-truth product surfaces', () => {
     for (const section of SECTIONS) {
       if (section === 'home') continue;
       const href = controlSectionHref(section);
@@ -39,7 +41,6 @@ describe('merchant control route authority', () => {
   it('fails closed for unknown, root-like, and still-unbuilt P0 slugs', () => {
     expect(controlSectionFromSlug('')).toBeNull();
     expect(controlSectionFromSlug('home')).toBeNull();
-    expect(controlSectionFromSlug('customers')).toBeNull();
     expect(controlSectionFromSlug('reports')).toBeNull();
     expect(controlSectionFromSlug('zatca')).toBeNull();
     expect(controlSectionFromSlug('../settings')).toBeNull();
