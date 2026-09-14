@@ -58,9 +58,9 @@ describe('platform auth', () => {
 
     const now = new Date('2026-09-14T10:00:00.000Z');
     const token = auth.issueSession(principal!, now);
-    expect(auth.verifySession(token, new Date('2026-09-14T10:59:59.000Z'))?.controlPlaneActorRef).toBe(
-      ACTOR,
-    );
+    expect(
+      auth.verifySession(token, new Date('2026-09-14T10:59:59.000Z'))?.controlPlaneActorRef,
+    ).toBe(ACTOR);
     expect(auth.verifySession(token, new Date('2026-09-14T11:00:00.000Z'))).toBeNull();
 
     const tampered = `${token.slice(0, -1)}${token.endsWith('a') ? 'b' : 'a'}`;
