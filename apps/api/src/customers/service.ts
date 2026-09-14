@@ -5,7 +5,7 @@ import {
   listMerchantCustomers,
   readMerchantCustomer,
   updateMerchantCustomer,
-} from '@korvi/database/customers';
+} from '@korvi/database';
 import type { AuthenticatedPrincipal, TenantScope } from '@korvi/domain';
 import type {
   CustomerAdminRefusal,
@@ -15,8 +15,8 @@ import type {
   CustomerMutationResult,
   CustomerPage,
   CustomerUpdateRequest,
-} from '@korvi/database/customers';
-import type { PrismaClient } from '@korvi/database';
+  PrismaClient,
+} from '@korvi/database';
 
 export type CustomerCommandResult =
   | { readonly outcome: 'success'; readonly value: CustomerMutationResult }
@@ -40,9 +40,7 @@ function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
   return { tenantId: brandTenantId(principal.tenantId) };
 }
 
-async function attempt(
-  work: () => Promise<CustomerMutationResult>,
-): Promise<CustomerCommandResult> {
+async function attempt(work: () => Promise<CustomerMutationResult>): Promise<CustomerCommandResult> {
   try {
     return { outcome: 'success', value: await work() };
   } catch (error) {
