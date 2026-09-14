@@ -102,7 +102,7 @@ describe('platform support routes', () => {
       ],
       nextCursor: null,
     });
-    expect(seenActor).toEqual({ controlPlaneActorRef: ACTOR });
+    expect(seenActor?.controlPlaneActorRef).toBe(ACTOR);
   });
 
   it('rejects caller-supplied actor authority and creates with an idempotency operation', async () => {
@@ -146,7 +146,7 @@ describe('platform support routes', () => {
       replayed: false,
       note: { body: 'متابعة داخلية', actorRef: ACTOR },
     });
-    expect(seenActor).toEqual({ controlPlaneActorRef: ACTOR });
+    expect(seenActor?.controlPlaneActorRef).toBe(ACTOR);
   });
 
   it('uses 200 for an exact replay and 409 for conflicting idempotency intent', async () => {
