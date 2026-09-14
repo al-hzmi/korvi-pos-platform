@@ -122,5 +122,7 @@ export function saudiMonthStart(date: string): string {
 export function basisPointsLabel(value: number): string {
   const whole = Math.trunc(value / 100);
   const fraction = Math.abs(value % 100);
-  return fraction === 0 ? `${String(whole)}%` : `${String(whole)}.${String(fraction).padStart(2, '0')}%`;
+  return fraction === 0
+    ? `${String(whole)}%`
+    : `${String(whole)}.${String(fraction).padStart(2, '0')}%`;
 }
