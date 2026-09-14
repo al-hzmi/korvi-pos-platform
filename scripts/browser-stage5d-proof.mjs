@@ -152,32 +152,35 @@ async function waitForText(text, timeoutMs = 20_000) {
   );
 }
 
+// Control-centre navigation became URL-authoritative anchors. The browser proof
+// still drives the UI through real hit-tested pointer/touch events, so an
+// actionable target may now be either an enabled button or an href-bearing link.
 async function waitForEnabledButton(text, timeoutMs = 20_000) {
   await waitFor(
-    `(() => [...document.querySelectorAll('button')].some((button) => (${normalizedTextExpression(text)})(button.textContent ?? '') && !button.disabled))()`,
-    `enabled button ${text}`,
+    `(() => [...document.querySelectorAll('button, a[href]')].some((candidate) => (${normalizedTextExpression(text)})(candidate.textContent ?? '') && (!(candidate instanceof HTMLButtonElement) || !candidate.disabled)))()`,
+    `enabled action ${text}`,
     timeoutMs,
   );
 }
 
 async function pointForButton(text) {
   const value = await evaluate(`(async () => {
-    const button = [...document.querySelectorAll('button')].find((candidate) =>
-      (${normalizedTextExpression(text)})(candidate.textContent ?? '') && !candidate.disabled
+    const action = [...document.querySelectorAll('button, a[href]')].find((candidate) =>
+      (${normalizedTextExpression(text)})(candidate.textContent ?? '') && (!(candidate instanceof HTMLButtonElement) || !candidate.disabled)
     );
-    if (!(button instanceof HTMLElement)) return null;
-    button.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+    if (!(action instanceof HTMLElement)) return null;
+    action.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    if (!button.isConnected || button.disabled) return null;
-    const rect = button.getBoundingClientRect();
+    if (!action.isConnected || (action instanceof HTMLButtonElement && action.disabled)) return null;
+    const rect = action.getBoundingClientRect();
     const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     if (rect.width <= 0 || rect.height <= 0 || point.x < 0 || point.y < 0 || point.x > innerWidth || point.y > innerHeight) return null;
     const hit = document.elementFromPoint(point.x, point.y);
-    if (hit === null || (hit !== button && !button.contains(hit))) return null;
+    if (hit === null || (hit !== action && !action.contains(hit))) return null;
     return point;
   })()`);
   if (value === null || value === undefined)
-    throw new Error(`Enabled button not found or not hit-testable: ${text}`);
+    throw new Error(`Enabled action not found or not hit-testable: ${text}`);
   return value;
 }
 
