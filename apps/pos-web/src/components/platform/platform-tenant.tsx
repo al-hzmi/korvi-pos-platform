@@ -543,7 +543,40 @@ function CommercialPanel({
   );
 }
 
-function AuditPanel({ audit }: { readonly audit: PlatformAuditPage }): JSX.Element {
+function AuditPanel({
+  tenantId,
+  audit,
+}: {
+  readonly tenantId: string;
+  readonly audit: PlatformAuditPage;
+}): JSX.Element {
+  const [page, setPage] = useState(audit);
+  const [paging, setPaging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPage(audit);
+    setPaging(false);
+    setError(null);
+  }, [audit]);
+
+  const loadMore = async () => {
+    if (page.nextCursor === null || paging) return;
+    setPaging(true);
+    setError(null);
+    try {
+      const next = await api.audit(tenantId, { cursor: page.nextCursor, limit: 50 });
+      setPage((current) => ({
+        items: [...current.items, ...next.items],
+        nextCursor: next.nextCursor,
+      }));
+    } catch (caught) {
+      setError(messageFor(caught));
+    } finally {
+      setPaging(false);
+    }
+  };
+
   return (
     <CardSurface className="overflow-hidden">
       <div className="border-b border-border px-5 py-4">
@@ -552,11 +585,11 @@ function AuditPanel({ audit }: { readonly audit: PlatformAuditPage }): JSX.Eleme
           أحدث الأحداث المحفوظة داخل نطاق المنشأة.
         </p>
       </div>
-      {audit.items.length === 0 ? (
+      {page.items.length === 0 ? (
         <div className="p-5 text-sm text-muted-foreground">لا توجد أحداث مسجلة.</div>
       ) : (
         <div>
-          {audit.items.map((entry) => (
+          {page.items.map((entry) => (
             <div
               key={entry.id}
               className="grid gap-2 border-b border-border/70 px-5 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
@@ -581,6 +614,18 @@ function AuditPanel({ audit }: { readonly audit: PlatformAuditPage }): JSX.Eleme
               </time>
             </div>
           ))}
+        </div>
+      )}
+      {error === null ? null : (
+        <div className="border-t border-border p-4">
+          <PlatformNotice tone="danger">{error}</PlatformNotice>
+        </div>
+      )}
+      {page.nextCursor === null ? null : (
+        <div className="flex justify-center border-t border-border p-4">
+          <Button variant="outline" size="sm" loading={paging} onClick={() => void loadMore()}>
+            تحميل أحداث أقدم
+          </Button>
         </div>
       )}
     </CardSurface>
@@ -665,7 +710,7 @@ function DetailView({
             {canManageTenant ? <LifecycleActions detail={detail} onChanged={onRefresh} /> : null}
             {canManageCommercial ? <CommercialPanel detail={detail} onChanged={onRefresh} /> : null}
             {session.permissions.includes('platform.audit.read') ? (
-              <AuditPanel audit={audit} />
+              <AuditPanel tenantId={detail.tenant.id} audit={audit} />
             ) : null}
           </div>
 
@@ -763,9 +808,11 @@ export function PlatformTenant({ tenantId }: { readonly tenantId: string }): JSX
   useEffect(() => {
     const controller = new AbortController();
     let live = true;
+    let authenticatedSession: PlatformSession | null = null;
     void api
       .session({ signal: controller.signal })
       .then(async (session) => {
+        authenticatedSession = session;
         if (!live) return;
         setState({ kind: 'loading', session });
         const [detail, audit] = await Promise.all([
@@ -787,12 +834,11 @@ export function PlatformTenant({ tenantId }: { readonly tenantId: string }): JSX
           setState({ kind: 'signed-out', unavailable: true });
           return;
         }
-        const current = state;
-        if (current.kind === 'loading' || current.kind === 'ready' || current.kind === 'failed') {
-          setState({ kind: 'failed', session: current.session, message: messageFor(error) });
-        } else {
-          setState({ kind: 'signed-out', unavailable: false });
+        if (authenticatedSession !== null) {
+          setState({ kind: 'failed', session: authenticatedSession, message: messageFor(error) });
+          return;
         }
+        setState({ kind: 'signed-out', unavailable: false });
       });
     return () => {
       live = false;
