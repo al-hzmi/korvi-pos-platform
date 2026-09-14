@@ -4,6 +4,7 @@ import {
   MAX_ZATCA_STATUS_TERMINALS,
   MerchantZatcaStatusRefusedError,
 } from '@korvi/database/zatca-merchant';
+import type { MerchantZatcaStatusQuery } from '@korvi/database/zatca-merchant';
 import type { MerchantZatcaService } from '../zatca/merchant-service.js';
 import type { Guards } from '../auth/guards.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
@@ -36,8 +37,17 @@ export function registerZatcaRoutes(app: FastifyInstance, options: ZatcaRouteOpt
     const parsed = statusQuery.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
 
+    const query: MerchantZatcaStatusQuery = {
+      ...(parsed.data.terminalLimit === undefined
+        ? {}
+        : { terminalLimit: parsed.data.terminalLimit }),
+      ...(parsed.data.submissionLimit === undefined
+        ? {}
+        : { submissionLimit: parsed.data.submissionLimit }),
+    };
+
     try {
-      const status = await service.status(principal, parsed.data);
+      const status = await service.status(principal, query);
       return reply.code(200).send(status);
     } catch (error) {
       if (error instanceof MerchantZatcaStatusRefusedError) {
