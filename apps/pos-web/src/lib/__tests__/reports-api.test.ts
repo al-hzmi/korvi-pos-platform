@@ -23,7 +23,9 @@ const payload = {
 
 describe('merchant reports API', () => {
   it('sends explicit offset-aware boundaries and never invents tenant authority', async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
+    const fetchImpl = vi.fn(async (_input: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(payload), { status: 200 }),
+    );
     const api = createReportsApi(fetchImpl);
 
     await api.period({
