@@ -131,7 +131,12 @@ export function ControlNav({
         }
 
         return (
-          <span key={entry.key} aria-disabled="true" className={className}>
+          <span
+            key={entry.key}
+            aria-disabled="true"
+            data-legacy-unavailable={built ? undefined : 'قريباً'}
+            className={className}
+          >
             {content}
           </span>
         );
