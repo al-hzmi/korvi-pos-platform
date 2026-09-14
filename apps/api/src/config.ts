@@ -287,12 +287,12 @@ export interface ApiConfig {
   /** Machine-only scrape credential; never logged, echoed or persisted. */
   readonly METRICS_AUTH_TOKEN: string | undefined;
   /** Internal SaaS operator credential; never persisted or echoed. */
-  readonly PLATFORM_ADMIN_ACCESS_KEY?: string;
+  readonly PLATFORM_ADMIN_ACCESS_KEY: string | undefined;
   /** Independent HMAC key for the HttpOnly platform session. */
-  readonly PLATFORM_SESSION_SIGNING_KEY?: string;
+  readonly PLATFORM_SESSION_SIGNING_KEY: string | undefined;
   /** Opaque actor recorded by lifecycle/commercial audit rows. */
-  readonly PLATFORM_ADMIN_ACTOR_REF?: string;
-  readonly PLATFORM_SESSION_TTL_SECONDS?: number;
+  readonly PLATFORM_ADMIN_ACTOR_REF: string | undefined;
+  readonly PLATFORM_SESSION_TTL_SECONDS: number;
   readonly isProduction: boolean;
 }
 
