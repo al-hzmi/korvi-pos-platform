@@ -1,7 +1,13 @@
 export { createPrismaClient } from './client.js';
 export type { PrismaClient } from './client.js';
 
-export { withTenant, withoutTenant, withLoginSlug, normalizeTenantSlug } from './tenant-context.js';
+export {
+  withTenant,
+  withControlPlane,
+  withoutTenant,
+  withLoginSlug,
+  normalizeTenantSlug,
+} from './tenant-context.js';
 export type { TransactionClient } from './tenant-context.js';
 
 export {
@@ -82,6 +88,27 @@ export type {
 } from './provisioning/tenant.js';
 export { fingerprintProvisioning, fingerprintLifecycle } from './provisioning/fingerprint.js';
 export type { ProvisioningIntent, LifecycleIntent } from './provisioning/fingerprint.js';
+
+// SaaS platform control-plane reads. Tenant discovery uses the dedicated
+// SELECT-only control-plane RLS policy; every child-table detail read re-enters
+// the ordinary tenant context instead of widening RLS installation-wide.
+export {
+  MAX_PLATFORM_TENANT_PAGE,
+  MAX_PLATFORM_AUDIT_PAGE,
+  listPlatformTenants,
+  readPlatformTenant,
+  readPlatformTenantDetail,
+  listPlatformTenantAudit,
+} from './control-plane/tenant-read.js';
+export type {
+  PlatformTenantListQuery,
+  PlatformTenantSummary,
+  PlatformTenantPage,
+  PlatformOwnerSummary,
+  PlatformTenantOperations,
+  PlatformTenantDetail,
+  PlatformAuditEntry,
+} from './control-plane/tenant-read.js';
 
 // Merchant administration (Strike 4B-1). Tenant-scoped, session-derived, and
 // deliberately separate from the control-plane functions above: nothing here
