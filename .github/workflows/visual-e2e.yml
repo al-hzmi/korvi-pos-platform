@@ -1,0 +1,431 @@
+name: Visual E2E
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - apps/api/**
+      - apps/pos-web/**
+      - packages/ui/**
+      - .github/workflows/visual-e2e.yml
+  workflow_dispatch:
+
+concurrency:
+  group: visual-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  browser-proof:
+    name: Browser proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+
+      - name: Build browser dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+          npm run build -w @korvi/ui
+          npm run build -w @korvi/api
+
+      - name: Write controlled HTTP fixture
+        run: |
+          mkdir -p .e2e artifacts/browser
+          cat > .e2e/server.mjs <<'EOF'
+          import { buildServer } from '../apps/api/dist/server.js';
+          import { loadConfig } from '../apps/api/dist/config.js';
+
+          const TENANT_ID = '018fb000-0000-7000-8000-00000000000a';
+          const BRANCH_ID = '018fb000-0000-7000-8000-0000000000a1';
+          const TERMINAL_ID = '018fb000-0000-7000-8000-0000000000a2';
+          const USER_ID = '018fb000-0000-7000-8000-0000000000a4';
+          const SALE_ID = '018fb000-0000-7000-8000-0000000000a7';
+          const now = '2026-09-14T10:00:00.000Z';
+
+          const tenant = {
+            id: TENANT_ID,
+            slug: 'riyadah-retail',
+            name: 'شركة الريادة للتجزئة',
+            vatNumber: '310123456700003',
+            status: 'active',
+            lifecycleProvenance: 'control-plane',
+            activatedAt: '2026-09-01T08:00:00.000Z',
+            suspendedAt: null,
+            suspensionReason: null,
+            createdAt: '2026-08-28T08:00:00.000Z',
+            updatedAt: now,
+          };
+
+          const principal = {
+            tenantId: TENANT_ID,
+            tenantSlug: tenant.slug,
+            userId: USER_ID,
+            sessionId: '018fb000-0000-7000-8000-0000000000a8',
+            email: 'owner@riyadah.test',
+            displayName: 'محمد المدير',
+            roles: ['owner'],
+            permissions: ['report.read'],
+            maxDiscountBasisPoints: 10000n,
+            branchId: BRANCH_ID,
+          };
+
+          const auth = {
+            async login() {
+              return { outcome: 'failure', reason: 'bad-password' };
+            },
+            async authenticate(token) {
+              return token === 'merchant-e2e'
+                ? { outcome: 'success', principal }
+                : { outcome: 'failure', reason: 'unknown-session' };
+            },
+            async logout() {
+              return true;
+            },
+            async logoutAll() {
+              return 1;
+            },
+          };
+
+          const platform = {
+            async listTenants() {
+              return {
+                items: [
+                  tenant,
+                  {
+                    ...tenant,
+                    id: '018fb000-0000-7000-8000-00000000000b',
+                    slug: 'jeddah-foods',
+                    name: 'أسواق جدة للمواد الغذائية',
+                    vatNumber: '310987654300003',
+                    status: 'provisioning',
+                    activatedAt: null,
+                  },
+                ],
+                nextCursor: null,
+              };
+            },
+            async getTenant(_actor, tenantId) {
+              if (tenantId !== TENANT_ID) return null;
+              return {
+                tenant,
+                commercial: {
+                  assignmentId: '018fb000-0000-7000-8000-0000000000c1',
+                  planKey: 'growth',
+                  planRevision: 2,
+                  state: 'active',
+                  entitlements: [
+                    { key: 'branches.max', kind: 'limit', limit: 10n },
+                    { key: 'advanced_reports', kind: 'flag', enabled: true },
+                  ],
+                  assignedAt: '2026-09-01T08:05:00.000Z',
+                },
+                operations: {
+                  branches: { total: 3, active: 3 },
+                  terminals: { total: 7, active: 6 },
+                  users: { total: 14, active: 13 },
+                  owner: {
+                    id: USER_ID,
+                    displayName: 'محمد المدير',
+                    email: 'owner@riyadah.test',
+                    isActive: true,
+                    lastLoginAt: now,
+                  },
+                  lastActivityAt: now,
+                  zatca: {
+                    latestProvisioningState: 'production-active',
+                    latestProvisioningAt: '2026-09-05T09:30:00.000Z',
+                  },
+                },
+              };
+            },
+            async createTenant(_actor, input) {
+              return {
+                id: '018fb000-0000-7000-8000-00000000000c',
+                slug: input.slug,
+                name: input.name,
+                status: 'provisioning',
+                roles: [],
+                created: true,
+              };
+            },
+            async activateTenant(_actor, tenantId) {
+              return { id: tenantId, status: 'active', changed: true, revokedSessions: 0 };
+            },
+            async suspendTenant(_actor, tenantId) {
+              return { id: tenantId, status: 'suspended', changed: true, revokedSessions: 4 };
+            },
+            async reactivateTenant(_actor, tenantId) {
+              return { id: tenantId, status: 'active', changed: true, revokedSessions: 0 };
+            },
+            async assignPlan() {
+              return {
+                assignmentId: '018fb000-0000-7000-8000-0000000000c2',
+                planKey: 'growth',
+                planRevision: 2,
+                state: 'active',
+                entitlements: [{ key: 'branches.max', kind: 'limit', limit: 10n }],
+                assignedAt: now,
+              };
+            },
+            async listAudit(_actor, tenantId) {
+              if (tenantId !== TENANT_ID) return null;
+              return {
+                items: [
+                  {
+                    id: '018fb000-0000-7000-8000-0000000000d1',
+                    actorUserId: null,
+                    branchId: null,
+                    terminalId: null,
+                    eventType: 'commercial.plan-assigned',
+                    entityType: 'tenant',
+                    entityId: TENANT_ID,
+                    metadata: { planKey: 'growth', planRevision: 2 },
+                    occurredAt: '2026-09-01T08:05:00.000Z',
+                  },
+                ],
+                nextCursor: null,
+              };
+            },
+          };
+
+          const salesRead = {
+            async list() {
+              return {
+                items: [
+                  {
+                    id: SALE_ID,
+                    invoiceNumber: 'INV-2026-1001',
+                    status: 'finalized',
+                    sequence: 1001,
+                    branch: { id: BRANCH_ID, code: 'JED', nameAr: 'فرع جدة' },
+                    terminal: { id: TERMINAL_ID, code: 'POS-01', label: 'الصندوق 1' },
+                    cashier: { id: USER_ID, displayName: 'محمد المدير' },
+                    customer: {
+                      id: '018fb000-0000-7000-8000-0000000000e1',
+                      nameAr: 'شركة النخبة',
+                    },
+                    currency: 'SAR',
+                    netMinor: '10000',
+                    vatMinor: '1500',
+                    totalMinor: '11500',
+                    tenderKinds: ['electronic'],
+                    issuedAt: now,
+                  },
+                ],
+                nextCursor: null,
+              };
+            },
+            async detail(_subject, saleId) {
+              if (saleId !== SALE_ID) return null;
+              return {
+                id: SALE_ID,
+                operationId: '018fb000-0000-7000-8000-0000000000f1',
+                invoiceNumber: 'INV-2026-1001',
+                invoiceType: 'simplified',
+                status: 'finalized',
+                sequence: 1001,
+                priceMode: 'tax-inclusive',
+                branch: { id: BRANCH_ID, code: 'JED', nameAr: 'فرع جدة' },
+                terminal: { id: TERMINAL_ID, code: 'POS-01', label: 'الصندوق 1' },
+                cashier: {
+                  id: USER_ID,
+                  displayName: 'محمد المدير',
+                  email: 'owner@riyadah.test',
+                },
+                customer: {
+                  id: '018fb000-0000-7000-8000-0000000000e1',
+                  nameAr: 'شركة النخبة',
+                  phone: '0500000000',
+                  vatNumber: '310111111100003',
+                },
+                currency: 'SAR',
+                grossMinor: '11500',
+                lineDiscountMinor: '0',
+                basketDiscountMinor: '0',
+                netMinor: '10000',
+                vatMinor: '1500',
+                totalMinor: '11500',
+                tenderedMinor: '11500',
+                changeMinor: '0',
+                issuedAt: now,
+                lines: [
+                  {
+                    id: '018fb000-0000-7000-8000-000000000101',
+                    lineNumber: 1,
+                    productId: '018fb000-0000-7000-8000-000000000102',
+                    sku: 'SKU-100',
+                    nameAr: 'منتج تجريبي فاخر',
+                    nameEn: 'Premium demo item',
+                    productType: 'standard',
+                    unitPriceMinor: '11500',
+                    vatBasisPoints: 1500,
+                    quantityScaled: '1000',
+                    grossMinor: '11500',
+                    lineDiscountMinor: '0',
+                    basketDiscountMinor: '0',
+                    netMinor: '10000',
+                    vatMinor: '1500',
+                    totalMinor: '11500',
+                  },
+                ],
+                tenders: [
+                  {
+                    id: '018fb000-0000-7000-8000-000000000103',
+                    kind: 'electronic',
+                    scheme: 'mada',
+                    amountMinor: '11500',
+                    changeMinor: '0',
+                    reference: 'APPROVAL-92731',
+                  },
+                ],
+                invoice: {
+                  id: '018fb000-0000-7000-8000-000000000104',
+                  invoiceNumber: 'INV-2026-1001',
+                  invoiceType: 'simplified',
+                  sellerName: 'شركة الريادة للتجزئة',
+                  sellerVatNumber: '310123456700003',
+                  buyerName: 'شركة النخبة',
+                  buyerVatNumber: '310111111100003',
+                  netMinor: '10000',
+                  vatMinor: '1500',
+                  totalMinor: '11500',
+                  currency: 'SAR',
+                  issuedAt: now,
+                  taxBreakdown: [{ vatBasisPoints: 1500, netMinor: '10000', vatMinor: '1500' }],
+                },
+                returns: [],
+              };
+            },
+          };
+
+          const config = loadConfig({
+            NODE_ENV: 'test',
+            LOG_LEVEL: 'fatal',
+            APP_ORIGINS: 'http://127.0.0.1:3000',
+            PLATFORM_ADMIN_ACCESS_KEY: 'platform-access-key-0123456789012345',
+            PLATFORM_SESSION_SIGNING_KEY: 'platform-signing-key-9876543210987654',
+            PLATFORM_ADMIN_ACTOR_REF: 'e2e-platform-operator',
+          });
+
+          const app = buildServer(config, { auth, platform, salesRead });
+          await app.listen({ host: '127.0.0.1', port: 3001 });
+
+          const shutdown = async () => {
+            await app.close();
+            process.exit(0);
+          };
+          process.on('SIGTERM', shutdown);
+          process.on('SIGINT', shutdown);
+          EOF
+
+      - name: Start Fastify and Next
+        run: |
+          node .e2e/server.mjs > artifacts/browser/api.log 2>&1 &
+          echo $! > .e2e/api.pid
+          KORVI_API_ORIGIN=http://127.0.0.1:3001 npm run dev -w @korvi/pos-web -- --hostname 127.0.0.1 --port 3000 > artifacts/browser/web.log 2>&1 &
+          echo $! > .e2e/web.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000/platform >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat artifacts/browser/api.log
+          cat artifacts/browser/web.log
+          exit 1
+
+      - name: Install browser driver
+        run: python -m pip install --disable-pip-version-check selenium==4.35.0
+
+      - name: Capture authenticated product surfaces
+        run: |
+          cat > .e2e/capture.py <<'PY'
+          import os
+          import shutil
+          from selenium import webdriver
+          from selenium.webdriver.chrome.service import Service
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support import expected_conditions as EC
+          from selenium.webdriver.support.ui import WebDriverWait
+
+          base = 'http://127.0.0.1:3000'
+          options = webdriver.ChromeOptions()
+          options.add_argument('--headless=new')
+          options.add_argument('--no-sandbox')
+          options.add_argument('--disable-dev-shm-usage')
+          options.add_argument('--force-device-scale-factor=1')
+          options.add_argument('--window-size=1440,1100')
+          chromedriver = shutil.which('chromedriver')
+          service = Service(chromedriver) if chromedriver else Service()
+          driver = webdriver.Chrome(service=service, options=options)
+          wait = WebDriverWait(driver, 25)
+
+          try:
+              driver.get(f'{base}/platform')
+              access = wait.until(EC.visibility_of_element_located((By.ID, 'platform-access-key')))
+              access.send_keys('platform-access-key-0123456789012345')
+              driver.find_element(By.XPATH, "//button[contains(., 'دخول آمن')]").click()
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'شركة الريادة للتجزئة'))
+              driver.save_screenshot('artifacts/browser/platform-dashboard-desktop.png')
+
+              tenant_link = wait.until(
+                  EC.element_to_be_clickable((By.CSS_SELECTOR, 'a[href^="/platform/tenants/"]'))
+              )
+              tenant_link.click()
+              wait.until(EC.url_contains('/platform/tenants/'))
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'شركة الريادة للتجزئة'))
+              driver.save_screenshot('artifacts/browser/platform-tenant-detail-desktop.png')
+
+              driver.delete_all_cookies()
+              driver.get(base)
+              driver.add_cookie({'name': 'korvi_session', 'value': 'merchant-e2e', 'path': '/'})
+              driver.get(f'{base}/control/sales')
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'INV-2026-1001'))
+              driver.save_screenshot('artifacts/browser/sales-desktop.png')
+
+              invoice = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'INV-2026-1001')]")))
+              invoice.click()
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'منتج تجريبي فاخر'))
+              driver.save_screenshot('artifacts/browser/sales-detail-desktop.png')
+
+              driver.set_window_size(390, 844)
+              driver.get(f'{base}/control/sales')
+              wait.until(EC.text_to_be_present_in_element((By.TAG_NAME, 'body'), 'INV-2026-1001'))
+              driver.save_screenshot('artifacts/browser/sales-mobile.png')
+          finally:
+              driver.quit()
+          PY
+          python .e2e/capture.py
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: korvi-platform-sales-browser-proof-${{ github.sha }}
+          path: artifacts/browser
+          if-no-files-found: error
+          retention-days: 14
