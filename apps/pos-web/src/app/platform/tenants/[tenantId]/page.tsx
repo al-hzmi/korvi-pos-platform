@@ -1,3 +1,4 @@
+import { PlatformSupportNotes } from '../../../../components/platform/platform-support-notes';
 import { PlatformTenant } from '../../../../components/platform/platform-tenant';
 
 interface PlatformTenantPageProps {
@@ -8,5 +9,10 @@ export default async function PlatformTenantPage({
   params,
 }: PlatformTenantPageProps): Promise<React.JSX.Element> {
   const { tenantId } = await params;
-  return <PlatformTenant tenantId={tenantId} />;
+  return (
+    <>
+      <PlatformTenant tenantId={tenantId} />
+      <PlatformSupportNotes tenantId={tenantId} />
+    </>
+  );
 }
