@@ -8,9 +8,19 @@ const PRODUCTION_COOKIE = '__Host-korvi_platform_session';
 const DEVELOPMENT_COOKIE = 'korvi_platform_session';
 const TOKEN_VERSION = 1;
 
+export const PLATFORM_PERMISSIONS = [
+  'platform.tenants.read',
+  'platform.tenants.manage',
+  'platform.commercial.manage',
+  'platform.audit.read',
+] as const;
+
+export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];
+
 export interface PlatformPrincipal {
   readonly controlPlaneActorRef: string;
   readonly expiresAt: number;
+  readonly permissions: readonly PlatformPermission[];
 }
 
 export interface PlatformAuth {
@@ -19,6 +29,7 @@ export interface PlatformAuth {
   issueSession(principal: PlatformPrincipal, now?: Date): string;
   verifySession(token: string, now?: Date): PlatformPrincipal | null;
   requireSession: preHandlerAsyncHookHandler;
+  requirePermission(permission: PlatformPermission): preHandlerAsyncHookHandler;
   setSessionCookie(reply: FastifyReply, token: string): void;
   clearSessionCookie(reply: FastifyReply): void;
 }
@@ -77,6 +88,14 @@ function configuredValues(config: ApiConfig): {
   };
 }
 
+function principal(actor: string, expiresAt: number): PlatformPrincipal {
+  return {
+    controlPlaneActorRef: actor,
+    expiresAt,
+    permissions: PLATFORM_PERMISSIONS,
+  };
+}
+
 export function createPlatformAuth(config: ApiConfig): PlatformAuth {
   const values = configuredValues(config);
   const name = cookieName(config.isProduction);
@@ -86,17 +105,16 @@ export function createPlatformAuth(config: ApiConfig): PlatformAuth {
     const expected = digestSecret(values.accessKey);
     const provided = digestSecret(accessKey);
     if (!timingSafeEqual(expected, provided)) return null;
-    return {
-      controlPlaneActorRef: values.actor,
-      expiresAt: Math.floor(Date.now() / 1000) + values.ttl,
-    };
+    return principal(values.actor, Math.floor(Date.now() / 1000) + values.ttl);
   }
 
-  function issueSession(principal: PlatformPrincipal, now: Date = new Date()): string {
+  function issueSession(subject: PlatformPrincipal, now: Date = new Date()): string {
     if (values === null) throw new Error('Platform administration is not configured.');
+    const actor = normalizeControlPlaneActor(subject.controlPlaneActorRef);
+    if (actor !== values.actor) throw new Error('Platform principal does not match configuration.');
     const payload: TokenPayload = {
       v: TOKEN_VERSION,
-      actor: normalizeControlPlaneActor(principal.controlPlaneActorRef),
+      actor,
       exp: Math.floor(now.getTime() / 1000) + values.ttl,
     };
     const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
@@ -120,7 +138,7 @@ export function createPlatformAuth(config: ApiConfig): PlatformAuth {
       if (!Number.isInteger(payload.exp)) return null;
       const exp = payload.exp as number;
       if (exp <= Math.floor(now.getTime() / 1000)) return null;
-      return { controlPlaneActorRef: values.actor, expiresAt: exp };
+      return principal(values.actor, exp);
     } catch {
       return null;
     }
@@ -136,14 +154,27 @@ export function createPlatformAuth(config: ApiConfig): PlatformAuth {
       await reply.code(401).send({ error: 'platform_unauthenticated' });
       return;
     }
-    const principal = verifySession(token);
-    if (principal === null) {
+    const subject = verifySession(token);
+    if (subject === null) {
       clearSessionCookie(reply);
       await reply.code(401).send({ error: 'platform_unauthenticated' });
       return;
     }
-    request.platformAuth = principal;
+    request.platformAuth = subject;
   };
+
+  function requirePermission(permission: PlatformPermission): preHandlerAsyncHookHandler {
+    return async (request, reply) => {
+      const subject = request.platformAuth;
+      if (subject === undefined) {
+        await reply.code(401).send({ error: 'platform_unauthenticated' });
+        return;
+      }
+      if (!subject.permissions.includes(permission)) {
+        await reply.code(403).send({ error: 'platform_forbidden' });
+      }
+    };
+  }
 
   function setSessionCookie(reply: FastifyReply, token: string): void {
     if (values === null) throw new Error('Platform administration is not configured.');
@@ -160,6 +191,7 @@ export function createPlatformAuth(config: ApiConfig): PlatformAuth {
     issueSession,
     verifySession,
     requireSession,
+    requirePermission,
     setSessionCookie,
     clearSessionCookie,
   };
