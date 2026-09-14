@@ -1,0 +1,35 @@
+name: Korvi format platform test once
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - .github/workflows/korvi-format-platform-test-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: node scripts/verify-package-manager.mjs
+      - run: npm ci --registry=https://registry.npmjs.org
+      - run: npx prettier --write apps/api/src/__tests__/platform-auth-routes.test.ts
+      - run: rm .github/workflows/korvi-format-platform-test-once.yml
+      - name: Commit formatting
+        run: |
+          git config user.name korvi-ci
+          git config user.email korvi-ci@users.noreply.github.com
+          git add apps/api/src/__tests__/platform-auth-routes.test.ts .github/workflows/korvi-format-platform-test-once.yml
+          git commit -m "chore: format platform route tests"
+          git push origin HEAD:strike/product-routing-p0
