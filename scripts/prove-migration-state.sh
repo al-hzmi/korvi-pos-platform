@@ -8,6 +8,31 @@ if [ -z "${DATABASE_URL:-}" ]; then
   echo '[x] migration proof requires DATABASE_URL' >&2
   exit 1
 fi
+if [ -z "${SHADOW_DATABASE_URL:-}" ]; then
+  echo '[x] migration proof requires a dedicated SHADOW_DATABASE_URL' >&2
+  exit 1
+fi
+
+# Replaying migration history must never target the production database. Compare
+# only connection targets (host/port/database), never credentials, and refuse a
+# same-database shadow even if the usernames or query parameters differ.
+if ! shadow_relation="$(
+  DATABASE_URL="$DATABASE_URL" SHADOW_DATABASE_URL="$SHADOW_DATABASE_URL" \
+    node --input-type=module <<'NODE'
+const primary = new URL(process.env.DATABASE_URL);
+const shadow = new URL(process.env.SHADOW_DATABASE_URL);
+const target = (url) =>
+  [url.protocol, url.hostname, url.port || '5432', decodeURIComponent(url.pathname)].join('|');
+process.stdout.write(target(primary) === target(shadow) ? 'same' : 'different');
+NODE
+)"; then
+  echo '[x] migration proof could not validate shadow database isolation' >&2
+  exit 1
+fi
+if [ "$shadow_relation" != 'different' ]; then
+  echo '[x] SHADOW_DATABASE_URL must target a different database from DATABASE_URL' >&2
+  exit 1
+fi
 
 migration_directories="$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
 if [ "$migration_directories" -lt 1 ]; then
@@ -52,9 +77,15 @@ if ! diff -u "$expected_manifest" "$actual_manifest"; then
   exit 1
 fi
 
+# Migrations — not the reduced merchant Prisma datamodel — are the complete
+# database authority. Some reviewed control-plane tables intentionally stay out
+# of generated Prisma Client, so comparing the live database to schema.prisma
+# would report those security boundaries as false drift. Replay the immutable
+# migration history in the isolated shadow database and compare that complete
+# result to the live datasource instead.
 npx --no-install prisma migrate diff \
-  --from-config-datasource \
-  --to-schema prisma/schema.prisma \
+  --from-migrations prisma/migrations \
+  --to-config-datasource \
   --exit-code
 
-printf '[ok] migration proof: %s source migrations, exact successful ledger/checksums, zero schema drift\n' "$migration_directories"
+printf '[ok] migration proof: %s source migrations, exact successful ledger/checksums, zero migration-history drift\n' "$migration_directories"
