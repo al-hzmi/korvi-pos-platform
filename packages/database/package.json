@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./customers": {
+      "types": "./dist/src/administration/customers.d.ts",
+      "default": "./dist/src/administration/customers.js"
     }
   },
   "files": [
