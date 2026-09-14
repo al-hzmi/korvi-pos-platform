@@ -258,10 +258,16 @@ export async function readMerchantPeriodReport(
     const returns = totals(returnRows[0]);
 
     const salesTax = new Map(
-      salesTaxRows.map((row) => [row.vatBasisPoints, { net: big(row.netMinor), vat: big(row.vatMinor) }]),
+      salesTaxRows.map((row) => [
+        row.vatBasisPoints,
+        { net: big(row.netMinor), vat: big(row.vatMinor) },
+      ]),
     );
     const returnsTax = new Map(
-      returnTaxRows.map((row) => [row.vatBasisPoints, { net: big(row.netMinor), vat: big(row.vatMinor) }]),
+      returnTaxRows.map((row) => [
+        row.vatBasisPoints,
+        { net: big(row.netMinor), vat: big(row.vatMinor) },
+      ]),
     );
     const rates = [...new Set([...salesTax.keys(), ...returnsTax.keys()])].sort((a, b) => a - b);
 
