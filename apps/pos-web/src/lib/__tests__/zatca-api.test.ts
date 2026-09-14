@@ -57,15 +57,18 @@ describe('ZATCA merchant web client', () => {
     },
   );
 
-  it('maps transport failure to the normal network failure contract', async () => {
-    const fetch = vi.fn(async () => {
-      throw new TypeError('offline');
-    });
+  it(
+    'maps transport failure to the normal network failure contract',
+    async () => {
+      const fetch = vi.fn(async () => {
+        throw new TypeError('offline');
+      });
 
-    await expect(createZatcaApi(fetch).status()).rejects.toMatchObject({
-      name: 'ApiError',
-      status: 0,
-      code: 'network',
-    } satisfies Partial<ApiError>);
-  });
+      await expect(createZatcaApi(fetch).status()).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 0,
+        code: 'network',
+      } satisfies Partial<ApiError>);
+    },
+  );
 });
