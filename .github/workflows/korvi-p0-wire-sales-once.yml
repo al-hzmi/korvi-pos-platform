@@ -1,0 +1,115 @@
+name: Korvi P0 wire sales once
+
+on:
+  push:
+    paths:
+      - '.github/workflows/korvi-p0-wire-sales-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: node scripts/verify-package-manager.mjs
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Wire sales runtime and correct browser contract
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function replaceOnce(source, before, after, label) {
+            if (!source.includes(before)) throw new Error(`Missing patch anchor: ${label}`);
+            return source.replace(before, after);
+          }
+
+          const serverPath = 'apps/api/src/server.ts';
+          let server = fs.readFileSync(serverPath, 'utf8');
+          server = replaceOnce(
+            server,
+            "import { createMerchantOnboardingService } from './onboarding/service.js';\n",
+            "import { createMerchantOnboardingService } from './onboarding/service.js';\nimport { createMerchantSalesReadService } from './sales/read-service.js';\n",
+            'sales service import',
+          );
+          server = replaceOnce(
+            server,
+            "import { registerOnboardingRoutes } from './routes/onboarding.js';\n",
+            "import { registerOnboardingRoutes } from './routes/onboarding.js';\nimport { registerSalesReadRoutes } from './routes/sales-read.js';\n",
+            'sales route import',
+          );
+          server = replaceOnce(
+            server,
+            "import type { MerchantOnboardingService } from './onboarding/service.js';\n",
+            "import type { MerchantOnboardingService } from './onboarding/service.js';\nimport type { MerchantSalesReadService } from './sales/read-service.js';\n",
+            'sales type import',
+          );
+          server = replaceOnce(
+            server,
+            "  readonly onboarding?: MerchantOnboardingService;\n\n  /**\n   * Korvi's own SaaS control plane.",
+            "  readonly onboarding?: MerchantOnboardingService;\n\n  /** Read-only merchant sales history, authorized by report.read. */\n  readonly salesRead?: MerchantSalesReadService;\n\n  /**\n   * Korvi's own SaaS control plane.",
+            'sales dependency',
+          );
+          server = replaceOnce(
+            server,
+            "/**\n * Platform control-plane persistence, built once on first use. This stays\n",
+            "/**\n * Read-only merchant sales history. Historical money, VAT and invoice fields\n * come from their immutable stored rows; this service never recalculates them\n * from the live catalogue.\n */\nfunction lazySalesReadService(config: ApiConfig): MerchantSalesReadService {\n  let built: MerchantSalesReadService | null = null;\n\n  const resolve = (): MerchantSalesReadService => {\n    if (built !== null) return built;\n    const url = config.DATABASE_URL;\n    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');\n    built = createMerchantSalesReadService(createPrismaClient(url));\n    return built;\n  };\n\n  return {\n    list: (principal, query) => resolve().list(principal, query),\n    detail: (principal, saleId) => resolve().detail(principal, saleId),\n  };\n}\n\n/**\n * Platform control-plane persistence, built once on first use. This stays\n",
+            'sales lazy service',
+          );
+          server = replaceOnce(
+            server,
+            "  registerOnboardingRoutes(app, {\n    service: deps.onboarding ?? lazyOnboardingService(config),\n    guards,\n  });\n  registerPlatformRoutes(app, {",
+            "  registerOnboardingRoutes(app, {\n    service: deps.onboarding ?? lazyOnboardingService(config),\n    guards,\n  });\n  registerSalesReadRoutes(app, {\n    service: deps.salesRead ?? lazySalesReadService(config),\n    guards,\n  });\n  registerPlatformRoutes(app, {",
+            'sales route registration',
+          );
+          fs.writeFileSync(serverPath, server);
+
+          const apiPath = 'apps/pos-web/src/lib/sales-read-api.ts';
+          let api = fs.readFileSync(apiPath, 'utf8');
+          api = replaceOnce(
+            api,
+            "export interface MerchantSaleDetail extends MerchantSaleSummary {\n  readonly operationId: string;\n  readonly invoiceType: string | null;\n  readonly priceMode: string;\n  readonly cashier: { readonly id: string; readonly displayName: string; readonly email: string };\n",
+            "export interface MerchantSaleDetail {\n  readonly id: string;\n  readonly operationId: string;\n  readonly invoiceNumber: string | null;\n  readonly invoiceType: string | null;\n  readonly status: MerchantSaleStatus;\n  readonly sequence: number;\n  readonly priceMode: string;\n  readonly branch: { readonly id: string; readonly code: string; readonly nameAr: string };\n  readonly terminal: { readonly id: string; readonly code: string; readonly label: string };\n  readonly cashier: { readonly id: string; readonly displayName: string; readonly email: string };\n",
+            'detail wire contract',
+          );
+          api = replaceOnce(
+            api,
+            "  readonly grossMinor: string;\n",
+            "  readonly currency: string;\n  readonly grossMinor: string;\n",
+            'detail currency',
+          );
+          fs.writeFileSync(apiPath, api);
+          NODE
+      - name: Format touched production files
+        run: >-
+          npx prettier --write
+          apps/api/src/server.ts
+          apps/api/src/routes/sales-read.ts
+          packages/database/src/sales/read-model.ts
+          apps/pos-web/src/lib/sales-read-api.ts
+          apps/pos-web/src/components/control/sales-panel.tsx
+          apps/pos-web/src/components/control/control-app.tsx
+          apps/pos-web/src/components/control/control-nav.tsx
+          apps/pos-web/src/lib/control-routes.ts
+      - name: Remove one-shot executor
+        run: rm .github/workflows/korvi-p0-wire-sales-once.yml
+      - name: Commit wired Sales capability
+        shell: bash
+        run: |
+          git config user.name 'korvi-ci'
+          git config user.email 'korvi-ci@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'feat(sales): wire merchant sales end to end'
+          git push origin HEAD:strike/product-routing-p0
