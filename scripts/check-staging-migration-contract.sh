@@ -21,11 +21,15 @@ KORVI_ENVIRONMENT=staging \
 DATABASE_URL='postgresql://staging-contract.invalid/korvi' \
   bash scripts/deploy/staging-migrate.sh >/dev/null
 
+# Staging applies and checks the immutable migration ledger only. Some reviewed
+# control-plane tables intentionally stay outside the merchant Prisma schema, so
+# comparing the live database to schema.prisma here would report false drift.
+# Full migration-history drift is proved separately by the shadow-database
+# harness used by production/live gates.
 mapfile -t calls < "$log"
 expected=(
   'exec -w @korvi/database -- prisma migrate deploy'
   'exec -w @korvi/database -- prisma migrate status'
-  'exec -w @korvi/database -- prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code'
 )
 
 if [ "${#calls[@]}" -ne "${#expected[@]}" ]; then
