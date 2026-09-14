@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
 import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './control-nav';
+import { CustomersPanel } from './customers-panel';
 import { DashboardPanel } from './dashboard-panel';
 import { InventoryPanel } from './inventory-panel';
 import { MembersPanel } from './members-panel';
@@ -64,6 +65,8 @@ function sectionTitle(section: ControlSection): string {
       return 'المخزون';
     case 'purchasing':
       return 'المشتريات';
+    case 'customers':
+      return 'العملاء';
     case 'branches':
       return 'الفروع والصناديق';
     case 'staff':
@@ -111,6 +114,13 @@ function Section({
         <PurchasingPanel
           api={api}
           permissions={principal.permissions}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
+    case 'customers':
+      return (
+        <CustomersPanel
+          canWrite={hasPermission(principal, 'customer.write')}
           onCommandLockChange={onCommandLockChange}
         />
       );
@@ -238,6 +248,7 @@ function Workspace({
                 </p>
               ) : activeSection === 'inventory' ||
                 activeSection === 'purchasing' ||
+                activeSection === 'customers' ||
                 activeSection === 'branches' ||
                 activeSection === 'staff' ||
                 activeSection === 'settings' ? (
