@@ -42,9 +42,11 @@ import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerSalesReadRoutes } from './routes/sales-read.js';
+import { registerZatcaRoutes } from './routes/zatca.js';
 import { registerOperationalObservability } from './runtime/observability.js';
 import { createMerchantSalesReadService } from './sales/read-service.js';
 import { createDrawerService } from './shifts/service.js';
+import { createMerchantZatcaService } from './zatca/merchant-service.js';
 import type { MerchantAdminService } from './admin/service.js';
 import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
@@ -57,6 +59,7 @@ import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { MerchantSalesReadService } from './sales/read-service.js';
+import type { MerchantZatcaService } from './zatca/merchant-service.js';
 import type { ApiConfig } from './config.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -98,6 +101,8 @@ export interface ServerDeps {
   readonly customers?: MerchantCustomerService;
   /** Read-only merchant sales history and financial reports, authorized by report.read. */
   readonly salesRead?: MerchantSalesReadService;
+  /** Merchant-safe ZATCA operational status, authorized by zatca.manage. */
+  readonly zatca?: MerchantZatcaService;
   /** Korvi's own SaaS control plane, separate from merchant administration. */
   readonly platform?: PlatformService;
   /** Append-only internal support ledger for the SaaS control plane. */
@@ -392,6 +397,20 @@ function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
   };
 }
 
+function lazyZatcaService(config: ApiConfig): MerchantZatcaService {
+  let built: MerchantZatcaService | null = null;
+
+  const resolve = (): MerchantZatcaService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantZatcaService(createPrismaClient(url));
+    return built;
+  };
+
+  return { status: (principal, query) => resolve().status(principal, query) };
+}
+
 function lazyPlatformService(config: ApiConfig): PlatformService {
   let built: PlatformService | null = null;
 
@@ -516,6 +535,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerSalesReadRoutes(app, {
     service: deps.salesRead ?? lazySalesReadService(config),
+    guards,
+  });
+  registerZatcaRoutes(app, {
+    service: deps.zatca ?? lazyZatcaService(config),
     guards,
   });
   registerPlatformRoutes(app, {
