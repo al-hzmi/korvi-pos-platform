@@ -98,6 +98,7 @@ function CustomerList({
   state,
   selectedId,
   loadingMore,
+  disabled,
   onSelect,
   onRetry,
   onLoadMore,
@@ -105,6 +106,7 @@ function CustomerList({
   readonly state: ListState;
   readonly selectedId: string | null;
   readonly loadingMore: boolean;
+  readonly disabled: boolean;
   readonly onSelect: (customerId: string) => void;
   readonly onRetry: () => void;
   readonly onLoadMore: () => void;
@@ -142,13 +144,16 @@ function CustomerList({
             <button
               key={customer.id}
               type="button"
+              disabled={disabled}
               onClick={() => onSelect(customer.id)}
-              className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-start transition-colors hover:bg-accent ${
+              className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-start transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60 ${
                 selectedId === customer.id ? 'bg-accent' : ''
               }`}
             >
               <span className="min-w-0">
-                <span className="block truncate font-medium text-foreground">{customer.nameAr}</span>
+                <span className="block truncate font-medium text-foreground">
+                  {customer.nameAr}
+                </span>
                 <span className="mt-0.5 block truncate text-xs text-muted-foreground" dir="ltr">
                   {customer.phone ?? customer.email ?? 'بدون بيانات اتصال'}
                 </span>
@@ -168,7 +173,12 @@ function CustomerList({
       )}
       {state.page.nextCursor === null ? null : (
         <div className="border-t border-border p-3 text-center">
-          <Button type="button" variant="outline" disabled={loadingMore} onClick={onLoadMore}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled || loadingMore}
+            onClick={onLoadMore}
+          >
             {loadingMore ? 'جارٍ التحميل…' : 'تحميل المزيد'}
           </Button>
         </div>
@@ -245,7 +255,8 @@ function CustomerDetailCard({
   const customer = state.detail.customer;
   const busy = command.kind === 'running';
   const retryOperationId =
-    command.kind === 'failed' && command.ambiguous ? command.operationId ?? undefined : undefined;
+    command.kind === 'failed' && command.ambiguous ? (command.operationId ?? undefined) : undefined;
+  const fieldsLocked = busy || retryOperationId !== undefined;
 
   return (
     <CardSurface className="flex flex-col gap-5 p-4">
@@ -271,14 +282,14 @@ function CustomerDetailCard({
         <InputField
           label="الاسم العربي"
           value={draft.nameAr}
-          disabled={!canWrite || busy}
+          disabled={!canWrite || fieldsLocked}
           onChange={(value) => setDraft((current) => ({ ...current, nameAr: value }))}
         />
         <InputField
           label="الاسم الإنجليزي"
           value={draft.nameEn}
           dir="ltr"
-          disabled={!canWrite || busy}
+          disabled={!canWrite || fieldsLocked}
           onChange={(value) => setDraft((current) => ({ ...current, nameEn: value }))}
         />
         <InputField
@@ -286,7 +297,7 @@ function CustomerDetailCard({
           value={draft.phone}
           dir="ltr"
           inputMode="tel"
-          disabled={!canWrite || busy}
+          disabled={!canWrite || fieldsLocked}
           onChange={(value) => setDraft((current) => ({ ...current, phone: value }))}
         />
         <InputField
@@ -294,7 +305,7 @@ function CustomerDetailCard({
           value={draft.email}
           dir="ltr"
           inputMode="email"
-          disabled={!canWrite || busy}
+          disabled={!canWrite || fieldsLocked}
           onChange={(value) => setDraft((current) => ({ ...current, email: value }))}
         />
         <InputField
@@ -302,14 +313,14 @@ function CustomerDetailCard({
           value={draft.vatNumber}
           dir="ltr"
           inputMode="numeric"
-          disabled={!canWrite || busy}
+          disabled={!canWrite || fieldsLocked}
           onChange={(value) => setDraft((current) => ({ ...current, vatNumber: value }))}
         />
         <label className="flex items-center gap-2 self-end pb-3 text-sm">
           <input
             type="checkbox"
             checked={active}
-            disabled={!canWrite || busy}
+            disabled={!canWrite || fieldsLocked}
             onChange={(event) => setActive(event.target.checked)}
           />
           العميل نشط
@@ -318,7 +329,11 @@ function CustomerDetailCard({
         {canWrite ? (
           <div className="flex flex-wrap items-center justify-end gap-2 sm:col-span-2">
             <Button type="submit" disabled={busy || draft.nameAr.trim() === ''}>
-              {busy ? 'جارٍ الحفظ…' : retryOperationId === undefined ? 'حفظ التعديلات' : 'تأكيد النتيجة'}
+              {busy
+                ? 'جارٍ الحفظ…'
+                : retryOperationId === undefined
+                  ? 'حفظ التعديلات'
+                  : 'تأكيد النتيجة'}
             </Button>
           </div>
         ) : null}
@@ -436,12 +451,8 @@ export function CustomersPanel({
       setSelectedId(customerId);
       setDetail({ kind: 'loading', customerId });
       try {
-        const value = await api.detail(
-          customerId,
-          signal === undefined ? undefined : { signal },
-        );
+        const value = await api.detail(customerId, signal === undefined ? undefined : { signal });
         setDetail({ kind: 'ready', detail: value });
-        setUpdateCommand({ kind: 'idle' });
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         setDetail({ kind: 'failed', customerId, failure: describeFailure(error) });
@@ -526,7 +537,7 @@ export function CustomersPanel({
   );
 
   const loadMore = useCallback(async () => {
-    if (list.kind !== 'ready' || list.page.nextCursor === null || loadingMore) return;
+    if (locked || list.kind !== 'ready' || list.page.nextCursor === null || loadingMore) return;
     setLoadingMore(true);
     try {
       const next = await api.list({
@@ -544,12 +555,13 @@ export function CustomersPanel({
     } finally {
       setLoadingMore(false);
     }
-  }, [api, applied, list, loadingMore]);
+  }, [api, applied, list, loadingMore, locked]);
 
   const createRetryId =
     createCommand.kind === 'failed' && createCommand.ambiguous
-      ? createCommand.operationId ?? undefined
+      ? (createCommand.operationId ?? undefined)
       : undefined;
+  const createFieldsLocked = createCommand.kind === 'running' || createRetryId !== undefined;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(520px,1.6fr)]">
@@ -559,8 +571,10 @@ export function CustomersPanel({
             className="grid gap-3 sm:grid-cols-[1fr_160px_auto] xl:grid-cols-1"
             onSubmit={(event) => {
               event.preventDefault();
+              if (locked) return;
               setSelectedId(null);
               setDetail({ kind: 'closed' });
+              setUpdateCommand({ kind: 'idle' });
               setApplied({
                 ...(search.trim() === '' ? {} : { search: search.trim() }),
                 ...(status === 'all' ? {} : { status }),
@@ -570,21 +584,25 @@ export function CustomersPanel({
             <input
               aria-label="بحث العملاء"
               placeholder="الاسم، الجوال، البريد، الرقم الضريبي"
-              className="h-touch rounded-md border border-input bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-touch rounded-md border border-input bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
               value={search}
+              disabled={locked}
               onChange={(event) => setSearch(event.target.value)}
             />
             <select
               aria-label="حالة العميل"
-              className="h-touch rounded-md border border-input bg-background px-3"
+              className="h-touch rounded-md border border-input bg-background px-3 disabled:cursor-not-allowed disabled:opacity-60"
               value={status}
+              disabled={locked}
               onChange={(event) => setStatus(event.target.value as typeof status)}
             >
               <option value="all">كل الحالات</option>
               <option value="active">النشطون</option>
               <option value="inactive">غير النشطين</option>
             </select>
-            <Button type="submit">بحث</Button>
+            <Button type="submit" disabled={locked}>
+              بحث
+            </Button>
           </form>
         </CardSurface>
 
@@ -592,7 +610,12 @@ export function CustomersPanel({
           state={list}
           selectedId={selectedId}
           loadingMore={loadingMore}
-          onSelect={(customerId) => void loadDetail(customerId)}
+          disabled={locked}
+          onSelect={(customerId) => {
+            if (locked) return;
+            setUpdateCommand({ kind: 'idle' });
+            void loadDetail(customerId);
+          }}
           onRetry={() => void loadList()}
           onLoadMore={() => void loadMore()}
         />
@@ -614,17 +637,17 @@ export function CustomersPanel({
               <InputField
                 label="الاسم العربي"
                 value={createDraft.nameAr}
-                disabled={createCommand.kind === 'running'}
+                disabled={createFieldsLocked}
                 onChange={(value) => {
                   setCreateDraft((current) => ({ ...current, nameAr: value }));
-                  if (createRetryId === undefined) setCreateCommand({ kind: 'idle' });
+                  setCreateCommand({ kind: 'idle' });
                 }}
               />
               <InputField
                 label="الاسم الإنجليزي"
                 value={createDraft.nameEn}
                 dir="ltr"
-                disabled={createCommand.kind === 'running'}
+                disabled={createFieldsLocked}
                 onChange={(value) => setCreateDraft((current) => ({ ...current, nameEn: value }))}
               />
               <InputField
@@ -632,7 +655,7 @@ export function CustomersPanel({
                 value={createDraft.phone}
                 dir="ltr"
                 inputMode="tel"
-                disabled={createCommand.kind === 'running'}
+                disabled={createFieldsLocked}
                 onChange={(value) => setCreateDraft((current) => ({ ...current, phone: value }))}
               />
               <InputField
@@ -640,7 +663,7 @@ export function CustomersPanel({
                 value={createDraft.email}
                 dir="ltr"
                 inputMode="email"
-                disabled={createCommand.kind === 'running'}
+                disabled={createFieldsLocked}
                 onChange={(value) => setCreateDraft((current) => ({ ...current, email: value }))}
               />
               <InputField
@@ -648,8 +671,10 @@ export function CustomersPanel({
                 value={createDraft.vatNumber}
                 dir="ltr"
                 inputMode="numeric"
-                disabled={createCommand.kind === 'running'}
-                onChange={(value) => setCreateDraft((current) => ({ ...current, vatNumber: value }))}
+                disabled={createFieldsLocked}
+                onChange={(value) =>
+                  setCreateDraft((current) => ({ ...current, vatNumber: value }))
+                }
               />
               <div className="flex items-end justify-end">
                 <Button
