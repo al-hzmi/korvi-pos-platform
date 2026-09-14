@@ -68,12 +68,7 @@ export function createMerchantCustomerService(prisma: PrismaClient): MerchantCus
     async create(principal, request) {
       requirePrincipalPermission(principal, 'customer.write');
       return attempt(() =>
-        createMerchantCustomer(
-          prisma,
-          scopeOf(principal),
-          { userId: principal.userId },
-          request,
-        ),
+        createMerchantCustomer(prisma, scopeOf(principal), { userId: principal.userId }, request),
       );
     },
 
