@@ -190,9 +190,9 @@ describe('row-level security', () => {
 
     expect(loginResolution).toHaveLength(1);
     expect(controlPlaneRead).toHaveLength(2);
-    expect(
-      controlPlaneRead.some((body) => body.startsWith('tenants_control_plane_read"')),
-    ).toBe(true);
+    expect(controlPlaneRead.some((body) => body.startsWith('tenants_control_plane_read"'))).toBe(
+      true,
+    );
     expect(
       controlPlaneRead.some((body) =>
         body.startsWith('platform_support_notes_control_plane_read"'),
