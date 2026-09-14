@@ -8,6 +8,7 @@ on:
       - packages/database/src/reports/**
       - packages/database/src/__tests__/reports-period-live.test.ts
       - packages/database/prisma/**
+      - .github/workflows/reports-browser-proof.yml
       - .github/workflows/reports-postgres-proof.yml
   workflow_dispatch:
 
