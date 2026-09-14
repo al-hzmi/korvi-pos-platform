@@ -178,6 +178,30 @@ export type {
   TerminalPatch,
 } from './administration/merchant-admin.js';
 
+// Merchant customer authority. Reads and writes remain tenant-scoped; mutation
+// identity and actor authority are server-derived and every successful change
+// records its result and audit evidence in the same transaction.
+export {
+  MAX_CUSTOMER_PAGE,
+  CustomerAdminRefusedError,
+  listMerchantCustomers,
+  readMerchantCustomer,
+  createMerchantCustomer,
+  updateMerchantCustomer,
+} from './administration/customers.js';
+export type {
+  CustomerAdminRefusal,
+  CustomerActor,
+  AdminCustomer,
+  CustomerListQuery,
+  CustomerPage,
+  CustomerSaleLink,
+  CustomerDetail,
+  CustomerCreateRequest,
+  CustomerUpdateRequest,
+  CustomerMutationResult,
+} from './administration/customers.js';
+
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.
 export {
