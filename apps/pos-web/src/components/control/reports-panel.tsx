@@ -75,7 +75,9 @@ function TotalsCard({
         <h2 className="font-semibold text-foreground">{title}</h2>
         <span
           className={`rounded-full px-2 py-1 text-xs font-medium ${
-            tone === 'return' ? 'bg-warning/10 text-warning-foreground' : 'bg-muted text-muted-foreground'
+            tone === 'return'
+              ? 'bg-warning/10 text-warning-foreground'
+              : 'bg-muted text-muted-foreground'
           }`}
           dir="ltr"
         >
@@ -152,7 +154,9 @@ export function ReportsPanel({ api: injected }: ReportsPanelProps = {}): JSX.Ele
               type="date"
               className="h-touch rounded-md border border-input bg-background px-3"
               value={draft.fromDate}
-              onChange={(event) => setDraft((value) => ({ ...value, fromDate: event.target.value }))}
+              onChange={(event) =>
+                setDraft((value) => ({ ...value, fromDate: event.target.value }))
+              }
             />
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
@@ -169,12 +173,15 @@ export function ReportsPanel({ api: injected }: ReportsPanelProps = {}): JSX.Ele
             <select
               className="h-touch rounded-md border border-input bg-background px-3"
               value={draft.branchId}
-              onChange={(event) => setDraft((value) => ({ ...value, branchId: event.target.value }))}
+              onChange={(event) =>
+                setDraft((value) => ({ ...value, branchId: event.target.value }))
+              }
             >
               <option value="">كل الفروع</option>
               {branches.map((branch) => (
                 <option key={branch.id} value={branch.id}>
-                  {branch.nameAr} — {branch.code}{branch.isActive ? '' : ' (غير نشط)'}
+                  {branch.nameAr} — {branch.code}
+                  {branch.isActive ? '' : ' (غير نشط)'}
                 </option>
               ))}
             </select>
@@ -212,7 +219,11 @@ export function ReportsPanel({ api: injected }: ReportsPanelProps = {}): JSX.Ele
       ) : (
         <>
           <div className="grid gap-4 xl:grid-cols-2">
-            <TotalsCard title="المبيعات المعتمدة" totals={state.report.sales} currency={state.report.currency} />
+            <TotalsCard
+              title="المبيعات المعتمدة"
+              totals={state.report.sales}
+              currency={state.report.currency}
+            />
             <TotalsCard
               title="المرتجعات المعتمدة"
               totals={state.report.returns}
@@ -273,12 +284,24 @@ export function ReportsPanel({ api: injected }: ReportsPanelProps = {}): JSX.Ele
                         <td className="px-4 py-3 font-medium" dir="ltr">
                           {basisPointsLabel(bucket.vatBasisPoints)}
                         </td>
-                        <td className="px-4 py-3">{money(bucket.salesNetMinor, state.report.currency)}</td>
-                        <td className="px-4 py-3">{money(bucket.salesVatMinor, state.report.currency)}</td>
-                        <td className="px-4 py-3">{money(bucket.returnsNetMinor, state.report.currency)}</td>
-                        <td className="px-4 py-3">{money(bucket.returnsVatMinor, state.report.currency)}</td>
-                        <td className="px-4 py-3">{money(bucket.netTaxableMinor, state.report.currency)}</td>
-                        <td className="px-4 py-3">{money(bucket.netVatMinor, state.report.currency)}</td>
+                        <td className="px-4 py-3">
+                          {money(bucket.salesNetMinor, state.report.currency)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {money(bucket.salesVatMinor, state.report.currency)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {money(bucket.returnsNetMinor, state.report.currency)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {money(bucket.returnsVatMinor, state.report.currency)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {money(bucket.netTaxableMinor, state.report.currency)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {money(bucket.netVatMinor, state.report.currency)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -292,7 +315,9 @@ export function ReportsPanel({ api: injected }: ReportsPanelProps = {}): JSX.Ele
               <h2 className="font-semibold text-foreground">التفصيل حسب الفرع</h2>
             </div>
             {state.report.branchBreakdown.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">لا توجد فروع ضمن التقرير.</p>
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                لا توجد فروع ضمن التقرير.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[700px] text-sm">
@@ -315,10 +340,18 @@ export function ReportsPanel({ api: injected }: ReportsPanelProps = {}): JSX.Ele
                             {branch.code}
                           </span>
                         </td>
-                        <td className="px-4 py-3" dir="ltr">{branch.sales.documentCount}</td>
-                        <td className="px-4 py-3">{money(branch.sales.totalMinor, state.report.currency)}</td>
-                        <td className="px-4 py-3" dir="ltr">{branch.returns.documentCount}</td>
-                        <td className="px-4 py-3">{money(branch.returns.totalMinor, state.report.currency)}</td>
+                        <td className="px-4 py-3" dir="ltr">
+                          {branch.sales.documentCount}
+                        </td>
+                        <td className="px-4 py-3">
+                          {money(branch.sales.totalMinor, state.report.currency)}
+                        </td>
+                        <td className="px-4 py-3" dir="ltr">
+                          {branch.returns.documentCount}
+                        </td>
+                        <td className="px-4 py-3">
+                          {money(branch.returns.totalMinor, state.report.currency)}
+                        </td>
                         <td className="px-4 py-3 font-medium">
                           {money(branch.netAfterReturns.totalMinor, state.report.currency)}
                         </td>

@@ -5,10 +5,7 @@ import type { TenantScope } from '@korvi/domain';
 export const MAX_REPORT_PERIOD_DAYS = 366;
 
 export type MerchantReportRefusal =
-  | 'invalid-period'
-  | 'period-too-large'
-  | 'unknown-branch'
-  | 'tenant-settings-missing';
+  'invalid-period' | 'period-too-large' | 'unknown-branch' | 'tenant-settings-missing';
 
 export class MerchantReportRefusedError extends Error {
   public override readonly name = 'MerchantReportRefusedError';
