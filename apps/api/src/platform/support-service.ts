@@ -25,7 +25,9 @@ export interface PlatformSupportService {
   ): Promise<PlatformSupportNoteCreateResult>;
 }
 
-export function createPlatformSupportService(prisma: PrismaClient): PlatformSupportService {
+export function createPlatformSupportService(
+  prisma: PrismaClient,
+): PlatformSupportService {
   return {
     list(actor, tenantId, query = {}) {
       return listPlatformSupportNotes(prisma, {
