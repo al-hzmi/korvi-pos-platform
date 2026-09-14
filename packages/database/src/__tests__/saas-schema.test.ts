@@ -165,16 +165,11 @@ describe('row-level security', () => {
     expect(migration).toMatch(new RegExp(`CREATE POLICY "\\w+" ON "${table}"`));
   });
 
-  it('gives every isolation policy both USING and WITH CHECK', () => {
-    // USING alone governs reads. Without WITH CHECK a caller could UPDATE a
-    // visible row and reassign it to another tenant.
-    //
-    // The statement body ends at the first semicolon. Reading past it would
-    // pick up the next migration's commentary, which discusses policies and
-    // would make this assertion answer a question about prose.
-    const isolation = policyBodies().filter((body) => !body.includes('FOR SELECT'));
-    // At least one per table: Phase 0 wrote the first policy for tenants and
-    // products, and Strike 2A restated both.
+  it('gives every tenant isolation policy both USING and WITH CHECK', () => {
+    // Standard tenant policies protect merchant-owned rows for reads and
+    // writes. Control-plane support notes are intentionally a separate
+    // authority boundary and have their own dedicated policy tests.
+    const isolation = policyBodies().filter((body) => /^\w+_isolation" ON /.test(body));
     expect(isolation.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
     for (const body of isolation) {
       expect(body).toContain('USING');
@@ -194,7 +189,11 @@ describe('row-level security', () => {
     );
 
     expect(loginResolution).toHaveLength(1);
-    expect(controlPlaneRead).toHaveLength(1);
+    expect(controlPlaneRead).toHaveLength(2);
+    expect(controlPlaneRead.some((body) => body.startsWith('tenants_control_plane_read"'))).toBe(true);
+    expect(
+      controlPlaneRead.some((body) => body.startsWith('platform_support_notes_control_plane_read"')),
+    ).toBe(true);
     expect(readOnly).toHaveLength(loginResolution.length + controlPlaneRead.length);
     for (const body of readOnly) {
       expect(body).toContain('USING');
