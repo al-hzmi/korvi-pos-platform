@@ -9,6 +9,7 @@ export const CONTROL_SECTION_HREFS = {
   staff: '/control/staff',
   reports: '/control/reports',
   settings: '/control/settings',
+  zatca: '/control/zatca',
 } as const;
 
 export type ControlSection = keyof typeof CONTROL_SECTION_HREFS;
@@ -28,6 +29,7 @@ export function controlSectionFromSlug(slug: string): ControlSection | null {
     case 'staff':
     case 'reports':
     case 'settings':
+    case 'zatca':
       return slug;
     default:
       return null;
