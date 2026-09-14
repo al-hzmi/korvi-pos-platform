@@ -9,7 +9,9 @@ export type PlatformPermission =
   | 'platform.tenants.read'
   | 'platform.tenants.manage'
   | 'platform.commercial.manage'
-  | 'platform.audit.read';
+  | 'platform.audit.read'
+  | 'platform.support.read'
+  | 'platform.support.manage';
 
 export interface PlatformSession {
   readonly authenticated: true;
@@ -88,6 +90,25 @@ export interface PlatformAuditPage {
   readonly nextCursor: string | null;
 }
 
+export interface PlatformSupportNote {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly operationId: string;
+  readonly actorRef: string;
+  readonly body: string;
+  readonly createdAt: string;
+}
+
+export interface PlatformSupportNotePage {
+  readonly items: readonly PlatformSupportNote[];
+  readonly nextCursor: string | null;
+}
+
+export interface PlatformSupportNoteCreateResult {
+  readonly note: PlatformSupportNote;
+  readonly replayed: boolean;
+}
+
 export interface PlatformApi {
   session(options?: { readonly signal?: AbortSignal }): Promise<PlatformSession>;
   login(accessKey: string): Promise<PlatformSession>;
@@ -130,6 +151,15 @@ export interface PlatformApi {
     query?: { readonly cursor?: string; readonly limit?: number },
     options?: { readonly signal?: AbortSignal },
   ): Promise<PlatformAuditPage>;
+  supportNotes(
+    tenantId: string,
+    query?: { readonly cursor?: string; readonly limit?: number },
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<PlatformSupportNotePage>;
+  createSupportNote(
+    tenantId: string,
+    input: { readonly operationId: string; readonly body: string },
+  ): Promise<PlatformSupportNoteCreateResult>;
 }
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -258,6 +288,22 @@ export function createPlatformApi(fetchImpl?: Fetch): PlatformApi {
         })}`,
         { method: 'GET' },
         options?.signal,
+      );
+    },
+    supportNotes(tenantId, query = {}, options) {
+      return call(
+        `/v1/platform/tenants/${encodeURIComponent(tenantId)}/support-notes${queryString({
+          cursor: query.cursor,
+          limit: query.limit,
+        })}`,
+        { method: 'GET' },
+        options?.signal,
+      );
+    },
+    createSupportNote(tenantId, input) {
+      return command(
+        `/v1/platform/tenants/${encodeURIComponent(tenantId)}/support-notes`,
+        input,
       );
     },
   };
