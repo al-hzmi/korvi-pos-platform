@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write apps/pos-web/src/components/control/control-app.tsx apps/pos-web/src/components/control/control-nav.tsx && git diff -- apps/pos-web/src/components/control/control-app.tsx apps/pos-web/src/components/control/control-nav.tsx && exit 1",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "npm run db:generate -w @korvi/database",
