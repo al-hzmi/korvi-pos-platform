@@ -45,6 +45,23 @@ describe('platform support-note web API', () => {
     expect(calls[0]?.init?.credentials).toBe('same-origin');
   });
 
+  it('carries the opaque cursor when loading an older support page', async () => {
+    const calls: { readonly input: string; readonly init?: RequestInit }[] = [];
+    const api = createPlatformApi(async (input, init) => {
+      calls.push(recordedCall(input, init));
+      return jsonResponse({ items: [], nextCursor: null });
+    });
+
+    await api.supportNotes(TENANT_ID, { cursor: NOTE_ID, limit: 50 });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.input).toBe(
+      `/v1/platform/tenants/${TENANT_ID}/support-notes?cursor=${NOTE_ID}&limit=50`,
+    );
+    expect(calls[0]?.init?.method).toBe('GET');
+    expect(calls[0]?.init?.credentials).toBe('same-origin');
+  });
+
   it('posts an idempotent support command without client-supplied actor authority', async () => {
     const calls: { readonly input: string; readonly init?: RequestInit }[] = [];
     const api = createPlatformApi(async (input, init) => {
