@@ -55,6 +55,18 @@ export { createInventoryRepository } from './repositories/inventory-repository.j
 export { createCustomerRepository } from './repositories/customer-repository.js';
 export { createShiftRepository } from './repositories/shift-repository.js';
 export { createSaleRepository } from './repositories/sale-repository.js';
+export {
+  MAX_MERCHANT_SALES_PAGE,
+  listMerchantSales,
+  readMerchantSale,
+} from './sales/read-model.js';
+export type {
+  MerchantSaleStatus,
+  MerchantSalesQuery,
+  MerchantSaleSummary,
+  MerchantSalesPage,
+  MerchantSaleDetail,
+} from './sales/read-model.js';
 export { createReturnRepository } from './repositories/return-repository.js';
 export { createIdempotencyRepository } from './repositories/idempotency-repository.js';
 export { createAuditRepository } from './repositories/audit-repository.js';
