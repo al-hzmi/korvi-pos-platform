@@ -3,38 +3,41 @@ import { ApiError } from '../api';
 import { createZatcaApi } from '../zatca-api';
 
 describe('ZATCA merchant web client', () => {
-  it('uses the bounded read-only merchant status route with same-origin credentials', async () => {
-    const fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          summary: {
-            terminalCount: '1',
-            complianceReadyTerminalCount: '1',
-            acceptedSubmissionCount: '3',
-            rejectedSubmissionCount: '0',
-            unresolvedSubmissionCount: '0',
-          },
-          terminals: [],
-          terminalHasMore: false,
-          recentSubmissions: [],
+  it(
+    'uses the bounded read-only merchant status route with same-origin credentials',
+    async () => {
+      const fetch = vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            summary: {
+              terminalCount: '1',
+              complianceReadyTerminalCount: '1',
+              acceptedSubmissionCount: '3',
+              rejectedSubmissionCount: '0',
+              unresolvedSubmissionCount: '0',
+            },
+            terminals: [],
+            terminalHasMore: false,
+            recentSubmissions: [],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+      const result = await createZatcaApi(fetch).status();
+
+      expect(result.summary.acceptedSubmissionCount).toBe('3');
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(fetch).toHaveBeenCalledWith(
+        '/v1/admin/zatca/status?terminalLimit=100&submissionLimit=25',
+        expect.objectContaining({
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: { accept: 'application/json' },
         }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    );
-
-    const result = await createZatcaApi(fetch).status();
-
-    expect(result.summary.acceptedSubmissionCount).toBe('3');
-    expect(fetch).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenCalledWith(
-      '/v1/admin/zatca/status?terminalLimit=100&submissionLimit=25',
-      expect.objectContaining({
-        method: 'GET',
-        credentials: 'same-origin',
-        headers: { accept: 'application/json' },
-      }),
-    );
-  });
+      );
+    },
+  );
 
   it('preserves server authorization failures as ApiError instead of inventing state', async () => {
     const fetch = vi.fn(async () =>
