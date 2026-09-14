@@ -1,17 +1,23 @@
 'use client';
 
 import { cn } from '@korvi/ui';
-import type { JSX } from 'react';
+import type { JSX, MouseEvent } from 'react';
 
 /**
- * The shape of Korvi, stated once.
+ * The shape of Korvi's merchant control centre, stated once.
  *
- * Everything a merchant will eventually manage is named here, and the parts
- * that are not built say so. Built sections can still be unavailable to this
- * principal; that is a UI courtesy only, while the API remains the authority.
+ * A section being named here does not make it implemented. `section: null`
+ * remains an explicit product gap. Built sections still require server-backed
+ * permissions; hiding or disabling navigation is only a UX courtesy.
  */
 export type ControlSection =
-  'home' | 'products' | 'inventory' | 'purchasing' | 'branches' | 'staff' | 'settings';
+  | 'home'
+  | 'products'
+  | 'inventory'
+  | 'purchasing'
+  | 'branches'
+  | 'staff'
+  | 'settings';
 
 export interface ControlEntry {
   readonly key: string;
@@ -44,6 +50,25 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'zatca', label: 'ZATCA', section: null },
 ];
 
+const CONTROL_SECTIONS = new Set<ControlSection>([
+  'home',
+  'products',
+  'inventory',
+  'purchasing',
+  'branches',
+  'staff',
+  'settings',
+]);
+
+export function isControlSection(value: string): value is ControlSection {
+  return CONTROL_SECTIONS.has(value as ControlSection);
+}
+
+/** Stable, bookmarkable route for every built merchant surface. */
+export function controlSectionHref(section: ControlSection): string {
+  return `/control/${section}`;
+}
+
 export function canAccessControlSection(
   section: ControlSection,
   permissions: readonly string[],
@@ -66,9 +91,37 @@ export function canOpenControlCentre(permissions: readonly string[]): boolean {
   return firstAuthorizedSection(permissions) !== null;
 }
 
+export type ControlRouteResolution =
+  | { readonly kind: 'section'; readonly section: ControlSection }
+  | { readonly kind: 'forbidden'; readonly section: ControlSection }
+  | { readonly kind: 'invalid' }
+  | { readonly kind: 'none' };
+
+/**
+ * Resolve the URL to a merchant surface without silently changing explicit
+ * deep links. `/control` is the only entry route allowed to choose the first
+ * authorized section; a forbidden or unknown explicit URL stays forbidden or
+ * unknown so refresh/back/forward never lands the user somewhere else.
+ */
+export function resolveControlRoute(
+  requestedSection: string | null,
+  permissions: readonly string[],
+): ControlRouteResolution {
+  if (requestedSection === null) {
+    const fallback = firstAuthorizedSection(permissions);
+    return fallback === null ? { kind: 'none' } : { kind: 'section', section: fallback };
+  }
+
+  if (!isControlSection(requestedSection)) return { kind: 'invalid' };
+  if (!canAccessControlSection(requestedSection, permissions)) {
+    return { kind: 'forbidden', section: requestedSection };
+  }
+  return { kind: 'section', section: requestedSection };
+}
+
 export interface ControlNavProps {
-  readonly active: ControlSection;
-  readonly onSelect: (section: ControlSection) => void;
+  readonly active: ControlSection | null;
+  readonly onSelect?: (section: ControlSection) => void;
   readonly permissions?: readonly string[];
   /** Keeps an ambiguous stock or purchasing command mounted until its identity is resolved. */
   readonly locked?: boolean;
@@ -94,36 +147,51 @@ export function ControlNav({
             : navigationLocked
               ? 'عملية معلقة'
               : null;
-
-        return (
-          <button
-            key={entry.key}
-            type="button"
-            disabled={!authorized || navigationLocked}
-            aria-current={authorized && entry.section === active ? 'page' : undefined}
-            onClick={() => {
-              if (authorized && !navigationLocked && entry.section !== null)
-                onSelect(entry.section);
-            }}
-            className={cn(
-              'flex h-touch items-center justify-between rounded-md px-3 text-sm transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              authorized && !navigationLocked
-                ? 'text-foreground hover:bg-accent'
-                : 'cursor-not-allowed text-muted-foreground',
-              authorized && entry.section === active
-                ? 'bg-accent font-semibold text-accent-foreground'
-                : '',
-            )}
-          >
+        const className = cn(
+          'flex h-touch items-center justify-between rounded-md px-3 text-sm transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          authorized && !navigationLocked
+            ? 'text-foreground hover:bg-accent'
+            : 'cursor-not-allowed text-muted-foreground',
+          authorized && entry.section === active
+            ? 'bg-accent font-semibold text-accent-foreground'
+            : '',
+        );
+        const contents = (
+          <>
             <span>{entry.label}</span>
             {badge === null ? null : (
               <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {badge}
               </span>
             )}
-          </button>
+          </>
+        );
+
+        if (!authorized || navigationLocked || entry.section === null) {
+          return (
+            <span key={entry.key} aria-disabled="true" className={className}>
+              {contents}
+            </span>
+          );
+        }
+
+        const section = entry.section;
+        return (
+          <a
+            key={entry.key}
+            href={controlSectionHref(section)}
+            aria-current={section === active ? 'page' : undefined}
+            onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+              if (onSelect === undefined) return;
+              event.preventDefault();
+              onSelect(section);
+            }}
+            className={className}
+          >
+            {contents}
+          </a>
         );
       })}
     </nav>
