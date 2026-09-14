@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { MerchantReportRefusedError } from '@korvi/database/reports';
 import { UUID } from './validation.js';
 import type { MerchantSalesReadService } from '../sales/read-service.js';
 import type { Guards } from '../auth/guards.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 const MAX_SALES_PAGE = 100;
 
@@ -26,6 +27,14 @@ const salesQuery = z
     path: ['from'],
   });
 
+const reportQuery = z
+  .object({
+    from: z.iso.datetime({ offset: true }),
+    to: z.iso.datetime({ offset: true }),
+    branchId: UUID.optional(),
+  })
+  .strict();
+
 export interface SalesReadRouteOptions {
   readonly service: MerchantSalesReadService;
   readonly guards: Guards;
@@ -33,6 +42,20 @@ export interface SalesReadRouteOptions {
 
 function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefined {
   return request.auth;
+}
+
+function reportRefusal(reply: FastifyReply, detail: string) {
+  switch (detail) {
+    case 'invalid-period':
+    case 'period-too-large':
+      return reply.code(400).send({ error: 'invalid_report_period' });
+    case 'unknown-branch':
+      return reply.code(404).send({ error: 'report_branch_not_found' });
+    case 'tenant-settings-missing':
+      return reply.code(409).send({ error: 'tenant_settings_missing' });
+    default:
+      return reply.code(400).send({ error: 'report_refused' });
+  }
 }
 
 export function registerSalesReadRoutes(
@@ -75,5 +98,25 @@ export function registerSalesReadRoutes(
     const sale = await service.detail(principal, parsed.data.saleId);
     if (sale === null) return reply.code(404).send({ error: 'sale_not_found' });
     return reply.code(200).send(sale);
+  });
+
+  app.get('/v1/admin/reports/period', { preHandler: canRead }, async (request, reply) => {
+    const principal = principalOf(request);
+    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+    const parsed = reportQuery.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
+
+    try {
+      const report = await service.report(principal, {
+        fromInclusive: parsed.data.from,
+        toExclusive: parsed.data.to,
+        ...(parsed.data.branchId === undefined ? {} : { branchId: parsed.data.branchId }),
+      });
+      return reply.code(200).send(report);
+    } catch (error) {
+      if (error instanceof MerchantReportRefusedError) return reportRefusal(reply, error.detail);
+      throw error;
+    }
   });
 }
