@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { newId, tenantId as brandTenantId } from '@korvi/domain';
-import { createPrismaClient, provisionTenant, withLoginSlug, withTenant } from '../index.js';
+import {
+  createPrismaClient,
+  provisionPermissionCatalogue,
+  provisionTenant,
+  withLoginSlug,
+  withTenant,
+} from '../index.js';
 import { readMerchantPeriodReport } from '../reports/period-summary.js';
 import type { PrismaClient } from '../index.js';
 
@@ -192,6 +198,9 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
   beforeAll(async () => {
     prisma = createPrismaClient(url);
     await prisma.$connect();
+    // Mirrors the API startup contract: the global application vocabulary is
+    // installed before control-plane tenant provisioning can reference it.
+    await provisionPermissionCatalogue(prisma);
   });
 
   beforeEach(async () => {

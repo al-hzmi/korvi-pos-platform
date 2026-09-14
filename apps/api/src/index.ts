@@ -1,29 +1,30 @@
 import { createPrismaClient } from '@korvi/database';
 import { loadConfig } from './config.js';
+import { prepareApplicationDatabase } from './runtime/database-startup.js';
 import { registerOperationalReadiness } from './runtime/readiness.js';
 import { installGracefulShutdown } from './runtime/shutdown.js';
 import { buildServer } from './server.js';
-import { verifyDeploymentDatabase } from './staging/preflight.js';
 
 async function start(): Promise<void> {
   const config = loadConfig();
+  const databaseUrl = config.DATABASE_URL;
 
-  // Production must never advertise a listener merely because PostgreSQL is
-  // reachable. Before accepting traffic, prove that the configured runtime role
-  // is restricted, the exact checked-in migration ledger/schema is present,
-  // tenant context is clean and every tenant table is FORCE-RLS protected.
-  // Migration application remains a separate controlled deployment concern.
-  if (config.isProduction) {
-    const databaseUrl = config.DATABASE_URL;
-    if (databaseUrl === undefined) {
-      throw new Error('Production database preflight requires DATABASE_URL.');
-    }
+  // A configured database is admitted before any network listener exists.
+  // Production first proves the exact migrations, restricted runtime role and
+  // FORCE-RLS contract, then every database-backed boot idempotently installs
+  // Korvi's global permission vocabulary. Tenant provisioning therefore cannot
+  // race a fresh deployment whose permission catalogue has not been installed.
+  if (databaseUrl !== undefined) {
     const prisma = createPrismaClient(databaseUrl);
     try {
-      await verifyDeploymentDatabase(prisma);
+      await prepareApplicationDatabase(prisma, config);
     } finally {
       await prisma.$disconnect();
     }
+  } else if (config.isProduction) {
+    // `loadConfig` already rejects this shape. Keep the executable boundary
+    // defensive so a hand-built production config can never skip DB admission.
+    throw new Error('Production database preflight requires DATABASE_URL.');
   }
 
   const app = buildServer(config);
