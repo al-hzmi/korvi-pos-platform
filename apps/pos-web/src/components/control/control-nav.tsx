@@ -1,18 +1,19 @@
 'use client';
 
 import { cn } from '@korvi/ui';
+import { controlSectionHref } from '../../lib/control-routes';
 import type { JSX } from 'react';
+import type { ControlSection } from '../../lib/control-routes';
+
+export type { ControlSection } from '../../lib/control-routes';
 
 /**
  * The shape of Korvi, stated once.
  *
- * Everything a merchant will eventually manage is named here, and the parts
- * that are not built say so. Built sections can still be unavailable to this
- * principal; that is a UI courtesy only, while the API remains the authority.
+ * Built merchant sections own real URLs. Entries without an implemented
+ * product surface stay explicitly unavailable until their backend and UI
+ * authority are complete; they are never represented as finished.
  */
-export type ControlSection =
-  'home' | 'products' | 'inventory' | 'purchasing' | 'branches' | 'staff' | 'settings';
-
 export interface ControlEntry {
   readonly key: string;
   readonly label: string;
@@ -68,7 +69,6 @@ export function canOpenControlCentre(permissions: readonly string[]): boolean {
 
 export interface ControlNavProps {
   readonly active: ControlSection;
-  readonly onSelect: (section: ControlSection) => void;
   readonly permissions?: readonly string[];
   /** Keeps an ambiguous stock or purchasing command mounted until its identity is resolved. */
   readonly locked?: boolean;
@@ -76,7 +76,6 @@ export interface ControlNavProps {
 
 export function ControlNav({
   active,
-  onSelect,
   permissions = [],
   locked = false,
 }: ControlNavProps): JSX.Element {
@@ -86,44 +85,53 @@ export function ControlNav({
         const built = entry.section !== null;
         const authorized =
           built && entry.permission !== undefined && permissions.includes(entry.permission);
-        const navigationLocked = locked && authorized && entry.section !== active;
+        const navigationLocked = locked && authorized;
         const badge = !built
-          ? 'قريباً'
+          ? 'غير مكتمل'
           : !authorized
             ? 'غير مصرح'
             : navigationLocked
               ? 'عملية معلقة'
               : null;
-
-        return (
-          <button
-            key={entry.key}
-            type="button"
-            disabled={!authorized || navigationLocked}
-            aria-current={authorized && entry.section === active ? 'page' : undefined}
-            onClick={() => {
-              if (authorized && !navigationLocked && entry.section !== null)
-                onSelect(entry.section);
-            }}
-            className={cn(
-              'flex h-touch items-center justify-between rounded-md px-3 text-sm transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              authorized && !navigationLocked
-                ? 'text-foreground hover:bg-accent'
-                : 'cursor-not-allowed text-muted-foreground',
-              authorized && entry.section === active
-                ? 'bg-accent font-semibold text-accent-foreground'
-                : '',
-            )}
-          >
+        const className = cn(
+          'flex h-touch items-center justify-between rounded-md px-3 text-sm transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          authorized && !navigationLocked
+            ? 'text-foreground hover:bg-accent'
+            : 'cursor-not-allowed text-muted-foreground',
+          authorized && entry.section === active
+            ? 'bg-accent font-semibold text-accent-foreground'
+            : '',
+        );
+        const content = (
+          <>
             <span>{entry.label}</span>
             {badge === null ? null : (
               <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {badge}
               </span>
             )}
-          </button>
+          </>
+        );
+
+        if (authorized && !navigationLocked && entry.section !== null) {
+          return (
+            <a
+              key={entry.key}
+              href={controlSectionHref(entry.section)}
+              aria-current={entry.section === active ? 'page' : undefined}
+              className={className}
+            >
+              {content}
+            </a>
+          );
+        }
+
+        return (
+          <span key={entry.key} aria-disabled="true" className={className}>
+            {content}
+          </span>
         );
       })}
     </nav>
