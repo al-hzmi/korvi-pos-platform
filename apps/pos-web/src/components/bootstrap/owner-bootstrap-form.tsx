@@ -123,10 +123,12 @@ export function OwnerBootstrapForm(): JSX.Element {
           </div>
         ) : (
           <>
-            <h1 className="mt-8 text-xl font-semibold text-card-foreground">اختر كلمة مرور المالك</h1>
+            <h1 className="mt-8 text-xl font-semibold text-card-foreground">
+              اختر كلمة مرور المالك
+            </h1>
             <p className="mt-2 text-sm leading-7 text-muted-foreground">
-              كلمة المرور تُرسل مباشرة إلى خادم كورفي لتجزئتها أمنيًا. لا يستطيع موظف المنصة
-              قراءتها أو استعادتها.
+              كلمة المرور تُرسل مباشرة إلى خادم كورفي لتجزئتها أمنيًا. لا يستطيع موظف المنصة قراءتها
+              أو استعادتها.
             </p>
             <form className="mt-6 space-y-4" onSubmit={submit}>
               <div>

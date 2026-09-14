@@ -1,7 +1,6 @@
 import {
   activateTenant,
   assignTenantPlan,
-  issueOwnerBootstrapInvitation,
   listPlatformTenantAudit,
   listPlatformTenants,
   provisionTenant,
@@ -10,7 +9,6 @@ import {
   suspendTenant,
 } from '@korvi/database';
 import type {
-  IssuedOwnerBootstrap,
   PlatformAuditPage,
   PlatformTenantDetail,
   PlatformTenantListQuery,
@@ -47,20 +45,6 @@ export interface PlatformPlanAssignment {
   readonly entitlements: readonly EntitlementGrant[];
 }
 
-export interface PlatformOwnerBootstrapInvitation {
-  readonly operationId: string;
-  readonly email: string;
-  readonly displayName: string;
-}
-
-export class PlatformOwnerBootstrapUnavailableError extends Error {
-  public override readonly name = 'PlatformOwnerBootstrapUnavailableError';
-
-  public constructor() {
-    super('Owner bootstrap signing authority is not configured.');
-  }
-}
-
 export interface PlatformService {
   listTenants(
     actor: PlatformActor,
@@ -89,11 +73,6 @@ export interface PlatformService {
     tenantId: string,
     input: PlatformPlanAssignment,
   ): Promise<TenantPlanAssignmentResult>;
-  issueOwnerBootstrap(
-    actor: PlatformActor,
-    tenantId: string,
-    input: PlatformOwnerBootstrapInvitation,
-  ): Promise<IssuedOwnerBootstrap>;
   listAudit(
     actor: PlatformActor,
     tenantId: string,
@@ -101,19 +80,7 @@ export interface PlatformService {
   ): Promise<PlatformAuditPage | null>;
 }
 
-/**
- * Build the SaaS control-plane authority.
- *
- * The owner-bootstrap signing key is deliberately injectable. The default keeps
- * the existing lazy server composition intact while still failing closed when
- * the deployment did not configure BOOTSTRAP_SIGNING_KEY. The key is never
- * returned, persisted or logged; only the already-reviewed bootstrap authority
- * receives it to derive the one-shot capability (ADR-0021).
- */
-export function createPlatformService(
-  prisma: PrismaClient,
-  ownerBootstrapSigningKey: string | undefined = process.env['BOOTSTRAP_SIGNING_KEY'],
-): PlatformService {
+export function createPlatformService(prisma: PrismaClient): PlatformService {
   return {
     async listTenants(actor, query) {
       return listPlatformTenants(prisma, {
@@ -160,17 +127,6 @@ export function createPlatformService(
 
     async assignPlan(actor, tenantId, input) {
       return assignTenantPlan(prisma, {
-        tenantId,
-        ...input,
-        controlPlaneActorRef: actor.controlPlaneActorRef,
-      });
-    },
-
-    async issueOwnerBootstrap(actor, tenantId, input) {
-      if (ownerBootstrapSigningKey === undefined) {
-        throw new PlatformOwnerBootstrapUnavailableError();
-      }
-      return issueOwnerBootstrapInvitation(prisma, ownerBootstrapSigningKey, {
         tenantId,
         ...input,
         controlPlaneActorRef: actor.controlPlaneActorRef,

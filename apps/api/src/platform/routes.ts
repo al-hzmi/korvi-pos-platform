@@ -7,7 +7,10 @@ import {
 } from '@korvi/database';
 import { CommercialEntitlementError, MAX_ENTITLEMENT_LIMIT } from '@korvi/domain';
 import { createLoginAdmissionController } from '../auth/login-admission.js';
-import { PlatformOwnerBootstrapUnavailableError } from './service.js';
+import {
+  issuePlatformOwnerBootstrap,
+  PlatformOwnerBootstrapUnavailableError,
+} from './owner-bootstrap-issuer.js';
 import type { PlatformAuth, PlatformPrincipal } from './auth.js';
 import type { PlatformService } from './service.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -144,11 +147,7 @@ function handlePlatformError(reply: FastifyReply, error: unknown): FastifyReply 
   }
   if (error instanceof OwnerBootstrapRefusedError) {
     const status =
-      error.detail === 'unknown-tenant'
-        ? 404
-        : error.detail === 'invalid-invitee'
-          ? 422
-          : 409;
+      error.detail === 'unknown-tenant' ? 404 : error.detail === 'invalid-invitee' ? 422 : 409;
     return reply.code(status).send({ error: error.detail.replace(/-/g, '_') });
   }
   if (error instanceof PlatformOwnerBootstrapUnavailableError) {
@@ -347,7 +346,7 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
       try {
-        const result = await service.issueOwnerBootstrap(
+        const result = await issuePlatformOwnerBootstrap(
           subject(request),
           params.data.tenantId,
           body.data,

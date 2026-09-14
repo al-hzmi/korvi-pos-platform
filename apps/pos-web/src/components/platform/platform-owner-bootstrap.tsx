@@ -19,8 +19,10 @@ function responseMessage(status: number, code: string | null): string {
   if (status === 403) return 'الجلسة لا تملك صلاحية تجهيز المالك.';
   if (status === 404) return 'المنشأة غير موجودة.';
   if (status === 409 && code === 'already_established') return 'تم إنشاء مالك لهذه المنشأة مسبقًا.';
-  if (status === 409 && code === 'already_invited') return 'يوجد رابط تفعيل صالح بالفعل. استخدم نفس العملية أو انتظر انتهاء صلاحيته.';
-  if (status === 409 && code === 'idempotency_conflict') return 'رقم العملية مستخدم لطلب مختلف. أعد المحاولة بعملية جديدة.';
+  if (status === 409 && code === 'already_invited')
+    return 'يوجد رابط تفعيل صالح بالفعل. استخدم نفس العملية أو انتظر انتهاء صلاحيته.';
+  if (status === 409 && code === 'idempotency_conflict')
+    return 'رقم العملية مستخدم لطلب مختلف. أعد المحاولة بعملية جديدة.';
   if (status === 422) return 'تحقق من اسم المالك والبريد الإلكتروني.';
   if (status === 503) return 'خدمة تفعيل المالك غير مهيأة على هذا النشر.';
   return 'تعذّر إصدار رابط التفعيل. أعد المحاولة.';
@@ -66,7 +68,9 @@ export function PlatformOwnerBootstrap({ tenantId }: { readonly tenantId: string
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const code =
-          body !== null && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
+          body !== null &&
+          typeof body === 'object' &&
+          typeof (body as { error?: unknown }).error === 'string'
             ? ((body as { error: string }).error ?? null)
             : null;
         throw new Error(responseMessage(response.status, code));
@@ -175,7 +179,11 @@ export function PlatformOwnerBootstrap({ tenantId }: { readonly tenantId: string
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={() => void copyLink()} disabled={activationUrl === null}>
+              <Button
+                type="button"
+                onClick={() => void copyLink()}
+                disabled={activationUrl === null}
+              >
                 {copied ? 'تم نسخ الرابط' : 'نسخ رابط التفعيل'}
               </Button>
               {activationUrl === null ? null : (
