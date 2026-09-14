@@ -17,6 +17,10 @@
     "./reports": {
       "types": "./dist/src/reports/period-summary.d.ts",
       "default": "./dist/src/reports/period-summary.js"
+    },
+    "./zatca-merchant": {
+      "types": "./dist/src/zatca/merchant-status.d.ts",
+      "default": "./dist/src/zatca/merchant-status.js"
     }
   },
   "files": [
