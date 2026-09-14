@@ -65,7 +65,7 @@ const snapshot = {
     openingFloatMinor: '10000',
     openedAt: '2026-09-15T00:00:00.000Z',
   },
-  priceMode: 'inclusive' as const,
+  priceMode: 'tax-inclusive' as const,
 };
 
 beforeEach(() => {

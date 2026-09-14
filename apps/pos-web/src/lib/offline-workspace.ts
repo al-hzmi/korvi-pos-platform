@@ -148,7 +148,7 @@ export function readOfflineWorkspace(now: Date = new Date()): OfflineWorkspaceSn
     savedPrincipal === null ||
     savedTerminal === null ||
     savedShift === null ||
-    (savedPriceMode !== 'inclusive' && savedPriceMode !== 'exclusive') ||
+    (savedPriceMode !== 'tax-inclusive' && savedPriceMode !== 'tax-exclusive') ||
     typeof capturedAt !== 'string'
   ) {
     clearOfflineWorkspace();
