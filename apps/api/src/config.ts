@@ -111,10 +111,29 @@ const schema = z
      * telemetry at all, is an operations defect rather than a runtime default.
      */
     METRICS_AUTH_TOKEN: z.string().min(32).max(512).optional(),
+
+    /**
+     * Korvi's own SaaS control-plane realm. It is intentionally independent
+     * from merchant users and merchant sessions: a platform operator is not a
+     * user inside any tenant. The access key authenticates the login request;
+     * a separate key signs the short-lived HttpOnly platform session cookie.
+     * All three values are optional as a unit so deployments that have not yet
+     * enabled the internal platform surface fail that route closed with 503.
+     */
+    PLATFORM_ADMIN_ACCESS_KEY: z.string().min(32).max(512).optional(),
+    PLATFORM_SESSION_SIGNING_KEY: z.string().min(32).max(512).optional(),
+    PLATFORM_ADMIN_ACTOR_REF: z.string().min(1).max(120).optional(),
+    PLATFORM_SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(4),
   })
   .superRefine((value, context) => {
     const bootstrapSigningKey = value.BOOTSTRAP_SIGNING_KEY;
     const metricsAuthToken = value.METRICS_AUTH_TOKEN;
+    const platformAccessKey = value.PLATFORM_ADMIN_ACCESS_KEY;
+    const platformSigningKey = value.PLATFORM_SESSION_SIGNING_KEY;
+    const platformActorRef = value.PLATFORM_ADMIN_ACTOR_REF;
+    const platformConfigured = [platformAccessKey, platformSigningKey, platformActorRef].filter(
+      (item) => item !== undefined,
+    ).length;
 
     if (value.AUTH_LOGIN_IDENTITY_LIMIT > value.AUTH_LOGIN_GLOBAL_LIMIT) {
       context.addIssue({
@@ -122,6 +141,39 @@ const schema = z
         path: ['AUTH_LOGIN_IDENTITY_LIMIT'],
         message: 'cannot exceed AUTH_LOGIN_GLOBAL_LIMIT',
       });
+    }
+
+    if (platformConfigured !== 0 && platformConfigured !== 3) {
+      context.addIssue({
+        code: 'custom',
+        path: ['PLATFORM_ADMIN_ACCESS_KEY'],
+        message:
+          'PLATFORM_ADMIN_ACCESS_KEY, PLATFORM_SESSION_SIGNING_KEY and PLATFORM_ADMIN_ACTOR_REF must be configured together',
+      });
+    }
+    if (
+      platformAccessKey !== undefined &&
+      platformSigningKey !== undefined &&
+      platformAccessKey === platformSigningKey
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['PLATFORM_SESSION_SIGNING_KEY'],
+        message: 'must be independent from PLATFORM_ADMIN_ACCESS_KEY',
+      });
+    }
+    for (const [key, raw] of [
+      ['PLATFORM_ADMIN_ACCESS_KEY', platformAccessKey],
+      ['PLATFORM_SESSION_SIGNING_KEY', platformSigningKey],
+      ['PLATFORM_ADMIN_ACTOR_REF', platformActorRef],
+    ] as const) {
+      if (raw !== undefined && raw !== raw.trim()) {
+        context.addIssue({
+          code: 'custom',
+          path: [key],
+          message: 'must be canonical without leading or trailing whitespace',
+        });
+      }
     }
 
     if (value.NODE_ENV === 'production' && (bootstrapSigningKey ?? '').trim() === '') {
@@ -234,6 +286,13 @@ export interface ApiConfig {
   readonly BOOTSTRAP_SIGNING_KEY: string | undefined;
   /** Machine-only scrape credential; never logged, echoed or persisted. */
   readonly METRICS_AUTH_TOKEN: string | undefined;
+  /** Internal SaaS operator credential; never persisted or echoed. */
+  readonly PLATFORM_ADMIN_ACCESS_KEY?: string;
+  /** Independent HMAC key for the HttpOnly platform session. */
+  readonly PLATFORM_SESSION_SIGNING_KEY?: string;
+  /** Opaque actor recorded by lifecycle/commercial audit rows. */
+  readonly PLATFORM_ADMIN_ACTOR_REF?: string;
+  readonly PLATFORM_SESSION_TTL_SECONDS?: number;
   readonly isProduction: boolean;
 }
 
@@ -265,6 +324,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     DATABASE_URL: value.DATABASE_URL,
     BOOTSTRAP_SIGNING_KEY: value.BOOTSTRAP_SIGNING_KEY,
     METRICS_AUTH_TOKEN: value.METRICS_AUTH_TOKEN,
+    PLATFORM_ADMIN_ACCESS_KEY: value.PLATFORM_ADMIN_ACCESS_KEY,
+    PLATFORM_SESSION_SIGNING_KEY: value.PLATFORM_SESSION_SIGNING_KEY,
+    PLATFORM_ADMIN_ACTOR_REF: value.PLATFORM_ADMIN_ACTOR_REF,
+    PLATFORM_SESSION_TTL_SECONDS: value.PLATFORM_SESSION_TTL_HOURS * 3600,
     isProduction: value.NODE_ENV === 'production',
   };
 }
