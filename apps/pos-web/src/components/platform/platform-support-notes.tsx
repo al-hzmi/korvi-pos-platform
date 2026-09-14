@@ -15,22 +15,33 @@ const api = createPlatformApi();
 const EMPTY_PAGE: PlatformSupportNotePage = { items: [], nextCursor: null };
 
 type SupportState =
-  | { readonly kind: 'checking' | 'hidden' }
-  | { readonly kind: 'ready'; readonly session: PlatformSession; readonly page: PlatformSupportNotePage }
+  | { readonly kind: 'checking' }
+  | { readonly kind: 'hidden' }
+  | {
+      readonly kind: 'ready';
+      readonly session: PlatformSession;
+      readonly page: PlatformSupportNotePage;
+    }
   | { readonly kind: 'failed'; readonly session: PlatformSession; readonly message: string };
 
 function supportMessage(error: unknown): string {
-  if (!(error instanceof ApiError)) return 'حدث خطأ غير متوقع أثناء تنفيذ عملية سجل الدعم.';
-  if (error.status === 0)
-    return 'لم يصل تأكيد من الخادم. يمكن إعادة المحاولة بنفس العملية دون إنشاء ملاحظة مكررة.';
-  if (error.status === 401) return 'انتهت جلسة إدارة المنصة.';
-  if (error.status === 403) return 'لا تملك الجلسة صلاحية سجل الدعم.';
-  if (error.status === 404) return 'المنشأة غير موجودة أو لم تعد متاحة.';
-  if (error.status === 409) return 'رقم العملية مستخدم لمحتوى مختلف. حدّث السجل ثم أعد المحاولة.';
-  return error.serverMessage ?? 'تعذّر تنفيذ عملية سجل الدعم.';
+  if (error instanceof ApiError) {
+    if (error.status === 0)
+      return 'لم يصل تأكيد من الخادم. يمكن إعادة المحاولة بنفس العملية دون إنشاء ملاحظة مكررة.';
+    if (error.status === 401) return 'انتهت جلسة إدارة المنصة.';
+    if (error.status === 403) return 'لا تملك الجلسة صلاحية سجل الدعم.';
+    if (error.status === 404) return 'المنشأة غير موجودة أو لم تعد متاحة.';
+    if (error.status === 409) return 'رقم العملية مستخدم لمحتوى مختلف. حدّث السجل ثم أعد المحاولة.';
+    return error.serverMessage ?? 'تعذّر تنفيذ عملية سجل الدعم.';
+  }
+  return 'حدث خطأ غير متوقع أثناء تنفيذ عملية سجل الدعم.';
 }
 
-export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }): JSX.Element | null {
+export function PlatformSupportNotes({
+  tenantId,
+}: {
+  readonly tenantId: string;
+}): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SupportState>({ kind: 'checking' });
   const [draft, setDraft] = useState('');
@@ -43,19 +54,19 @@ export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }
   useEffect(() => {
     const controller = new AbortController();
     let live = true;
-    let session: PlatformSession | null = null;
+    let authenticatedSession: PlatformSession | null = null;
 
     void api
       .session({ signal: controller.signal })
-      .then(async (value) => {
-        session = value;
+      .then(async (session) => {
+        authenticatedSession = session;
         if (!live) return;
-        if (!value.permissions.includes('platform.support.read')) {
+        if (!session.permissions.includes('platform.support.read')) {
           setState({ kind: 'hidden' });
           return;
         }
         const page = await api.supportNotes(tenantId, { limit: 50 }, { signal: controller.signal });
-        if (live) setState({ kind: 'ready', session: value, page });
+        if (live) setState({ kind: 'ready', session, page });
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -64,11 +75,15 @@ export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }
           setState({ kind: 'hidden' });
           return;
         }
-        if (session === null) {
+        if (authenticatedSession === null) {
           setState({ kind: 'hidden' });
           return;
         }
-        setState({ kind: 'failed', session, message: supportMessage(error) });
+        setState({
+          kind: 'failed',
+          session: authenticatedSession,
+          message: supportMessage(error),
+        });
       });
 
     return () => {
@@ -77,7 +92,7 @@ export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }
     };
   }, [refreshKey, tenantId]);
 
-  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const body = draft.trim();
     if (busy || body === '') return;
@@ -97,7 +112,7 @@ export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }
     } finally {
       setBusy(false);
     }
-  }
+  };
 
   if (state.kind === 'checking' || state.kind === 'hidden') return null;
 
@@ -139,21 +154,23 @@ export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }
           <div className="max-h-[calc(70vh-73px)] overflow-y-auto p-5">
             {canManage ? (
               <form className="space-y-3" onSubmit={submit}>
-                <label className={PLATFORM_LABEL} htmlFor="platform-support-note-body">
-                  ملاحظة جديدة
-                </label>
-                <textarea
-                  id="platform-support-note-body"
-                  className={`${PLATFORM_INPUT} min-h-28 resize-y py-3`}
-                  value={draft}
-                  maxLength={4000}
-                  disabled={busy}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="سجّل سياق الدعم أو المتابعة دون معلومات حساسة"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {draft.length.toLocaleString('ar-SA')} / ٤٬٠٠٠
-                </p>
+                <div>
+                  <label className={PLATFORM_LABEL} htmlFor="platform-support-note-body">
+                    ملاحظة جديدة
+                  </label>
+                  <textarea
+                    id="platform-support-note-body"
+                    className={`${PLATFORM_INPUT} min-h-28 resize-y py-3`}
+                    value={draft}
+                    maxLength={4000}
+                    disabled={busy}
+                    onChange={(event) => setDraft(event.target.value)}
+                    placeholder="سجّل سياق الدعم أو المتابعة دون معلومات حساسة"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {draft.length.toLocaleString('ar-SA')} / ٤٬٠٠٠
+                  </p>
+                </div>
                 {commandError === null ? null : (
                   <PlatformNotice tone="danger">{commandError}</PlatformNotice>
                 )}
