@@ -8,6 +8,8 @@ on:
       - packages/database/src/reports/**
       - packages/database/src/__tests__/reports-period-live.test.ts
       - packages/database/prisma/**
+      - scripts/prove-migration-state.sh
+      - scripts/deploy/production-migrate.sh
       - .github/workflows/reports-browser-proof.yml
       - .github/workflows/reports-postgres-proof.yml
   workflow_dispatch:
@@ -27,6 +29,7 @@ jobs:
     env:
       POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_reports
       MIGRATION_DATABASE_URL: postgresql://korvi_migrator:korvi_reports_migrator@localhost:5432/korvi_reports?schema=public
+      SHADOW_DATABASE_URL: postgresql://korvi_migrator:korvi_reports_migrator@localhost:5432/korvi_reports_shadow?schema=public
       DATABASE_URL: postgresql://korvi_runtime:korvi_reports_runtime@localhost:5432/korvi_reports
       KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:korvi_reports_runtime@localhost:5432/korvi_reports
       PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime
@@ -62,7 +65,7 @@ jobs:
       - name: Install
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Create restricted database identities
+      - name: Create restricted database identities and isolated shadow
         shell: bash
         run: |
           set -euo pipefail
@@ -76,10 +79,19 @@ jobs:
           ALTER DATABASE korvi_reports OWNER TO korvi_migrator;
           SQL
 
+          psql postgresql://postgres:postgres@localhost:5432/postgres \
+            --no-psqlrc --set=ON_ERROR_STOP=1 \
+            --command 'CREATE DATABASE korvi_reports_shadow OWNER korvi_migrator'
+
           runtime_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
             "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls
                FROM pg_roles WHERE rolname = 'korvi_runtime'")"
           test "$runtime_flags" = 'f|f|f|f|f|f'
+
+          shadow_owner="$(psql postgresql://postgres:postgres@localhost:5432/postgres \
+            --no-psqlrc --tuples-only --no-align --command \
+            "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'korvi_reports_shadow'")"
+          test "$shadow_owner" = 'korvi_migrator'
 
       - name: Apply production migrations
         env:
