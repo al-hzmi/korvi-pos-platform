@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --write apps/pos-web/src/components/control/reports-panel.tsx apps/pos-web/src/lib/reports-api.ts packages/database/src/reports/period-summary.ts && git diff --exit-code",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "npm run db:generate -w @korvi/database",
