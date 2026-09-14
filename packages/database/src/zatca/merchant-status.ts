@@ -19,10 +19,7 @@ export type MerchantZatcaSubmissionState =
   | 'accepted'
   | 'rejected'
   | 'uncertain';
-export type MerchantZatcaUncertaintyReason =
-  | 'credential-store'
-  | 'transport'
-  | 'response-invalid';
+export type MerchantZatcaUncertaintyReason = 'credential-store' | 'transport' | 'response-invalid';
 
 export interface MerchantZatcaStatusQuery {
   readonly terminalLimit?: number;
@@ -142,11 +139,7 @@ interface SummaryRow {
   unresolvedSubmissionCount: bigint | string;
 }
 
-function validatedLimit(
-  value: number | undefined,
-  maximum: number,
-  fallback: number,
-): number {
+function validatedLimit(value: number | undefined, maximum: number, fallback: number): number {
   if (value === undefined) return fallback;
   if (!Number.isInteger(value) || value < 1 || value > maximum) {
     throw new MerchantZatcaStatusRefusedError('invalid-limit');
@@ -231,11 +224,7 @@ export async function readMerchantZatcaStatus(
     MAX_ZATCA_STATUS_TERMINALS,
     MAX_ZATCA_STATUS_TERMINALS,
   );
-  const submissionLimit = validatedLimit(
-    query.submissionLimit,
-    MAX_ZATCA_STATUS_SUBMISSIONS,
-    25,
-  );
+  const submissionLimit = validatedLimit(query.submissionLimit, MAX_ZATCA_STATUS_SUBMISSIONS, 25);
   const tenant = scope.tenantId as string;
 
   return withTenant(prisma, scope.tenantId, async (tx) => {
