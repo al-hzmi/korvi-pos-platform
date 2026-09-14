@@ -370,8 +370,7 @@ function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
     list: (principal, query) => resolve().list(principal, query),
     detail: (principal, customerId) => resolve().detail(principal, customerId),
     create: (principal, request) => resolve().create(principal, request),
-    update: (principal, customerId, request) =>
-      resolve().update(principal, customerId, request),
+    update: (principal, customerId, request) => resolve().update(principal, customerId, request),
   };
 }
 
