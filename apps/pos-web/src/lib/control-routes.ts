@@ -7,7 +7,9 @@ export type ControlSection =
   | 'staff'
   | 'settings';
 
-export const CONTROL_SECTION_HREFS: Readonly<Record<ControlSection, string>> = {
+type ControlSectionHrefMap = Readonly<Record<ControlSection, string>>;
+
+export const CONTROL_SECTION_HREFS: ControlSectionHrefMap = {
   home: '/control',
   products: '/control/products',
   inventory: '/control/inventory',
