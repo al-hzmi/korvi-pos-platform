@@ -54,8 +54,12 @@ export interface MerchantSaleDetail {
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
   readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
   readonly tenderedMinor: string;
   readonly changeMinor: string;
+  readonly issuedAt: string;
   readonly lines: readonly {
     readonly id: string;
     readonly lineNumber: number;
