@@ -1,0 +1,45 @@
+name: Korvi fix platform logical align once
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - .github/workflows/korvi-fix-platform-logical-align-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Replace physical alignment with logical alignment
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('apps/pos-web/src/components/platform/platform-tenant.tsx')
+          text = path.read_text()
+          text = text.replace('sm:text-left', 'sm:text-start')
+          text = text.replace('truncate text-left font-mono', 'truncate text-start font-mono')
+          path.write_text(text)
+          PY
+          npx prettier --write apps/pos-web/src/components/platform/platform-tenant.tsx
+          bash scripts/check-invariants.sh
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/korvi-fix-platform-logical-align-once.yml
+          git config user.name korvi-ci
+          git config user.email korvi-ci@users.noreply.github.com
+          git add apps/pos-web/src/components/platform/platform-tenant.tsx .github/workflows/korvi-fix-platform-logical-align-once.yml
+          git commit -m "fix(platform): use logical RTL alignment"
+          git push origin HEAD:strike/product-routing-p0
