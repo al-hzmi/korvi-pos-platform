@@ -12,6 +12,7 @@ const BRANCH_ID = '018fb000-0000-7000-8000-0000000000a1';
 const USER_ID = '018fb000-0000-7000-8000-0000000000a4';
 const CUSTOMER_ID = '018fb000-0000-7000-8000-0000000000e1';
 const OTHER_CUSTOMER_ID = '018fb000-0000-7000-8000-0000000000e2';
+const ORIGIN = 'http://localhost:3000';
 
 const customer = {
   id: CUSTOMER_ID,
@@ -144,7 +145,7 @@ describe('merchant customer routes', () => {
     const write = await app!.inject({
       method: 'POST',
       url: '/v1/admin/customers',
-      headers: { cookie: 'korvi_session=customer-test-token' },
+      headers: { cookie: 'korvi_session=customer-test-token', origin: ORIGIN },
       payload: {
         operationId: 'customer-create-1',
         nameAr: 'عميل',
@@ -165,7 +166,7 @@ describe('merchant customer routes', () => {
     const response = await app!.inject({
       method: 'POST',
       url: '/v1/admin/customers',
-      headers: { cookie: 'korvi_session=customer-test-token' },
+      headers: { cookie: 'korvi_session=customer-test-token', origin: ORIGIN },
       payload: {
         operationId: 'customer-create-2',
         nameAr: 'عميل',
@@ -219,7 +220,7 @@ describe('merchant customer routes', () => {
     const response = await app!.inject({
       method: 'POST',
       url: '/v1/admin/customers',
-      headers: { cookie: 'korvi_session=customer-test-token' },
+      headers: { cookie: 'korvi_session=customer-test-token', origin: ORIGIN },
       payload: {
         operationId: 'customer-create-3',
         nameAr: 'عميل',
@@ -247,13 +248,13 @@ describe('merchant customer routes', () => {
     const created = await app!.inject({
       method: 'POST',
       url: '/v1/admin/customers',
-      headers: { cookie: 'korvi_session=customer-test-token' },
+      headers: { cookie: 'korvi_session=customer-test-token', origin: ORIGIN },
       payload: { ...payload, operationId: 'customer-create-new' },
     });
     const replayed = await app!.inject({
       method: 'POST',
       url: '/v1/admin/customers',
-      headers: { cookie: 'korvi_session=customer-test-token' },
+      headers: { cookie: 'korvi_session=customer-test-token', origin: ORIGIN },
       payload: { ...payload, operationId: 'customer-create-replay' },
     });
 
@@ -272,7 +273,7 @@ describe('merchant customer routes', () => {
     const response = await app!.inject({
       method: 'PATCH',
       url: `/v1/admin/customers/${OTHER_CUSTOMER_ID}`,
-      headers: { cookie: 'korvi_session=customer-test-token' },
+      headers: { cookie: 'korvi_session=customer-test-token', origin: ORIGIN },
       payload: { operationId: 'customer-update-1', isActive: false },
     });
 
