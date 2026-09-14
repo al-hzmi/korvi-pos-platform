@@ -1,0 +1,86 @@
+name: Korvi refresh P0 contract tests once
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'korvi-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 0
+      - name: Refresh semantic P0 contracts
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected block not found in {path}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              'apps/api/src/__tests__/platform-auth-routes.test.ts',
+              "    expect(seenActor).toEqual({ controlPlaneActorRef: ACTOR });\n",
+              "    expect(seenActor?.controlPlaneActorRef).toBe(ACTOR);\n",
+          )
+
+          replace(
+              'apps/api/src/__tests__/staging-preflight.test.ts',
+              "    expect(expected.migrations).toHaveLength(16);\n",
+              "    expect(new Set(expected.migrations.map((migration) => migration.name)).size).toBe(\n      expected.migrations.length,\n    );\n    expect(expected.migrations.map((migration) => migration.name)).toContain(\n      '20260914013000_platform_control_plane_read',\n    );\n",
+          )
+
+          replace(
+              'packages/database/src/__tests__/saas-schema.test.ts',
+              "    // The login-resolution door. FOR SELECT means PostgreSQL will not consider\n    // it for INSERT, UPDATE or DELETE at all, so there is no version of this\n    // policy that writes. It carries no WITH CHECK because it cannot.\n    const readOnly = policyBodies().filter((body) => body.includes('FOR SELECT'));\n    expect(readOnly.length).toBe(1);\n    for (const body of readOnly) {\n      expect(body).toContain('USING');\n      expect(body).not.toContain('WITH CHECK');\n      expect(body).toContain('login_tenant_slug()');\n    }\n",
+              "    // Read-only doors are explicit exceptions to tenant write isolation. Each\n    // must remain SELECT-only and must be keyed by its own transaction-local\n    // authority setting rather than inheriting another trust boundary.\n    const readOnly = policyBodies().filter((body) => body.includes('FOR SELECT'));\n    const loginResolution = readOnly.filter((body) => body.includes('login_tenant_slug()'));\n    const controlPlaneRead = readOnly.filter((body) =>\n      body.includes('current_control_plane_actor()'),\n    );\n\n    expect(loginResolution).toHaveLength(1);\n    expect(controlPlaneRead).toHaveLength(1);\n    expect(readOnly).toHaveLength(loginResolution.length + controlPlaneRead.length);\n    for (const body of readOnly) {\n      expect(body).toContain('USING');\n      expect(body).not.toContain('WITH CHECK');\n    }\n",
+          )
+
+          replace(
+              'apps/pos-web/src/components/__tests__/control.test.ts',
+              "    expect(markup.match(/قريباً/g) ?? []).toHaveLength(unbuilt.length);\n",
+              "    expect(markup.match(/غير مكتمل/g) ?? []).toHaveLength(unbuilt.length);\n    expect(markup).not.toContain('قريباً');\n",
+          )
+
+          replace(
+              'apps/pos-web/src/components/__tests__/control.test.ts',
+              "    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(7);\n",
+              "    const built = CONTROL_ENTRIES.filter((entry) => entry.section !== null);\n    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(built.length);\n    expect(markup).toContain('المبيعات');\n",
+          )
+
+          replace(
+              'apps/pos-web/src/components/__tests__/control.test.ts',
+              "    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(6);\n",
+              "    const unauthorized = CONTROL_ENTRIES.filter(\n      (entry) => entry.section !== null && entry.permission !== 'users.manage',\n    );\n    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(unauthorized.length);\n",
+          )
+
+          replace(
+              'apps/pos-web/src/components/__tests__/control.test.ts',
+              "    expect(markup.match(/عملية معلقة/g) ?? []).toHaveLength(2);\n",
+              "    const permissions = ['report.read', 'product.read', 'inventory.read'];\n    const lockedSiblings = CONTROL_ENTRIES.filter(\n      (entry) =>\n        entry.section !== null &&\n        entry.section !== 'inventory' &&\n        entry.permission !== undefined &&\n        permissions.includes(entry.permission),\n    );\n    expect(markup.match(/عملية معلقة/g) ?? []).toHaveLength(lockedSiblings.length);\n",
+          )
+          PY
+      - name: Commit semantic test contracts
+        run: |
+          rm .github/workflows/korvi-refresh-p0-contract-tests-once.yml
+          git config user.name korvi-ci
+          git config user.email korvi-ci@users.noreply.github.com
+          git add apps/api/src/__tests__/platform-auth-routes.test.ts \
+                  apps/api/src/__tests__/staging-preflight.test.ts \
+                  packages/database/src/__tests__/saas-schema.test.ts \
+                  apps/pos-web/src/components/__tests__/control.test.ts \
+                  apps/pos-web/src/components/control/control-nav.tsx \
+                  .github/workflows/korvi-refresh-p0-contract-tests-once.yml
+          git commit -m "test(p0): track live platform and sales contracts"
+          git push origin HEAD:strike/product-routing-p0
