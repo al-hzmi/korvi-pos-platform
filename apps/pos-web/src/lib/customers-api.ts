@@ -96,7 +96,8 @@ function queryString(input: Readonly<Record<string, string | number | undefined>
 
 export function createCustomersApi(fetchImpl?: Fetch): CustomersApi {
   const call = async <T>(path: string, init: RequestInit, signal?: AbortSignal): Promise<T> => {
-    const doFetch: Fetch = fetchImpl ?? ((input, requestInit) => globalThis.fetch(input, requestInit));
+    const doFetch: Fetch =
+      fetchImpl ?? ((input, requestInit) => globalThis.fetch(input, requestInit));
     let response: Response;
     try {
       response = await doFetch(path, {
