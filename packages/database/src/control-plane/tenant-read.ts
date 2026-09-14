@@ -2,10 +2,7 @@ import { TENANT_LIFECYCLE_STATES, tenantId as asTenantId } from '@korvi/domain';
 import { readCommercialAccount } from '../commercial/plan-entitlements.js';
 import { withControlPlane, withTenant } from '../tenant-context.js';
 import { oneOf } from '../repositories/mapping.js';
-import type {
-  CommercialAccountSnapshot,
-  TenantLifecycleState,
-} from '@korvi/domain';
+import type { CommercialAccountSnapshot, TenantLifecycleState } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 
 export const MAX_PLATFORM_TENANT_PAGE = 100;
@@ -199,7 +196,10 @@ export async function readPlatformTenant(
   });
 }
 
-async function readOperations(prisma: PrismaClient, tenant: string): Promise<PlatformTenantOperations> {
+async function readOperations(
+  prisma: PrismaClient,
+  tenant: string,
+): Promise<PlatformTenantOperations> {
   return withTenant(prisma, tenant, async (tx) => {
     const [
       branchTotal,
@@ -221,7 +221,13 @@ async function readOperations(prisma: PrismaClient, tenant: string): Promise<Pla
       tx.user.count({ where: { tenantId: tenant } }),
       tx.user.count({ where: { tenantId: tenant, isActive: true } }),
       tx.$queryRaw<
-        { id: string; displayName: string; email: string; isActive: boolean; lastLoginAt: Date | null }[]
+        {
+          id: string;
+          displayName: string;
+          email: string;
+          isActive: boolean;
+          lastLoginAt: Date | null;
+        }[]
       >`
         SELECT u."id", u."displayName", u."email", u."isActive", u."lastLoginAt"
           FROM "users" u

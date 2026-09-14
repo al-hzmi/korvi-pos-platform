@@ -54,7 +54,9 @@ export function PlatformPageHeader({
     <div className="flex flex-col gap-4 border-b border-border/70 pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         <p className="mb-1 text-xs font-semibold tracking-wide text-primary">{eyebrow}</p>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          {title}
+        </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
       </div>
       {action === undefined ? null : <div className="shrink-0">{action}</div>}
@@ -74,7 +76,10 @@ export function PlatformMetric({
   return (
     <CardSurface className="p-4">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-card-foreground" dir="ltr">
+      <p
+        className="mt-2 font-mono text-2xl font-semibold tabular-nums text-card-foreground"
+        dir="ltr"
+      >
         {value}
       </p>
       {detail === undefined ? null : (
@@ -123,9 +128,16 @@ export function PlatformNotice({
 
 export function PlatformSkeletonRows(): JSX.Element {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card" role="status" aria-label="جارٍ التحميل">
+    <div
+      className="overflow-hidden rounded-lg border border-border bg-card"
+      role="status"
+      aria-label="جارٍ التحميل"
+    >
       {[0, 1, 2, 3, 4].map((row) => (
-        <div key={row} className="grid grid-cols-4 gap-4 border-b border-border/70 p-4 last:border-b-0">
+        <div
+          key={row}
+          className="grid grid-cols-4 gap-4 border-b border-border/70 p-4 last:border-b-0"
+        >
           <div className="h-4 animate-pulse rounded bg-muted" />
           <div className="h-4 animate-pulse rounded bg-muted" />
           <div className="h-4 animate-pulse rounded bg-muted" />

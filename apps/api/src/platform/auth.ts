@@ -133,7 +133,9 @@ export function createPlatformAuth(config: ApiConfig): PlatformAuth {
     if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
 
     try {
-      const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Partial<TokenPayload>;
+      const payload = JSON.parse(
+        Buffer.from(encoded, 'base64url').toString('utf8'),
+      ) as Partial<TokenPayload>;
       if (payload.v !== TOKEN_VERSION || payload.actor !== values.actor) return null;
       if (!Number.isInteger(payload.exp)) return null;
       const exp = payload.exp as number;

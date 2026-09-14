@@ -101,7 +101,10 @@ export interface PlatformApi {
     },
     options?: { readonly signal?: AbortSignal },
   ): Promise<PlatformTenantPage>;
-  tenant(tenantId: string, options?: { readonly signal?: AbortSignal }): Promise<PlatformTenantDetail>;
+  tenant(
+    tenantId: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<PlatformTenantDetail>;
   createTenant(input: {
     readonly operationId: string;
     readonly slug: string;
@@ -151,12 +154,9 @@ function readError(body: unknown, status: number): ApiError {
 }
 
 export function createPlatformApi(fetchImpl?: Fetch): PlatformApi {
-  const call = async <T>(
-    path: string,
-    init: RequestInit,
-    signal?: AbortSignal,
-  ): Promise<T> => {
-    const doFetch: Fetch = fetchImpl ?? ((input, requestInit) => globalThis.fetch(input, requestInit));
+  const call = async <T>(path: string, init: RequestInit, signal?: AbortSignal): Promise<T> => {
+    const doFetch: Fetch =
+      fetchImpl ?? ((input, requestInit) => globalThis.fetch(input, requestInit));
     let response: Response;
     try {
       response = await doFetch(path, {

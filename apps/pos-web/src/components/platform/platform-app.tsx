@@ -35,7 +35,10 @@ type TenantState =
   | { readonly kind: 'failed'; readonly message: string }
   | { readonly kind: 'ready'; readonly page: PlatformTenantPage };
 
-const STATUS_OPTIONS: readonly { readonly value: '' | PlatformLifecycleStatus; readonly label: string }[] = [
+const STATUS_OPTIONS: readonly {
+  readonly value: '' | PlatformLifecycleStatus;
+  readonly label: string;
+}[] = [
   { value: '', label: 'كل الحالات' },
   { value: 'active', label: 'نشطة' },
   { value: 'provisioning', label: 'قيد التجهيز' },
@@ -97,7 +100,8 @@ function LoginScreen({
             <div className="max-w-md">
               <p className="text-3xl font-semibold leading-tight">غرفة التحكم التشغيلية للمنصة.</p>
               <p className="mt-4 text-sm leading-7 text-primary-foreground/75">
-                إدارة دورة حياة المنشآت، الاشتراكات والصلاحيات التجارية من نطاق منفصل تمامًا عن حسابات التجار.
+                إدارة دورة حياة المنشآت، الاشتراكات والصلاحيات التجارية من نطاق منفصل تمامًا عن
+                حسابات التجار.
               </p>
             </div>
             <p className="text-xs text-primary-foreground/60">Korvi Control Plane · Internal</p>
@@ -114,7 +118,8 @@ function LoginScreen({
             <p className="text-xs font-semibold text-primary">PLATFORM ADMIN</p>
             <h1 className="mt-2 text-2xl font-semibold text-card-foreground">دخول إدارة المنصة</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              هذا النطاق مستقل عن دخول المتجر. المفتاح يُرسل مرة واحدة لإنشاء جلسة HttpOnly ولا يُحفظ في المتصفح.
+              هذا النطاق مستقل عن دخول المتجر. المفتاح يُرسل مرة واحدة لإنشاء جلسة HttpOnly ولا
+              يُحفظ في المتصفح.
             </p>
 
             <form className="mt-8 space-y-5" onSubmit={submit}>
@@ -135,11 +140,17 @@ function LoginScreen({
               </div>
               {unavailable ? (
                 <PlatformNotice tone="warning">
-                  هذا النشر لا يحتوي إعدادات Platform Admin. يلزم تفعيل أسرار المنصة في بيئة الخادم أولًا.
+                  هذا النشر لا يحتوي إعدادات Platform Admin. يلزم تفعيل أسرار المنصة في بيئة الخادم
+                  أولًا.
                 </PlatformNotice>
               ) : null}
               {error === null ? null : <PlatformNotice tone="danger">{error}</PlatformNotice>}
-              <Button type="submit" className="w-full" loading={busy} disabled={unavailable || accessKey === ''}>
+              <Button
+                type="submit"
+                className="w-full"
+                loading={busy}
+                disabled={unavailable || accessKey === ''}
+              >
                 دخول آمن
               </Button>
             </form>
@@ -214,25 +225,53 @@ function CreateTenantPanel({
             <label className={PLATFORM_LABEL} htmlFor="tenant-name">
               اسم المنشأة
             </label>
-            <input id="tenant-name" className={PLATFORM_INPUT} value={name} onChange={(event) => setName(event.target.value)} required maxLength={200} />
+            <input
+              id="tenant-name"
+              className={PLATFORM_INPUT}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={200}
+            />
           </div>
           <div>
             <label className={PLATFORM_LABEL} htmlFor="tenant-slug">
               المعرّف المختصر
             </label>
-            <input id="tenant-slug" className={PLATFORM_INPUT} dir="ltr" value={slug} onChange={(event) => setSlug(event.target.value.toLowerCase())} required pattern="[a-z0-9][a-z0-9-]{0,62}" />
+            <input
+              id="tenant-slug"
+              className={PLATFORM_INPUT}
+              dir="ltr"
+              value={slug}
+              onChange={(event) => setSlug(event.target.value.toLowerCase())}
+              required
+              pattern="[a-z0-9][a-z0-9-]{0,62}"
+            />
           </div>
           <div>
             <label className={PLATFORM_LABEL} htmlFor="tenant-vat">
               الرقم الضريبي
             </label>
-            <input id="tenant-vat" className={PLATFORM_INPUT} dir="ltr" inputMode="numeric" value={vatNumber} onChange={(event) => setVatNumber(event.target.value)} maxLength={64} />
+            <input
+              id="tenant-vat"
+              className={PLATFORM_INPUT}
+              dir="ltr"
+              inputMode="numeric"
+              value={vatNumber}
+              onChange={(event) => setVatNumber(event.target.value)}
+              maxLength={64}
+            />
           </div>
           <div className="sm:col-span-2">
             <label className={PLATFORM_LABEL} htmlFor="tenant-vertical">
               النشاط
             </label>
-            <select id="tenant-vertical" className={PLATFORM_INPUT} value={vertical} onChange={(event) => setVertical(event.target.value as PlatformVertical)}>
+            <select
+              id="tenant-vertical"
+              className={PLATFORM_INPUT}
+              value={vertical}
+              onChange={(event) => setVertical(event.target.value as PlatformVertical)}
+            >
               <option value="retail">تجزئة</option>
               <option value="grocery">بقالة وسوبرماركت</option>
               <option value="restaurant">مطعم ومقهى</option>
@@ -248,7 +287,11 @@ function CreateTenantPanel({
             <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
               إلغاء
             </Button>
-            <Button type="submit" loading={busy} disabled={name.trim() === '' || slug.trim() === ''}>
+            <Button
+              type="submit"
+              loading={busy}
+              disabled={name.trim() === '' || slug.trim() === ''}
+            >
               إنشاء المنشأة
             </Button>
           </div>
@@ -258,7 +301,13 @@ function CreateTenantPanel({
   );
 }
 
-function TenantDashboard({ session, onSignedOut }: { readonly session: PlatformSession; readonly onSignedOut: () => void }): JSX.Element {
+function TenantDashboard({
+  session,
+  onSignedOut,
+}: {
+  readonly session: PlatformSession;
+  readonly onSignedOut: () => void;
+}): JSX.Element {
   const [state, setState] = useState<TenantState>({ kind: 'loading' });
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -351,14 +400,16 @@ function TenantDashboard({ session, onSignedOut }: { readonly session: PlatformS
           title="المنشآت"
           description="متابعة دورة حياة حسابات التجار وحالة تشغيلها من نطاق إداري مستقل عن لوحة كل منشأة."
           action={
-            canManage ? (
-              <Button onClick={() => setCreateOpen(true)}>إنشاء منشأة</Button>
-            ) : undefined
+            canManage ? <Button onClick={() => setCreateOpen(true)}>إنشاء منشأة</Button> : undefined
           }
         />
 
         <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <PlatformMetric label="المعروضة" value={String(counts.shown)} detail="ضمن نتيجة البحث الحالية" />
+          <PlatformMetric
+            label="المعروضة"
+            value={String(counts.shown)}
+            detail="ضمن نتيجة البحث الحالية"
+          />
           <PlatformMetric label="نشطة" value={String(counts.active)} />
           <PlatformMetric label="قيد التجهيز" value={String(counts.provisioning)} />
           <PlatformMetric label="موقوفة" value={String(counts.suspended)} />
@@ -412,13 +463,20 @@ function TenantDashboard({ session, onSignedOut }: { readonly session: PlatformS
           {state.kind === 'failed' ? (
             <PlatformNotice tone="danger">
               {state.message}{' '}
-              <button className="font-semibold underline underline-offset-4" type="button" onClick={reload}>
+              <button
+                className="font-semibold underline underline-offset-4"
+                type="button"
+                onClick={reload}
+              >
                 إعادة المحاولة
               </button>
             </PlatformNotice>
           ) : null}
           {state.kind === 'ready' && state.page.items.length === 0 ? (
-            <PlatformEmpty title="لا توجد نتائج" description="غيّر عبارة البحث أو الحالة، أو أنشئ منشأة جديدة إذا كان هذا حسابًا جديدًا." />
+            <PlatformEmpty
+              title="لا توجد نتائج"
+              description="غيّر عبارة البحث أو الحالة، أو أنشئ منشأة جديدة إذا كان هذا حسابًا جديدًا."
+            />
           ) : null}
           {state.kind === 'ready' && state.page.items.length > 0 ? (
             <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
@@ -435,7 +493,9 @@ function TenantDashboard({ session, onSignedOut }: { readonly session: PlatformS
                   className="grid min-h-[76px] gap-3 border-b border-border/70 px-4 py-4 transition-colors last:border-b-0 hover:bg-muted/40 md:grid-cols-[minmax(220px,1.5fr)_minmax(150px,0.8fr)_140px_170px] md:items-center"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-card-foreground">{tenant.name}</p>
+                    <p className="truncate text-sm font-semibold text-card-foreground">
+                      {tenant.name}
+                    </p>
                     <p className="mt-1 truncate text-xs text-muted-foreground" dir="ltr">
                       {tenant.vatNumber ?? 'بدون رقم ضريبي'}
                     </p>
@@ -447,7 +507,9 @@ function TenantDashboard({ session, onSignedOut }: { readonly session: PlatformS
                     <PlatformStatusBadge status={tenant.status} />
                   </div>
                   <time className="text-xs text-muted-foreground" dateTime={tenant.createdAt}>
-                    {new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium' }).format(new Date(tenant.createdAt))}
+                    {new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium' }).format(
+                      new Date(tenant.createdAt),
+                    )}
                   </time>
                 </Link>
               ))}
@@ -456,7 +518,11 @@ function TenantDashboard({ session, onSignedOut }: { readonly session: PlatformS
         </section>
       </main>
 
-      <CreateTenantPanel open={createOpen} onClose={() => setCreateOpen(false)} onCreated={reload} />
+      <CreateTenantPanel
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={reload}
+      />
     </div>
   );
 }

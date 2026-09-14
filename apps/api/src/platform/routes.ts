@@ -42,7 +42,13 @@ const createTenantBody = z
   })
   .strict();
 const entitlementWire = z.discriminatedUnion('kind', [
-  z.object({ key: z.string().trim().min(1).max(96), kind: z.literal('flag'), enabled: z.boolean() }).strict(),
+  z
+    .object({
+      key: z.string().trim().min(1).max(96),
+      kind: z.literal('flag'),
+      enabled: z.boolean(),
+    })
+    .strict(),
   z
     .object({
       key: z.string().trim().min(1).max(96),
