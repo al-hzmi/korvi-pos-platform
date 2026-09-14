@@ -122,6 +122,20 @@ export type {
   PlatformAuditEntry,
   PlatformAuditPage,
 } from './control-plane/tenant-read.js';
+export {
+  MAX_PLATFORM_SUPPORT_NOTE_LENGTH,
+  MAX_PLATFORM_SUPPORT_NOTE_PAGE,
+  PlatformSupportNoteRefusedError,
+  listPlatformSupportNotes,
+  createPlatformSupportNote,
+} from './control-plane/support-notes.js';
+export type {
+  PlatformSupportNoteRefusal,
+  PlatformSupportNote,
+  PlatformSupportNotePage,
+  PlatformSupportNoteCreateRequest,
+  PlatformSupportNoteCreateResult,
+} from './control-plane/support-notes.js';
 
 // Merchant administration (Strike 4B-1). Tenant-scoped, session-derived, and
 // deliberately separate from the control-plane functions above: nothing here
