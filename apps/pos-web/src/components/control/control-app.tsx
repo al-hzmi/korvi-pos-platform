@@ -10,6 +10,7 @@ import { MembersPanel } from './members-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
 import { PurchasingPanel } from './purchasing-panel';
+import { SalesPanel } from './sales-panel';
 import { SettingsPanel } from './settings-panel';
 import { LoginScreen } from '../login-screen';
 import { Screen } from '../screen';
@@ -55,6 +56,8 @@ function sectionTitle(section: ControlSection): string {
   switch (section) {
     case 'home':
       return 'الرئيسية';
+    case 'sales':
+      return 'المبيعات';
     case 'products':
       return 'المنتجات';
     case 'inventory':
@@ -90,6 +93,8 @@ function Section({
   switch (section) {
     case 'home':
       return <DashboardPanel api={api} />;
+    case 'sales':
+      return <SalesPanel />;
     case 'products':
       return <ProductsPanel api={api} canWrite={hasPermission(principal, 'product.write')} />;
     case 'inventory':
@@ -226,11 +231,15 @@ function Workspace({
               <h1 className="text-2xl font-semibold text-foreground">
                 {sectionTitle(activeSection)}
               </h1>
-              {activeSection === 'inventory' ||
-              activeSection === 'purchasing' ||
-              activeSection === 'branches' ||
-              activeSection === 'staff' ||
-              activeSection === 'settings' ? (
+              {activeSection === 'sales' ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  سجل الفواتير المعتمدة كما حُفظت وقت البيع، مع الضريبة والتسوية والمرتجعات المرتبطة.
+                </p>
+              ) : activeSection === 'inventory' ||
+                activeSection === 'purchasing' ||
+                activeSection === 'branches' ||
+                activeSection === 'staff' ||
+                activeSection === 'settings' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
                   إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
                 </p>
