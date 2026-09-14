@@ -257,7 +257,7 @@ function Workspace({
 export interface ControlSurfaceProps {
   readonly view: ControlView;
   readonly api: ApiClient;
-  readonly section: ControlSection;
+  readonly section?: ControlSection;
   readonly onAuthenticated: (principal: Principal) => void;
   readonly onRetrySession: () => void;
   readonly onSignOut: () => void;
@@ -266,7 +266,7 @@ export interface ControlSurfaceProps {
 export function ControlSurface({
   view,
   api,
-  section,
+  section = 'home',
   onAuthenticated,
   onRetrySession,
   onSignOut,
