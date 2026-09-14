@@ -76,6 +76,11 @@ export interface PlatformAuditEntry {
   readonly occurredAt: string;
 }
 
+export interface PlatformAuditPage {
+  readonly items: readonly PlatformAuditEntry[];
+  readonly nextCursor: string | null;
+}
+
 function boundedLimit(value: number | undefined, max: number): number {
   if (value === undefined) return Math.min(50, max);
   if (!Number.isInteger(value) || value < 1 || value > max) {
@@ -293,15 +298,20 @@ export async function readPlatformTenantDetail(
 
 export async function listPlatformTenantAudit(
   prisma: PrismaClient,
+  controlPlaneActorRef: string,
   tenant: string,
-  limit?: number,
-): Promise<readonly PlatformAuditEntry[]> {
-  const take = boundedLimit(limit, MAX_PLATFORM_AUDIT_PAGE);
+  input: { readonly cursor?: string; readonly limit?: number } = {},
+): Promise<PlatformAuditPage | null> {
+  const identity = await readPlatformTenant(prisma, controlPlaneActorRef, tenant);
+  if (identity === null) return null;
+
+  const limit = boundedLimit(input.limit, MAX_PLATFORM_AUDIT_PAGE);
   return withTenant(prisma, tenant, async (tx) => {
     const rows = await tx.auditEvent.findMany({
       where: { tenantId: tenant },
       orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-      take,
+      take: limit + 1,
+      ...(input.cursor === undefined ? {} : { cursor: { id: input.cursor }, skip: 1 }),
       select: {
         id: true,
         actorUserId: true,
@@ -314,6 +324,11 @@ export async function listPlatformTenantAudit(
         occurredAt: true,
       },
     });
-    return rows.map((row) => ({ ...row, occurredAt: row.occurredAt.toISOString() }));
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      items: page.map((row) => ({ ...row, occurredAt: row.occurredAt.toISOString() })),
+      nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
+    };
   });
 }
