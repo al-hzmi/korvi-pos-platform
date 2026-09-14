@@ -323,7 +323,7 @@ export function SalesPanel({ api: injected }: { readonly api?: MerchantSalesApi 
 
   const loadList = useCallback(
     async (query: MerchantSalesQuery, signal?: AbortSignal) => {
-      const page = await api.list(query, { signal });
+      const page = await api.list(query, signal === undefined ? undefined : { signal });
       setList({ kind: 'ready', items: page.items, nextCursor: page.nextCursor });
     },
     [api],
@@ -340,13 +340,15 @@ export function SalesPanel({ api: injected }: { readonly api?: MerchantSalesApi 
   }, [applied, loadList]);
 
   const applyFilters = useCallback(() => {
+    const normalizedFrom = toIso(from);
+    const normalizedTo = toIso(to);
     setDetail({ kind: 'closed' });
     setApplied({
       limit: 50,
       ...(search.trim() === '' ? {} : { search: search.trim() }),
       ...(status === 'all' ? {} : { status }),
-      ...(toIso(from) === undefined ? {} : { from: toIso(from) }),
-      ...(toIso(to) === undefined ? {} : { to: toIso(to) }),
+      ...(normalizedFrom === undefined ? {} : { from: normalizedFrom }),
+      ...(normalizedTo === undefined ? {} : { to: normalizedTo }),
     });
   }, [from, search, status, to]);
 

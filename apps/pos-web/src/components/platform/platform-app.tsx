@@ -327,8 +327,8 @@ function TenantDashboard({
     void api
       .tenants(
         {
-          search: appliedSearch === '' ? undefined : appliedSearch,
-          status: status === '' ? undefined : status,
+          ...(appliedSearch === '' ? {} : { search: appliedSearch }),
+          ...(status === '' ? {} : { status }),
           limit: 100,
         },
         { signal: controller.signal },
