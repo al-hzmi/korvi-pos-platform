@@ -6,7 +6,7 @@ on:
       - tooling/prettier-rls-exact
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   format:
@@ -23,9 +23,16 @@ jobs:
         run: npx --no-install prettier --write packages/database/src/__tests__/rls-live.test.ts
       - name: Prove formatter idempotence
         run: npx --no-install prettier --check packages/database/src/__tests__/rls-live.test.ts
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: exact-prettier-rls-${{ github.sha }}
-          path: packages/database/src/__tests__/rls-live.test.ts
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit exact formatter output on tooling branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- packages/database/src/__tests__/rls-live.test.ts; then
+            echo 'Formatter output already committed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packages/database/src/__tests__/rls-live.test.ts
+          git commit -m 'chore(tooling): capture exact pinned prettier output'
+          git push origin HEAD:tooling/prettier-rls-exact
