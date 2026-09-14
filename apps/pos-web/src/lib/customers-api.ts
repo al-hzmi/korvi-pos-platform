@@ -21,15 +21,14 @@ export interface CustomerPage {
 
 export interface CustomerSaleLink {
   readonly id: string;
-  readonly invoiceNumber: string;
+  readonly invoiceNumber: string | null;
   readonly status: string;
   readonly issuedAt: string;
   readonly currency: string;
   readonly totalMinor: string;
 }
 
-export interface CustomerDetail {
-  readonly customer: CustomerSummary;
+export interface CustomerDetail extends CustomerSummary {
   readonly salesCount: number;
   readonly recentSales: readonly CustomerSaleLink[];
 }
