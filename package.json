@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --write apps/api/src/customers/service.ts apps/api/src/routes/customers.ts apps/api/src/server.ts && git diff --exit-code",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "npm run db:generate -w @korvi/database",
