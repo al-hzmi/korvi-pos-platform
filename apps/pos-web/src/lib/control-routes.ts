@@ -1,5 +1,6 @@
 export const CONTROL_SECTION_HREFS = {
   home: '/control',
+  sales: '/control/sales',
   products: '/control/products',
   inventory: '/control/inventory',
   purchasing: '/control/purchasing',
@@ -16,6 +17,7 @@ export function controlSectionHref(section: ControlSection): string {
 
 export function controlSectionFromSlug(slug: string): ControlSection | null {
   switch (slug) {
+    case 'sales':
     case 'products':
     case 'inventory':
     case 'purchasing':
