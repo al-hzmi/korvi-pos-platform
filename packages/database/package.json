@@ -13,6 +13,10 @@
     "./customers": {
       "types": "./dist/src/administration/customers.d.ts",
       "default": "./dist/src/administration/customers.js"
+    },
+    "./reports": {
+      "types": "./dist/src/reports/period-summary.d.ts",
+      "default": "./dist/src/reports/period-summary.js"
     }
   },
   "files": [
