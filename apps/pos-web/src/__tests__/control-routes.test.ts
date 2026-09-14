@@ -36,10 +36,12 @@ describe('merchant control route authority', () => {
     }
   });
 
-  it('fails closed for unknown or root-like slugs', () => {
+  it('fails closed for unknown, root-like, and still-unbuilt P0 slugs', () => {
     expect(controlSectionFromSlug('')).toBeNull();
     expect(controlSectionFromSlug('home')).toBeNull();
     expect(controlSectionFromSlug('customers')).toBeNull();
+    expect(controlSectionFromSlug('reports')).toBeNull();
+    expect(controlSectionFromSlug('zatca')).toBeNull();
     expect(controlSectionFromSlug('../settings')).toBeNull();
   });
 });
