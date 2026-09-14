@@ -210,7 +210,7 @@ function CustomerDetailCard({
 
   useEffect(() => {
     if (state.kind !== 'ready') return;
-    const customer = state.detail.customer;
+    const customer = state.detail;
     setDraft({
       nameAr: customer.nameAr,
       nameEn: customer.nameEn ?? '',
@@ -252,7 +252,7 @@ function CustomerDetailCard({
     );
   }
 
-  const customer = state.detail.customer;
+  const customer = state.detail;
   const busy = command.kind === 'running';
   const retryOperationId =
     command.kind === 'failed' && command.ambiguous ? (command.operationId ?? undefined) : undefined;
@@ -370,7 +370,7 @@ function CustomerDetailCard({
                 {state.detail.recentSales.map((sale) => (
                   <tr key={sale.id}>
                     <td className="px-3 py-3 font-mono text-xs" dir="ltr">
-                      {sale.invoiceNumber}
+                      {sale.invoiceNumber ?? '—'}
                     </td>
                     <td className="px-3 py-3">{formatTimestamp(sale.issuedAt)}</td>
                     <td className="px-3 py-3">{sale.status}</td>
