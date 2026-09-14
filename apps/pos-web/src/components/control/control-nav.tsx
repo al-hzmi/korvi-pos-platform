@@ -42,7 +42,7 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'staff', label: 'الموظفون والصلاحيات', section: 'staff', permission: 'users.manage' },
   { key: 'reports', label: 'التقارير', section: 'reports', permission: 'report.read' },
   { key: 'settings', label: 'الإعدادات', section: 'settings', permission: 'settings.manage' },
-  { key: 'zatca', label: 'ZATCA', section: null },
+  { key: 'zatca', label: 'ZATCA', section: 'zatca', permission: 'zatca.manage' },
 ];
 
 export function canAccessControlSection(
