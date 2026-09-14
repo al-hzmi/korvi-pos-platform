@@ -194,7 +194,9 @@ describe('row-level security', () => {
       controlPlaneRead.some((body) => body.startsWith('tenants_control_plane_read"')),
     ).toBe(true);
     expect(
-      controlPlaneRead.some((body) => body.startsWith('platform_support_notes_control_plane_read"')),
+      controlPlaneRead.some((body) =>
+        body.startsWith('platform_support_notes_control_plane_read"'),
+      ),
     ).toBe(true);
     expect(readOnly).toHaveLength(loginResolution.length + controlPlaneRead.length);
     for (const body of readOnly) {
