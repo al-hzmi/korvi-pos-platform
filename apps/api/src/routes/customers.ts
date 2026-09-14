@@ -11,7 +11,10 @@ const NAME_AR = z.string().trim().min(1).max(160);
 const NAME_EN = z.string().trim().min(1).max(160).nullable();
 const PHONE = z.string().trim().min(3).max(40).nullable();
 const EMAIL = z.string().trim().email().max(320).nullable();
-const VAT_NUMBER = z.string().regex(/^[0-9]{15}$/, 'must be a 15 digit VAT number').nullable();
+const VAT_NUMBER = z
+  .string()
+  .regex(/^[0-9]{15}$/, 'must be a 15 digit VAT number')
+  .nullable();
 
 const customerParams = z.object({ customerId: UUID }).strict();
 const customerListQuery = z
