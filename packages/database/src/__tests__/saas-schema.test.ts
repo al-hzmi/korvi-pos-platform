@@ -184,15 +184,21 @@ describe('row-level security', () => {
   });
 
   it('keeps every read-only policy read-only, and keyed on its own setting', () => {
-    // The login-resolution door. FOR SELECT means PostgreSQL will not consider
-    // it for INSERT, UPDATE or DELETE at all, so there is no version of this
-    // policy that writes. It carries no WITH CHECK because it cannot.
+    // Read-only doors are explicit exceptions to tenant write isolation. Each
+    // must remain SELECT-only and must be keyed by its own transaction-local
+    // authority setting rather than inheriting another trust boundary.
     const readOnly = policyBodies().filter((body) => body.includes('FOR SELECT'));
-    expect(readOnly.length).toBe(1);
+    const loginResolution = readOnly.filter((body) => body.includes('login_tenant_slug()'));
+    const controlPlaneRead = readOnly.filter((body) =>
+      body.includes('current_control_plane_actor()'),
+    );
+
+    expect(loginResolution).toHaveLength(1);
+    expect(controlPlaneRead).toHaveLength(1);
+    expect(readOnly).toHaveLength(loginResolution.length + controlPlaneRead.length);
     for (const body of readOnly) {
       expect(body).toContain('USING');
       expect(body).not.toContain('WITH CHECK');
-      expect(body).toContain('login_tenant_slug()');
     }
   });
 

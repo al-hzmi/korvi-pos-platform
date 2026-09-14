@@ -134,7 +134,7 @@ describe('platform routes', () => {
     });
     expect(list.statusCode).toBe(200);
     expect(list.json()).toEqual({ items: [], nextCursor: null });
-    expect(seenActor).toEqual({ controlPlaneActorRef: ACTOR });
+    expect(seenActor?.controlPlaneActorRef).toBe(ACTOR);
 
     const authorityInjection = await app.inject({
       method: 'POST',

@@ -146,7 +146,8 @@ describe('control navigation', () => {
 
     expect(unbuilt.length).toBeGreaterThan(0);
     expect(markup.match(/disabled/g) ?? []).toHaveLength(unbuilt.length);
-    expect(markup.match(/قريباً/g) ?? []).toHaveLength(unbuilt.length);
+    expect(markup.match(/غير مكتمل/g) ?? []).toHaveLength(unbuilt.length);
+    expect(markup).not.toContain('قريباً');
     for (const entry of unbuilt) {
       expect(markup).toContain(entry.label);
     }
@@ -156,7 +157,9 @@ describe('control navigation', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, { active: 'home', permissions: [], onSelect: () => undefined }),
     );
-    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(7);
+    const built = CONTROL_ENTRIES.filter((entry) => entry.section !== null);
+    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(built.length);
+    expect(markup).toContain('المبيعات');
   });
 
   it('keeps users.manage separate from settings.manage in navigation', () => {
@@ -168,7 +171,10 @@ describe('control navigation', () => {
       }),
     );
     expect(peopleOnly).toContain('الموظفون والصلاحيات');
-    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(6);
+    const unauthorized = CONTROL_ENTRIES.filter(
+      (entry) => entry.section !== null && entry.permission !== 'users.manage',
+    );
+    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(unauthorized.length);
   });
 
   it('marks exactly one section as the open one', () => {
@@ -191,7 +197,15 @@ describe('control navigation', () => {
         onSelect: () => undefined,
       }),
     );
-    expect(markup.match(/عملية معلقة/g) ?? []).toHaveLength(2);
+    const permissions = ['report.read', 'product.read', 'inventory.read'];
+    const lockedSiblings = CONTROL_ENTRIES.filter(
+      (entry) =>
+        entry.section !== null &&
+        entry.section !== 'inventory' &&
+        entry.permission !== undefined &&
+        permissions.includes(entry.permission),
+    );
+    expect(markup.match(/عملية معلقة/g) ?? []).toHaveLength(lockedSiblings.length);
     expect(markup).toMatch(/aria-current="page"/);
   });
 });
