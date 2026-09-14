@@ -17,7 +17,11 @@ const EMPTY_PAGE: PlatformSupportNotePage = { items: [], nextCursor: null };
 type SupportState =
   | { readonly kind: 'checking' }
   | { readonly kind: 'hidden' }
-  | { readonly kind: 'ready'; readonly session: PlatformSession; readonly page: PlatformSupportNotePage }
+  | {
+      readonly kind: 'ready';
+      readonly session: PlatformSession;
+      readonly page: PlatformSupportNotePage;
+    }
   | { readonly kind: 'failed'; readonly session: PlatformSession; readonly message: string };
 
 function supportMessage(error: unknown): string {
@@ -33,7 +37,11 @@ function supportMessage(error: unknown): string {
   return 'حدث خطأ غير متوقع أثناء تنفيذ عملية سجل الدعم.';
 }
 
-export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }): JSX.Element | null {
+export function PlatformSupportNotes({
+  tenantId,
+}: {
+  readonly tenantId: string;
+}): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SupportState>({ kind: 'checking' });
   const [draft, setDraft] = useState('');
@@ -46,10 +54,12 @@ export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }
   useEffect(() => {
     const controller = new AbortController();
     let live = true;
+    let authenticatedSession: PlatformSession | null = null;
 
     void api
       .session({ signal: controller.signal })
       .then(async (session) => {
+        authenticatedSession = session;
         if (!live) return;
         if (!session.permissions.includes('platform.support.read')) {
           setState({ kind: 'hidden' });
@@ -65,12 +75,15 @@ export function PlatformSupportNotes({ tenantId }: { readonly tenantId: string }
           setState({ kind: 'hidden' });
           return;
         }
-        const session = state.kind === 'ready' || state.kind === 'failed' ? state.session : null;
-        if (session === null) {
+        if (authenticatedSession === null) {
           setState({ kind: 'hidden' });
           return;
         }
-        setState({ kind: 'failed', session, message: supportMessage(error) });
+        setState({
+          kind: 'failed',
+          session: authenticatedSession,
+          message: supportMessage(error),
+        });
       });
 
     return () => {
