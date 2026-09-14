@@ -8,6 +8,7 @@ import {
 
 const SECTIONS: readonly ControlSection[] = [
   'home',
+  'sales',
   'products',
   'inventory',
   'purchasing',
@@ -23,9 +24,10 @@ describe('merchant control route authority', () => {
     expect(hrefs).toEqual(SECTIONS.map((section) => CONTROL_SECTION_HREFS[section]));
     expect(new Set(hrefs).size).toBe(SECTIONS.length);
     expect(controlSectionHref('home')).toBe('/control');
+    expect(controlSectionHref('sales')).toBe('/control/sales');
   });
 
-  it('round-trips every non-home route slug', () => {
+  it('round-trips every non-home route slug including the stored-truth sales surface', () => {
     for (const section of SECTIONS) {
       if (section === 'home') continue;
       const href = controlSectionHref(section);
@@ -37,7 +39,7 @@ describe('merchant control route authority', () => {
   it('fails closed for unknown or root-like slugs', () => {
     expect(controlSectionFromSlug('')).toBeNull();
     expect(controlSectionFromSlug('home')).toBeNull();
-    expect(controlSectionFromSlug('sales')).toBeNull();
+    expect(controlSectionFromSlug('customers')).toBeNull();
     expect(controlSectionFromSlug('../settings')).toBeNull();
   });
 });
