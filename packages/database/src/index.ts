@@ -108,6 +108,7 @@ export type {
   PlatformTenantOperations,
   PlatformTenantDetail,
   PlatformAuditEntry,
+  PlatformAuditPage,
 } from './control-plane/tenant-read.js';
 
 // Merchant administration (Strike 4B-1). Tenant-scoped, session-derived, and
