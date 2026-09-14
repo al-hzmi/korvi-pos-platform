@@ -72,6 +72,8 @@ export interface ControlNavProps {
   readonly permissions?: readonly string[];
   /** Keeps an ambiguous stock or purchasing command mounted until its identity is resolved. */
   readonly locked?: boolean;
+  /** @deprecated Route navigation is now URL-authoritative. Kept temporarily for caller compatibility. */
+  readonly onSelect?: (section: ControlSection) => void;
 }
 
 export function ControlNav({
