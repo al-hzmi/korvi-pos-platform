@@ -25,6 +25,7 @@ import { createMerchantProductService } from './catalog/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantPurchasingService } from './purchasing/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
+import { createMerchantSalesReadService } from './sales/read-service.js';
 import { createPlatformAuth } from './platform/auth.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { createPlatformService } from './platform/service.js';
@@ -33,6 +34,7 @@ import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
+import { registerSalesReadRoutes } from './routes/sales-read.js';
 import { createAuthService } from './auth/service.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -46,6 +48,7 @@ import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
+import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { PlatformService } from './platform/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
@@ -118,6 +121,9 @@ export interface ServerDeps {
    * acquire write authority while it is only meant to explain readiness.
    */
   readonly onboarding?: MerchantOnboardingService;
+
+  /** Read-only merchant sales history, authorized by report.read. */
+  readonly salesRead?: MerchantSalesReadService;
 
   /**
    * Korvi's own SaaS control plane. This is not merchant administration and it
@@ -428,6 +434,28 @@ function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
 }
 
 /**
+ * Read-only merchant sales history. Historical money, VAT and invoice fields
+ * come from their immutable stored rows; this service never recalculates them
+ * from the live catalogue.
+ */
+function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
+  let built: MerchantSalesReadService | null = null;
+
+  const resolve = (): MerchantSalesReadService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantSalesReadService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    list: (principal, query) => resolve().list(principal, query),
+    detail: (principal, saleId) => resolve().detail(principal, saleId),
+  };
+}
+
+/**
  * Platform control-plane persistence, built once on first use. This stays
  * separate from merchant admin so neither authority can accidentally inherit
  * the other's identity or RLS context.
@@ -556,6 +584,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerOnboardingRoutes(app, {
     service: deps.onboarding ?? lazyOnboardingService(config),
+    guards,
+  });
+  registerSalesReadRoutes(app, {
+    service: deps.salesRead ?? lazySalesReadService(config),
     guards,
   });
   registerPlatformRoutes(app, {

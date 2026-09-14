@@ -21,10 +21,10 @@ const salesQuery = z
     limit: z.coerce.number().int().min(1).max(MAX_SALES_PAGE).optional(),
   })
   .strict()
-  .refine(
-    (value) => value.from === undefined || value.to === undefined || value.from <= value.to,
-    { message: 'from must not be later than to', path: ['from'] },
-  );
+  .refine((value) => value.from === undefined || value.to === undefined || value.from <= value.to, {
+    message: 'from must not be later than to',
+    path: ['from'],
+  });
 
 export interface SalesReadRouteOptions {
   readonly service: MerchantSalesReadService;

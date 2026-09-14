@@ -33,19 +33,24 @@ export interface MerchantSalesPage {
   readonly nextCursor: string | null;
 }
 
-export interface MerchantSaleDetail extends MerchantSaleSummary {
+export interface MerchantSaleDetail {
+  readonly id: string;
   readonly operationId: string;
+  readonly invoiceNumber: string | null;
   readonly invoiceType: string | null;
+  readonly status: MerchantSaleStatus;
+  readonly sequence: number;
   readonly priceMode: string;
+  readonly branch: { readonly id: string; readonly code: string; readonly nameAr: string };
+  readonly terminal: { readonly id: string; readonly code: string; readonly label: string };
   readonly cashier: { readonly id: string; readonly displayName: string; readonly email: string };
-  readonly customer:
-    | {
-        readonly id: string;
-        readonly nameAr: string;
-        readonly phone: string | null;
-        readonly vatNumber: string | null;
-      }
-    | null;
+  readonly customer: {
+    readonly id: string;
+    readonly nameAr: string;
+    readonly phone: string | null;
+    readonly vatNumber: string | null;
+  } | null;
+  readonly currency: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
   readonly basketDiscountMinor: string;
@@ -77,27 +82,25 @@ export interface MerchantSaleDetail extends MerchantSaleSummary {
     readonly changeMinor: string;
     readonly reference: string | null;
   }[];
-  readonly invoice:
-    | {
-        readonly id: string;
-        readonly invoiceNumber: string;
-        readonly invoiceType: string;
-        readonly sellerName: string;
-        readonly sellerVatNumber: string;
-        readonly buyerName: string | null;
-        readonly buyerVatNumber: string | null;
-        readonly netMinor: string;
-        readonly vatMinor: string;
-        readonly totalMinor: string;
-        readonly currency: string;
-        readonly issuedAt: string;
-        readonly taxBreakdown: readonly {
-          readonly vatBasisPoints: number;
-          readonly netMinor: string;
-          readonly vatMinor: string;
-        }[];
-      }
-    | null;
+  readonly invoice: {
+    readonly id: string;
+    readonly invoiceNumber: string;
+    readonly invoiceType: string;
+    readonly sellerName: string;
+    readonly sellerVatNumber: string;
+    readonly buyerName: string | null;
+    readonly buyerVatNumber: string | null;
+    readonly netMinor: string;
+    readonly vatMinor: string;
+    readonly totalMinor: string;
+    readonly currency: string;
+    readonly issuedAt: string;
+    readonly taxBreakdown: readonly {
+      readonly vatBasisPoints: number;
+      readonly netMinor: string;
+      readonly vatMinor: string;
+    }[];
+  } | null;
   readonly returns: readonly {
     readonly id: string;
     readonly returnNumber: string | null;
@@ -114,10 +117,7 @@ export interface MerchantSalesApi {
     query?: MerchantSalesQuery,
     options?: { readonly signal?: AbortSignal },
   ): Promise<MerchantSalesPage>;
-  detail(
-    saleId: string,
-    options?: { readonly signal?: AbortSignal },
-  ): Promise<MerchantSaleDetail>;
+  detail(saleId: string, options?: { readonly signal?: AbortSignal }): Promise<MerchantSaleDetail>;
 }
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;

@@ -233,7 +233,8 @@ function Workspace({
               </h1>
               {activeSection === 'sales' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  سجل الفواتير المعتمدة كما حُفظت وقت البيع، مع الضريبة والتسوية والمرتجعات المرتبطة.
+                  سجل الفواتير المعتمدة كما حُفظت وقت البيع، مع الضريبة والتسوية والمرتجعات
+                  المرتبطة.
                 </p>
               ) : activeSection === 'inventory' ||
                 activeSection === 'purchasing' ||
