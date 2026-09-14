@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { MerchantReportRefusedError } from '@korvi/database/reports';
 import { buildServer } from '../server.js';
 import { loadConfig } from '../config.js';
 import type { MerchantSalesReadService } from '../sales/read-service.js';
@@ -11,6 +12,8 @@ const BRANCH_ID = '018fb000-0000-7000-8000-0000000000a1';
 const TERMINAL_ID = '018fb000-0000-7000-8000-0000000000a2';
 const USER_ID = '018fb000-0000-7000-8000-0000000000a4';
 const SALE_ID = '018fb000-0000-7000-8000-0000000000a7';
+const FROM = '2026-09-01T00:00:00+03:00';
+const TO = '2026-10-01T00:00:00+03:00';
 
 let app: FastifyInstance | null = null;
 
@@ -49,6 +52,54 @@ function authFor(subject: AuthenticatedPrincipal | null): AuthService {
   };
 }
 
+function reportFixture() {
+  return {
+    fromInclusive: new Date(FROM).toISOString(),
+    toExclusive: new Date(TO).toISOString(),
+    branchId: BRANCH_ID,
+    currency: 'SAR',
+    sales: { documentCount: '2', netMinor: '20000', vatMinor: '3000', totalMinor: '23000' },
+    returns: { documentCount: '1', netMinor: '4000', vatMinor: '600', totalMinor: '4600' },
+    netAfterReturns: { netMinor: '16000', vatMinor: '2400', totalMinor: '18400' },
+    vatBreakdown: [
+      {
+        vatBasisPoints: 1500,
+        salesNetMinor: '20000',
+        salesVatMinor: '3000',
+        returnsNetMinor: '4000',
+        returnsVatMinor: '600',
+        netTaxableMinor: '16000',
+        netVatMinor: '2400',
+      },
+    ],
+    availableBranches: [
+      { id: BRANCH_ID, code: 'JED', nameAr: 'جدة', nameEn: 'Jeddah', isActive: true },
+    ],
+    branchBreakdown: [
+      {
+        id: BRANCH_ID,
+        code: 'JED',
+        nameAr: 'جدة',
+        nameEn: 'Jeddah',
+        isActive: true,
+        sales: {
+          documentCount: '2',
+          netMinor: '20000',
+          vatMinor: '3000',
+          totalMinor: '23000',
+        },
+        returns: {
+          documentCount: '1',
+          netMinor: '4000',
+          vatMinor: '600',
+          totalMinor: '4600',
+        },
+        netAfterReturns: { netMinor: '16000', vatMinor: '2400', totalMinor: '18400' },
+      },
+    ],
+  } as const;
+}
+
 function recordingSalesRead() {
   const calls: string[] = [];
   const service: MerchantSalesReadService = {
@@ -79,6 +130,15 @@ function recordingSalesRead() {
     async detail(subject, saleId) {
       calls.push(`detail:${subject.tenantId}:${saleId}`);
       return null;
+    },
+    async report(subject, query) {
+      calls.push(
+        `report:${subject.tenantId}:${query.fromInclusive}:${query.toExclusive}:${query.branchId ?? ''}`,
+      );
+      if (query.branchId === '018fb000-0000-7000-8000-0000000000ff') {
+        throw new MerchantReportRefusedError('unknown-branch');
+      }
+      return reportFixture();
     },
   };
   return { service, calls };
@@ -159,5 +219,73 @@ describe('merchant sales read routes', () => {
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: 'sale_not_found' });
     expect(sales.calls).toEqual([`detail:${TENANT_ID}:${SALE_ID}`]);
+  });
+});
+
+describe('merchant period report route', () => {
+  const path = `/v1/admin/reports/period?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&branchId=${BRANCH_ID}`;
+
+  it('requires a session and report.read before reading financial aggregates', async () => {
+    const anonymous = build(principal(['report.read']));
+    const noSession = await app!.inject({ method: 'GET', url: path });
+    expect(noSession.statusCode).toBe(401);
+    expect(anonymous.calls).toEqual([]);
+    await app!.close();
+    app = null;
+
+    const forbidden = build(principal([]));
+    const denied = await app!.inject({
+      method: 'GET',
+      url: path,
+      headers: { cookie: 'korvi_session=sales-test-token' },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(forbidden.calls).toEqual([]);
+  });
+
+  it('rejects unknown query authority before the report service runs', async () => {
+    const sales = build(principal(['report.read']));
+    const response = await app!.inject({
+      method: 'GET',
+      url: `${path}&tenantId=${TENANT_ID}`,
+      headers: { cookie: 'korvi_session=sales-test-token' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: 'invalid_query' });
+    expect(sales.calls).toEqual([]);
+  });
+
+  it('passes the authenticated tenant and exact period to the report authority', async () => {
+    const sales = build(principal(['report.read']));
+    const response = await app!.inject({
+      method: 'GET',
+      url: path,
+      headers: { cookie: 'korvi_session=sales-test-token' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      currency: 'SAR',
+      sales: { documentCount: '2', totalMinor: '23000' },
+      returns: { documentCount: '1', totalMinor: '4600' },
+      netAfterReturns: { vatMinor: '2400', totalMinor: '18400' },
+      vatBreakdown: [{ vatBasisPoints: 1500, netVatMinor: '2400' }],
+    });
+    expect(sales.calls).toEqual([`report:${TENANT_ID}:${FROM}:${TO}:${BRANCH_ID}`]);
+  });
+
+  it('maps a branch outside the tenant report authority to a safe 404', async () => {
+    const sales = build(principal(['report.read']));
+    const unknown = '018fb000-0000-7000-8000-0000000000ff';
+    const response = await app!.inject({
+      method: 'GET',
+      url: `/v1/admin/reports/period?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&branchId=${unknown}`,
+      headers: { cookie: 'korvi_session=sales-test-token' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: 'report_branch_not_found' });
+    expect(sales.calls).toEqual([`report:${TENANT_ID}:${FROM}:${TO}:${unknown}`]);
   });
 });
