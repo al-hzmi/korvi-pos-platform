@@ -1,9 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  newId,
-  normalizeControlPlaneActor,
-  normalizeControlPlaneOperation,
-} from '@korvi/domain';
+import { newId, normalizeControlPlaneActor, normalizeControlPlaneOperation } from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
 import { withControlPlane } from '../tenant-context.js';
 import type { PrismaClient } from '../client.js';
@@ -215,7 +211,8 @@ export async function createPlatformSupportNote(
       LIMIT 1
     `;
     const note = stored[0];
-    if (note === undefined) throw new DatabaseError('Platform support note insert produced no row.');
+    if (note === undefined)
+      throw new DatabaseError('Platform support note insert produced no row.');
     if (note.requestHash !== requestHash) {
       throw new PlatformSupportNoteRefusedError('idempotency-conflict');
     }
