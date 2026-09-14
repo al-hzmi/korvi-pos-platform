@@ -13,6 +13,8 @@ export const PLATFORM_PERMISSIONS = [
   'platform.tenants.manage',
   'platform.commercial.manage',
   'platform.audit.read',
+  'platform.support.read',
+  'platform.support.manage',
 ] as const;
 
 export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];
