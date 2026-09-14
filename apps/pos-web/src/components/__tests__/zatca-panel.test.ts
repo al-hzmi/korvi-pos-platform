@@ -2,13 +2,16 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ZatcaPanel } from '../control/zatca-panel';
+import type { ZatcaPanelProps } from '../control/zatca-panel';
 import type { ZatcaApi } from '../../lib/zatca-api';
 
 const idleApi = {} as ZatcaApi;
 
 describe('ZATCA merchant status first paint', () => {
   it('does not invent compliance or submission state before the server answers', () => {
-    const markup = renderToStaticMarkup(createElement(ZatcaPanel, { api: idleApi }));
+    const markup = renderToStaticMarkup(
+      createElement<ZatcaPanelProps>(ZatcaPanel, { api: idleApi }),
+    );
 
     expect(markup).toContain('جارٍ قراءة حالة الربط والإرسال');
     expect(markup).not.toContain('أجهزة اجتازت الامتثال');
