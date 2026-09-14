@@ -198,7 +198,13 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
   app.get('/v1/platform/tenants', { preHandler: canReadTenants }, async (request, reply) => {
     const parsed = tenantListQuery.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
-    return safely(reply, () => service.listTenants(subject(request), parsed.data));
+    const query = {
+      ...(parsed.data.search === undefined ? {} : { search: parsed.data.search }),
+      ...(parsed.data.status === undefined ? {} : { status: parsed.data.status }),
+      ...(parsed.data.cursor === undefined ? {} : { cursor: parsed.data.cursor }),
+      ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
+    };
+    return safely(reply, () => service.listTenants(subject(request), query));
   });
 
   app.get(
@@ -317,7 +323,11 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       const query = auditQuery.safeParse(request.query);
       if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
       if (!query.success) return reply.code(400).send({ error: 'invalid_query' });
-      const page = await service.listAudit(subject(request), params.data.tenantId, query.data);
+      const input = {
+        ...(query.data.cursor === undefined ? {} : { cursor: query.data.cursor }),
+        ...(query.data.limit === undefined ? {} : { limit: query.data.limit }),
+      };
+      const page = await service.listAudit(subject(request), params.data.tenantId, input);
       if (page === null) return reply.code(404).send({ error: 'unknown_tenant' });
       return reply.code(200).send(page);
     },
