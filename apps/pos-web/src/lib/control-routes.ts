@@ -7,27 +7,6 @@ export type ControlSection =
   | 'staff'
   | 'settings';
 
-const SECTION_SLUGS = {
-  products: 'products',
-  inventory: 'inventory',
-  purchasing: 'purchasing',
-  branches: 'branches',
-  staff: 'staff',
-  settings: 'settings',
-} as const satisfies Record<Exclude<ControlSection, 'home'>, string>;
-
-export function controlSectionHref(section: ControlSection): string {
-  if (section === 'home') return '/control';
-  return `/control/${SECTION_SLUGS[section]}`;
-}
-
-export function controlSectionFromSlug(slug: string): ControlSection | null {
-  for (const [section, candidate] of Object.entries(SECTION_SLUGS)) {
-    if (candidate === slug) return section as Exclude<ControlSection, 'home'>;
-  }
-  return null;
-}
-
 export const CONTROL_SECTION_HREFS: Readonly<Record<ControlSection, string>> = {
   home: '/control',
   products: '/control/products',
@@ -37,3 +16,20 @@ export const CONTROL_SECTION_HREFS: Readonly<Record<ControlSection, string>> = {
   staff: '/control/staff',
   settings: '/control/settings',
 };
+
+const CONTROL_SECTION_BY_SLUG: Readonly<Record<string, ControlSection>> = {
+  products: 'products',
+  inventory: 'inventory',
+  purchasing: 'purchasing',
+  branches: 'branches',
+  staff: 'staff',
+  settings: 'settings',
+};
+
+export function controlSectionHref(section: ControlSection): string {
+  return CONTROL_SECTION_HREFS[section];
+}
+
+export function controlSectionFromSlug(slug: string): ControlSection | null {
+  return CONTROL_SECTION_BY_SLUG[slug] ?? null;
+}
