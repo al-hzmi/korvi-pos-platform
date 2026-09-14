@@ -1,0 +1,163 @@
+name: One-shot offline gates 41-43 root fix
+
+on:
+  push:
+    branches:
+      - tooling/offline-gates-41-43-rootfix-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: tooling/offline-gates-41-43-rootfix-20260915
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Apply exact offline migration and proof fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          function replaceExact(source, before, after, label, expected = 1) {
+            const count = source.split(before).length - 1;
+            if (count !== expected) throw new Error(`${label}: expected ${expected} matches, got ${count}`);
+            return source.split(before).join(after);
+          }
+
+          {
+            const path = 'apps/pos-web/src/lib/offline-store.ts';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceExact(source, 'export const OFFLINE_DB_VERSION = 3;', 'export const OFFLINE_DB_VERSION = 4;', 'offline DB version');
+            source = replaceExact(
+              source,
+              'function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {',
+              `function migrateDraftPriceModeV4(transaction: IDBTransaction): void {\n  const store = transaction.objectStore(OFFLINE_SALE_DRAFT_STORE);\n  const request = store.openCursor();\n  request.onerror = () => transaction.abort();\n  request.onsuccess = () => {\n    const cursor = request.result;\n    if (cursor === null) return;\n    const row = cursor.value as Record<string, unknown>;\n    if (row['priceMode'] === 'inclusive') {\n      cursor.update({ ...row, priceMode: 'tax-inclusive' });\n    } else if (row['priceMode'] === 'exclusive') {\n      cursor.update({ ...row, priceMode: 'tax-exclusive' });\n    }\n    cursor.continue();\n  };\n}\n\nfunction openDatabase(factory: IDBFactory): Promise<IDBDatabase> {`,
+              'v4 draft migration insertion',
+            );
+            source = replaceExact(
+              source,
+              `      if (event.oldVersion < 3 && event.oldVersion >= 2 && request.transaction !== null)\n        migrateQueueLifecycleV3(request.transaction);`,
+              `      if (event.oldVersion < 3 && event.oldVersion >= 2 && request.transaction !== null)\n        migrateQueueLifecycleV3(request.transaction);\n      if (event.oldVersion < 4 && request.transaction !== null)\n        migrateDraftPriceModeV4(request.transaction);`,
+              'v4 upgrade hook',
+            );
+            fs.writeFileSync(path, source);
+          }
+
+          {
+            const path = 'scripts/browser-offline-shell-proof.mjs';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceExact(
+              source,
+              `  await waitFor(\n    \`document.readyState === 'complete' || document.readyState === 'interactive'\`,\n    'initial cashier document',\n  );\n  assert.equal(`,
+              `  await waitFor(\n    \`document.readyState === 'complete' || document.readyState === 'interactive'\`,\n    'initial cashier document',\n  );\n  const expectedOrigin = new URL(baseUrl).origin;\n  await waitFor(\n    \`location.origin === \${JSON.stringify(expectedOrigin)}\`,\n    'initial cashier navigation',\n  );\n  assert.equal(`,
+              'Gate41 navigation race',
+            );
+            fs.writeFileSync(path, source);
+          }
+
+          {
+            const path = 'scripts/gate42-browser/main.ts';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceExact(source, "  priceMode: 'inclusive',", "  priceMode: 'tax-inclusive',", 'Gate42 canonical draft');
+            fs.writeFileSync(path, source);
+          }
+
+          {
+            const path = 'scripts/gate42-indexeddb-proof.mjs';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceExact(source, '  assert.equal(result.version, 1);', '  assert.equal(result.version, 4);', 'Gate42 schema version');
+            source = replaceExact(
+              source,
+              "  assert.deepEqual([...result.stores].sort(), ['catalogue-v1', 'sale-drafts-v1']);",
+              "  assert.deepEqual([...result.stores].sort(), [\n    'catalogue-v1',\n    'sale-drafts-v1',\n    'transaction-queue-v1',\n  ]);",
+              'Gate42 store set',
+            );
+            fs.writeFileSync(path, source);
+          }
+
+          {
+            const path = 'scripts/gate43-browser/main.ts';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceExact(
+              source,
+              "import type { OfflineSaleDraft, OfflineSaleScope } from '../../apps/pos-web/src/lib/offline-store';",
+              "import type { OfflineSaleScope } from '../../apps/pos-web/src/lib/offline-store';",
+              'Gate43 legacy type import',
+            );
+            source = replaceExact(source, 'const LEGACY_DRAFT: OfflineSaleDraft = {', 'const LEGACY_DRAFT = {', 'Gate43 raw legacy draft');
+            source = replaceExact(
+              source,
+              "  updatedAt: '2026-09-12T00:00:00.000Z',\n};",
+              "  updatedAt: '2026-09-12T00:00:00.000Z',\n} as const;",
+              'Gate43 raw legacy draft const',
+            );
+            source = replaceExact(
+              source,
+              '  readonly legacyDraftPreserved: boolean;',
+              '  readonly legacyDraftPreserved: boolean;\n  readonly legacyDraftPriceModeCanonicalized: boolean;',
+              'Gate43 result contract',
+            );
+            source = replaceExact(
+              source,
+              '      legacyDraftPreserved: legacyDraft?.lines[0]?.productId === LEGACY_PRODUCT.id,',
+              "      legacyDraftPreserved: legacyDraft?.lines[0]?.productId === LEGACY_PRODUCT.id,\n      legacyDraftPriceModeCanonicalized: legacyDraft?.priceMode === 'tax-inclusive',",
+              'Gate43 canonicalized result',
+              2,
+            );
+            source = replaceExact(source, "setStatus({ phase: 'seeded-v1-upgraded-to-v2', ...result });", "setStatus({ phase: 'seeded-v1-upgraded-to-v4', ...result });", 'Gate43 phase label');
+            fs.writeFileSync(path, source);
+          }
+
+          {
+            const path = 'scripts/gate43-queue-proof.mjs';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceExact(source, '  assert.equal(result.version, 2);', '  assert.equal(result.version, 4);', 'Gate43 schema version');
+            source = replaceExact(
+              source,
+              '  assert.equal(result.legacyDraftPreserved, true);',
+              '  assert.equal(result.legacyDraftPreserved, true);\n  assert.equal(result.legacyDraftPriceModeCanonicalized, true);',
+              'Gate43 canonical migration assertion',
+            );
+            source = replaceExact(
+              source,
+              "    'v1_sale_draft_upgrade_preservation=PASS',",
+              "    'v1_sale_draft_upgrade_preservation=PASS',\n    'v1_sale_draft_price_mode_canonicalization=PASS',",
+              'Gate43 canonical migration evidence',
+            );
+            fs.writeFileSync(path, source);
+          }
+          NODE
+
+          npx prettier --write \
+            apps/pos-web/src/lib/offline-store.ts \
+            scripts/browser-offline-shell-proof.mjs \
+            scripts/gate42-browser/main.ts \
+            scripts/gate42-indexeddb-proof.mjs \
+            scripts/gate43-browser/main.ts \
+            scripts/gate43-queue-proof.mjs
+          git diff --check
+      - name: Commit exact output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-proof-bot'
+          git config user.email 'korvi-proof-bot@users.noreply.github.com'
+          git add \
+            apps/pos-web/src/lib/offline-store.ts \
+            scripts/browser-offline-shell-proof.mjs \
+            scripts/gate42-browser/main.ts \
+            scripts/gate42-indexeddb-proof.mjs \
+            scripts/gate43-browser/main.ts \
+            scripts/gate43-queue-proof.mjs
+          git diff --cached --exit-code && { echo 'No changes produced' >&2; exit 1; } || true
+          git commit -m 'fix(offline): migrate legacy drafts and repair proof harnesses'
+          git push origin HEAD:tooling/offline-gates-41-43-rootfix-20260915
