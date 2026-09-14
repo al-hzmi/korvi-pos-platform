@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError } from '../api';
+import type { ApiError } from '../api';
 import { createZatcaApi } from '../zatca-api';
 
 describe('ZATCA merchant web client', () => {
