@@ -25,6 +25,9 @@ import { createMerchantProductService } from './catalog/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantPurchasingService } from './purchasing/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
+import { createPlatformAuth } from './platform/auth.js';
+import { registerPlatformRoutes } from './platform/routes.js';
+import { createPlatformService } from './platform/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
@@ -43,6 +46,7 @@ import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
+import type { PlatformService } from './platform/service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { ApiConfig } from './config.js';
 import type { FastifyInstance } from 'fastify';
@@ -114,6 +118,13 @@ export interface ServerDeps {
    * acquire write authority while it is only meant to explain readiness.
    */
   readonly onboarding?: MerchantOnboardingService;
+
+  /**
+   * Korvi's own SaaS control plane. This is not merchant administration and it
+   * never receives a merchant principal. Tests may inject an in-memory service;
+   * production resolves the database-backed authority lazily.
+   */
+  readonly platform?: PlatformService;
 }
 
 class AuthUnavailableError extends Error {
@@ -417,6 +428,37 @@ function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
 }
 
 /**
+ * Platform control-plane persistence, built once on first use. This stays
+ * separate from merchant admin so neither authority can accidentally inherit
+ * the other's identity or RLS context.
+ */
+function lazyPlatformService(config: ApiConfig): PlatformService {
+  let built: PlatformService | null = null;
+
+  const resolve = (): PlatformService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createPlatformService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    listTenants: (actor, query) => resolve().listTenants(actor, query),
+    getTenant: (actor, tenantId) => resolve().getTenant(actor, tenantId),
+    createTenant: (actor, input) => resolve().createTenant(actor, input),
+    activateTenant: (actor, tenantId, operationId) =>
+      resolve().activateTenant(actor, tenantId, operationId),
+    suspendTenant: (actor, tenantId, operationId, reason) =>
+      resolve().suspendTenant(actor, tenantId, operationId, reason),
+    reactivateTenant: (actor, tenantId, operationId) =>
+      resolve().reactivateTenant(actor, tenantId, operationId),
+    assignPlan: (actor, tenantId, input) => resolve().assignPlan(actor, tenantId, input),
+    listAudit: (actor, tenantId, input) => resolve().listAudit(actor, tenantId, input),
+  };
+}
+
+/**
  * The public bootstrap surface, or nothing.
  *
  * Two configuration facts have to hold before this route can be served at all:
@@ -445,10 +487,12 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
           'req.headers.cookie',
           'req.body.password',
           'req.body.token',
+          'req.body.accessKey',
           'request.headers.authorization',
           'request.headers.cookie',
           'request.body.password',
           'request.body.token',
+          'request.body.accessKey',
           'res.headers["set-cookie"]',
         ],
         censor: '[Redacted]',
@@ -468,6 +512,7 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   const service = deps.auth ?? lazyAuthService(config);
   const guards = createGuards(service, config);
   const business = deps.business ?? lazyBusinessDeps(config);
+  const platformAuth = createPlatformAuth(config);
 
   // Before anything else: a state-changing request from an origin this
   // deployment does not know never reaches a handler.
@@ -477,7 +522,7 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   // database the auth routes answer 503, which is what it is.
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     if (error instanceof AuthUnavailableError) {
-      request.log.error('authentication is not configured; DATABASE_URL is missing');
+      request.log.error('database-backed route unavailable; DATABASE_URL is missing');
       return reply.code(503).send({ error: 'unavailable' });
     }
     // Adapter/database errors can contain hosts, credentials or query detail.
@@ -512,6 +557,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerOnboardingRoutes(app, {
     service: deps.onboarding ?? lazyOnboardingService(config),
     guards,
+  });
+  registerPlatformRoutes(app, {
+    auth: platformAuth,
+    service: deps.platform ?? lazyPlatformService(config),
   });
   return app;
 }
