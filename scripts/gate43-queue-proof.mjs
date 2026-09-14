@@ -111,7 +111,7 @@ async function waitForReady(timeoutMs = 30_000) {
 try {
   await waitForReady();
   const result = await evaluate(`globalThis.gate43Proof.${phase}()`);
-  assert.equal(result.version, 2);
+  assert.equal(result.version, 4);
   assert.deepEqual([...result.stores].sort(), [
     'catalogue-v1',
     'sale-drafts-v1',
@@ -119,6 +119,7 @@ try {
   ]);
   assert.equal(result.legacyCataloguePreserved, true);
   assert.equal(result.legacyDraftPreserved, true);
+  assert.equal(result.legacyDraftPriceModeCanonicalized, true);
   assert.equal(result.queueACount, 4);
   assert.equal(result.queueBCount, 1);
   assert.deepEqual(result.orderedBeforeTransition, orderedIds);
@@ -153,6 +154,7 @@ try {
     `stores=${[...result.stores].sort().join(',')}`,
     'v1_catalogue_upgrade_preservation=PASS',
     'v1_sale_draft_upgrade_preservation=PASS',
+    'v1_sale_draft_price_mode_canonicalization=PASS',
     `queue_a_count=${String(result.queueACount)}`,
     `queue_b_count=${String(result.queueBCount)}`,
     `uuidv7_order=${result.orderedBeforeTransition.join(',')}=PASS`,

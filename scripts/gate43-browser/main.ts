@@ -11,7 +11,7 @@ import {
   queuePartitionKey,
 } from '../../apps/pos-web/src/lib/offline-store';
 import type { ProductSummary } from '../../apps/pos-web/src/lib/api-types';
-import type { OfflineSaleDraft, OfflineSaleScope } from '../../apps/pos-web/src/lib/offline-store';
+import type { OfflineSaleScope } from '../../apps/pos-web/src/lib/offline-store';
 
 const PARTITION_A: QueuePartition = {
   tenantId: '018f3000-0000-7000-8000-0000000000a1',
@@ -52,7 +52,7 @@ const LEGACY_SCOPE: OfflineSaleScope = {
   shiftId: '018f3000-0000-7000-8000-0000000000a5',
 };
 
-const LEGACY_DRAFT: OfflineSaleDraft = {
+const LEGACY_DRAFT = {
   lines: [
     {
       productId: LEGACY_PRODUCT.id,
@@ -69,7 +69,7 @@ const LEGACY_DRAFT: OfflineSaleDraft = {
   cash: '20.00',
   priceMode: 'inclusive',
   updatedAt: '2026-09-12T00:00:00.000Z',
-};
+} as const;
 
 const OPERATION_IDS = [
   '018f3000-0001-7000-8000-000000000001',
@@ -112,6 +112,7 @@ interface SeedResult {
   readonly stores: readonly string[];
   readonly legacyCataloguePreserved: boolean;
   readonly legacyDraftPreserved: boolean;
+  readonly legacyDraftPriceModeCanonicalized: boolean;
   readonly orderedBeforeTransition: readonly string[];
   readonly queueACount: number;
   readonly queueBCount: number;
@@ -247,6 +248,7 @@ async function readBaseState() {
       stores: description.stores,
       legacyCataloguePreserved: legacyProducts[0]?.id === LEGACY_PRODUCT.id,
       legacyDraftPreserved: legacyDraft?.lines[0]?.productId === LEGACY_PRODUCT.id,
+      legacyDraftPriceModeCanonicalized: legacyDraft?.priceMode === 'tax-inclusive',
       queueACount: await store.queueCount(PARTITION_A),
       queueBCount: await store.queueCount(PARTITION_B),
     };
@@ -321,6 +323,7 @@ async function seed(): Promise<SeedResult> {
       stores: description.stores,
       legacyCataloguePreserved: legacyProducts[0]?.id === LEGACY_PRODUCT.id,
       legacyDraftPreserved: legacyDraft?.lines[0]?.productId === LEGACY_PRODUCT.id,
+      legacyDraftPriceModeCanonicalized: legacyDraft?.priceMode === 'tax-inclusive',
       orderedBeforeTransition,
       queueACount: await store.queueCount(PARTITION_A),
       queueBCount: await store.queueCount(PARTITION_B),
@@ -329,7 +332,7 @@ async function seed(): Promise<SeedResult> {
       crossPartitionCollisionRejected,
       terminalConflictRejected,
     };
-    setStatus({ phase: 'seeded-v1-upgraded-to-v2', ...result });
+    setStatus({ phase: 'seeded-v1-upgraded-to-v4', ...result });
     return result;
   } finally {
     store.close();
