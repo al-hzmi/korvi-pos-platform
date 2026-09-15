@@ -25,7 +25,7 @@ services:
       - key: METRICS_AUTH_TOKEN
         generateValue: true
       - key: OFFLINE_LEASE_SIGNING_SEED_B64
-        sync: false
+        generateValue: true
       - key: OFFLINE_LEASE_KEY_ID
         value: staging-v1
       - key: OFFLINE_LEASE_TTL_HOURS
