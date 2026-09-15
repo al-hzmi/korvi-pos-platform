@@ -18,6 +18,8 @@ import type { FastifyInstance } from 'fastify';
 const ORIGIN = 'http://localhost:3000';
 const PRODUCTION_ORIGIN = 'https://korvi.example';
 const PRODUCTION_DATABASE_URL = 'postgresql://korvi_test@localhost:5432/korvi_test';
+const OFFLINE_LEASE_SEED = 'A'.repeat(43);
+const OFFLINE_LEASE_KEY_ID = 'bootstrap-config-test-v1';
 const TOKEN = 'v1.cGF5bG9hZA.c2lnbmF0dXJl';
 const PASSWORD = 'a-real-password-9!';
 
@@ -170,6 +172,8 @@ describe('the signing key as configuration', () => {
         DATABASE_URL: PRODUCTION_DATABASE_URL,
         BOOTSTRAP_SIGNING_KEY: key,
         METRICS_AUTH_TOKEN: metricsToken,
+        OFFLINE_LEASE_SIGNING_SEED_B64: OFFLINE_LEASE_SEED,
+        OFFLINE_LEASE_KEY_ID,
       }),
     ).not.toThrow();
   });
