@@ -36,8 +36,8 @@ jobs:
       - name: Install exact npm graph
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Generate native icons from the existing Korvi app icon
-        run: npm exec -w @korvi/cashier-client tauri -- icon ../pos-web/public/app-icon-512.png
+      - name: Generate native icons from the canonical Korvi vector icon
+        run: npm exec -w @korvi/cashier-client tauri -- icon ../pos-web/public/brand/korvi-pos-icon.svg
 
       - name: Generate exact Cargo lockfile
         working-directory: apps/cashier-client/src-tauri
