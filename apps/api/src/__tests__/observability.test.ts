@@ -54,19 +54,25 @@ describe('production observability boundary', () => {
     app.get('/v1/items/:itemId', async () => ({ ok: true }));
     app.get('/ready', async (_request, reply) => reply.code(503).send({ status: 'not_ready' }));
 
-    const business = await app.inject({ method: 'GET', url: '/v1/items/secret-merchant-row' });
+    const business = await app.inject({
+      method: 'GET',
+      url: '/v1/items/private-merchant-item?token=private-query-value',
+    });
     expect(business.statusCode).toBe(200);
+    expect(business.headers['x-request-id']).toBeTruthy();
+
     const readiness = await app.inject({ method: 'GET', url: '/ready' });
     expect(readiness.statusCode).toBe(503);
 
     const anonymous = await app.inject({ method: 'GET', url: '/metrics' });
     expect(anonymous.statusCode).toBe(401);
-    expect(anonymous.body).not.toContain(METRICS_TOKEN);
+    expect(anonymous.json()).toEqual({ error: 'unauthorized' });
+    expect(anonymous.headers['cache-control']).toBe('no-store');
 
     const wrong = await app.inject({
       method: 'GET',
       url: '/metrics',
-      headers: { authorization: 'Bearer definitely-wrong' },
+      headers: { authorization: `Bearer ${'x'.repeat(METRICS_TOKEN.length)}` },
     });
     expect(wrong.statusCode).toBe(401);
 
@@ -76,11 +82,13 @@ describe('production observability boundary', () => {
       headers: { authorization: `Bearer ${METRICS_TOKEN}` },
     });
     expect(metrics.statusCode).toBe(200);
+    expect(metrics.headers['cache-control']).toBe('no-store');
     expect(metrics.headers['content-type']).toContain('text/plain');
     expect(metrics.body).toContain(REQUEST_COUNTER);
     expect(metrics.body).toContain(DURATION_COUNT);
     expect(metrics.body).toContain(NOT_READY_COUNTER);
-    expect(metrics.body).not.toContain('secret-merchant-row');
+    expect(metrics.body).not.toContain('private-merchant-item');
+    expect(metrics.body).not.toContain('private-query-value');
     expect(metrics.body).not.toContain(METRICS_TOKEN);
 
     await app.close();
@@ -91,6 +99,7 @@ describe('production observability boundary', () => {
     registerOperationalObservability(app, loadConfig({ NODE_ENV: 'test' }));
     const response = await app.inject({ method: 'GET', url: '/metrics' });
     expect(response.statusCode).toBe(404);
+    expect(response.headers['x-request-id']).toBeTruthy();
     await app.close();
   });
 });
