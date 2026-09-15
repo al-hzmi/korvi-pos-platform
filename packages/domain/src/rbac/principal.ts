@@ -26,6 +26,14 @@ export interface AuthenticatedPrincipal {
   /** Basis points, derived from the roles held. Never sent by the client. */
   readonly maxDiscountBasisPoints: bigint;
   readonly branchId: string | null;
+  /**
+   * Present only for an installed-cashier session. Browser sessions deliberately
+   * omit it because a browser user may legitimately choose among active tills
+   * in their branch. A native session gets this value from its verified device
+   * enrollment and therefore may never act as a different till, even one in
+   * the same branch.
+   */
+  readonly terminalId?: string | null;
 }
 
 /**
