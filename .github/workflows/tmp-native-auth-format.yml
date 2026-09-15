@@ -1,0 +1,87 @@
+name: Temporary Native Auth Formatter
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+
+permissions:
+  contents: read
+
+jobs:
+  format-native-auth-proof:
+    if: github.event.head_commit.message == 'ci(native-auth): stage canonical formatter artifact'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Strengthen composite-index proof and format canonically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/api/src/__tests__/native-auth-e2e-live.test.ts')
+          source = path.read_text()
+          old = '''    const indexes = await withTenant(prisma, tenantA.id, async (tx) =>
+      tx.$queryRaw<{ indexdef: string }[]>`
+        SELECT indexdef FROM pg_indexes
+         WHERE schemaname = 'public' AND tablename = 'device_enrollments'`,
+    );
+    expect(
+      indexes.some(
+        (row) =>
+          row.indexdef.includes('UNIQUE') &&
+          row.indexdef.includes('"tenantId"') &&
+          row.indexdef.includes('"id"'),
+      ),
+    ).toBe(true);
+'''
+          new = '''    const compositeIndexes = await withTenant(prisma, tenantA.id, async (tx) =>
+      tx.$queryRaw<{ indisunique: boolean; columns: string[] }[]>`
+        SELECT
+          i.indisunique,
+          array_agg(a.attname ORDER BY key_columns.ordinality)::text[] AS "columns"
+        FROM pg_index i
+        JOIN pg_class table_relation ON table_relation.oid = i.indrelid
+        JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS key_columns(attnum, ordinality)
+          ON TRUE
+        JOIN pg_attribute a
+          ON a.attrelid = table_relation.oid AND a.attnum = key_columns.attnum
+        WHERE table_relation.relname = 'device_enrollments'
+        GROUP BY i.indexrelid, i.indisunique`;
+    );
+    expect(
+      compositeIndexes.some(
+        (index) =>
+          index.indisunique &&
+          index.columns.length === 2 &&
+          index.columns[0] === 'tenantId' &&
+          index.columns[1] === 'id',
+      ),
+    ).toBe(true);
+'''
+          if source.count(old) != 1:
+              raise SystemExit(f'index proof marker count={source.count(old)}')
+          path.write_text(source.replace(old, new))
+          PY
+          npm exec prettier -- --write apps/api/src/__tests__/native-auth-e2e-live.test.ts
+          npm exec prettier -- --check apps/api/src/__tests__/native-auth-e2e-live.test.ts
+
+      - name: Upload canonical source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-auth-canonical-source-${{ github.sha }}
+          path: apps/api/src/__tests__/native-auth-e2e-live.test.ts
+          if-no-files-found: error
+          retention-days: 1
