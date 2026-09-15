@@ -1,0 +1,40 @@
+name: War Room Gate 13 Format Export
+
+on:
+  push:
+    branches:
+      - warroom/gate13-device-proof
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format Gate 13 live proof with pinned Prettier
+        run: npx --no-install prettier --write apps/api/src/__tests__/platform-device-enrollment-e2e-live.test.ts
+
+      - name: Verify formatted file
+        run: npx --no-install prettier --check apps/api/src/__tests__/platform-device-enrollment-e2e-live.test.ts
+
+      - name: Upload exact formatted proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gate13-prettier-3.9.6
+          path: apps/api/src/__tests__/platform-device-enrollment-e2e-live.test.ts
+          if-no-files-found: error
+          retention-days: 1
