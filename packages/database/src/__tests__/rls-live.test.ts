@@ -203,8 +203,9 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
         `INSERT INTO "sale_lines"
           ("id","tenantId","saleId","productId","lineNumber","sku","nameAr",
            "unitPriceMinor","vatBasisPoints","quantityScaled",
+           "costUnknownQuantityScaled","costProvenance",
            "grossMinor","lineDiscountMinor","basketDiscountMinor","netMinor","vatMinor","totalMinor")
-         VALUES ($1,$2,$3,$4,1,'SKU-rls-live-a','حليب',1150,1500,1000,1150,0,0,1000,150,1150)`,
+         VALUES ($1,$2,$3,$4,1,'SKU-rls-live-a','حليب',1150,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
         [A.saleLine, A.tenant, A.sale, A.product],
       );
     });
@@ -251,24 +252,45 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
     }
   });
 
-  it('gives every tenant-owned table a policy with both USING and WITH CHECK', async () => {
+  it('gives every tenant-owned table command-correct RLS predicates', async () => {
     const result = await client.query<{
       tablename: string;
+      policyname: string;
       cmd: string;
       qual: string | null;
       with_check: string | null;
-    }>(`SELECT tablename, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'public'`);
+    }>(
+      `SELECT tablename, policyname, cmd, qual, with_check
+         FROM pg_policies
+        WHERE schemaname = 'public'`,
+    );
 
     const covered = new Set(result.rows.map((row) => row.tablename));
     expect(covered.size).toBeGreaterThanOrEqual(30);
 
     for (const row of result.rows) {
-      expect(row.qual, `${row.tablename} policy has no USING`).not.toBeNull();
-      // A FOR SELECT policy cannot carry WITH CHECK, and does not need one:
-      // PostgreSQL never consults it for a write. Everything else must.
-      if (row.cmd === 'SELECT') continue;
-      expect(row.with_check, `${row.tablename} policy has no WITH CHECK`).not.toBeNull();
+      if (row.cmd === 'SELECT' || row.cmd === 'DELETE') {
+        expect(row.qual, `${row.tablename}.${row.policyname} has no USING`).not.toBeNull();
+        continue;
+      }
+      if (row.cmd === 'INSERT') {
+        expect(
+          row.with_check,
+          `${row.tablename}.${row.policyname} has no WITH CHECK`,
+        ).not.toBeNull();
+        continue;
+      }
+      expect(row.qual, `${row.tablename}.${row.policyname} has no USING`).not.toBeNull();
+      expect(row.with_check, `${row.tablename}.${row.policyname} has no WITH CHECK`).not.toBeNull();
     }
+
+    // Support notes are deliberately append-only at the policy layer: the
+    // control plane may read and append, but no UPDATE/DELETE policy exists.
+    const supportNoteCommands = result.rows
+      .filter((row) => row.tablename === 'platform_support_notes')
+      .map((row) => row.cmd)
+      .sort();
+    expect(supportNoteCommands).toEqual(['INSERT', 'SELECT']);
 
     for (const table of NOT_TENANT_OWNED) {
       expect(covered.has(table)).toBe(false);
@@ -478,8 +500,9 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
       `INSERT INTO "sale_lines"
         ("id","tenantId","saleId","productId","lineNumber","sku","nameAr",
          "unitPriceMinor","vatBasisPoints","quantityScaled",
+         "costUnknownQuantityScaled","costProvenance",
          "grossMinor","lineDiscountMinor","basketDiscountMinor","netMinor","vatMinor","totalMinor")
-       VALUES ($1,$2,$3,$4,2,'X','منتج',1150,1500,1000,1150,0,0,1000,150,1150)`,
+       VALUES ($1,$2,$3,$4,2,'X','منتج',1150,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
       [SCRATCH.saleLine, A.tenant, A.sale, B.product],
     );
     expect(message).toMatch(/foreign key constraint "sale_lines_tenantId_productId_fkey"/);
@@ -491,8 +514,9 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
       `INSERT INTO "sale_lines"
         ("id","tenantId","saleId","productId","lineNumber","sku","nameAr",
          "unitPriceMinor","vatBasisPoints","quantityScaled",
+         "costUnknownQuantityScaled","costProvenance",
          "grossMinor","lineDiscountMinor","basketDiscountMinor","netMinor","vatMinor","totalMinor")
-       VALUES ($1,$2,$3,$4,3,'X','منتج',1150,1500,1000,1150,0,0,1000,150,1150)`,
+       VALUES ($1,$2,$3,$4,3,'X','منتج',1150,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
       [SCRATCH.saleLine, A.tenant, B.sale, A.product],
     );
     expect(message).toMatch(/foreign key constraint "sale_lines_tenantId_saleId_fkey"/);
@@ -521,8 +545,10 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
   it('refuses an inventory movement on another tenant’s branch', async () => {
     const message = await rejected(
       A.tenant,
-      `INSERT INTO "inventory_movements" ("id","tenantId","branchId","productId","kind","quantityScaled","occurredAt")
-       VALUES ($1,$2,$3,$4,'adjustment',-1000, now())`,
+      `INSERT INTO "inventory_movements"
+        ("id","tenantId","branchId","productId","kind","quantityScaled",
+         "costUnknownQuantityScaled","costProvenance","occurredAt")
+       VALUES ($1,$2,$3,$4,'adjustment',-1000,1000,'unknown', now())`,
       [SCRATCH.movement, A.tenant, B.branch, A.product],
     );
     expect(message).toMatch(/foreign key constraint "inventory_movements_tenantId_branchId_fkey"/);
@@ -531,8 +557,10 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
   it('refuses an inventory movement on another tenant’s product', async () => {
     const message = await rejected(
       A.tenant,
-      `INSERT INTO "inventory_movements" ("id","tenantId","branchId","productId","kind","quantityScaled","occurredAt")
-       VALUES ($1,$2,$3,$4,'adjustment',-1000, now())`,
+      `INSERT INTO "inventory_movements"
+        ("id","tenantId","branchId","productId","kind","quantityScaled",
+         "costUnknownQuantityScaled","costProvenance","occurredAt")
+       VALUES ($1,$2,$3,$4,'adjustment',-1000,1000,'unknown', now())`,
       [SCRATCH.movement, A.tenant, A.branch, B.product],
     );
     expect(message).toMatch(/foreign key constraint "inventory_movements_tenantId_productId_fkey"/);
@@ -667,25 +695,18 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
     expect(removed).toBe(1);
   });
 
-  it('has no drift between the migration and the Prisma schema', async () => {
-    // The composite keys are hand-written SQL. If Prisma's model of them ever
-    // disagrees with the database, the next `prisma migrate dev` silently
-    // proposes to undo them.
+  it('has every checked-in migration applied to the live database', async () => {
+    // Complete drift authority is migration history rather than the reduced
+    // merchant Prisma datamodel; reviewed raw control-plane tables intentionally
+    // remain outside generated Prisma Client. The workflow shadow replay proves
+    // exact migration-history drift before this runtime isolation suite runs.
     const databaseDir = join(here, '../..');
-    const output = execFileSync(
-      'npx',
-      [
-        '--no-install',
-        'prisma',
-        'migrate',
-        'diff',
-        '--from-config-datasource',
-        '--to-schema',
-        'prisma/schema.prisma',
-      ],
-      { cwd: databaseDir, env: { ...process.env, DATABASE_URL: url }, encoding: 'utf8' },
-    );
-    expect(output).toContain('No difference detected');
+    const output = execFileSync('npx', ['--no-install', 'prisma', 'migrate', 'status'], {
+      cwd: databaseDir,
+      env: { ...process.env, DATABASE_URL: url },
+      encoding: 'utf8',
+    });
+    expect(output).toContain('Database schema is up to date!');
   }, 120_000);
 });
 

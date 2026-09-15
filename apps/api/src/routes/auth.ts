@@ -5,6 +5,10 @@ import {
   readCookie,
   sessionCookieName,
 } from '../auth/cookie.js';
+import { createLoginAdmissionController } from '../auth/login-admission.js';
+import { nativeAuthServiceFor, offlineLeaseServiceFor } from '../native-auth/lazy.js';
+import { registerNativeAuthRoutes } from './native-auth.js';
+import type { LoginAdmissionController } from '../auth/login-admission.js';
 import type { Guards } from '../auth/guards.js';
 import type { AuthService } from '../auth/service.js';
 import type { ApiConfig } from '../config.js';
@@ -12,12 +16,9 @@ import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { FastifyInstance } from 'fastify';
 
 /**
- * The authentication surface. Three routes, plus one convenience.
- *
- * Nothing here reads a tenant, a role or a permission from the request. The
- * only thing the client supplies is a slug, an address and a password on the
- * way in, and a cookie afterwards; everything else is read from the database
- * on the server (ADR-0012).
+ * The browser authentication surface. Native installed-cashier authentication
+ * is registered alongside it but has a separate token format, persistence
+ * table and route prefix.
  */
 
 const loginBody = z.object({
@@ -26,16 +27,10 @@ const loginBody = z.object({
   password: z.string().min(1).max(1024),
 });
 
-/** One body for every failure, whatever actually went wrong. */
+/** One body for every credential failure, whatever actually went wrong. */
 const INVALID_CREDENTIALS = { error: 'invalid_credentials' } as const;
+const TOO_MANY_REQUESTS = { error: 'too_many_requests' } as const;
 
-/**
- * What a client is allowed to know about itself.
- *
- * Built field by field rather than by spreading the principal: a spread picks
- * up whatever is added to the type later, and the next field added might be one
- * that should not cross the wire.
- */
 function safePrincipal(principal: AuthenticatedPrincipal): Record<string, unknown> {
   return {
     user: {
@@ -50,9 +45,6 @@ function safePrincipal(principal: AuthenticatedPrincipal): Record<string, unknow
     session: { id: principal.sessionId },
     roles: principal.roles,
     permissions: principal.permissions,
-    // A bigint cannot be JSON-serialised, and a number would lose precision at
-    // a scale this value will never reach — but the convention is the same
-    // everywhere in Korvi, so it crosses as a string (ADR-0002).
     maxDiscountBasisPoints: principal.maxDiscountBasisPoints.toString(),
     branchId: principal.branchId,
   };
@@ -62,44 +54,91 @@ export interface AuthRouteOptions {
   readonly service: AuthService;
   readonly guards: Guards;
   readonly config: ApiConfig;
+  /** Test seam; production uses the fail-closed application admission policy. */
+  readonly loginAdmission?: LoginAdmissionController;
+}
+
+function admissionController(config: ApiConfig): LoginAdmissionController {
+  const globalLimit = config.AUTH_LOGIN_GLOBAL_LIMIT;
+  const identityLimit = config.AUTH_LOGIN_IDENTITY_LIMIT;
+  const windowMs = config.AUTH_LOGIN_WINDOW_MS;
+  const maxConcurrent = config.AUTH_LOGIN_MAX_CONCURRENT;
+  const maxTrackedIdentities = config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES;
+
+  const allAbsent =
+    globalLimit === undefined &&
+    identityLimit === undefined &&
+    windowMs === undefined &&
+    maxConcurrent === undefined &&
+    maxTrackedIdentities === undefined;
+
+  if (allAbsent) {
+    if (config.NODE_ENV !== 'test') {
+      throw new Error('Login admission policy is required outside NODE_ENV=test.');
+    }
+    return createLoginAdmissionController();
+  }
+
+  if (
+    globalLimit === undefined ||
+    identityLimit === undefined ||
+    windowMs === undefined ||
+    maxConcurrent === undefined ||
+    maxTrackedIdentities === undefined
+  ) {
+    throw new Error('Login admission policy must define all five controls together.');
+  }
+
+  return createLoginAdmissionController({
+    globalLimit,
+    identityLimit,
+    windowMs,
+    maxConcurrent,
+    maxTrackedIdentities,
+  });
 }
 
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptions): void {
   const { service, guards, config } = options;
+  const loginAdmission = options.loginAdmission ?? admissionController(config);
 
   app.post('/v1/auth/login', async (request, reply) => {
     const parsed = loginBody.safeParse(request.body);
-    if (!parsed.success) {
-      // A malformed body gets the same answer as a wrong password. Telling a
-      // caller which field they got wrong is a probe they can run for free.
-      return reply.code(401).send(INVALID_CREDENTIALS);
+    if (!parsed.success) return reply.code(401).send(INVALID_CREDENTIALS);
+
+    const permit = loginAdmission.admit(parsed.data.tenantSlug, parsed.data.email);
+    if (!permit.allowed) {
+      request.log.warn({ reason: permit.reason }, 'login admission refused');
+      reply.header('retry-after', String(permit.retryAfterSeconds));
+      return reply.code(429).send(TOO_MANY_REQUESTS);
     }
 
-    const result = await service.login({
-      tenantSlug: parsed.data.tenantSlug,
-      email: parsed.data.email,
-      password: parsed.data.password,
-      userAgent: request.headers['user-agent'] ?? null,
-    });
+    try {
+      const result = await service.login({
+        tenantSlug: parsed.data.tenantSlug,
+        email: parsed.data.email,
+        password: parsed.data.password,
+        userAgent: request.headers['user-agent'] ?? null,
+      });
 
-    if (result.outcome === 'failure') {
-      request.log.info({ reason: result.reason }, 'login refused');
-      return reply.code(401).send(INVALID_CREDENTIALS);
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'login refused');
+        return reply.code(401).send(INVALID_CREDENTIALS);
+      }
+
+      reply.header(
+        'set-cookie',
+        buildSessionCookie(result.token, {
+          isProduction: config.isProduction,
+          maxAgeSeconds: config.SESSION_TTL_SECONDS,
+        }),
+      );
+      return reply
+        .code(200)
+        .send({ ...safePrincipal(result.principal), expiresAt: result.expiresAt });
+    } finally {
+      permit.release();
     }
-
-    reply.header(
-      'set-cookie',
-      buildSessionCookie(result.token, {
-        isProduction: config.isProduction,
-        maxAgeSeconds: config.SESSION_TTL_SECONDS,
-      }),
-    );
-    // The token is in the cookie and nowhere else. A copy in the body would be
-    // readable by any script on the page, which is the whole thing HttpOnly is
-    // there to prevent.
-    return reply
-      .code(200)
-      .send({ ...safePrincipal(result.principal), expiresAt: result.expiresAt });
   });
 
   app.get('/v1/auth/me', { preHandler: guards.requireSession }, async (request, reply) => {
@@ -111,10 +150,6 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   app.post('/v1/auth/logout', async (request, reply) => {
     const raw = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
     if (raw !== null) await service.logout(raw);
-
-    // The cookie is cleared whether or not a session was found. A logout that
-    // reports "no such session" tells a caller their stolen token has already
-    // been revoked, and leaves the browser holding it either way.
     reply.header('set-cookie', buildClearedCookieHeader(config.isProduction));
     return reply.code(204).send();
   });
@@ -125,4 +160,13 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     reply.header('set-cookie', buildClearedCookieHeader(config.isProduction));
     return reply.code(200).send({ revoked });
   });
+
+  const native = nativeAuthServiceFor(config);
+  if (native !== undefined) {
+    const offlineLease = offlineLeaseServiceFor(config);
+    registerNativeAuthRoutes(app, {
+      service: native,
+      ...(offlineLease === undefined ? {} : { offlineLease }),
+    });
+  }
 }

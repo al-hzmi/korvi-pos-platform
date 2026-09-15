@@ -9,6 +9,30 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./customers": {
+      "types": "./dist/src/administration/customers.d.ts",
+      "default": "./dist/src/administration/customers.js"
+    },
+    "./reports": {
+      "types": "./dist/src/reports/period-summary.d.ts",
+      "default": "./dist/src/reports/period-summary.js"
+    },
+    "./zatca-merchant": {
+      "types": "./dist/src/zatca/merchant-status.d.ts",
+      "default": "./dist/src/zatca/merchant-status.js"
+    },
+    "./platform-operational-bootstrap": {
+      "types": "./dist/src/control-plane/operational-bootstrap.d.ts",
+      "default": "./dist/src/control-plane/operational-bootstrap.js"
+    },
+    "./device-enrollment": {
+      "types": "./dist/src/control-plane/device-enrollment.d.ts",
+      "default": "./dist/src/control-plane/device-enrollment.js"
+    },
+    "./native-auth": {
+      "types": "./dist/src/native-auth/device-session.d.ts",
+      "default": "./dist/src/native-auth/device-session.js"
     }
   },
   "files": [
@@ -23,12 +47,12 @@
   },
   "dependencies": {
     "@korvi/domain": "*",
-    "@prisma/adapter-pg": "7.9.1",
-    "@prisma/client": "7.9.1",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
     "pg": "8.23.0"
   },
   "devDependencies": {
-    "@types/pg": "8.21.0",
-    "prisma": "7.9.1"
+    "@types/pg": "8.23.1",
+    "prisma": "7.10.0"
   }
 }

@@ -76,8 +76,14 @@ function fake(replies: Replies = {}): Fake {
       get(_target, model: string | symbol): unknown {
         if (typeof model !== 'string') return undefined;
         if (model === '$executeRaw') {
-          return (_strings: TemplateStringsArray, ...values: unknown[]): Promise<number> => {
-            contexts.push(values[0]);
+          return (strings: TemplateStringsArray, ...values: unknown[]): Promise<number> => {
+            const sql = strings.join(' ');
+            // `contexts` means exactly RLS context establishment. Strike 5C
+            // legitimately added other parameterised UPDATEs through
+            // $executeRaw; treating the first parameter of every such write as
+            // a tenant id made this fake test its own implementation detail
+            // instead of the security property it names.
+            if (sql.includes("set_config('app.tenant_id'")) contexts.push(values[0]);
             return Promise.resolve(1);
           };
         }
@@ -103,8 +109,22 @@ function fake(replies: Replies = {}): Fake {
               return Promise.resolve([{ allowNegativeStock: false }]);
             }
             if (sql.includes('"idempotency_keys"')) return Promise.resolve([{ id: 'ik1' }]);
+            if (sql.includes('"inventory_cost_balances"')) {
+              // Strike 5C's valuation cursor is subordinate to the already
+              // locked stock row. The fake returns a synchronized zero-known
+              // pool so this file continues proving tenant binding rather than
+              // pretending to prove PostgreSQL costing behaviour.
+              return Promise.resolve([
+                {
+                  knownQuantityScaled: 0n,
+                  knownValueMinor: 0n,
+                  stockRevision: 1n,
+                  costRevision: 0n,
+                },
+              ]);
+            }
             if (sql.includes('"inventory_balances"')) {
-              return Promise.resolve([{ quantityScaled: 0n }]);
+              return Promise.resolve([{ quantityScaled: 0n, revision: 1n }]);
             }
             return Promise.resolve([{ sequence: 12 }]);
           };
@@ -239,7 +259,7 @@ async function exerciseEverything(f: Fake): Promise<void> {
 /** Replies rich enough that mapping code runs rather than short-circuiting. */
 const FULL_REPLIES: Replies = {
   'inventoryBalance.upsert': [
-    { tenantId: TENANT, branchId: 'b1', productId: 'p1', quantityScaled: -1000n },
+    { tenantId: TENANT, branchId: 'b1', productId: 'p1', quantityScaled: -1000n, revision: 1n },
   ],
   'customer.create': [
     {
@@ -554,7 +574,11 @@ describe('writes that must be atomic', () => {
     const f = fake({ 'sale.findFirst': [saleRow] });
     await createSaleRepository(f.client).record(scope, saleInput());
 
-    const update = f.raw.find((sql) => sql.includes('"inventory_balances"'));
+    // Strike 5C now locks the stock row before valuing the movement. The
+    // earlier SELECT ... FOR UPDATE is not the floor-enforcing mutation; this
+    // assertion deliberately selects the UPDATE whose predicate is the actual
+    // concurrency authority.
+    const update = f.raw.find((sql) => sql.includes('UPDATE "inventory_balances"'));
     expect(update).toBeDefined();
     expect(update).toContain('UPDATE');
     expect(update).toContain('>= 0');
