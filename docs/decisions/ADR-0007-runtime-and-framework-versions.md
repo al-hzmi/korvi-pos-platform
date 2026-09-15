@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-07
 - **Phase:** 0
-- **Revision:** 2
+- **Revision:** 4
+- **Last reviewed:** 2026-09-09
 
 ## Context
 
@@ -12,82 +13,109 @@ project and should start on current stable software. The standing instruction is
 latest production-stable, no canary, beta, preview or RC, and nothing
 incompatible with the rest of the toolchain.
 
-Revision 1 chose versions from a single `npm view` per package. Revision 2 adds
-`scripts/verify-versions.mjs`, which asserts on every push that each pin is
-published, is not a prerelease string, and is not carried only by a prerelease
-dist-tag — so a pin cannot drift onto a preview unnoticed.
+Revision 2 added `scripts/verify-versions.mjs`, which asserts on every push that
+each pin is published and production-stable. Revision 3 was made during the
+Strike 5B validation gate after registry metadata moved several stable pins and
+one package exposed a prerelease through its `latest` dist-tag. The policy is
+production-stable, not blindly following a moving tag: when `latest` is not an
+exact stable `x.y.z`, the verifier compares against the newest published stable
+triplet instead. This prevents CI from ever requiring an RC/preview merely
+because a publisher moved a tag.
+
+Revision 4 records the 2026-09-09 stable refresh to React 19.3.0, React DOM
+19.3.0, their 19.3.0 type packages and Zod 4.6.0. Compatibility was proved with
+the full production verification gate before adoption. The first React 19.3
+trial exposed duplicate React type identities because transitive dependencies
+still resolved 19.2.x. Korvi therefore pins one React authority across the npm
+dependency graph with root overrides for `react`, `react-dom`, `@types/react`
+and `@types/react-dom`. This is not an exception to the latest-stable policy: it
+prevents a mixed React runtime/type graph while keeping every resolved React
+package on the same verified stable release.
 
 ## Decision
 
-| Package      | Version | Note                                               |
-| ------------ | ------- | -------------------------------------------------- |
-| Node         | 24 LTS  | Active LTS ("Krypton")                             |
-| npm          | 11.17.0 | declared via `packageManager`                      |
-| TypeScript   | 6.0.3   | **not 7.x** — see below                            |
-| Next.js      | 16.2.12 | **not 16.3.0** — see below                         |
-| React        | 19.2.8  | `latest`                                           |
-| Prisma       | 7.9.1   | `latest`                                           |
-| Tailwind CSS | 3.4.19  | **not 4.x** — see below                            |
-| Vitest       | 4.1.10  | `latest`                                           |
-| Vite         | 8.2.1   | `latest`                                           |
-| ESLint       | 10.8.1  | `latest`, with typescript-eslint 8.66.0 (`latest`) |
-| Fastify      | 5.11.2  | `latest`                                           |
-| Zod          | 4.4.3   | `latest`                                           |
-| Zustand      | 5.0.14  | `latest`                                           |
+| Package      | Version | Note                                                      |
+| ------------ | ------- | --------------------------------------------------------- |
+| Node         | 24 LTS  | Active LTS ("Krypton")                                    |
+| npm          | 11.19.0 | declared via `packageManager`                             |
+| TypeScript   | 6.0.3   | **not 7.x** — see below                                   |
+| Next.js      | 16.3.4  | production-stable                                         |
+| React        | 19.3.0  | production-stable; dependency graph version-aligned       |
+| Prisma       | 7.10.0  | production-stable; Prisma packages remain version-aligned |
+| Tailwind CSS | 3.4.19  | **not 4.x** — see below                                   |
+| Vitest       | 5.0.0   | production-stable                                         |
+| Vite         | 8.2.2   | production-stable                                         |
+| ESLint       | 10.10.0 | production-stable; typescript-eslint 8.70.0               |
+| Fastify      | 5.12.3  | production-stable                                         |
+| Zod          | 4.6.0   | production-stable                                         |
+| Zustand      | 5.0.15  | production-stable                                         |
 
-Three pins are not the newest `latest`. All three are stable releases on
-maintained lines; none is a prerelease channel.
+Three policy exceptions remain deliberate: TypeScript, Tailwind CSS and
+`@types/node`. Every other pin must track the newest production-stable release
+and prove compatibility through `npm run verify`.
 
-### TypeScript 6.0.3, not 7.0.2
+### React dependency authority
 
-`typescript-eslint@8.66.0` declares `typescript: ">=4.8.4 <6.1.0"`. TypeScript 7
-falls outside that range and would leave the monorepo unlintable. Lint is a
-Phase 0 gate, and a foundation that cannot enforce its own rules is not a
-foundation. 6.0.3 is the highest stable release inside the supported range.
+React's runtime and public types participate in structural types that cross
+workspace boundaries. Two installed `@types/react` versions can make identical
+looking values such as `React.Ref<T>` unrelated to TypeScript. A mixed
+`react-dom` graph can likewise make browser behavior depend on which package
+resolved which copy.
+
+Korvi therefore uses root npm overrides to keep `react`, `react-dom`,
+`@types/react` and `@types/react-dom` on one exact, production-stable version
+through the full dependency graph. Workspace manifests remain exact pins as
+well. A React refresh is accepted only when all of the following are true:
+
+1. `npm ls` contains no older React runtime or React type copy.
+2. dependency pin verification and advisory audit pass.
+3. production build and TypeScript checks pass.
+4. the complete automated test suite passes.
+5. browser regression evidence is obtained before operational promotion.
+
+The override is dependency-graph authority, not permission to force an
+incompatible release. If a transitive package becomes invalid under the target
+React version, the upgrade is blocked until that dependency is compatible or a
+separate accepted ADR justifies a hold.
+
+### TypeScript 6.0.3, not 7.x
+
+`typescript-eslint` declares TypeScript support below 6.1. TypeScript 7 falls
+outside that range and would leave the monorepo unable to enforce its lint gate.
+6.0.3 remains the highest stable release inside the supported range.
 
 Revisit when typescript-eslint ships TypeScript 7 support.
 
-### Tailwind CSS 3.4.19, not 4.3.3
+### Tailwind CSS 3.4.19, not 4.x
 
 `KORVI-DESIGN-SYSTEM.md` §10 ships a complete `tailwind.config.ts` in v3 format
 and records that it was compiled and tested. ADR-0006 makes that document the
-authority.
+authority. Tailwind v4 is a design-system migration, not a patch-level toolchain
+refresh. 3.4.19 remains on the official `v3-lts` line.
 
-Tailwind v4 replaces the JavaScript config with CSS-first `@theme` declarations.
-That is a design-system revision, not a config rewrite, and it should be agreed
-with whoever maintains Korvi ERP so the two products do not diverge.
+### `@types/node` tracks Node 24
 
-Supporting evidence: 3.4.19 carries the **`v3-lts`** dist-tag, so this is an
-officially maintained line rather than an abandoned major.
+Node typings intentionally track the Node 24 runtime. A newer major can describe
+APIs the deployed runtime does not have, creating code that typechecks and then
+fails at runtime.
 
-### Next.js 16.2.12, not 16.3.0
+## Production-stable selection rule
 
-Pinned to the 16.2 line at the architect's direction.
-
-Recording what the registry actually reports, because the reasoning given was
-that 16.3 is a preview build and that is not what the dist-tags show:
-
-```
-next dist-tags:  latest  = 16.3.0
-                 preview = 16.3.0-preview.10
-                 canary  = 16.3.1-canary.7
-                 beta    = 16.0.0-beta.0
-```
-
-`16.3.0` is the `latest` stable release. `16.3.0-preview.10` is a separate
-prerelease version that happens to share the `16.3.0` prefix; the two are
-different artifacts.
-
-The pin is nonetheless applied as directed. 16.2.12 is the newest stable release
-on the 16.2 line, it is not a prerelease, and staying a minor behind costs
-nothing here — Phase 0 uses no 16.3-only feature. Recorded rather than argued
-so that whoever revisits this has the evidence rather than the conclusion.
+1. Every project pin is an exact `x.y.z` and must exist in the public npm registry.
+2. A prerelease pin is forbidden.
+3. If the registry's `latest` dist-tag is an exact stable `x.y.z`, it is the
+   comparison target.
+4. If `latest` points to an RC/preview/canary/other non-triplet version, the
+   comparison target becomes the numerically newest published stable `x.y.z`.
+5. Falling behind that production-stable target is a hard failure unless the
+   package is explicitly justified by an accepted ADR in `ALLOWED_BEHIND`.
 
 ## Consequences
 
-- Every pin is machine-verified on each push; a prerelease cannot slip in.
-- All three departures are on maintained stable lines, not dead ends.
-- Dependabot ignores TypeScript and Tailwind majors, because bumping them is a
-  decision recorded here rather than a PR to merge.
-- `npm run verify` is the check that any pin can be lifted: if it stays green
-  after a bump, the pin can go.
+- A publisher cannot make Korvi chase a prerelease by repointing `latest`.
+- Stable patch/minor drift still fails immediately and must be upgraded or
+  explicitly justified by architecture.
+- React runtime and type packages resolve as one version across the monorepo,
+  preventing duplicate type identities and mixed runtime copies.
+- TypeScript, Tailwind and Node typings remain deliberate, reviewable exceptions.
+- `npm run verify` remains the compatibility gate for lifting or changing pins.

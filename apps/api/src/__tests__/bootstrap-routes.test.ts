@@ -16,6 +16,8 @@ import type { FastifyInstance } from 'fastify';
  */
 
 const ORIGIN = 'http://localhost:3000';
+const PRODUCTION_ORIGIN = 'https://korvi.example';
+const PRODUCTION_DATABASE_URL = 'postgresql://korvi_test@localhost:5432/korvi_test';
 const TOKEN = 'v1.cGF5bG9hZA.c2lnbmF0dXJl';
 const PASSWORD = 'a-real-password-9!';
 
@@ -146,6 +148,7 @@ describe('the public bootstrap door', () => {
 describe('the signing key as configuration', () => {
   it('is optional outside production and demanded in it', () => {
     const key = 'k'.repeat(40);
+    const metricsToken = 'm'.repeat(40);
     expect(loadConfig({ NODE_ENV: 'test' }).BOOTSTRAP_SIGNING_KEY).toBeUndefined();
     expect(loadConfig({ NODE_ENV: 'test', BOOTSTRAP_SIGNING_KEY: key }).BOOTSTRAP_SIGNING_KEY).toBe(
       key,
@@ -153,11 +156,21 @@ describe('the signing key as configuration', () => {
 
     // Production without one refuses to boot, rather than serving the route
     // unsigned or discovering the gap on the first invitation.
-    expect(() => loadConfig({ NODE_ENV: 'production', APP_ORIGINS: ORIGIN })).toThrow(
-      /BOOTSTRAP_SIGNING_KEY/,
-    );
     expect(() =>
-      loadConfig({ NODE_ENV: 'production', APP_ORIGINS: ORIGIN, BOOTSTRAP_SIGNING_KEY: key }),
+      loadConfig({
+        NODE_ENV: 'production',
+        APP_ORIGINS: PRODUCTION_ORIGIN,
+        DATABASE_URL: PRODUCTION_DATABASE_URL,
+      }),
+    ).toThrow(/BOOTSTRAP_SIGNING_KEY/);
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        APP_ORIGINS: PRODUCTION_ORIGIN,
+        DATABASE_URL: PRODUCTION_DATABASE_URL,
+        BOOTSTRAP_SIGNING_KEY: key,
+        METRICS_AUTH_TOKEN: metricsToken,
+      }),
     ).not.toThrow();
   });
 

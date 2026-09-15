@@ -5,6 +5,8 @@ import {
   readCookie,
   sessionCookieName,
 } from '../auth/cookie.js';
+import { createLoginAdmissionController } from '../auth/login-admission.js';
+import type { LoginAdmissionController } from '../auth/login-admission.js';
 import type { Guards } from '../auth/guards.js';
 import type { AuthService } from '../auth/service.js';
 import type { ApiConfig } from '../config.js';
@@ -26,8 +28,9 @@ const loginBody = z.object({
   password: z.string().min(1).max(1024),
 });
 
-/** One body for every failure, whatever actually went wrong. */
+/** One body for every credential failure, whatever actually went wrong. */
 const INVALID_CREDENTIALS = { error: 'invalid_credentials' } as const;
+const TOO_MANY_REQUESTS = { error: 'too_many_requests' } as const;
 
 /**
  * What a client is allowed to know about itself.
@@ -62,44 +65,110 @@ export interface AuthRouteOptions {
   readonly service: AuthService;
   readonly guards: Guards;
   readonly config: ApiConfig;
+  /** Test seam; production uses the fail-closed application admission policy. */
+  readonly loginAdmission?: LoginAdmissionController;
+}
+
+function admissionController(config: ApiConfig): LoginAdmissionController {
+  const globalLimit = config.AUTH_LOGIN_GLOBAL_LIMIT;
+  const identityLimit = config.AUTH_LOGIN_IDENTITY_LIMIT;
+  const windowMs = config.AUTH_LOGIN_WINDOW_MS;
+  const maxConcurrent = config.AUTH_LOGIN_MAX_CONCURRENT;
+  const maxTrackedIdentities = config.AUTH_LOGIN_MAX_TRACKED_IDENTITIES;
+
+  const allAbsent =
+    globalLimit === undefined &&
+    identityLimit === undefined &&
+    windowMs === undefined &&
+    maxConcurrent === undefined &&
+    maxTrackedIdentities === undefined;
+
+  // A few pre-admission live fixtures hand-build NODE_ENV=test config objects.
+  // They may use the controller's finite defaults, but no deployed environment
+  // may do so: loadConfig resolves every value and production fails closed even
+  // if a caller constructs ApiConfig manually instead of using that parser.
+  if (allAbsent) {
+    if (config.NODE_ENV !== 'test') {
+      throw new Error('Login admission policy is required outside NODE_ENV=test.');
+    }
+    return createLoginAdmissionController();
+  }
+
+  // Never combine explicit operator intent with hidden defaults. A partial
+  // policy is an invalid deployment/test configuration, not a cue to guess.
+  if (
+    globalLimit === undefined ||
+    identityLimit === undefined ||
+    windowMs === undefined ||
+    maxConcurrent === undefined ||
+    maxTrackedIdentities === undefined
+  ) {
+    throw new Error('Login admission policy must define all five controls together.');
+  }
+
+  return createLoginAdmissionController({
+    globalLimit,
+    identityLimit,
+    windowMs,
+    maxConcurrent,
+    maxTrackedIdentities,
+  });
 }
 
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptions): void {
   const { service, guards, config } = options;
+  // One controller per server process. Creating it inside the handler would
+  // reset counters on every request and turn the protection into decoration.
+  const loginAdmission = options.loginAdmission ?? admissionController(config);
 
   app.post('/v1/auth/login', async (request, reply) => {
     const parsed = loginBody.safeParse(request.body);
     if (!parsed.success) {
-      // A malformed body gets the same answer as a wrong password. Telling a
-      // caller which field they got wrong is a probe they can run for free.
+      // A malformed body never reaches tenant lookup or a KDF, so rejecting it
+      // immediately is both cheaper and reveals no account-existence fact.
       return reply.code(401).send(INVALID_CREDENTIALS);
     }
 
-    const result = await service.login({
-      tenantSlug: parsed.data.tenantSlug,
-      email: parsed.data.email,
-      password: parsed.data.password,
-      userAgent: request.headers['user-agent'] ?? null,
-    });
-
-    if (result.outcome === 'failure') {
-      request.log.info({ reason: result.reason }, 'login refused');
-      return reply.code(401).send(INVALID_CREDENTIALS);
+    // Admission happens before tenant lookup and before every real/dummy scrypt
+    // verification. The identity key is canonical and hashed inside the
+    // controller; rotating identities is still bounded by the process-wide
+    // budget, and KDF work is never queued without bound.
+    const permit = loginAdmission.admit(parsed.data.tenantSlug, parsed.data.email);
+    if (!permit.allowed) {
+      request.log.warn({ reason: permit.reason }, 'login admission refused');
+      reply.header('retry-after', String(permit.retryAfterSeconds));
+      return reply.code(429).send(TOO_MANY_REQUESTS);
     }
 
-    reply.header(
-      'set-cookie',
-      buildSessionCookie(result.token, {
-        isProduction: config.isProduction,
-        maxAgeSeconds: config.SESSION_TTL_SECONDS,
-      }),
-    );
-    // The token is in the cookie and nowhere else. A copy in the body would be
-    // readable by any script on the page, which is the whole thing HttpOnly is
-    // there to prevent.
-    return reply
-      .code(200)
-      .send({ ...safePrincipal(result.principal), expiresAt: result.expiresAt });
+    try {
+      const result = await service.login({
+        tenantSlug: parsed.data.tenantSlug,
+        email: parsed.data.email,
+        password: parsed.data.password,
+        userAgent: request.headers['user-agent'] ?? null,
+      });
+
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'login refused');
+        return reply.code(401).send(INVALID_CREDENTIALS);
+      }
+
+      reply.header(
+        'set-cookie',
+        buildSessionCookie(result.token, {
+          isProduction: config.isProduction,
+          maxAgeSeconds: config.SESSION_TTL_SECONDS,
+        }),
+      );
+      // The token is in the cookie and nowhere else. A copy in the body would be
+      // readable by any script on the page, which is the whole thing HttpOnly is
+      // there to prevent.
+      return reply
+        .code(200)
+        .send({ ...safePrincipal(result.principal), expiresAt: result.expiresAt });
+    } finally {
+      permit.release();
+    }
   });
 
   app.get('/v1/auth/me', { preHandler: guards.requireSession }, async (request, reply) => {
