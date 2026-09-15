@@ -5,6 +5,7 @@ on:
     branches:
       - strike/product-routing-p0
 
+# Ephemeral formatter only. It has no write authority and is removed after its artifact is consumed.
 permissions:
   contents: read
 
