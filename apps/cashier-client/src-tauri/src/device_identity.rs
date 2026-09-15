@@ -30,6 +30,9 @@ mod platform {
     const SOFTWARE_PROVIDER: &str = "Microsoft Software Key Storage Provider";
     const ECDSA_P256: &str = "ECDSA_P256";
     const ECC_PUBLIC_BLOB: &str = "ECCPUBLICBLOB";
+    const ECC_PRIVATE_BLOB: &str = "ECCPRIVATEBLOB";
+    const EXPORT_POLICY_PROPERTY: &str = "Export Policy";
+    const NCRYPT_PERSIST_FLAG: u32 = 0x8000_0000;
 
     #[link(name = "ncrypt")]
     extern "system" {
@@ -50,6 +53,22 @@ mod platform {
             legacy: u32,
             flags: u32,
         ) -> Status;
+        fn NCryptGetProperty(
+            object: Handle,
+            property: *const u16,
+            output: *mut u8,
+            output_len: u32,
+            result: *mut u32,
+            flags: u32,
+        ) -> Status;
+        fn NCryptSetProperty(
+            object: Handle,
+            property: *const u16,
+            input: *const u8,
+            input_len: u32,
+            flags: u32,
+        ) -> Status;
+        fn NCryptDeleteKey(key: Handle, flags: u32) -> Status;
         fn NCryptFinalizeKey(key: Handle, flags: u32) -> Status;
         fn NCryptExportKey(
             key: Handle,
@@ -112,15 +131,94 @@ mod platform {
         }
     }
 
+    fn export_policy(key: Handle) -> Result<u32, String> {
+        let mut policy = 0u32;
+        let mut received = 0u32;
+        let status = unsafe {
+            NCryptGetProperty(
+                key,
+                wide(EXPORT_POLICY_PROPERTY).as_ptr(),
+                (&mut policy as *mut u32).cast::<u8>(),
+                std::mem::size_of::<u32>() as u32,
+                &mut received,
+                0,
+            )
+        };
+        if status != SUCCESS || received != std::mem::size_of::<u32>() as u32 {
+            return Err("Windows CNG export policy could not be verified".into());
+        }
+        Ok(policy)
+    }
+
+    fn set_non_exportable(key: Handle) -> Result<(), String> {
+        let policy = 0u32;
+        let status = unsafe {
+            NCryptSetProperty(
+                key,
+                wide(EXPORT_POLICY_PROPERTY).as_ptr(),
+                (&policy as *const u32).cast::<u8>(),
+                std::mem::size_of::<u32>() as u32,
+                NCRYPT_PERSIST_FLAG,
+            )
+        };
+        if status != SUCCESS {
+            return Err("Windows CNG refused the non-exportable key policy".into());
+        }
+        Ok(())
+    }
+
+    fn verified_existing_key(
+        provider: Handle,
+        key: Handle,
+        hardware: bool,
+    ) -> Result<CngKey, String> {
+        match export_policy(key) {
+            Ok(0) if private_export_is_refused(key) => Ok(CngKey {
+                provider,
+                key,
+                hardware,
+            }),
+            Ok(policy) => {
+                unsafe {
+                    let _ = NCryptFreeObject(key);
+                    let _ = NCryptFreeObject(provider);
+                }
+                Err(format!(
+                "Windows CNG device key failed non-exportability verification (policy {policy:#x}); explicit re-enrollment is required"
+            ))
+            }
+            Err(error) => {
+                unsafe {
+                    let _ = NCryptFreeObject(key);
+                    let _ = NCryptFreeObject(provider);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn private_export_is_refused(key: Handle) -> bool {
+        let mut needed = 0u32;
+        let status = unsafe {
+            NCryptExportKey(
+                key,
+                0,
+                wide(ECC_PRIVATE_BLOB).as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                0,
+                &mut needed,
+                0,
+            )
+        };
+        status != SUCCESS
+    }
+
     fn open_or_create() -> Result<CngKey, String> {
         for (provider_name, hardware) in [(PLATFORM_PROVIDER, true), (SOFTWARE_PROVIDER, false)] {
             if let Ok(provider) = open_provider(provider_name) {
                 if let Ok(key) = open_existing(provider) {
-                    return Ok(CngKey {
-                        provider,
-                        key,
-                        hardware,
-                    });
+                    return verified_existing_key(provider, key, hardware);
                 }
                 unsafe {
                     let _ = NCryptFreeObject(provider);
@@ -143,16 +241,20 @@ mod platform {
                     0,
                 )
             };
-            if created == SUCCESS && unsafe { NCryptFinalizeKey(key, 0) } == SUCCESS {
-                return Ok(CngKey {
-                    provider,
-                    key,
-                    hardware,
-                });
+            if created == SUCCESS {
+                let policy_set = set_non_exportable(key).is_ok();
+                let finalized = policy_set && unsafe { NCryptFinalizeKey(key, 0) } == SUCCESS;
+                if finalized && export_policy(key) == Ok(0) && private_export_is_refused(key) {
+                    return Ok(CngKey {
+                        provider,
+                        key,
+                        hardware,
+                    });
+                }
             }
             if key != 0 {
                 unsafe {
-                    let _ = NCryptFreeObject(key);
+                    let _ = NCryptDeleteKey(key, 0);
                 }
             }
             unsafe {
@@ -249,6 +351,18 @@ mod platform {
         out.extend_from_slice(&r);
         out.extend_from_slice(&s);
         Ok(out)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn windows_device_identity_key_is_non_exportable() {
+            let key = open_or_create().expect("CNG device key");
+            assert_eq!(export_policy(key.key).expect("export policy"), 0);
+            assert!(private_export_is_refused(key.key));
+        }
     }
 
     pub fn identity<R: Runtime>(_app: &AppHandle<R>) -> Result<DeviceIdentityInfo, String> {
