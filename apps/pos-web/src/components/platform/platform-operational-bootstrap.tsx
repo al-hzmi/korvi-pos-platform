@@ -29,8 +29,7 @@ function responseMessage(status: number, code: string | null): string {
   if (status === 404) return 'المنشأة غير موجودة.';
   if (status === 409 && code === 'tenant_suspended')
     return 'المنشأة موقوفة. أعد تفعيلها قبل تجهيز الفرع ونقطة البيع.';
-  if (status === 409 && code === 'branch_code_taken')
-    return 'رمز الفرع مستخدم داخل هذه المنشأة.';
+  if (status === 409 && code === 'branch_code_taken') return 'رمز الفرع مستخدم داخل هذه المنشأة.';
   if (status === 409 && code === 'terminal_code_taken')
     return 'رمز نقطة البيع مستخدم داخل هذه المنشأة.';
   if (status === 409 && code === 'idempotency_conflict')
@@ -119,8 +118,8 @@ export function PlatformOperationalBootstrap({
           <div className="max-w-2xl">
             <p className="text-sm font-semibold text-card-foreground">تجهيز التشغيل الأولي</p>
             <p className="mt-1 text-xs leading-6 text-muted-foreground">
-              ينشئ كورفي الفرع ونقطة البيع في معاملة واحدة. إذا فشل أي جزء فلن يبقى فرع أو جهاز
-              نصف مهيأ، وإعادة نفس العملية آمنة.
+              ينشئ كورفي الفرع ونقطة البيع في معاملة واحدة. إذا فشل أي جزء فلن يبقى فرع أو جهاز نصف
+              مهيأ، وإعادة نفس العملية آمنة.
             </p>
           </div>
           <span className="rounded-md bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
