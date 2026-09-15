@@ -67,8 +67,7 @@ export interface NativeChallengeSuccess {
 }
 
 export type NativeChallengeResult =
-  | NativeChallengeSuccess
-  | { readonly outcome: 'failure'; readonly reason: NativeChallengeRefusal };
+  NativeChallengeSuccess | { readonly outcome: 'failure'; readonly reason: NativeChallengeRefusal };
 
 export interface NativeLoginInput {
   readonly tenantId: string;
@@ -97,8 +96,7 @@ export interface NativeLoginSuccess {
 }
 
 export type NativeLoginResult =
-  | NativeLoginSuccess
-  | { readonly outcome: 'failure'; readonly reason: NativeLoginRefusal };
+  NativeLoginSuccess | { readonly outcome: 'failure'; readonly reason: NativeLoginRefusal };
 
 export type NativeSessionResult =
   | {
@@ -142,10 +140,7 @@ function canonicalChallenge(challenge: NativeChallengeRecord): string {
   ].join('\n');
 }
 
-function signatureIsValid(
-  challenge: NativeChallengeRecord,
-  encodedSignature: string,
-): boolean {
+function signatureIsValid(challenge: NativeChallengeRecord, encodedSignature: string): boolean {
   if (!SIGNATURE_PATTERN.test(encodedSignature)) return false;
   try {
     const publicKey = createPublicKey({
@@ -285,14 +280,21 @@ export function createNativeAuthService(options: NativeAuthServiceOptions): Nati
         return { outcome: 'failure', reason: 'invalid-credentials' };
       }
       if (user.passwordHash === null) {
-        await record(scope, 'auth.native.login.failure', null, user.id, { reason: 'no-credential' });
+        await record(scope, 'auth.native.login.failure', null, user.id, {
+          reason: 'no-credential',
+        });
         return { outcome: 'failure', reason: 'invalid-credentials' };
       }
       if (!credentialOk) {
-        const window = await repository.registerFailedLogin(scope, user.id, attemptedAt.toISOString(), {
-          threshold: DEFAULT_LOCKOUT.threshold,
-          lockSeconds: DEFAULT_LOCKOUT.lockSeconds,
-        });
+        const window = await repository.registerFailedLogin(
+          scope,
+          user.id,
+          attemptedAt.toISOString(),
+          {
+            threshold: DEFAULT_LOCKOUT.threshold,
+            lockSeconds: DEFAULT_LOCKOUT.lockSeconds,
+          },
+        );
         await record(scope, 'auth.native.login.failure', null, user.id, {
           reason: 'bad-password',
           failedLoginCount: window.failedLoginCount,
@@ -301,7 +303,9 @@ export function createNativeAuthService(options: NativeAuthServiceOptions): Nati
         return { outcome: 'failure', reason: 'invalid-credentials' };
       }
       if (!user.isActive) {
-        await record(scope, 'auth.native.login.failure', null, user.id, { reason: 'user-inactive' });
+        await record(scope, 'auth.native.login.failure', null, user.id, {
+          reason: 'user-inactive',
+        });
         return { outcome: 'failure', reason: 'invalid-credentials' };
       }
 
@@ -380,9 +384,14 @@ export function createNativeAuthService(options: NativeAuthServiceOptions): Nati
       const parsed = parseNativeToken(token);
       if (parsed === null) return { outcome: 'failure', reason: 'malformed-token' };
       const scope: TenantScope = { tenantId: brandTenantId(parsed.tenantHint) };
-      const context = await findNativeSessionByTokenHash(prisma, parsed.tenantHint, hashNativeToken(token));
+      const context = await findNativeSessionByTokenHash(
+        prisma,
+        parsed.tenantHint,
+        hashNativeToken(token),
+      );
       if (context === null) return { outcome: 'failure', reason: 'unknown-session' };
-      if (context.tenantStatus !== 'active') return { outcome: 'failure', reason: 'tenant-inactive' };
+      if (context.tenantStatus !== 'active')
+        return { outcome: 'failure', reason: 'tenant-inactive' };
       if (context.revokedAt !== null) return { outcome: 'failure', reason: 'revoked' };
       if (context.expiresAt <= now()) return { outcome: 'failure', reason: 'expired' };
       if (context.sessionAuthVersion !== context.userAuthVersion) {
@@ -392,7 +401,8 @@ export function createNativeAuthService(options: NativeAuthServiceOptions): Nati
       if (context.membershipStatus !== 'active') {
         return { outcome: 'failure', reason: 'membership-inactive' };
       }
-      if (context.deviceState !== 'active') return { outcome: 'failure', reason: 'device-inactive' };
+      if (context.deviceState !== 'active')
+        return { outcome: 'failure', reason: 'device-inactive' };
       if (context.devicePublicKeySha256 !== context.enrolledPublicKeySha256) {
         return { outcome: 'failure', reason: 'device-key-mismatch' };
       }
@@ -433,7 +443,11 @@ export function createNativeAuthService(options: NativeAuthServiceOptions): Nati
     async logout(token): Promise<boolean> {
       const parsed = parseNativeToken(token);
       if (parsed === null) return false;
-      const context = await findNativeSessionByTokenHash(prisma, parsed.tenantHint, hashNativeToken(token));
+      const context = await findNativeSessionByTokenHash(
+        prisma,
+        parsed.tenantHint,
+        hashNativeToken(token),
+      );
       if (context === null) return false;
       return revokeNativeSession(prisma, context.tenantId, context.sessionId, now());
     },

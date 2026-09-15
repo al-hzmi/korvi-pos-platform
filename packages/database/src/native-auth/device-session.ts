@@ -32,7 +32,10 @@ export interface CreateNativeChallengeInput {
 
 export type NativeChallengeClaim =
   | { readonly outcome: 'claimed'; readonly challenge: NativeChallengeRecord }
-  | { readonly outcome: 'refused'; readonly reason: 'unknown' | 'consumed' | 'expired' | 'device-inactive' };
+  | {
+      readonly outcome: 'refused';
+      readonly reason: 'unknown' | 'consumed' | 'expired' | 'device-inactive';
+    };
 
 export interface CreateNativeSessionInput {
   readonly id: string;
@@ -49,7 +52,8 @@ export type CreateNativeSessionResult =
   | { readonly outcome: 'created' }
   | {
       readonly outcome: 'refused';
-      readonly reason: 'user-inactive' | 'membership-inactive' | 'branch-mismatch' | 'device-inactive';
+      readonly reason:
+        'user-inactive' | 'membership-inactive' | 'branch-mismatch' | 'device-inactive';
     };
 
 export interface NativeSessionContext {
@@ -138,7 +142,9 @@ export async function readActiveNativeDeviceBinding(
   tenantId: string,
   deviceEnrollmentId: string,
 ): Promise<NativeDeviceBinding | null> {
-  return withTenant(prisma, tenantId, (tx) => activeBindingWithin(tx, tenantId, deviceEnrollmentId));
+  return withTenant(prisma, tenantId, (tx) =>
+    activeBindingWithin(tx, tenantId, deviceEnrollmentId),
+  );
 }
 
 export async function createNativeAuthChallenge(
@@ -265,9 +271,7 @@ export async function createNativeSession(
       FOR UPDATE`;
     if (users.length !== 1) return { outcome: 'refused', reason: 'user-inactive' };
 
-    const memberships = await tx.$queryRaw<
-      { status: string; defaultBranchId: string | null }[]
-    >`
+    const memberships = await tx.$queryRaw<{ status: string; defaultBranchId: string | null }[]>`
       SELECT "status", "defaultBranchId"
       FROM "tenant_memberships"
       WHERE "tenantId" = ${input.tenantId}::uuid

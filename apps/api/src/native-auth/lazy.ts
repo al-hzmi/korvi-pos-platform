@@ -1,8 +1,4 @@
-import {
-  createAuditRepository,
-  createAuthRepository,
-  createPrismaClient,
-} from '@korvi/database';
+import { createAuditRepository, createAuthRepository, createPrismaClient } from '@korvi/database';
 import { createNativeAuthService } from './service.js';
 import type { ApiConfig } from '../config.js';
 import type { NativeAuthService } from './service.js';
