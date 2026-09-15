@@ -1,7 +1,7 @@
 /* global self, caches */
 'use strict';
 
-const SHELL_PATH = '/';
+const SHELL_PATH = '/cashier';
 const STATIC_PREFIXES = ['/_next/static/', '/brand/'];
 const SHELL_CACHE_PREFIX = 'korvi-pos-shell-v1-';
 const META_CACHE_NAME = 'korvi-pos-shell-meta-v1';

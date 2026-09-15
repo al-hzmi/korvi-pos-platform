@@ -103,7 +103,7 @@ async function waitForServerDown(url, timeoutMs = 15_000) {
   throw new Error('Web server did not stop; the offline proof would be invalid.');
 }
 
-const target = await createTarget(`${baseUrl}/`);
+const target = await createTarget(`${baseUrl}/cashier`);
 assert.equal(typeof target.webSocketDebuggerUrl, 'string');
 const cdp = new CdpClient(target.webSocketDebuggerUrl);
 await cdp.ready();
@@ -218,7 +218,7 @@ try {
   assert.notEqual(activeCache, undefined, 'Active shell cache must exist.');
   const activeUrls = activeCache.urls.map((value) => new URL(value));
   assert.equal(
-    activeUrls.some((url) => url.pathname === '/'),
+    activeUrls.some((url) => url.pathname === '/cashier'),
     true,
     'Cashier HTML must be cached.',
   );
@@ -249,12 +249,12 @@ try {
   const webPid = Number(pidText);
   assert.equal(Number.isSafeInteger(webPid) && webPid > 1, true, 'Web PID must be safe.');
   process.kill(-webPid, 'SIGTERM');
-  await waitForServerDown(`${baseUrl}/`);
+  await waitForServerDown(`${baseUrl}/cashier`);
   record('web_server_hard_stop=PASS');
 
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
   const responseStart = responses.length;
-  const offlineUrl = `${baseUrl}/?gate41-offline-proof=${Date.now().toString(10)}`;
+  const offlineUrl = `${baseUrl}/cashier?gate41-offline-proof=${Date.now().toString(10)}`;
   await cdp.send('Page.navigate', { url: offlineUrl });
 
   await waitFor(
@@ -270,7 +270,7 @@ try {
   const offlineDocument = responses.slice(responseStart).find((entry) => {
     if (entry.type !== 'Document') return false;
     const url = new URL(entry.url);
-    return url.origin === baseUrl && url.pathname === '/';
+    return url.origin === baseUrl && url.pathname === '/cashier';
   });
   assert.notEqual(offlineDocument, undefined, 'Offline document response must be observed.');
   assert.equal(
