@@ -29,6 +29,10 @@
     "./device-enrollment": {
       "types": "./dist/src/control-plane/device-enrollment.d.ts",
       "default": "./dist/src/control-plane/device-enrollment.js"
+    },
+    "./native-auth": {
+      "types": "./dist/src/native-auth/device-session.d.ts",
+      "default": "./dist/src/native-auth/device-session.js"
     }
   },
   "files": [
