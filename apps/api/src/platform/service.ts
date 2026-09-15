@@ -8,6 +8,7 @@ import {
   reactivateTenant,
   suspendTenant,
 } from '@korvi/database';
+import { enrollPlatformDevice, revokePlatformDevice } from '@korvi/database/device-enrollment';
 import type {
   PlatformAuditPage,
   PlatformTenantDetail,
@@ -18,6 +19,10 @@ import type {
   TenantLifecycleResult,
   TenantPlanAssignmentResult,
 } from '@korvi/database';
+import type {
+  DeviceEnrollmentMutationResult,
+  PlatformDeviceEnrollmentRequest,
+} from '@korvi/database/device-enrollment';
 import type {
   CommercialAccountState,
   EntitlementGrant,
@@ -44,6 +49,11 @@ export interface PlatformPlanAssignment {
   readonly accountState: CommercialAccountState;
   readonly entitlements: readonly EntitlementGrant[];
 }
+
+export type PlatformDeviceEnrollmentInput = Omit<
+  PlatformDeviceEnrollmentRequest,
+  'tenantId' | 'controlPlaneActorRef'
+>;
 
 export interface PlatformService {
   listTenants(
@@ -78,6 +88,17 @@ export interface PlatformService {
     tenantId: string,
     input?: { readonly cursor?: string; readonly limit?: number },
   ): Promise<PlatformAuditPage | null>;
+  enrollDevice(
+    actor: PlatformActor,
+    tenantId: string,
+    input: PlatformDeviceEnrollmentInput,
+  ): Promise<DeviceEnrollmentMutationResult>;
+  revokeDevice(
+    actor: PlatformActor,
+    tenantId: string,
+    enrollmentId: string,
+    input: { readonly operationId: string; readonly reason: string },
+  ): Promise<DeviceEnrollmentMutationResult>;
 }
 
 export function createPlatformService(prisma: PrismaClient): PlatformService {
@@ -135,6 +156,23 @@ export function createPlatformService(prisma: PrismaClient): PlatformService {
 
     async listAudit(actor, tenantId, input = {}) {
       return listPlatformTenantAudit(prisma, actor.controlPlaneActorRef, tenantId, input);
+    },
+
+    async enrollDevice(actor, tenantId, input) {
+      return enrollPlatformDevice(prisma, {
+        tenantId,
+        ...input,
+        controlPlaneActorRef: actor.controlPlaneActorRef,
+      });
+    },
+
+    async revokeDevice(actor, tenantId, enrollmentId, input) {
+      return revokePlatformDevice(prisma, {
+        tenantId,
+        enrollmentId,
+        ...input,
+        controlPlaneActorRef: actor.controlPlaneActorRef,
+      });
     },
   };
 }
