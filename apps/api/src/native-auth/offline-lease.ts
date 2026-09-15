@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { createPrivateKey, sign } from 'node:crypto';
+import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { withTenant } from '@korvi/database';
 import { newId as defaultNewId, tenantId as brandTenantId } from '@korvi/domain';
 import type { NativeAuthService } from './service.js';
@@ -28,6 +28,10 @@ export interface OfflineLeaseClaims {
   readonly terminalId: string;
   readonly deviceEnrollmentId: string;
   readonly devicePublicKeySha256: string;
+  readonly userId: string;
+  readonly sessionId: string;
+  readonly roles: readonly string[];
+  readonly maxDiscountBasisPoints: string;
   readonly assignmentId: string;
   readonly planKey: string;
   readonly planRevision: number;
@@ -37,11 +41,20 @@ export interface OfflineLeaseClaims {
   readonly issuedAt: string;
   readonly notBefore: string;
   readonly expiresAt: string;
+  readonly issuedAtUnixMs: number;
+  readonly notBeforeUnixMs: number;
+  readonly expiresAtUnixMs: number;
   readonly leaseRevision: 1;
 }
 
 export type OfflineLeaseIssueResult =
-  | { readonly outcome: 'success'; readonly lease: string; readonly claims: OfflineLeaseClaims }
+  | {
+      readonly outcome: 'success';
+      readonly lease: string;
+      readonly claims: OfflineLeaseClaims;
+      /** Public verification material only. The Ed25519 seed/private key never leaves the API. */
+      readonly verificationKeySpki: string;
+    }
   | {
       readonly outcome: 'failure';
       readonly reason: 'unauthenticated' | 'commercial-inactive' | 'signing-unavailable';
@@ -92,6 +105,9 @@ export function createOfflineLeaseService(
   if (privateKey.asymmetricKeyType !== 'ed25519') {
     throw new Error('Offline lease signing authority must be Ed25519.');
   }
+  const verificationKeySpki = createPublicKey(privateKey)
+    .export({ format: 'der', type: 'spki' })
+    .toString('base64');
   const now = options.now ?? (() => new Date());
   const newId = options.newId ?? defaultNewId;
 
@@ -131,7 +147,10 @@ export function createOfflineLeaseService(
         }))
         .sort((left, right) => left.key.localeCompare(right.key));
       const capabilities = [...principal.permissions].sort();
+      const roles = [...principal.roles].sort();
       const leaseId = newId();
+      const issuedAtUnixMs = issuedAt.getTime();
+      const expiresAtUnixMs = expiresAt.getTime();
       const claims: OfflineLeaseClaims = {
         version: LEASE_VERSION,
         issuer: 'korvi-platform',
@@ -142,6 +161,10 @@ export function createOfflineLeaseService(
         terminalId: binding.terminalId,
         deviceEnrollmentId: binding.deviceEnrollmentId,
         devicePublicKeySha256: binding.devicePublicKeySha256,
+        userId: principal.userId,
+        sessionId: principal.sessionId,
+        roles,
+        maxDiscountBasisPoints: principal.maxDiscountBasisPoints.toString(),
         assignmentId: assignment.id,
         planKey: assignment.planKey,
         planRevision: assignment.planRevision,
@@ -151,6 +174,9 @@ export function createOfflineLeaseService(
         issuedAt: issuedAt.toISOString(),
         notBefore: issuedAt.toISOString(),
         expiresAt: expiresAt.toISOString(),
+        issuedAtUnixMs,
+        notBeforeUnixMs: issuedAtUnixMs,
+        expiresAtUnixMs,
         leaseRevision: LEASE_VERSION,
       };
       const lease = encodeLease(claims, privateKey);
@@ -171,7 +197,7 @@ export function createOfflineLeaseService(
         },
         occurredAt: issuedAt.toISOString(),
       });
-      return { outcome: 'success', lease, claims };
+      return { outcome: 'success', lease, claims, verificationKeySpki };
     },
   };
 }
