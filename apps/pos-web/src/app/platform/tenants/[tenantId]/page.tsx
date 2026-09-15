@@ -1,3 +1,4 @@
+import { PlatformOperationalBootstrap } from '../../../../components/platform/platform-operational-bootstrap';
 import { PlatformOwnerBootstrap } from '../../../../components/platform/platform-owner-bootstrap';
 import { PlatformSupportNotes } from '../../../../components/platform/platform-support-notes';
 import { PlatformTenant } from '../../../../components/platform/platform-tenant';
@@ -14,6 +15,7 @@ export default async function PlatformTenantPage({
     <>
       <PlatformTenant tenantId={tenantId} />
       <PlatformOwnerBootstrap tenantId={tenantId} />
+      <PlatformOperationalBootstrap tenantId={tenantId} />
       <PlatformSupportNotes tenantId={tenantId} />
     </>
   );
