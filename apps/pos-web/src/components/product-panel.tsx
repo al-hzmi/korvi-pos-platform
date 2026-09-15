@@ -80,10 +80,7 @@ export function ProductPanel({
         ) : null}
       </div>
 
-      <div
-        className="min-h-0 flex-1 overflow-y-auto pe-1"
-        aria-busy={state.status === 'loading'}
-      >
+      <div className="min-h-0 flex-1 overflow-y-auto pe-1" aria-busy={state.status === 'loading'}>
         {state.status === 'failed' && state.failure !== null ? (
           <StatusNote tone="warning" live>
             {state.failure.message}
@@ -161,7 +158,9 @@ export function ProductPanel({
                         {product.sku}
                       </BidiIsolate>
                       {product.productType === 'weighted' && product.unitLabel !== null ? (
-                        <span className="text-[10px] text-muted-foreground">{product.unitLabel}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {product.unitLabel}
+                        </span>
                       ) : null}
                     </span>
                     <span className="flex shrink-0 items-baseline gap-1">
