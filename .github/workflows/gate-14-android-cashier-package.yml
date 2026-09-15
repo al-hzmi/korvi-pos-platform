@@ -1,0 +1,94 @@
+name: Gate 14 Android Cashier Package
+
+on:
+  push:
+    branches:
+      - warroom/installed-cashier
+    paths:
+      - .github/workflows/gate-14-android-cashier-package.yml
+      - apps/cashier-client/**
+      - apps/pos-web/src/components/pos-app.tsx
+      - apps/pos-web/src/lib/api.ts
+      - packages/domain/**
+      - packages/ui/**
+      - package.json
+      - package-lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      KORVI_NATIVE_API_ORIGIN: https://api.staging.invalid/
+      KORVI_NATIVE_WEB_ORIGIN: https://staging.invalid/
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Configure Android SDK, JDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_HOME:-}"
+          test -n "${JAVA_HOME_17_X64:-}"
+          ndk_version="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n 1)"
+          test -n "$ndk_version"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$ndk_version" >> "$GITHUB_ENV"
+          echo "Android SDK: $ANDROID_HOME"
+          echo "Android NDK: $ndk_version"
+          "$JAVA_HOME_17_X64/bin/java" -version
+
+      - name: Install Android Rust target
+        run: rustup target add aarch64-linux-android
+
+      - name: Install exact dependency graph
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Verify dependency pins
+        run: npm run versions:verify
+
+      - name: Build shared cashier packages
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
+
+      - name: Initialize Android project
+        run: npm run tauri -w @korvi/cashier-client -- android init --ci --skip-targets-install
+
+      - name: Build Android arm64 APK
+        run: npm run tauri -w @korvi/cashier-client -- android build --apk --target aarch64 --ci
+
+      - name: Verify APK exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print)
+          if [ "${#apks[@]}" -lt 1 ]; then
+            echo 'No Android APK was produced.' >&2
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            test -s "$apk"
+            printf '%s %s bytes\n' "$apk" "$(stat -c %s "$apk")"
+            sha256sum "$apk"
+          done
+
+      - name: Preserve Android package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: korvi-cashier-android-${{ github.sha }}
+          path: apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
