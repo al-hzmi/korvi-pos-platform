@@ -141,16 +141,24 @@ function normalizeToken(value: string, max: number): string {
   return normalized;
 }
 
-function normalizeUuid(value: string, refusal: 'unknown-tenant' | 'unknown-terminal' | 'unknown-enrollment'): string {
+function normalizeUuid(
+  value: string,
+  refusal: 'unknown-tenant' | 'unknown-terminal' | 'unknown-enrollment',
+): string {
   const normalized = value.trim().toLowerCase();
   if (!UUID_PATTERN.test(normalized)) throw new PlatformDeviceEnrollmentRefusedError(refusal);
   return normalized;
 }
 
-function normalizeEnrollment(request: PlatformDeviceEnrollmentRequest): NormalizedEnrollmentRequest {
+function normalizeEnrollment(
+  request: PlatformDeviceEnrollmentRequest,
+): NormalizedEnrollmentRequest {
   const tenantId = normalizeUuid(request.tenantId, 'unknown-tenant');
   const terminalId = normalizeUuid(request.terminalId, 'unknown-terminal');
-  const installationId = normalizeUuid(request.installationId, 'invalid-input' as 'unknown-enrollment');
+  const installationId = normalizeUuid(
+    request.installationId,
+    'invalid-input' as 'unknown-enrollment',
+  );
   const operationId = normalizeToken(request.operationId, 160);
   const actorRef = normalizeToken(request.controlPlaneActorRef, 120);
   const appVersion = normalizeToken(request.appVersion, 64);
@@ -190,7 +198,9 @@ function normalizeEnrollment(request: PlatformDeviceEnrollmentRequest): Normaliz
   };
 }
 
-function normalizeRevocation(request: PlatformDeviceRevocationRequest): NormalizedRevocationRequest {
+function normalizeRevocation(
+  request: PlatformDeviceRevocationRequest,
+): NormalizedRevocationRequest {
   return {
     tenantId: normalizeUuid(request.tenantId, 'unknown-tenant'),
     enrollmentId: normalizeUuid(request.enrollmentId, 'unknown-enrollment'),
@@ -328,7 +338,15 @@ async function classifyEnrollmentConflict(
   input: NormalizedEnrollmentRequest,
 ): Promise<never> {
   const rows = await tx.$queryRaw<
-    { operationId: string; requestHash: string; terminalId: string; installationId: string; normalizedFingerprintDigest: string; publicKeySha256: string; state: string }[]
+    {
+      operationId: string;
+      requestHash: string;
+      terminalId: string;
+      installationId: string;
+      normalizedFingerprintDigest: string;
+      publicKeySha256: string;
+      state: string;
+    }[]
   >`
     SELECT "operationId", "requestHash", "terminalId", "installationId",
            "normalizedFingerprintDigest", "publicKeySha256", "state"
@@ -352,7 +370,10 @@ async function classifyEnrollmentConflict(
     if (row.publicKeySha256 === input.publicKeySha256) {
       throw new PlatformDeviceEnrollmentRefusedError('public-key-already-enrolled');
     }
-    if (row.terminalId === input.terminalId && (row.state === 'active' || row.state === 'suspended')) {
+    if (
+      row.terminalId === input.terminalId &&
+      (row.state === 'active' || row.state === 'suspended')
+    ) {
       throw new PlatformDeviceEnrollmentRefusedError('terminal-already-enrolled');
     }
     if (
@@ -437,7 +458,11 @@ export async function enrollPlatformDevice(
       enrollmentId,
       input.actorRef,
       input.operationId,
-      { terminalId: input.terminalId, platform: input.platform, publicKeySha256: input.publicKeySha256 },
+      {
+        terminalId: input.terminalId,
+        platform: input.platform,
+        publicKeySha256: input.publicKeySha256,
+      },
       at,
     );
 

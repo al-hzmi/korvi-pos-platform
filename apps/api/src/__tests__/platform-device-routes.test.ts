@@ -5,7 +5,10 @@ import { createPlatformAuth } from '../platform/auth.js';
 import { registerPlatformDeviceRoutes } from '../platform/device-routes.js';
 import { loadConfig } from '../config.js';
 import type { PlatformActor } from '../platform/service.js';
-import type { PlatformDeviceEnrollmentInput, PlatformDeviceRevocationInput } from '../platform/device-enrollment-issuer.js';
+import type {
+  PlatformDeviceEnrollmentInput,
+  PlatformDeviceRevocationInput,
+} from '../platform/device-enrollment-issuer.js';
 import type { FastifyInstance } from 'fastify';
 
 const ACCESS_KEY = 'a'.repeat(40);

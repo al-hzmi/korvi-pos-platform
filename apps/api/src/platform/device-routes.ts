@@ -8,7 +8,10 @@ import {
 } from './device-enrollment-issuer.js';
 import type { DeviceEnrollmentRecord } from '@korvi/database/device-enrollment';
 import type { PlatformAuth, PlatformPrincipal } from './auth.js';
-import type { PlatformDeviceEnrollmentInput, PlatformDeviceRevocationInput } from './device-enrollment-issuer.js';
+import type {
+  PlatformDeviceEnrollmentInput,
+  PlatformDeviceRevocationInput,
+} from './device-enrollment-issuer.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 const tenantParams = z.object({ tenantId: z.string().uuid() }).strict();
