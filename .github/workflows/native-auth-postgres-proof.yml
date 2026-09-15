@@ -58,6 +58,9 @@ jobs:
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
 
+      - name: Verify permanent Native Auth proof formatting
+        run: npm exec prettier -- --check apps/api/src/__tests__/native-auth-e2e-live.test.ts
+
       - name: Create restricted application role
         shell: bash
         run: |
