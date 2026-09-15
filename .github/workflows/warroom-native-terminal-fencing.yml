@@ -148,7 +148,9 @@ jobs:
         run: npx prettier --write apps/api/src/native-auth/service.ts apps/api/src/routes/business.ts apps/api/src/__tests__/native-terminal-fencing.test.ts
 
       - name: Generate Prisma client
-        run: npm run prisma:generate
+        run: npm run db:generate
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
 
       - name: Build trusted workspaces
         run: npm run build
