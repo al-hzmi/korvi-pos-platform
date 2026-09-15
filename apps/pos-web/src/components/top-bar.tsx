@@ -78,7 +78,9 @@ export function TopBar({
               online ? 'h-2 w-2 rounded-full bg-success' : 'h-2 w-2 rounded-full bg-warning'
             }
           />
-          <span className="hidden sm:inline">{online ? 'متصل · الوردية مفتوحة' : 'تشغيل محلي'}</span>
+          <span className="hidden sm:inline">
+            {online ? 'متصل · الوردية مفتوحة' : 'تشغيل محلي'}
+          </span>
           <span className="sm:hidden">{online ? 'متصل' : 'محلي'}</span>
         </span>
         {showControlCentre && online ? (
