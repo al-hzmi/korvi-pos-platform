@@ -1,0 +1,59 @@
+name: Temporary Autoprefixer Lock Refresh
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - .github/workflows/tmp-refresh-autoprefixer.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.event.head_commit.message != 'chore(deps): bump autoprefixer to 10.6.1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: strike/product-routing-p0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Refresh exact dependency and lockfile
+        run: >-
+          npm install -w @korvi/pos-web --save-dev --save-exact
+          autoprefixer@10.6.1 --package-lock-only --ignore-scripts
+
+      - name: Prove only intended manifests changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | sort)"
+          expected=$'apps/pos-web/package.json\npackage-lock.json'
+          if [ "$actual" != "$expected" ]; then
+            printf 'Unexpected dependency refresh diff:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          npm ci --registry=https://registry.npmjs.org
+          npm run versions:verify
+
+      - name: Commit deterministic lock refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/pos-web/package.json package-lock.json
+          git commit -m 'chore(deps): bump autoprefixer to 10.6.1'
+          git push origin HEAD:strike/product-routing-p0
