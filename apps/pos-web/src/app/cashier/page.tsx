@@ -1,4 +1,4 @@
-import { PosApp } from '../../components/pos-app';
+import { WebPosApp } from '../../components/web-pos-app';
 
 /**
  * Explicit till surface.
@@ -10,5 +10,5 @@ import { PosApp } from '../../components/pos-app';
  * injected by this web host; installed Cashier omits it entirely.
  */
 export default function CashierPage(): React.JSX.Element {
-  return <PosApp controlCentreHref="/control" />;
+  return <WebPosApp controlCentreHref="/control" />;
 }
