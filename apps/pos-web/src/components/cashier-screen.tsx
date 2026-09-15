@@ -120,9 +120,6 @@ export function CashierScreen({
       cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
       setCash(durableState.draft.cash);
     }
-    // A failed local store must never masquerade as durable. It does not,
-    // however, revoke the server's online sale authority; the warning below
-    // stays visible and the cashier can continue online.
     setDraftHydrated(true);
   }, [cart.dispatch, draftHydrated, durableState]);
 
@@ -153,9 +150,6 @@ export function CashierScreen({
     priceMode,
   ]);
 
-  // The opening grid. A till that shows nothing until somebody types looks
-  // broken, and in a shop with a short catalogue the cashier should not have
-  // to type at all. Runs once, on the first render of a ready workspace.
   const browse = search.browse;
   useEffect(() => {
     browse();
@@ -166,7 +160,6 @@ export function CashierScreen({
       if (locked) return;
       cart.dispatch({ type: 'add', product });
       search.reset();
-      // Straight back to the field, so the next scan lands somewhere.
       focusSearch();
     },
     [cart, search, locked, focusSearch],
@@ -182,14 +175,10 @@ export function CashierScreen({
     search.runNow(search.term);
   }, [search, add, locked]);
 
-  // A shift that stopped being usable — closed under the till, taken by
-  // another cashier, or never opened — is not something to keep selling
-  // through. The screen above re-reads it and decides.
   useEffect(() => {
     if (shiftNeedsRefresh(checkout.state.failure?.action)) onShiftChanged();
   }, [checkout.state.failure, onShiftChanged]);
 
-  // The cash field is where the cashier has to look next.
   useEffect(() => {
     if (checkout.state.failure?.action === 'amend-cash') cashInput.current?.focus();
   }, [checkout.state.failure]);
@@ -199,7 +188,6 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
-    // Once, between customers — not once per item.
     search.browse();
     focusSearch();
   }, [checkout, cart, clearDraft, search, focusSearch]);
@@ -212,15 +200,13 @@ export function CashierScreen({
       lines: cart.lines,
       cashReceivedMinor: cashMinor,
     });
-  }, [checkout, terminal.id, cart.lines, cashMinor]);
+  }, [checkout, terminal.id, shift.id, cart.lines, cashMinor]);
 
   const completed = checkout.state.phase === 'succeeded' ? checkout.state.sale : null;
-  // Named so the value is used rather than merely accepted: a screen that
-  // takes a shift it never reads is a screen that will drift out of step.
   const drawerLabel = `الوردية ${shift.id.slice(0, 8)}`;
 
   return (
-    <div className="flex h-screen flex-col bg-muted/40">
+    <div className="flex h-screen flex-col bg-muted/30">
       <TopBar
         cashierName={principal.user.displayName}
         showControlCentre={canOpenControlCentre(principal.permissions)}
@@ -230,8 +216,8 @@ export function CashierScreen({
         onSignOut={onSignOut}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
-        <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
+      <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(0,1fr)_28rem] lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_30rem]">
+        <CardSurface className="flex min-h-[28rem] flex-col border-border/80 bg-card p-3 shadow-sm sm:p-4 lg:min-h-0">
           {offlineSync.state.needsReview.length > 0 ? (
             <StatusNote tone="warning" className="mb-3" live>
               توجد {offlineSync.state.needsReview.length} عملية بيع دون اتصال رفضها الخادم وتحتاج
@@ -267,11 +253,11 @@ export function CashierScreen({
         </CardSurface>
 
         <aside
-          className="flex min-h-0 w-full shrink-0 flex-col lg:w-[26rem]"
+          className="flex min-h-[28rem] w-full min-w-0 flex-col lg:min-h-0"
           aria-label={`السلة والدفع — ${drawerLabel}`}
         >
           {checkout.state.phase === 'queued' && checkout.state.intent !== null ? (
-            <CardSurface className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+            <CardSurface className="flex min-h-0 flex-1 flex-col gap-4 border-border/80 p-4 shadow-sm">
               <StatusNote tone="warning" live>
                 تم حفظ البيع محلياً بنفس معرّف العملية وسيُرسل للخادم دون تغيير عند عودة الاتصال.
                 هذه ليست فاتورة ضريبية معتمدة بعد؛ المخزون والضريبة والحسابات تبقى بانتظار سلطة
@@ -284,12 +270,12 @@ export function CashierScreen({
                 </p>
                 <p className="mt-1 text-muted-foreground">المبلغ المستلم: {cash} ر.س</p>
               </div>
-              <Button size="lg" onClick={newSale}>
+              <Button size="lg" className="h-touch-lg font-semibold" onClick={newSale}>
                 بدء بيع جديد
               </Button>
             </CardSurface>
           ) : completed === null ? (
-            <CardSurface className="flex min-h-0 flex-1 flex-col p-4">
+            <CardSurface className="flex min-h-0 flex-1 flex-col border-border/80 p-4 shadow-sm">
               {durabilityLoading ? (
                 <StatusNote tone="info" className="mb-3" live>
                   جاري استعادة حالة البيع المحلية…
@@ -325,7 +311,7 @@ export function CashierScreen({
             <SaleReceipt sale={completed} replayed={checkout.state.replayed} onNewSale={newSale} />
           )}
         </aside>
-      </div>
+      </main>
     </div>
   );
 }

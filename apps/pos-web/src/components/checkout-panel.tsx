@@ -56,60 +56,67 @@ export function CheckoutPanel({
   const cashFrozen = locked;
 
   return (
-    <div className="flex shrink-0 flex-col gap-3 border-t border-border pt-3">
-      <dl className="flex flex-col gap-1 text-sm">
-        <div className="flex items-center justify-between text-muted-foreground">
-          <dt>الإجمالي قبل الضريبة</dt>
-          <dd>
-            <Numeric value={formatMinor(netMinor)} />
-          </dd>
-        </div>
-        <div className="flex items-center justify-between text-muted-foreground">
-          <dt>ضريبة القيمة المضافة</dt>
-          <dd>
-            <Numeric value={formatMinor(vatMinor)} />
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between pt-1">
-          <dt className="text-base font-semibold text-card-foreground">المطلوب</dt>
-          <dd>
-            <Numeric
-              value={formatMinor(totalMinor)}
-              className="text-3xl font-bold text-foreground"
-            />
-          </dd>
-        </div>
-      </dl>
+    <div className="flex shrink-0 flex-col gap-3 border-t border-border pt-4">
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm">
+        <dl className="flex flex-col gap-2 text-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <dt>الإجمالي قبل الضريبة</dt>
+            <dd className="flex items-baseline gap-1">
+              <Numeric value={formatMinor(netMinor)} />
+              <span className="text-[10px]">ر.س</span>
+            </dd>
+          </div>
+          <div className="flex items-center justify-between text-muted-foreground">
+            <dt>ضريبة القيمة المضافة</dt>
+            <dd className="flex items-baseline gap-1">
+              <Numeric value={formatMinor(vatMinor)} />
+              <span className="text-[10px]">ر.س</span>
+            </dd>
+          </div>
+          <div className="mt-1 flex items-end justify-between border-t border-primary/15 pt-3">
+            <dt className="text-base font-semibold text-foreground">الإجمالي المستحق</dt>
+            <dd className="flex items-baseline gap-1 text-primary">
+              <Numeric value={formatMinor(totalMinor)} className="text-4xl font-bold tracking-tight" />
+              <span className="text-xs font-semibold">ر.س</span>
+            </dd>
+          </div>
+        </dl>
+      </div>
 
-      <Field
-        id="cash-received"
-        label="النقد المستلم (ريال)"
-        inputMode="decimal"
-        autoComplete="off"
-        dir="ltr"
-        disabled={cashFrozen}
-        invalid={cash.trim() !== '' && cashMinor === null}
-        value={cash}
-        inputRef={cashRef}
-        className="h-touch-lg text-lg"
-        onChange={(event) => {
-          onCashChange(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && canSubmit && !submitting && !cashFrozen) {
-            event.preventDefault();
-            onSubmit();
-          }
-        }}
-      />
+      <div className="rounded-lg border border-border bg-background p-3">
+        <Field
+          id="cash-received"
+          label="النقد المستلم (ريال)"
+          inputMode="decimal"
+          autoComplete="off"
+          dir="ltr"
+          disabled={cashFrozen}
+          invalid={cash.trim() !== '' && cashMinor === null}
+          value={cash}
+          inputRef={cashRef}
+          className="h-touch-lg text-xl font-semibold"
+          onChange={(event) => {
+            onCashChange(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && canSubmit && !submitting && !cashFrozen) {
+              event.preventDefault();
+              onSubmit();
+            }
+          }}
+        />
 
-      <div className="flex items-baseline justify-between rounded-md bg-muted px-3 py-2 text-sm">
-        <span className="text-muted-foreground">الباقي</span>
-        {change === null ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          <Numeric value={formatMinor(change)} className="text-lg font-semibold text-foreground" />
-        )}
+        <div className="mt-3 flex items-center justify-between rounded-md bg-muted px-3 py-2.5 text-sm">
+          <span className="font-medium text-muted-foreground">الباقي للعميل</span>
+          {change === null ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <span className="flex items-baseline gap-1">
+              <Numeric value={formatMinor(change)} className="text-xl font-bold text-foreground" />
+              <span className="text-[10px] text-muted-foreground">ر.س</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {state.failure === null ? null : (
@@ -128,7 +135,7 @@ export function CheckoutPanel({
       <div className="flex gap-2">
         <Button
           size="lg"
-          className="flex-1"
+          className="h-touch-lg flex-1 text-base font-semibold shadow-sm"
           loading={submitting}
           disabled={!canSubmit}
           onClick={onSubmit}
@@ -140,7 +147,7 @@ export function CheckoutPanel({
               : 'إتمام البيع'}
         </Button>
         {state.failure === null || state.attemptOutstanding ? null : (
-          <Button variant="outline" size="lg" onClick={onDismiss}>
+          <Button variant="outline" size="lg" className="h-touch-lg" onClick={onDismiss}>
             إخفاء
           </Button>
         )}
