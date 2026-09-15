@@ -79,7 +79,7 @@ Plan/entitlement, limits, billing/subscription state, active/suspended/grace beh
 
 ## Gate 11 — Installed Application Release (B0/C1)
 
-Required before Korvi is sold as an installed Windows/Android application.
+Required before Korvi is sold as an installed Windows/Android cashier application.
 
 ### Windows proof
 
@@ -103,13 +103,14 @@ Required before Korvi is sold as an installed Windows/Android application.
 
 ### Shared installed-client acceptance
 
-- same authoritative domain/API contracts as the web/PWA client; no forked financial engine;
+- same authoritative domain/API contracts as the web/PWA foundations; no forked financial engine;
 - no secrets baked into packages;
 - local stores partitioned by merchant/device identity;
 - full-shift WAN outage + end-of-day reconnect proof;
-- evidence artifacts are tied to the exact release SHA/build version.
+- evidence artifacts are tied to the exact release SHA/build version;
+- the installed client is cashier-scoped; ordinary merchant management and Platform Admin are not merely hidden inside the package.
 
-A PWA install badge alone does not close this gate if Windows/Android packaged Installed Korvi is the declared commercial product.
+A PWA install badge alone does not close this gate if Windows/Android packaged Korvi Cashier is the declared commercial product.
 
 ## Gate 12 — End-to-End Provisioning & Human Acceptance
 
@@ -134,12 +135,49 @@ Human acceptance must include accountant review for financial/VAT/stock/history 
 
 An executive decision may schedule those people for launch/first-customer time rather than the engineering day, but the system must not silently mark their acceptance as completed beforehand.
 
+## Gate 13 — Client Trust / Anti-Cloning / IP Defense (B0/C1)
+
+Required before Korvi Cashier is considered commercially hardened for external distribution.
+
+The purpose is not to claim the client is impossible to reverse engineer. The required property is:
+
+> **STOLEN CLIENT ≠ STOLEN PRODUCT**
+
+Pass criteria include:
+
+- no reusable production database/admin/platform secrets in Windows/Android artifacts or local stores;
+- distinct device enrollment identity bound to tenant/branch/terminal/installation;
+- OS-backed protection for device private key material where supported;
+- signed bounded offline license/lease verifiable without embedding Korvi private signing keys;
+- server-side RBAC/RLS/idempotency remains decisive when client UI/binary is modified;
+- copied local DB/application directory cannot silently function as a second valid enrolled terminal;
+- Platform Admin/customer provisioning/plan and license issuance remain cloud authority rather than cashier-local authority;
+- official Windows and Android release/update artifacts are signed and versioned;
+- unsigned/untrusted update rejection;
+- production packages do not expose unjustified debug endpoints, public source maps or reusable secrets;
+- minification/obfuscation/integrity checks may raise reverse-engineering cost but are not relied on as the security boundary;
+- device revocation prevents future cloud authority/lease renewal for a stolen or cloned device;
+- duplicate-device identity and impossible synchronization behavior create auditable rejection/alert paths;
+- lease expiry/renewal/revocation behavior is proved during long offline operation without corrupting legitimate recorded work.
+
+Required adversarial proof should include attempts to:
+
+1. copy the installed client and local state to another device;
+2. patch local role/plan/UI flags;
+3. call merchant/platform admin APIs from cashier credentials;
+4. replay queued financial operations;
+5. restore old local files after device revocation;
+6. install an unsigned or tampered update;
+7. inspect the release bundle for secrets/debug artifacts.
+
+Detailed doctrine: `docs/governance/KORVI-CLIENT-TRUST-ANTI-CLONING.md`.
+
 ## Standard repository gate
 
 `npm run verify` is necessary for every push but not sufficient for all releases. C0 changes additionally require relevant live/adversarial evidence. A writer does not self-approve a C0 change.
 
 ## Evidence rule
 
-A gate is **PASS**, **FAIL**, or **NOT APPLICABLE with reason**. “Looks good”, “implemented”, “tests exist”, “SDK passed”, “PWA installs”, or “report written” are not gate states.
+A gate is **PASS**, **FAIL**, or **NOT APPLICABLE with reason**. “Looks good”, “implemented”, “tests exist”, “SDK passed”, “PWA installs”, “obfuscated”, or “report written” are not gate states.
 
 Every final claim must name the exact SHA/build, the evidence artifact/run, the applicable client/platform and any intentionally deferred external acceptance item.
