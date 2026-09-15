@@ -139,7 +139,10 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
   let platformCookie: string;
   const tenantIds: string[] = [];
 
-  async function provisionMerchant(label: string, extendedTopology: boolean): Promise<MerchantFixture> {
+  async function provisionMerchant(
+    label: string,
+    extendedTopology: boolean,
+  ): Promise<MerchantFixture> {
     const suffix = newId().replaceAll('-', '').slice(-12);
     const slug = `native-${label}-${suffix}`;
     const ownerEmail = `owner-${label}-${suffix}@native-gate.test`;
@@ -280,7 +283,9 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
         terminalId,
         installationId: newId(),
         platform: 'windows',
-        normalizedFingerprintDigest: createHash('sha256').update(`fingerprint:${label}`).digest('hex'),
+        normalizedFingerprintDigest: createHash('sha256')
+          .update(`fingerprint:${label}`)
+          .digest('hex'),
         publicKeySpki: key.publicSpki.toString('base64'),
         publicKeySha256: key.publicKeySha256,
         keyAlgorithm: 'ed25519',
@@ -386,9 +391,24 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
     const keyA = makeDeviceKey();
     const keyC = makeDeviceKey();
     const keyB = makeDeviceKey();
-    const enrollmentA = await enrollDevice(tenantA.id, tenantA.terminalA, keyA, 'tenant-a-terminal-a');
-    const enrollmentC = await enrollDevice(tenantA.id, tenantA.terminalC, keyC, 'tenant-a-terminal-c');
-    const enrollmentB = await enrollDevice(tenantB.id, tenantB.terminalA, keyB, 'tenant-b-terminal-a');
+    const enrollmentA = await enrollDevice(
+      tenantA.id,
+      tenantA.terminalA,
+      keyA,
+      'tenant-a-terminal-a',
+    );
+    const enrollmentC = await enrollDevice(
+      tenantA.id,
+      tenantA.terminalC,
+      keyC,
+      'tenant-a-terminal-c',
+    );
+    const enrollmentB = await enrollDevice(
+      tenantB.id,
+      tenantB.terminalA,
+      keyB,
+      'tenant-b-terminal-a',
+    );
 
     const db = new pg.Client({ connectionString: url });
     await db.connect();
@@ -410,7 +430,11 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
       rolbypassrls: false,
     });
 
-    const rls = await db.query<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+    const rls = await db.query<{
+      relname: string;
+      relrowsecurity: boolean;
+      relforcerowsecurity: boolean;
+    }>(
       `SELECT relname, relrowsecurity, relforcerowsecurity
          FROM pg_class
         WHERE relname IN ('device_enrollments', 'native_auth_challenges', 'native_sessions')
@@ -455,8 +479,11 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
       key: keyA,
     });
     expectError(expiredAttempt, 401, 'native_unauthenticated');
-    const expiredState = await withTenant(prisma, tenantA.id, async (tx) =>
-      tx.$queryRaw<{ consumedAt: Date | null }[]>`
+    const expiredState = await withTenant(
+      prisma,
+      tenantA.id,
+      async (tx) =>
+        tx.$queryRaw<{ consumedAt: Date | null }[]>`
         SELECT "consumedAt" FROM "native_auth_challenges" WHERE "id" = ${expired.challengeId}::uuid`,
     );
     expect(expiredState[0]?.consumedAt).toBeNull();
@@ -643,21 +670,30 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
         SELECT count(*)::bigint AS "count" FROM "native_auth_challenges"`;
       const sessions = await tx.$queryRaw<{ count: bigint }[]>`
         SELECT count(*)::bigint AS "count" FROM "native_sessions"`;
-      return { challenges: Number(challenges[0]?.count ?? 0n), sessions: Number(sessions[0]?.count ?? 0n) };
+      return {
+        challenges: Number(challenges[0]?.count ?? 0n),
+        sessions: Number(sessions[0]?.count ?? 0n),
+      };
     });
     const rlsB = await withTenant(prisma, tenantB.id, async (tx) => {
       const challenges = await tx.$queryRaw<{ count: bigint }[]>`
         SELECT count(*)::bigint AS "count" FROM "native_auth_challenges"`;
       const sessions = await tx.$queryRaw<{ count: bigint }[]>`
         SELECT count(*)::bigint AS "count" FROM "native_sessions"`;
-      return { challenges: Number(challenges[0]?.count ?? 0n), sessions: Number(sessions[0]?.count ?? 0n) };
+      return {
+        challenges: Number(challenges[0]?.count ?? 0n),
+        sessions: Number(sessions[0]?.count ?? 0n),
+      };
     });
     expect(rlsA.challenges).toBeGreaterThan(0);
     expect(rlsA.sessions).toBe(1);
     expect(rlsB).toEqual({ challenges: 0, sessions: 0 });
 
-    const nativeColumns = await withTenant(prisma, tenantA.id, async (tx) =>
-      tx.$queryRaw<{ table_name: string; column_name: string }[]>`
+    const nativeColumns = await withTenant(
+      prisma,
+      tenantA.id,
+      async (tx) =>
+        tx.$queryRaw<{ table_name: string; column_name: string }[]>`
         SELECT table_name, column_name
           FROM information_schema.columns
          WHERE table_schema = 'public'
@@ -665,8 +701,11 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
            AND (lower(column_name) LIKE '%private%' OR lower(column_name) LIKE '%secret%')`,
     );
     expect(nativeColumns).toEqual([]);
-    const persistedKeyMaterial = await withTenant(prisma, tenantA.id, async (tx) =>
-      tx.$queryRaw<{ publicSpki: string }[]>`
+    const persistedKeyMaterial = await withTenant(
+      prisma,
+      tenantA.id,
+      async (tx) =>
+        tx.$queryRaw<{ publicSpki: string }[]>`
         SELECT encode("publicKeySpki", 'base64') AS "publicSpki"
           FROM "device_enrollments"
          WHERE "id" = ${enrollmentA.id}::uuid`,
@@ -674,17 +713,30 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
     const privateBase64 = keyA.privatePkcs8.toString('base64');
     expect(JSON.stringify(persistedKeyMaterial)).not.toContain(privateBase64);
 
-    const indexes = await withTenant(prisma, tenantA.id, async (tx) =>
-      tx.$queryRaw<{ indexdef: string }[]>`
-        SELECT indexdef FROM pg_indexes
-         WHERE schemaname = 'public' AND tablename = 'device_enrollments'`,
+    const compositeIndexes = await withTenant(
+      prisma,
+      tenantA.id,
+      async (tx) =>
+        tx.$queryRaw<{ indisunique: boolean; columns: string[] }[]>`
+        SELECT
+          i.indisunique,
+          array_agg(a.attname ORDER BY key_columns.ordinality)::text[] AS "columns"
+        FROM pg_index i
+        JOIN pg_class table_relation ON table_relation.oid = i.indrelid
+        JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS key_columns(attnum, ordinality)
+          ON TRUE
+        JOIN pg_attribute a
+          ON a.attrelid = table_relation.oid AND a.attnum = key_columns.attnum
+        WHERE table_relation.relname = 'device_enrollments'
+        GROUP BY i.indexrelid, i.indisunique`,
     );
     expect(
-      indexes.some(
-        (row) =>
-          row.indexdef.includes('UNIQUE') &&
-          row.indexdef.includes('"tenantId"') &&
-          row.indexdef.includes('"id"'),
+      compositeIndexes.some(
+        (index) =>
+          index.indisunique &&
+          index.columns.length === 2 &&
+          index.columns[0] === 'tenantId' &&
+          index.columns[1] === 'id',
       ),
     ).toBe(true);
 
