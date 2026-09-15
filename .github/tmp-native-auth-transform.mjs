@@ -28,7 +28,7 @@ const newBlock = `    const compositeIndexes = await withTenant(prisma, tenantA.
         JOIN pg_attribute a
           ON a.attrelid = table_relation.oid AND a.attnum = key_columns.attnum
         WHERE table_relation.relname = 'device_enrollments'
-        GROUP BY i.indexrelid, i.indisunique\`;
+        GROUP BY i.indexrelid, i.indisunique\`,
     );
     expect(
       compositeIndexes.some(
