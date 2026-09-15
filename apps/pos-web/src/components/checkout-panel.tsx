@@ -76,7 +76,10 @@ export function CheckoutPanel({
           <div className="mt-1 flex items-end justify-between border-t border-primary/15 pt-3">
             <dt className="text-base font-semibold text-foreground">الإجمالي المستحق</dt>
             <dd className="flex items-baseline gap-1 text-primary">
-              <Numeric value={formatMinor(totalMinor)} className="text-4xl font-bold tracking-tight" />
+              <Numeric
+                value={formatMinor(totalMinor)}
+                className="text-4xl font-bold tracking-tight"
+              />
               <span className="text-xs font-semibold">ر.س</span>
             </dd>
           </div>
