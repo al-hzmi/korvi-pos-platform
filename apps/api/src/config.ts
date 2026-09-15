@@ -216,7 +216,7 @@ const schema = z
     const offlineConfigured = [offlineSeed, offlineKeyId].filter(
       (item) => item !== undefined,
     ).length;
-    if (offlineConfigured != 0 && offlineConfigured != 2) {
+    if (offlineConfigured !== 0 && offlineConfigured !== 2) {
       context.addIssue({
         code: 'custom',
         path: ['OFFLINE_LEASE_SIGNING_SEED_B64'],
