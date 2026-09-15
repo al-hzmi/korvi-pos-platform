@@ -33,6 +33,9 @@ jobs:
       - name: Refresh exact npm lockfile
         run: npm install --package-lock-only --registry=https://registry.npmjs.org
 
+      - name: Verify dependency pins
+        run: npm run versions:verify
+
       - name: Install exact npm graph
         run: npm ci --registry=https://registry.npmjs.org
 
