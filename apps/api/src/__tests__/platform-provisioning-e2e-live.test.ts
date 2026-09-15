@@ -194,7 +194,7 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
       },
     });
     expect(plan.statusCode).toBe(200);
-    expect(plan.json()).toMatchObject({ planKey: 'commercial', accountState: 'active' });
+    expect(plan.json()).toMatchObject({ planKey: 'commercial', planRevision: 1, state: 'active' });
 
     // 4 — Issue the initial-owner one-time capability, then accept it through
     // the public bootstrap surface. This intentionally happens before branch
