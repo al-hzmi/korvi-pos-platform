@@ -1,84 +1,228 @@
 # KORVI POS — Execution Roadmap
 
 Status: **ACTIVE SEQUENCING DOCUMENT**
-Rule: roadmap can defer accepted capabilities; it cannot delete them.
+Rule: roadmap can sequence/defer accepted capabilities; it cannot delete or downgrade them.
 
-## Completed foundation through current main
+## Executive completion policy — 2026-09-15
 
-The repository has established the platform/domain foundation, strict money and quantity rules, identifiers, tenancy/RLS, authentication/RBAC, cashier server and UI foundations, settlement, commercial dashboard foundation, original-sale returns/refunds, shift close/cash-drawer reconciliation, and the substantially established SaaS control plane through Stage 4. These are engineering milestones, not a claim that the whole product is launch-ready or ZATCA Phase 2 compliant.
+The current objective is to finish the **sellable Korvi V1 product experience** first, while preserving the full Master Product Vision in the Directive/Matrix.
 
-## Execution order
+The following external items may be intentionally scheduled immediately before the first real customer rather than blocking engineering completion today:
 
-### Stage 1 — Foundation Integrity — substantially established
+- paid final production infrastructure;
+- final production domain/cutover;
+- launch-window accountant acceptance;
+- launch-window systems-expert acceptance;
+- controlled first-customer field validation.
 
-Money/quantity/tax invariants, pure domain, UUIDv7, tenant isolation, migrations, auth/RBAC, audit, printing foundation, automated verification.
+This scheduling exception means “continue building instead of waiting”. It does **not** mean those gates are passed, and it does not authorize a false Production Ready claim.
 
-### Stage 2 — Commercial Transaction Core — substantially established
+## Immediate execution order — active workstream
 
-Checkout, tender settlement, sale persistence, cashier experience foundation, original-sale returns/refunds, cash movements, blind close/reconciliation. Remaining work in this stage is completed only when later UI/printing/compliance dependencies for each operation are delivered.
+### P0-1 — Finish Product Routing / Role Experience / Visual Truth
 
-### Stage 3 — Product Constitution — substantially established
+Continue from the first real open blocker on the active Product P0 branch. Required outcome:
 
-Adopt the five governance documents: Master Product Directive, Capability Matrix, Architecture Map, Release Gates, Roadmap. They become the anti-drift control layer before expanding product breadth.
+- cashier lands in cashier experience;
+- manager/owner lands in merchant control experience;
+- Korvi Platform Admin has a distinct platform authority/surface;
+- refresh/back/forward/deep links preserve logical navigation;
+- merchant surfaces for sales/customers/inventory/purchasing/reports/settings/ZATCA are real rather than placeholders;
+- exact-head desktop/tablet/mobile visual proof is green;
+- no regression to financial/offline/inventory/ZATCA core.
 
-### Stage 4 — SaaS Control Plane — **SUBSTANTIALLY ESTABLISHED**
+### P0-2 — Complete Platform Admin customer-provisioning cycle
+
+Close the gap between “tenant row exists” and “customer can actually sign in”. Required flow:
+
+**Platform Admin → create tenant/business → assign plan → create/bootstrap initial owner → create/activate branch → register terminal/device → securely present tenant code/login facts → sign in as merchant owner → complete merchant onboarding → open cashier.**
+
+Direct SQL/manual database work is not the normal customer-creation path.
+
+Create a safe demo tenant only through supported product/admin flows; never commit credentials or secrets to GitHub.
+
+### P0-3 — Installed Korvi for Windows and Android
+
+Installed Korvi is now a B0 commercial requirement.
+
+Implementation must reuse the existing client/domain/API boundaries rather than rewrite Korvi separately per platform. Choose the smallest production-grade packaging architecture that can satisfy the gates without weakening the current system.
+
+Required outcomes:
+
+- Windows installable release artifact;
+- Android installable release artifact;
+- application opens independently of a browser tab;
+- bundled/offline application shell;
+- durable local catalogue/search, drafts and operation queue;
+- full-shift WAN outage operation for the supported cashier capability set;
+- process/device restart recovery within the declared policy;
+- end-of-day reconnect sync with no loss/duplication/reordering;
+- deterministic conflict/review handling;
+- printer/scanner/device integration for supported profiles;
+- no secrets embedded in packages;
+- controlled app version/update/local-schema migration behavior;
+- real Windows + Android evidence, not report-only proof.
+
+Do not declare victory from existing browser/PWA offline evidence alone. Reuse that proven engine as foundation, then prove the installed clients.
+
+### P0-4 — Unify all final work on one release lineage
+
+Once Product P0 + provisioning + installed-client requirements are implemented:
+
+1. reconcile with the current official RC baseline;
+2. preserve all closed financial/security/offline/ZATCA/inventory evidence;
+3. advance one final release lineage;
+4. run full CI/live PostgreSQL/visual/offline/installed-client proof on the exact final SHA/build;
+5. deploy the same final code to Staging;
+6. run the full administrative and merchant dry run from Staging/installed clients.
+
+Intermediate green SHAs do not substitute for final exact-head evidence.
+
+### P0-5 — User-visible full dry run
+
+Provide the executive operator with exactly what is needed to test personally:
+
+- Platform Admin URL/installed entry point;
+- safe temporary Platform Admin access mechanism;
+- tenant/customer code;
+- demo owner email/user identity;
+- safe temporary/one-time credential path;
+- merchant login URL/installed entry point;
+- branch/register/device setup facts;
+- instructions for first login only where unavoidable.
+
+Never write passwords, CSIDs, API keys, HSM material or persistent secrets into source control or issue comments.
+
+## Foundation already established
+
+The repository has substantial evidence for:
+
+- integer money/VAT/allocation;
+- UUIDv7/idempotency;
+- tenancy/RLS/auth/RBAC;
+- checkout and immutable sales;
+- shifts/cash movement/reconciliation;
+- original-sale returns/refunds;
+- inventory ledger/adjustments/counts/transfers;
+- purchasing/receiving;
+- costing with explicit unknown provenance;
+- Arabic receipt/printing foundation;
+- browser-based offline shell/catalogue/queue/sync/conflict proof;
+- substantial ZATCA Phase 2 implementation/evidence;
+- SaaS lifecycle/onboarding foundations.
+
+These are foundations and proven authorities, not permission to skip the remaining product workflows.
+
+## Full execution stages after P0 commercial-V1 closure
+
+### Stage 1 — Financial / Security / Transaction Foundation — substantially established
+
+Maintain and never regress money/quantity/tax invariants, pure domain boundaries, UUIDv7, tenant isolation, migrations, auth/RBAC, audit, printing foundation and automated verification.
+
+### Stage 2 — SaaS Control Plane & Merchant Administration — active completion
+
+Finish Platform Admin, customer provisioning, owner bootstrap/recovery boundaries, commercial plan state, branches/devices/users and the complete merchant control experience.
+
+### Stage 3 — Installed / Offline / Device Continuity — active B0 completion
+
+Move the already-proven browser offline engine into official Windows/Android Installed Korvi release paths and close real-device/full-shift evidence. Then complete Liquid Cashier authorized recovery/device replacement.
+
+### Stage 4 — Retail / Grocery Competitive Parity
+
+Complete:
+
+- high-throughput barcode/search UX;
+- physical scale workflow where targeted;
+- packaging/unit/carton hierarchy;
+- multiple price lists and customer/context pricing;
+- coupons/promotion engine;
+- labels/price lookup/printing;
+- batch/lot/expiry;
+- replenishment/reorder foundation;
+- warehouse/location modeling where required;
+- representative large-catalogue performance.
+
+### Stage 5 — Customer / Loyalty / Promotion Parity
+
+Complete customer analytics/segmentation, explicit credit/balance authority where offered, loyalty ledger/rewards, gift/wallet value only as governed financial ledgers, and deterministic promotions with snapshot/refund explainability.
+
+### Stage 6 — Restaurant / Cafe Vertical
 
 Sequence:
 
-1. **4A Tenant Lifecycle & Provisioning Authority** — **substantially established.** Lifecycle states, provisioning transaction, safe activation/suspension/reactivation rules, idempotency, RLS/security, audit and live DB proof are in place (ADR-0018). It is backend authority only: no control-plane transport or operator identity model, so the capability is not yet production ready.
-2. **4B Control-Plane Administration — substantially established.**
-   - **4B-1 Merchant administration authority — substantially established.** Server authority and authenticated API for tenant settings, branches, terminals, users/memberships and role assignment, with session-invalidation and last-administrator protection proved against live PostgreSQL (ADR-0019).
-   - **4B-2 Merchant administration UI — substantially established.** Settings, branches, terminals, members, roles and permissions screens operate over the 4B-1 authority and add no independent authority. General staff credential/invitation lifecycle remains outside this milestone, so the capability is not yet production ready.
-3. **4C Plan/Entitlement Foundation — substantially established.** Stable `(planKey, planRevision)` identity, immutable assignment snapshots, deterministic entitlement evaluation, orthogonal commercial account state, RLS, audit, idempotency, rollback and concurrency proof are established (ADR-0020). No payment/billing provider, merchant plan-write surface or universal route enforcement is claimed, so this is not production ready.
-4. **4D Onboarding — substantially established.** Evidence-derived readiness authority and authenticated readiness API, one-time signed initial-owner bootstrap, minimal audited product bootstrap authority, and guided merchant onboarding UI are implemented and tested (ADR-0021 through ADR-0023). Readiness is derived from live tenant/settings/branch/terminal/administrator/product truth; no persisted fake completion flag exists. Initial owner bootstrap is permanently closed after successful consumption and is not a recovery flow. General staff credential invitation/recovery, control-plane operator transport, billing/provider activation and Production Operations remain separate work, so 4D is not by itself a Production Ready claim.
+1. menu/categories/modifiers;
+2. dining modes and order boundaries;
+3. tables/zones/courses/notes;
+4. recipes/ingredients/consumption/waste on one stock truth;
+5. kitchen routing/KDS;
+6. waiter/server experience;
+7. customer/order-status display;
+8. kiosk;
+9. QR table menu/order/pay;
+10. online ordering;
+11. delivery integrations;
+12. split/merge flows only after C0 transaction architecture is explicit.
 
-### Stage 5 — Inventory & Purchasing Foundation — **IN PROGRESS**
+### Stage 7 — Payments / Omnichannel / Integrations
 
-One stock ledger and causality model; adjustments/counts/transfers; supplier/PO/receiving; MOQ/multiple rules; costing foundation; branch stock. Preserve current sale/return semantics during migration. ADR-0024 defines the authority boundary; ADR-0025 binds prospective cost decisions to the stock/cost observation reviewed by the manager.
+Complete electronic/split/mixed tender UX, PSP adapters, ecommerce/delivery ingestion, Salla/Zid-style mapping where selected, webhooks/events, integration identity and immutable accounting/ERP event export.
 
-Sequence:
+### Stage 8 — Reporting / Profit / Command Center
 
-1. **5A Stock Ledger Integrity — substantially established.** Balance revision, authoritative adjustments, concurrency-safe absolute counts, atomic branch transfers, idempotency, audit, strict RLS and sale/return regression proof are implemented and proved against live PostgreSQL. C0 data-integrity strike, reviewed and closed.
-2. **5B Purchasing & Receiving — substantially established.** Suppliers, immutable purchase orders, partial receiving and receipt-to-stock atomicity are implemented and proved against live PostgreSQL. Purchase orders do not mutate stock; accepted receipts do. Over-receipt is refused under concurrency while PO-line locks are held.
-3. **5C Costing Authority — substantially established.** Exact integer valuation, explicit unknown historical provenance, deterministic remainder conservation, sale-line cost-basis freeze, original-sale return restoration, transfer conservation, valued receiving and prospective bootstrap authority are implemented and proved against fresh and occupied PostgreSQL. Independent C0 review and the Human Gate closed the strike at `600373c`.
-4. **5D Inventory & Purchasing UX — delivered; closure gates pending.** Branch stock read, retry-safe stock commands, purchasing/partial-receiving workflows and separately permissioned cost affordances are implemented and verified at one delivered HEAD. The UI does not become stock/cost authority. Independent review, actual visual-browser evidence and the Human Gate remain open, so the strike is not yet closed and no progress increase is claimed — see `docs/architecture/STRIKE-5D-INVENTORY-PURCHASING-UX.md`.
+Expand sales/VAT reporting into product/category/customer/branch/cashier, inventory/purchasing/cost, profitability and exception/reconciliation views. Build the Attention Center around What/Why/Evidence/Severity/Affected/Action/Deep Link/State/Audit.
 
-### Stage 6 — Offline & Device Continuity
+### Stage 9 — Korvi Advantage Engines
 
-Capability-level offline contract; local durable queue; sync state machine; conflict/idempotency proof; device recovery. Release claims only after Offline Gate passes.
+Deliver without granting AI authority over money/tax/stock:
 
-### Stage 7 — Retail/Grocery Vertical
+1. Migration Engine.
+2. Korvi Product Knowledge / national catalogue.
+3. Explainable Reorder.
+4. Expiry Intelligence.
+5. Branch Rebalancing recommendations.
+6. Korvi Watchdog / Guardian.
+7. Profitability Intelligence.
+8. Pricing Assistant.
+9. Attention Center enhancements.
+10. Liquid Cashier / Device Continuity enhancements.
+11. Safe Operational Recovery.
+12. Supply-network foundations.
 
-Barcode-first acceleration, weighted workflows, grocery-specific inventory/expiry/label needs justified by product discovery, high-volume performance.
+### Stage 10 — Supply Network / B2B Frontier
 
-### Stage 8 — Restaurant Vertical
-
-Menu/modifiers and restaurant order boundaries first, then kitchen routing/KDS and additional service workflows. Do not fork financial/inventory authority.
-
-### Stage 9 — Customer, Loyalty & Promotions
-
-Customer model, loyalty ledger, deterministic promotion engine, snapshot/refund semantics, segmentation and retention surfaces.
-
-### Stage 10 — Omnichannel & Integrations
-
-PSP adapters, ecommerce/delivery ingestion, integration mapping/idempotency, future accounting/ERP event export.
-
-### Stage 11 — Analytics & Command Center
-
-Operational reporting, exception/reconciliation views, evidence-backed alerts, branch/device health, governed Guardian anomaly signals.
-
-### Stage 12 — Korvi Advantage Engines
-
-Migration engine; Product Knowledge/national catalogue; Device Continuity enhancements; Operational Intelligence; premium Command Center capabilities.
-
-### Stage 13 — Supply Network
-
-Supplier-network workflows and B2B supply ordering after core merchant operations and integration identity are proven.
+After merchant purchasing/integration identities are stable, expand governed supplier identity/mapping into B2B supply ordering/network capabilities. This is strategically accepted but intentionally later than the core merchant product.
 
 ## Parallel gates across every stage
 
-Security/Tenancy, Financial Integrity, Data/Migration, ZATCA, Offline/Continuity, Performance, Device/Printing, UX, Production Operations, Commercial Truth.
+- Financial Integrity
+- Security/Tenancy
+- Data/Migration
+- ZATCA
+- Offline/Continuity
+- Installed Application
+- Device/Printing
+- Performance
+- UX/Accessibility/Visual Truth
+- Commercial Truth
+- Production Operations
+- End-to-End Provisioning/Human Acceptance
 
-## Immediate execution rule under constrained AI quota
+## “Korvi Complete” terminology
 
-Expensive implementation-agent quota is reserved for bounded C0/C1 strikes. Architecture, scope decomposition, acceptance criteria, documentation, review, test planning, and DevOps orchestration are performed outside that quota. A strike prompt must be small enough to finish in one implementation pass plus at most one correction pass without reducing system quality.
+Never use a single percentage or completion phrase without naming the denominator.
+
+- **Release Gate Readiness** = current release scorecard denominator.
+- **Commercial V1 Completeness** = every current sellable-V1 capability plus installed-client/provisioning/acceptance requirements.
+- **Master Product Vision Completeness** = the broader accepted platform scope in the Master Product Directive/Capability Matrix.
+
+`Korvi مكتمل ✅` may only be shown with the scope explicitly named and only when that scope has no known missing capability or open required blocker. Deadline pressure is never evidence.
+
+## Execution behavior
+
+- Always verify live branch/HEAD/CI before continuing.
+- Continue from the **FIRST REAL OPEN BLOCKER**.
+- Do not reopen proven closed work without contradictory live evidence.
+- Do not stop at planning/testing/reporting when an implementable blocker remains and the task context authorizes implementation.
+- Do not weaken quality, security, financial correctness, inventory truth, ZATCA or offline guarantees to move faster.
+- Prefer root-cause fixes and reusable architecture over temporary patches.
+- Preserve evidence and exact-head traceability.
