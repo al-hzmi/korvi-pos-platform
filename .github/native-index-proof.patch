@@ -1,7 +1,7 @@
 diff --git a/apps/api/src/__tests__/native-auth-e2e-live.test.ts b/apps/api/src/__tests__/native-auth-e2e-live.test.ts
 --- a/apps/api/src/__tests__/native-auth-e2e-live.test.ts
 +++ b/apps/api/src/__tests__/native-auth-e2e-live.test.ts
-@@
+@@ -677,13 +677,25 @@
 -    const indexes = await withTenant(prisma, tenantA.id, async (tx) =>
 -      tx.$queryRaw<{ indexdef: string }[]>`
 -        SELECT indexdef FROM pg_indexes
