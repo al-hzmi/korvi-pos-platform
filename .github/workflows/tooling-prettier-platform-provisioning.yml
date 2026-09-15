@@ -1,0 +1,34 @@
+name: Tooling Prettier Platform Provisioning
+
+on:
+  push:
+    branches:
+      - tooling/prettier-platform-provisioning-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  format-patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: node scripts/verify-package-manager.mjs
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Format target files
+        run: |
+          npx --no-install prettier --write \
+            apps/api/src/platform/routes.ts \
+            apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
+            packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
+            packages/database/src/control-plane/operational-bootstrap.ts
+      - name: Print canonical patch
+        run: git diff --no-ext-diff --unified=3 --no-color -- \
+          apps/api/src/platform/routes.ts \
+          apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
+          packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
+          packages/database/src/control-plane/operational-bootstrap.ts
