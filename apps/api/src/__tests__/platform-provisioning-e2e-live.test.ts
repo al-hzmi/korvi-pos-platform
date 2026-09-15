@@ -65,7 +65,11 @@ interface ShiftOpened {
 }
 
 interface SaleCreated {
-  readonly sale: { readonly saleId: string; readonly branchId: string; readonly terminalId: string };
+  readonly sale: {
+    readonly saleId: string;
+    readonly branchId: string;
+    readonly terminalId: string;
+  };
   readonly replayed: boolean;
 }
 
