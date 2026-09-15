@@ -51,7 +51,6 @@ jobs:
               "url.pathname === '/'": "url.pathname === '/cashier'",
               'waitForServerDown(`${baseUrl}/`)': 'waitForServerDown(`${baseUrl}/cashier`)',
               '`${baseUrl}/?gate41-offline-proof=${Date.now().toString(10)}`': '`${baseUrl}/cashier?gate41-offline-proof=${Date.now().toString(10)}`',
-              "url.pathname === '/';": "url.pathname === '/cashier';",
           }
           for old, new in replacements.items():
               if old not in text:
