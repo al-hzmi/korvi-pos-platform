@@ -35,22 +35,15 @@ jobs:
 
           path = Path('packages/database/src/__tests__/saas-schema.test.ts')
           source = path.read_text()
-          old = '''  it('recreates each policy rather than assuming it is absent', () => {
-            // Phase 0 already created policies on tenants and products, and
-            // PostgreSQL has no CREATE POLICY ... IF NOT EXISTS, so a bare CREATE
-            // would abort this migration on any database that has run Phase 0.
-            // Phase 0 wrote the first policies onto an empty database and had
-            // nothing to drop. Every migration after it does.
-            const created = [...afterBaseline.matchAll(/\\nCREATE POLICY "(\\w+)" ON "(\\w+)"/g)];
-            const pairs = [
-              ...afterBaseline.matchAll(
-                /DROP POLICY IF EXISTS "(\\w+)" ON "(\\w+)";\\nCREATE POLICY "\\1" ON "\\2"/g,
-              ),
-            ];
-            expect(created.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
-            expect(pairs.length).toBe(created.length);
-          });'''
-          new = '''  it('recreates each current policy rather than assuming it is absent', () => {
+          start_marker = "  it('recreates each policy rather than assuming it is absent', () => {"
+          end_marker = "\n\n  it('keys the tenants policy on its own id, not on a tenantId column', () => {"
+          start = source.find(start_marker)
+          if start < 0:
+              raise SystemExit('Refusing to patch: RLS lifecycle start marker not found.')
+          end = source.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('Refusing to patch: RLS lifecycle end marker not found.')
+          replacement = '''  it('recreates each current policy rather than assuming it is absent', () => {
             // Migration history is immutable. A policy that was originally created
             // bare can be repaired only by a later DROP + CREATE. Therefore the
             // contract is on the latest definition of each policy identity, not on
@@ -73,9 +66,7 @@ jobs:
               );
             }
           });'''
-          if old not in source:
-              raise SystemExit('Refusing to patch: expected RLS lifecycle contract was not found exactly.')
-          path.write_text(source.replace(old, new))
+          path.write_text(source[:start] + replacement + source[end:])
           PY
 
           mkdir -p packages/database/prisma/migrations/20260915203000_native_schema_integrity_fix
