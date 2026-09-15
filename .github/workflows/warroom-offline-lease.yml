@@ -1,0 +1,401 @@
+name: War Room Offline Lease
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: warroom-offline-lease
+  cancel-in-progress: true
+
+jobs:
+  implement-and-prove:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_offline_lease
+      DATABASE_URL: postgresql://korvi_offline_lease:korvi_offline_lease_ci@localhost:5432/korvi_offline_lease?schema=public
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_offline_lease:korvi_offline_lease_ci@localhost:5432/korvi_offline_lease?schema=public
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_offline_lease
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_offline_lease"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+
+      - name: Create restricted PostgreSQL application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_offline_lease
+            LOGIN PASSWORD 'korvi_offline_lease_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_offline_lease TO korvi_offline_lease;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_offline_lease;
+          SQL
+          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname='korvi_offline_lease'")"
+          test "$flags" = 'f|f|f|f|f|f'
+
+      - name: Apply exact migration history
+        run: bash scripts/prove-migration-state.sh
+
+      - name: Implement server-governed signed lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > apps/api/src/native-auth/offline-lease.ts <<'TS'
+          import { Buffer } from 'node:buffer';
+          import { createPrivateKey, sign } from 'node:crypto';
+          import { withTenant } from '@korvi/database';
+          import { newId as defaultNewId, tenantId as brandTenantId } from '@korvi/domain';
+          import type { NativeAuthService } from './service.js';
+          import type { PrismaClient } from '@korvi/database';
+          import type { AuditRepository, Permission, TenantScope } from '@korvi/domain';
+
+          const PKCS8_ED25519_SEED_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
+          const POS_ENTITLEMENT = 'pos.enabled';
+          const LEASE_VERSION = 1 as const;
+          const TOKEN_PREFIX = 'kol1';
+
+          export interface OfflineLeaseEntitlement {
+            readonly key: string;
+            readonly kind: string;
+            readonly flagValue: boolean | null;
+            readonly limitValue: string | null;
+          }
+
+          export interface OfflineLeaseClaims {
+            readonly version: 1;
+            readonly issuer: 'korvi-platform';
+            readonly leaseId: string;
+            readonly keyId: string;
+            readonly tenantId: string;
+            readonly branchId: string;
+            readonly terminalId: string;
+            readonly deviceEnrollmentId: string;
+            readonly devicePublicKeySha256: string;
+            readonly assignmentId: string;
+            readonly planKey: string;
+            readonly planRevision: number;
+            readonly entitlementRevision: string;
+            readonly entitlements: readonly OfflineLeaseEntitlement[];
+            readonly capabilities: readonly Permission[];
+            readonly issuedAt: string;
+            readonly notBefore: string;
+            readonly expiresAt: string;
+            readonly leaseRevision: 1;
+          }
+
+          export type OfflineLeaseIssueResult =
+            | { readonly outcome: 'success'; readonly lease: string; readonly claims: OfflineLeaseClaims }
+            | {
+                readonly outcome: 'failure';
+                readonly reason: 'unauthenticated' | 'commercial-inactive' | 'signing-unavailable';
+              };
+
+          export interface OfflineLeaseService {
+            issue(nativeToken: string): Promise<OfflineLeaseIssueResult>;
+          }
+
+          export interface OfflineLeaseServiceOptions {
+            readonly prisma: PrismaClient;
+            readonly native: NativeAuthService;
+            readonly audit: AuditRepository;
+            readonly signingSeedBase64Url: string;
+            readonly keyId: string;
+            readonly ttlSeconds: number;
+            readonly now?: () => Date;
+            readonly newId?: () => string;
+          }
+
+          function signerFromSeed(encoded: string) {
+            const seed = Buffer.from(encoded, 'base64url');
+            if (seed.length !== 32) throw new Error('Offline lease signing seed must decode to 32 bytes.');
+            return createPrivateKey({
+              key: Buffer.concat([PKCS8_ED25519_SEED_PREFIX, seed]),
+              format: 'der',
+              type: 'pkcs8',
+            });
+          }
+
+          function encodeLease(claims: OfflineLeaseClaims, privateKey: ReturnType<typeof createPrivateKey>): string {
+            const payload = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
+            const signature = sign(null, Buffer.from(`${TOKEN_PREFIX}.${payload}`, 'utf8'), privateKey).toString('base64url');
+            return `${TOKEN_PREFIX}.${payload}.${signature}`;
+          }
+
+          export function createOfflineLeaseService(options: OfflineLeaseServiceOptions): OfflineLeaseService {
+            const privateKey = signerFromSeed(options.signingSeedBase64Url);
+            if (privateKey.asymmetricKeyType !== 'ed25519') {
+              throw new Error('Offline lease signing authority must be Ed25519.');
+            }
+            const now = options.now ?? (() => new Date());
+            const newId = options.newId ?? defaultNewId;
+
+            return {
+              async issue(nativeToken): Promise<OfflineLeaseIssueResult> {
+                const authenticated = await options.native.authenticate(nativeToken);
+                if (authenticated.outcome === 'failure') {
+                  return { outcome: 'failure', reason: 'unauthenticated' };
+                }
+                const { principal, binding } = authenticated;
+                const scope: TenantScope = { tenantId: brandTenantId(principal.tenantId) };
+                const commercial = await withTenant(options.prisma, principal.tenantId, async (tx) =>
+                  tx.tenantCommercialAccount.findUnique({
+                    where: { tenantId: principal.tenantId },
+                    include: { currentAssignment: { include: { entitlements: true } } },
+                  }),
+                );
+                const assignment = commercial?.currentAssignment;
+                const posEnabled = assignment?.entitlements.some(
+                  (entry) => entry.entitlementKey === POS_ENTITLEMENT && entry.kind === 'flag' && entry.flagValue === true,
+                );
+                if (assignment === undefined || assignment.accountState !== 'active' || !posEnabled) {
+                  return { outcome: 'failure', reason: 'commercial-inactive' };
+                }
+
+                const issuedAt = now();
+                const expiresAt = new Date(issuedAt.getTime() + options.ttlSeconds * 1000);
+                const entitlements: OfflineLeaseEntitlement[] = assignment.entitlements
+                  .map((entry) => ({
+                    key: entry.entitlementKey,
+                    kind: entry.kind,
+                    flagValue: entry.flagValue,
+                    limitValue: entry.limitValue === null ? null : entry.limitValue.toString(),
+                  }))
+                  .sort((left, right) => left.key.localeCompare(right.key));
+                const capabilities = [...principal.permissions].sort();
+                const leaseId = newId();
+                const claims: OfflineLeaseClaims = {
+                  version: LEASE_VERSION,
+                  issuer: 'korvi-platform',
+                  leaseId,
+                  keyId: options.keyId,
+                  tenantId: principal.tenantId,
+                  branchId: binding.branchId,
+                  terminalId: binding.terminalId,
+                  deviceEnrollmentId: binding.deviceEnrollmentId,
+                  devicePublicKeySha256: binding.devicePublicKeySha256,
+                  assignmentId: assignment.id,
+                  planKey: assignment.planKey,
+                  planRevision: assignment.planRevision,
+                  entitlementRevision: `${assignment.id}:${assignment.planRevision}`,
+                  entitlements,
+                  capabilities,
+                  issuedAt: issuedAt.toISOString(),
+                  notBefore: issuedAt.toISOString(),
+                  expiresAt: expiresAt.toISOString(),
+                  leaseRevision: LEASE_VERSION,
+                };
+                const lease = encodeLease(claims, privateKey);
+                await options.audit.append(scope, {
+                  id: newId(),
+                  actorUserId: principal.userId,
+                  branchId: binding.branchId,
+                  terminalId: binding.terminalId,
+                  eventType: 'auth.native.offline-lease.issued',
+                  entityType: 'offline-lease',
+                  entityId: leaseId,
+                  metadata: {
+                    deviceEnrollmentId: binding.deviceEnrollmentId,
+                    assignmentId: assignment.id,
+                    planRevision: assignment.planRevision,
+                    keyId: options.keyId,
+                    expiresAt: expiresAt.toISOString(),
+                  },
+                  occurredAt: issuedAt.toISOString(),
+                });
+                return { outcome: 'success', lease, claims };
+              },
+            };
+          }
+          TS
+
+          python - <<'PY'
+          from pathlib import Path
+
+          config = Path('apps/api/src/config.ts')
+          text = config.read_text()
+          text = text.replace(
+              "  'METRICS_AUTH_TOKEN',\n] as const;",
+              "  'METRICS_AUTH_TOKEN',\n  'OFFLINE_LEASE_SIGNING_SEED_B64',\n] as const;",
+              1,
+          )
+          anchor = "    METRICS_AUTH_TOKEN: z.string().min(32).max(512).optional(),\n"
+          addition = anchor + '''\n    /** Ed25519 seed for server-signed installed-cashier offline authority. Never ships to clients. */\n    OFFLINE_LEASE_SIGNING_SEED_B64: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),\n    OFFLINE_LEASE_KEY_ID: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(),\n    OFFLINE_LEASE_TTL_HOURS: z.coerce.number().int().min(12).max(24 * 7).default(72),\n'''
+          if anchor not in text:
+              raise SystemExit('config schema anchor changed')
+          text = text.replace(anchor, addition, 1)
+          anchor = "    const platformActorRef = value.PLATFORM_ADMIN_ACTOR_REF;\n"
+          addition = anchor + "    const offlineSeed = value.OFFLINE_LEASE_SIGNING_SEED_B64;\n    const offlineKeyId = value.OFFLINE_LEASE_KEY_ID;\n"
+          if anchor not in text:
+              raise SystemExit('config refine anchor changed')
+          text = text.replace(anchor, addition, 1)
+          anchor = "    if (value.NODE_ENV === 'production' && (metricsAuthToken ?? '').trim() === '') {"
+          checks = '''    const offlineConfigured = [offlineSeed, offlineKeyId].filter((item) => item !== undefined).length;\n    if (offlineConfigured != 0 && offlineConfigured != 2) {\n      context.addIssue({\n        code: 'custom',\n        path: ['OFFLINE_LEASE_SIGNING_SEED_B64'],\n        message: 'OFFLINE_LEASE_SIGNING_SEED_B64 and OFFLINE_LEASE_KEY_ID must be configured together',\n      });\n    }\n    if (value.NODE_ENV === 'production' && offlineSeed === undefined) {\n      context.addIssue({\n        code: 'custom',\n        path: ['OFFLINE_LEASE_SIGNING_SEED_B64'],\n        message: 'is required in production; installed cashiers need bounded signed offline authority',\n      });\n    }\n    if (value.NODE_ENV === 'production' && offlineKeyId === undefined) {\n      context.addIssue({\n        code: 'custom',\n        path: ['OFFLINE_LEASE_KEY_ID'],\n        message: 'is required in production so offline signing authority can be rotated explicitly',\n      });\n    }\n\n'''
+          if anchor not in text:
+              raise SystemExit('config production anchor changed')
+          text = text.replace(anchor, checks + anchor, 1)
+          anchor = "  readonly METRICS_AUTH_TOKEN: string | undefined;\n"
+          addition = anchor + "  readonly OFFLINE_LEASE_SIGNING_SEED_B64?: string;\n  readonly OFFLINE_LEASE_KEY_ID?: string;\n  readonly OFFLINE_LEASE_TTL_SECONDS?: number;\n"
+          if anchor not in text:
+              raise SystemExit('ApiConfig anchor changed')
+          text = text.replace(anchor, addition, 1)
+          anchor = "    METRICS_AUTH_TOKEN: value.METRICS_AUTH_TOKEN,\n"
+          addition = anchor + "    OFFLINE_LEASE_SIGNING_SEED_B64: value.OFFLINE_LEASE_SIGNING_SEED_B64,\n    OFFLINE_LEASE_KEY_ID: value.OFFLINE_LEASE_KEY_ID,\n    OFFLINE_LEASE_TTL_SECONDS: value.OFFLINE_LEASE_TTL_HOURS * 3600,\n"
+          if anchor not in text:
+              raise SystemExit('loadConfig anchor changed')
+          text = text.replace(anchor, addition, 1)
+          config.write_text(text)
+
+          lazy = Path('apps/api/src/native-auth/lazy.ts')
+          text = lazy.read_text()
+          text = text.replace(
+              "import { createNativeAuthService } from './service.js';",
+              "import { createNativeAuthService } from './service.js';\nimport { createOfflineLeaseService } from './offline-lease.js';",
+              1,
+          )
+          text = text.replace(
+              "import type { NativeAuthService } from './service.js';",
+              "import type { NativeAuthService } from './service.js';\nimport type { OfflineLeaseService } from './offline-lease.js';",
+              1,
+          )
+          text += '''\n\nconst offlineServices = new WeakMap<ApiConfig, OfflineLeaseService>();\n\nexport function offlineLeaseServiceFor(config: ApiConfig): OfflineLeaseService | undefined {\n  const existing = offlineServices.get(config);\n  if (existing !== undefined) return existing;\n  const url = config.DATABASE_URL;\n  const seed = config.OFFLINE_LEASE_SIGNING_SEED_B64;\n  const keyId = config.OFFLINE_LEASE_KEY_ID;\n  if (url === undefined || seed === undefined || keyId === undefined) return undefined;\n  const native = nativeAuthServiceFor(config);\n  if (native === undefined) return undefined;\n  const prisma = createPrismaClient(url);\n  const service = createOfflineLeaseService({\n    prisma,\n    native,\n    audit: createAuditRepository(prisma),\n    signingSeedBase64Url: seed,\n    keyId,\n    ttlSeconds: config.OFFLINE_LEASE_TTL_SECONDS ?? 72 * 60 * 60,\n  });\n  offlineServices.set(config, service);\n  return service;\n}\n'''
+          lazy.write_text(text)
+
+          routes = Path('apps/api/src/routes/native-auth.ts')
+          text = routes.read_text()
+          text = text.replace(
+              "import type { NativeAuthService } from '../native-auth/service.js';",
+              "import type { NativeAuthService } from '../native-auth/service.js';\nimport type { OfflineLeaseService } from '../native-auth/offline-lease.js';",
+              1,
+          )
+          text = text.replace(
+              "  options: { readonly service: NativeAuthService },",
+              "  options: { readonly service: NativeAuthService; readonly offlineLease?: OfflineLeaseService },",
+              1,
+          )
+          anchor = "  app.post('/v1/native-auth/logout', async (request, reply) => {"
+          lease_route = '''  app.post('/v1/native-auth/offline-lease', async (request, reply) => {\n    const token = readNativeAuthorization(request.headers.authorization);\n    if (token === null) return reply.code(401).send(UNAUTHENTICATED);\n    if (options.offlineLease === undefined) {\n      return reply.code(503).send({ error: 'offline_lease_unavailable' });\n    }\n    const result = await options.offlineLease.issue(token);\n    if (result.outcome === 'failure') {\n      if (result.reason === 'unauthenticated') return reply.code(401).send(UNAUTHENTICATED);\n      if (result.reason === 'commercial-inactive') {\n        return reply.code(403).send({ error: 'offline_lease_refused' });\n      }\n      return reply.code(503).send({ error: 'offline_lease_unavailable' });\n    }\n    return reply.code(200).send({ lease: result.lease, claims: result.claims });\n  });\n\n'''
+          if anchor not in text:
+              raise SystemExit('native route anchor changed')
+          text = text.replace(anchor, lease_route + anchor, 1)
+          routes.write_text(text)
+
+          auth = Path('apps/api/src/routes/auth.ts')
+          text = auth.read_text()
+          text = text.replace(
+              "import { nativeAuthServiceFor } from '../native-auth/lazy.js';",
+              "import { nativeAuthServiceFor, offlineLeaseServiceFor } from '../native-auth/lazy.js';",
+              1,
+          )
+          old = "  const native = nativeAuthServiceFor(config);\n  if (native !== undefined) registerNativeAuthRoutes(app, { service: native });"
+          new = "  const native = nativeAuthServiceFor(config);\n  if (native !== undefined) {\n    registerNativeAuthRoutes(app, { service: native, offlineLease: offlineLeaseServiceFor(config) });\n  }"
+          if old not in text:
+              raise SystemExit('auth registration anchor changed')
+          auth.write_text(text.replace(old, new, 1))
+
+          test = Path('apps/api/src/__tests__/native-auth-e2e-live.test.ts')
+          text = test.read_text()
+          text = text.replace(
+              "import { createHash, generateKeyPairSync, sign } from 'node:crypto';",
+              "import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';",
+              1,
+          )
+          anchor = "const OWNER_PASSWORD = 'Native-Gate-Owner-Password-9!';\n"
+          addition = anchor + "const OFFLINE_LEASE_SEED = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';\nconst OFFLINE_LEASE_KEY_ID = 'native-gate-v1';\n"
+          if anchor not in text:
+              raise SystemExit('native test constants anchor changed')
+          text = text.replace(anchor, addition, 1)
+          anchor = "        SESSION_TTL_HOURS: '1',\n"
+          addition = anchor + "        OFFLINE_LEASE_SIGNING_SEED_B64: OFFLINE_LEASE_SEED,\n        OFFLINE_LEASE_KEY_ID,\n        OFFLINE_LEASE_TTL_HOURS: '72',\n"
+          if anchor not in text:
+              raise SystemExit('native test config anchor changed')
+          text = text.replace(anchor, addition, 1)
+          anchor = "    const nativeHeader = headers({ authorization: `KorviNative ${native.token}` });\n"
+          lease_assert = anchor + '''    const leaseResponse = await app.inject({\n      method: 'POST',\n      url: '/v1/native-auth/offline-lease',\n      headers: nativeHeader,\n    });\n    expect(leaseResponse.statusCode).toBe(200);\n    const leaseWire = leaseResponse.json<{ lease: string; claims: Record<string, unknown> }>();\n    const parts = leaseWire.lease.split('.');\n    expect(parts).toHaveLength(3);\n    expect(parts[0]).toBe('kol1');\n    const payload = parts[1] ?? '';\n    const signatureBytes = Buffer.from(parts[2] ?? '', 'base64url');\n    const seed = Buffer.from(OFFLINE_LEASE_SEED, 'base64url');\n    const leasePrivate = createPrivateKey({\n      key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]),\n      format: 'der',\n      type: 'pkcs8',\n    });\n    expect(verify(null, Buffer.from(`kol1.${payload}`, 'utf8'), createPublicKey(leasePrivate), signatureBytes)).toBe(true);\n    const leaseClaims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;\n    expect(leaseClaims).toMatchObject({\n      version: 1,\n      issuer: 'korvi-platform',\n      keyId: OFFLINE_LEASE_KEY_ID,\n      tenantId: tenantA.id,\n      branchId: tenantA.branchA,\n      terminalId: tenantA.terminalA,\n      deviceEnrollmentId: enrollmentA.id,\n      devicePublicKeySha256: keyA.publicKeySha256,\n      planKey: 'commercial',\n      planRevision: 1,\n      leaseRevision: 1,\n    });\n    expect(Date.parse(String(leaseClaims['expiresAt'])) - Date.parse(String(leaseClaims['issuedAt']))).toBe(72 * 60 * 60 * 1000);\n    expect(Array.isArray(leaseClaims['capabilities'])).toBe(true);\n    expect(JSON.stringify(leaseClaims)).toContain('pos.enabled');\n\n    const browserLease = await app.inject({\n      method: 'POST',\n      url: '/v1/native-auth/offline-lease',\n      headers: headers({ cookie: tenantA.merchantCookie }),\n    });\n    expectError(browserLease, 401, 'native_unauthenticated');\n\n'''
+          if anchor not in text:
+              raise SystemExit('native test lease anchor changed')
+          text = text.replace(anchor, lease_assert, 1)
+          test.write_text(text)
+
+          config_test = Path('apps/api/src/__tests__/config.test.ts')
+          text = config_test.read_text()
+          anchor = "  METRICS_AUTH_TOKEN: 'metrics-config-test-token-0000000000000000000000002',\n"
+          addition = anchor + "  OFFLINE_LEASE_SIGNING_SEED_B64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',\n  OFFLINE_LEASE_KEY_ID: 'config-test-v1',\n"
+          if anchor not in text:
+              raise SystemExit('config test anchor changed')
+          config_test.write_text(text.replace(anchor, addition, 1))
+
+          render = Path('render.yaml')
+          text = render.read_text()
+          anchor = "      - key: METRICS_AUTH_TOKEN\n        generateValue: true\n"
+          addition = anchor + "      - key: OFFLINE_LEASE_SIGNING_SEED_B64\n        sync: false\n      - key: OFFLINE_LEASE_KEY_ID\n        value: staging-v1\n      - key: OFFLINE_LEASE_TTL_HOURS\n        value: '72'\n"
+          if anchor not in text:
+              raise SystemExit('render env anchor changed')
+          render.write_text(text.replace(anchor, addition, 1))
+          PY
+
+      - name: Canonical formatting
+        run: npm exec prettier -- --write apps/api/src/native-auth/offline-lease.ts apps/api/src/native-auth/lazy.ts apps/api/src/routes/native-auth.ts apps/api/src/routes/auth.ts apps/api/src/config.ts apps/api/src/__tests__/native-auth-e2e-live.test.ts apps/api/src/__tests__/config.test.ts render.yaml
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build and typecheck
+        run: |
+          npm run build
+          npm run typecheck
+
+      - name: Config regression proof
+        run: npm test -- apps/api/src/__tests__/config.test.ts
+
+      - name: Restricted PostgreSQL Native + Offline Lease proof
+        run: npm test -- apps/api/src/__tests__/native-auth-e2e-live.test.ts
+
+      - name: Commit proven lease and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/warroom-offline-lease.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/src/native-auth/offline-lease.ts apps/api/src/native-auth/lazy.ts apps/api/src/routes/native-auth.ts apps/api/src/routes/auth.ts apps/api/src/config.ts apps/api/src/__tests__/native-auth-e2e-live.test.ts apps/api/src/__tests__/config.test.ts render.yaml
+          git commit -m 'feat(installed): issue bounded signed offline authority'
+          git push origin HEAD:strike/product-routing-p0
