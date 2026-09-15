@@ -152,13 +152,14 @@ describe('control navigation', () => {
     expect(markup).toContain('/control/zatca');
   });
 
-  it('marks built administration sections unauthorized without their permissions', () => {
+  it('hides administration sections that are not authorized', () => {
     const markup = renderToStaticMarkup(
       createElement(ControlNav, { active: 'home', permissions: [], onSelect: () => undefined }),
     );
-    const built = CONTROL_ENTRIES.filter((entry) => entry.section !== null);
-    expect(markup.match(/غير مصرح/g) ?? []).toHaveLength(built.length);
-    expect(markup).toContain('المبيعات');
+
+    expect(markup).not.toContain('المبيعات');
+    expect(markup).not.toContain('/control/sales');
+    expect(markup).not.toContain('غير مصرح');
   });
 
   it('keeps users.manage separate from settings.manage in navigation', () => {
@@ -170,10 +171,10 @@ describe('control navigation', () => {
       }),
     );
     expect(peopleOnly).toContain('الموظفون والصلاحيات');
-    const unauthorized = CONTROL_ENTRIES.filter(
-      (entry) => entry.section !== null && entry.permission !== 'users.manage',
-    );
-    expect(peopleOnly.match(/غير مصرح/g) ?? []).toHaveLength(unauthorized.length);
+    expect(peopleOnly).toContain('/control/staff');
+    expect(peopleOnly).not.toContain('الإعدادات');
+    expect(peopleOnly).not.toContain('/control/settings');
+    expect(peopleOnly).not.toContain('الرئيسية');
   });
 
   it('marks exactly one section as the open one', () => {
