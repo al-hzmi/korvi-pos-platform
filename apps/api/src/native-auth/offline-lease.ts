@@ -24,11 +24,14 @@ export interface OfflineLeaseClaims {
   readonly leaseId: string;
   readonly keyId: string;
   readonly tenantId: string;
+  readonly tenantSlug: string;
   readonly branchId: string;
   readonly terminalId: string;
   readonly deviceEnrollmentId: string;
   readonly devicePublicKeySha256: string;
   readonly userId: string;
+  readonly userEmail: string;
+  readonly userDisplayName: string;
   readonly sessionId: string;
   readonly roles: readonly string[];
   readonly maxDiscountBasisPoints: string;
@@ -157,11 +160,14 @@ export function createOfflineLeaseService(
         leaseId,
         keyId: options.keyId,
         tenantId: principal.tenantId,
+        tenantSlug: principal.tenantSlug,
         branchId: binding.branchId,
         terminalId: binding.terminalId,
         deviceEnrollmentId: binding.deviceEnrollmentId,
         devicePublicKeySha256: binding.devicePublicKeySha256,
         userId: principal.userId,
+        userEmail: principal.email,
+        userDisplayName: principal.displayName,
         sessionId: principal.sessionId,
         roles,
         maxDiscountBasisPoints: principal.maxDiscountBasisPoints.toString(),
