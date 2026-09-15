@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   refresh:
-    if: github.event.head_commit.message != 'chore(deps): bump autoprefixer to 10.6.1'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
