@@ -21,6 +21,10 @@
     "./zatca-merchant": {
       "types": "./dist/src/zatca/merchant-status.d.ts",
       "default": "./dist/src/zatca/merchant-status.js"
+    },
+    "./platform-operational-bootstrap": {
+      "types": "./dist/src/control-plane/operational-bootstrap.d.ts",
+      "default": "./dist/src/control-plane/operational-bootstrap.js"
     }
   },
   "files": [
