@@ -183,7 +183,10 @@ export function CartPanel({ lines, preview, locked, dispatch }: CartPanelProps):
       {lines.length === 0 ? (
         <div className="flex flex-1 items-center justify-center py-10 text-center">
           <div className="max-w-56">
-            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-muted/50 text-lg text-muted-foreground" aria-hidden="true">
+            <div
+              className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-muted/50 text-lg text-muted-foreground"
+              aria-hidden="true"
+            >
               +
             </div>
             <p className="text-sm font-medium text-foreground">السلة فارغة</p>
