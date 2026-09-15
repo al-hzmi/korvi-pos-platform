@@ -178,6 +178,21 @@ function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
 }
 
 /**
+ * Resolve the only terminal this principal may address. Browser sessions do
+ * not carry a terminal binding and keep the existing branch-scoped choice. An
+ * installed session is device-bound, so a client-supplied terminal id is only
+ * an assertion: it must equal the authenticated terminal exactly.
+ */
+export function authoritativeTerminalId(
+  principal: AuthenticatedPrincipal,
+  requestedTerminalId: string,
+): string | null {
+  const bound = principal.terminalId;
+  if (bound === undefined || bound === null) return requestedTerminalId;
+  return bound === requestedTerminalId ? bound : null;
+}
+
+/**
  * The two answers a till-addressed route may give before it does any work.
  *
  * `branch_required` is a configuration problem the merchant can fix.
@@ -213,7 +228,9 @@ async function ownBranchTerminal(
   principal: AuthenticatedPrincipal,
   terminalId: string,
 ): Promise<Terminal | null> {
-  const terminal = await terminals.findById(scopeOf(principal), terminalId);
+  const authoritative = authoritativeTerminalId(principal, terminalId);
+  if (authoritative === null) return null;
+  const terminal = await terminals.findById(scopeOf(principal), authoritative);
   if (terminal === null || !terminal.isActive) return null;
   return terminal.branchId === principal.branchId ? terminal : null;
 }
@@ -490,10 +507,13 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = checkoutBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.checkout.checkout({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
         ...(parsed.data.expectedShiftId === undefined
           ? {}
           : { expectedShiftId: parsed.data.expectedShiftId }),
@@ -652,10 +672,13 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = returnBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.returns.create({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
         saleId: parsed.data.saleId,
         ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
         lines: parsed.data.lines,
@@ -707,10 +730,13 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = manualMovementBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.drawer.recordMovement({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
         shiftId: parsed.data.shiftId,
         kind: parsed.data.kind,
         amountMinor: parsed.data.amountMinor,
@@ -757,10 +783,13 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = closeShiftBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.drawer.close({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
         shiftId: parsed.data.shiftId,
         declaredCashMinor: parsed.data.declaredCashMinor,
       });

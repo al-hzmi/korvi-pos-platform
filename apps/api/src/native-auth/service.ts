@@ -359,6 +359,7 @@ export function createNativeAuthService(options: NativeAuthServiceOptions): Nati
         permissions: authorization.permissions,
         maxDiscountBasisPoints: maxDiscountForRoles(authorization.roles),
         branchId: challenge.branchId,
+        terminalId: challenge.terminalId,
       };
       const binding: NativeSessionBinding = {
         deviceEnrollmentId: challenge.deviceEnrollmentId,
@@ -430,6 +431,7 @@ export function createNativeAuthService(options: NativeAuthServiceOptions): Nati
           permissions: authorization.permissions,
           maxDiscountBasisPoints: maxDiscountForRoles(authorization.roles),
           branchId: context.branchId,
+          terminalId: context.terminalId,
         },
         binding: {
           deviceEnrollmentId: context.deviceEnrollmentId,
