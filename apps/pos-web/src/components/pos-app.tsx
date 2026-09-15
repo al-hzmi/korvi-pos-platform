@@ -59,11 +59,7 @@ function Waiting({ label }: { readonly label: string }): JSX.Element {
   );
 }
 
-export function PosApp({
-  api,
-  onManagementLanding,
-  controlCentreHref,
-}: PosAppProps): JSX.Element {
+export function PosApp({ api, onManagementLanding, controlCentreHref }: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
 
