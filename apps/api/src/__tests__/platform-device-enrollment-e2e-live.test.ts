@@ -304,7 +304,7 @@ describe.skipIf(url === '')('Gate 13 device enrollment authority, live', () => {
       headers: headers(tenantA.merchantCookie),
       payload: payloadA,
     });
-    expectError(merchantRefusal, 401, 'unauthenticated');
+    expectError(merchantRefusal, 401, 'platform_unauthenticated');
 
     const actorInjection = await app.inject({
       method: 'POST',
