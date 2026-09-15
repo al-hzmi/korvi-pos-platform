@@ -65,7 +65,7 @@ interface ShiftOpened {
 }
 
 interface SaleCreated {
-  readonly sale: { readonly id: string; readonly branchId: string; readonly terminalId: string };
+  readonly sale: { readonly saleId: string; readonly branchId: string; readonly terminalId: string };
   readonly replayed: boolean;
 }
 
@@ -377,11 +377,11 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
       });
 
       const persistedSale = await tx.sale.findFirst({
-        where: { tenantId: tenant.id, id: sale.sale.id },
+        where: { tenantId: tenant.id, id: sale.sale.saleId },
         select: { id: true, branchId: true, terminalId: true },
       });
       expect(persistedSale).toEqual({
-        id: sale.sale.id,
+        id: sale.sale.saleId,
         branchId: operations.branch.id,
         terminalId: operations.terminal.id,
       });
