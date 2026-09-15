@@ -56,6 +56,22 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
   forbidden: { message: 'لا تملك صلاحية تنفيذ هذه العملية.', action: 'permission' },
   invalid_credentials: { message: 'بيانات الدخول غير صحيحة.', action: 'notice' },
   unavailable: { message: 'الخدمة غير متاحة حالياً. حاول بعد قليل.', action: 'retry-same' },
+  operation_in_progress: {
+    message: 'العملية نفسها ما زالت قيد الحسم. أعد التأكيد بنفس العملية دون تغيير البيانات.',
+    action: 'retry-same',
+  },
+  customer_phone_taken: {
+    message: 'رقم الجوال مستخدم لعميل آخر. راجع الرقم قبل الحفظ.',
+    action: 'notice',
+  },
+  customer_not_found: {
+    message: 'العميل لم يعد موجوداً أو غير متاح لهذه المنشأة.',
+    action: 'notice',
+  },
+  invalid_cursor: {
+    message: 'تعذّر متابعة صفحة العملاء من موضعها السابق. أعد تحميل القائمة.',
+    action: 'notice',
+  },
   branch_required: {
     message: 'لا يوجد فرع مرتبط بهذا المستخدم. راجع إعدادات المنشأة.',
     action: 'blocking',
@@ -92,6 +108,11 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
   'idempotency-conflict': {
     message:
       'هناك عملية سابقة بنفس المعرّف ومحتوى مختلف. لا تُعاد المحاولة تلقائياً — راجع آخر فاتورة قبل المتابعة.',
+    action: 'blocking',
+  },
+  idempotency_conflict: {
+    message:
+      'معرّف العملية استُخدم سابقاً ببيانات مختلفة. لا تغيّر بيانات عملية غير محسومة؛ راجع النتيجة أولاً.',
     action: 'blocking',
   },
   'tenant-misconfigured': { message: 'إعدادات المنشأة غير مكتملة.', action: 'blocking' },

@@ -1,0 +1,59 @@
+name: Cashier Formatting Preview
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - apps/pos-web/src/components/cart-panel.tsx
+      - apps/pos-web/src/components/checkout-panel.tsx
+      - apps/pos-web/src/components/product-panel.tsx
+      - apps/pos-web/src/components/sale-receipt.tsx
+      - apps/pos-web/src/components/top-bar.tsx
+      - .github/workflows/format-cashier-strike-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  format-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format cashier strike files
+        run: |
+          npx prettier --write \
+            apps/pos-web/src/components/cart-panel.tsx \
+            apps/pos-web/src/components/checkout-panel.tsx \
+            apps/pos-web/src/components/product-panel.tsx \
+            apps/pos-web/src/components/sale-receipt.tsx \
+            apps/pos-web/src/components/top-bar.tsx
+
+      - name: Prove formatting is clean
+        run: npm run format:check
+
+      - name: Upload formatted files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cashier-formatted-${{ github.sha }}
+          path: |
+            apps/pos-web/src/components/cart-panel.tsx
+            apps/pos-web/src/components/checkout-panel.tsx
+            apps/pos-web/src/components/product-panel.tsx
+            apps/pos-web/src/components/sale-receipt.tsx
+            apps/pos-web/src/components/top-bar.tsx
+          if-no-files-found: error
+          retention-days: 1

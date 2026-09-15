@@ -2,7 +2,7 @@ import { TENANT_LIFECYCLE_STATES, evaluateOnboardingReadiness } from '@korvi/dom
 import { Prisma } from '../../generated/client/client.js';
 import { withTenant } from '../tenant-context.js';
 import { oneOf, tenantParam } from '../repositories/mapping.js';
-import { viableAdministratorExists } from './viability.js';
+import { viableAdministratorExists, viablePosOperatorExists } from './viability.js';
 import type { OnboardingReadiness, TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 
@@ -12,6 +12,7 @@ interface ReadinessEvidenceRow {
   activeBranchPresent: boolean;
   activeTerminalPresent: boolean;
   viableAdministratorPresent: boolean;
+  viablePosOperatorPresent: boolean;
   activeProductPresent: boolean;
 }
 
@@ -57,6 +58,7 @@ export async function readTenantOnboardingReadiness(
         ) AS "activeTerminalPresent",
 
         ${viableAdministratorExists(Prisma.sql`t."id"`)} AS "viableAdministratorPresent",
+        ${viablePosOperatorExists(Prisma.sql`t."id"`)} AS "viablePosOperatorPresent",
 
         EXISTS (
           SELECT 1
@@ -78,6 +80,7 @@ export async function readTenantOnboardingReadiness(
       activeBranchPresent: row.activeBranchPresent,
       activeTerminalPresent: row.activeTerminalPresent,
       viableAdministratorPresent: row.viableAdministratorPresent,
+      viablePosOperatorPresent: row.viablePosOperatorPresent,
       activeProductPresent: row.activeProductPresent,
     });
   });
