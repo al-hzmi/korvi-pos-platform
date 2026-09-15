@@ -153,6 +153,97 @@ describe('platform routes', () => {
     expect(authorityInjection.json()).toEqual({ error: 'invalid_body' });
   });
 
+  it('keeps operational provisioning behind Platform authority and server-derived actor identity', async () => {
+    let calls = 0;
+    let seenActor: string | undefined;
+    let seenTenant: string | undefined;
+    let seenBranchCode: string | undefined;
+
+    const auth = createPlatformAuth(config());
+    app = Fastify({ logger: false });
+    registerPlatformRoutes(app, {
+      auth,
+      service: recordingService(),
+      operationalBootstrap: async (actor, tenantId, input) => {
+        calls += 1;
+        seenActor = actor.controlPlaneActorRef;
+        seenTenant = tenantId;
+        seenBranchCode = input.branch.code;
+        return {
+          branch: {
+            id: '018fb000-0000-7000-8000-0000000000b1',
+            code: input.branch.code,
+            nameAr: input.branch.nameAr,
+            nameEn: input.branch.nameEn ?? null,
+            isActive: true,
+          },
+          terminal: {
+            id: '018fb000-0000-7000-8000-0000000000c1',
+            branchId: '018fb000-0000-7000-8000-0000000000b1',
+            code: input.terminal.code,
+            label: input.terminal.label,
+            isActive: true,
+          },
+          replayed: false,
+        };
+      },
+    });
+    await app.ready();
+
+    const merchantRealmCookie = await app.inject({
+      method: 'POST',
+      url: `/v1/platform/tenants/${TENANT_ID}/operational-bootstrap`,
+      headers: { cookie: 'korvi_session=merchant-session' },
+      payload: {
+        operationId: 'op-platform-1',
+        branch: { code: 'BR-01', nameAr: 'الفرع الرئيسي', nameEn: null },
+        terminal: { code: 'POS-01', label: 'الكاشير الرئيسي' },
+      },
+    });
+    expect(merchantRealmCookie.statusCode).toBe(401);
+    expect(calls).toBe(0);
+
+    const principal = auth.authenticateAccessKey(ACCESS_KEY);
+    if (principal === null) throw new Error('test platform credential was rejected');
+    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+
+    const injectedAuthority = await app.inject({
+      method: 'POST',
+      url: `/v1/platform/tenants/${TENANT_ID}/operational-bootstrap`,
+      headers: { cookie },
+      payload: {
+        operationId: 'op-platform-1',
+        controlPlaneActorRef: 'platform:attacker',
+        branch: { code: 'BR-01', nameAr: 'الفرع الرئيسي', nameEn: null },
+        terminal: { code: 'POS-01', label: 'الكاشير الرئيسي' },
+      },
+    });
+    expect(injectedAuthority.statusCode).toBe(400);
+    expect(injectedAuthority.json()).toEqual({ error: 'invalid_body' });
+    expect(calls).toBe(0);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/v1/platform/tenants/${TENANT_ID}/operational-bootstrap`,
+      headers: { cookie },
+      payload: {
+        operationId: 'op-platform-1',
+        branch: { code: 'BR-01', nameAr: 'الفرع الرئيسي', nameEn: null },
+        terminal: { code: 'POS-01', label: 'الكاشير الرئيسي' },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      branch: { code: 'BR-01', isActive: true },
+      terminal: { code: 'POS-01', isActive: true },
+      replayed: false,
+    });
+    expect(calls).toBe(1);
+    expect(seenActor).toBe(ACTOR);
+    expect(seenTenant).toBe(TENANT_ID);
+    expect(seenBranchCode).toBe('BR-01');
+  });
+
   it('clears a malformed signed session instead of treating it as merchant auth', async () => {
     app = Fastify({ logger: false });
     registerPlatformRoutes(app, {
