@@ -5,8 +5,13 @@ import {
   TenantLifecycleRefusedError,
   TenantProvisioningError,
 } from '@korvi/database';
+import { PlatformOperationalBootstrapRefusedError } from '@korvi/database/platform-operational-bootstrap';
 import { CommercialEntitlementError, MAX_ENTITLEMENT_LIMIT } from '@korvi/domain';
 import { createLoginAdmissionController } from '../auth/login-admission.js';
+import {
+  issuePlatformOperationalBootstrap,
+  PlatformOperationalBootstrapUnavailableError,
+} from './operational-bootstrap-issuer.js';
 import {
   issuePlatformOwnerBootstrap,
   PlatformOwnerBootstrapUnavailableError,
@@ -24,6 +29,24 @@ const ownerBootstrapBody = z
     operationId: z.string().trim().min(1).max(160),
     email: z.string().trim().email().max(254),
     displayName: z.string().trim().min(1).max(160),
+  })
+  .strict();
+const operationalBootstrapBody = z
+  .object({
+    operationId: z.string().trim().min(1).max(160),
+    branch: z
+      .object({
+        code: z.string().trim().min(1).max(64),
+        nameAr: z.string().trim().min(1).max(200),
+        nameEn: z.string().trim().max(200).nullable().optional(),
+      })
+      .strict(),
+    terminal: z
+      .object({
+        code: z.string().trim().min(1).max(64),
+        label: z.string().trim().min(1).max(200),
+      })
+      .strict(),
   })
   .strict();
 const tenantListQuery = z
@@ -90,6 +113,7 @@ const loginAdmission = createLoginAdmissionController({
 export interface PlatformRouteOptions {
   readonly auth: PlatformAuth;
   readonly service: PlatformService;
+  readonly operationalBootstrap?: typeof issuePlatformOperationalBootstrap;
 }
 
 function subject(request: { platformAuth?: PlatformPrincipal }): PlatformPrincipal {
@@ -150,8 +174,20 @@ function handlePlatformError(reply: FastifyReply, error: unknown): FastifyReply 
       error.detail === 'unknown-tenant' ? 404 : error.detail === 'invalid-invitee' ? 422 : 409;
     return reply.code(status).send({ error: error.detail.replace(/-/g, '_') });
   }
+  if (error instanceof PlatformOperationalBootstrapRefusedError) {
+    const status =
+      error.detail === 'unknown-tenant'
+        ? 404
+        : error.detail === 'invalid-input'
+          ? 422
+          : 409;
+    return reply.code(status).send({ error: error.detail.replace(/-/g, '_') });
+  }
   if (error instanceof PlatformOwnerBootstrapUnavailableError) {
     return reply.code(503).send({ error: 'owner_bootstrap_unavailable' });
+  }
+  if (error instanceof PlatformOperationalBootstrapUnavailableError) {
+    return reply.code(503).send({ error: 'operational_bootstrap_unavailable' });
   }
   if (error instanceof CommercialEntitlementError || error instanceof RangeError) {
     return reply.code(422).send({ error: 'invalid_platform_request' });
@@ -172,6 +208,7 @@ async function safely(reply: FastifyReply, work: () => Promise<unknown>): Promis
 
 export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRouteOptions): void {
   const { auth, service } = options;
+  const operationalBootstrap = options.operationalBootstrap ?? issuePlatformOperationalBootstrap;
   const canReadTenants = [auth.requireSession, auth.requirePermission('platform.tenants.read')];
   const canManageTenants = [auth.requireSession, auth.requirePermission('platform.tenants.manage')];
   const canManageCommercial = [
@@ -357,6 +394,30 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
         reply.header('cache-control', 'no-store');
         reply.header('pragma', 'no-cache');
         return reply.code(result.created ? 201 : 200).send(result);
+      } catch (error) {
+        const handled = handlePlatformError(reply, error);
+        if (handled !== null) return handled;
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/v1/platform/tenants/:tenantId/operational-bootstrap',
+    { preHandler: canManageTenants },
+    async (request, reply) => {
+      const params = tenantParams.safeParse(request.params);
+      const body = operationalBootstrapBody.safeParse(request.body);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      try {
+        const result = await operationalBootstrap(
+          subject(request),
+          params.data.tenantId,
+          body.data,
+        );
+        return reply.code(result.replayed ? 200 : 201).send(result);
       } catch (error) {
         const handled = handlePlatformError(reply, error);
         if (handled !== null) return handled;
