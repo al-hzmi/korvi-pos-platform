@@ -7,6 +7,7 @@ on:
     paths:
       - apps/pos-web/src/components/cart-panel.tsx
       - apps/pos-web/src/components/checkout-panel.tsx
+      - apps/pos-web/src/components/pos-app.tsx
       - apps/pos-web/src/components/product-panel.tsx
       - apps/pos-web/src/components/sale-receipt.tsx
       - apps/pos-web/src/components/top-bar.tsx
@@ -38,6 +39,7 @@ jobs:
           npx prettier --write \
             apps/pos-web/src/components/cart-panel.tsx \
             apps/pos-web/src/components/checkout-panel.tsx \
+            apps/pos-web/src/components/pos-app.tsx \
             apps/pos-web/src/components/product-panel.tsx \
             apps/pos-web/src/components/sale-receipt.tsx \
             apps/pos-web/src/components/top-bar.tsx
@@ -52,6 +54,7 @@ jobs:
           path: |
             apps/pos-web/src/components/cart-panel.tsx
             apps/pos-web/src/components/checkout-panel.tsx
+            apps/pos-web/src/components/pos-app.tsx
             apps/pos-web/src/components/product-panel.tsx
             apps/pos-web/src/components/sale-receipt.tsx
             apps/pos-web/src/components/top-bar.tsx
