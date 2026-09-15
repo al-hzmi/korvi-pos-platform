@@ -2,6 +2,9 @@
 -- Historical migrations are immutable. This migration establishes the
 -- canonical tenant composite key name and makes the latest Native Auth
 -- RLS policy definitions explicitly recreatable.
+-- The legacy composite unique index is intentionally retained: existing
+-- foreign keys may already depend on that historical index identity, while
+-- this canonical key gives later tenant-consistent references a stable target.
 
 BEGIN;
 
