@@ -1,0 +1,62 @@
+name: Temporary Gate 12 Formatting
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - .github/workflows/tmp-format-gate12.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: strike/product-routing-p0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format only Gate 12 changes
+        run: >-
+          npx prettier --write
+          apps/api/src/__tests__/platform-provisioning-e2e-live.test.ts
+          packages/database/src/control-plane/operational-bootstrap.ts
+
+      - name: Prove only intended files changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | sort)"
+          expected=$'apps/api/src/__tests__/platform-provisioning-e2e-live.test.ts\npackages/database/src/control-plane/operational-bootstrap.ts'
+          if [ "$actual" != "$expected" ]; then
+            printf 'Unexpected formatting diff:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          npx prettier --check \
+            apps/api/src/__tests__/platform-provisioning-e2e-live.test.ts \
+            packages/database/src/control-plane/operational-bootstrap.ts
+
+      - name: Commit deterministic formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            apps/api/src/__tests__/platform-provisioning-e2e-live.test.ts \
+            packages/database/src/control-plane/operational-bootstrap.ts
+          git commit -m 'style: format Gate 12 provisioning changes'
+          git push origin HEAD:strike/product-routing-p0
