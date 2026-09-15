@@ -182,6 +182,7 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: ${{ env.RESTORE_URL }}
+          POSTGRES_ADMIN_URL: ${{ env.RESTORE_ADMIN_URL }}
         run: |
           set -euo pipefail
           expected_migrations="$(cat artifacts/expected-migration-count)"
@@ -200,14 +201,7 @@ jobs:
           echo "restored_rls_fingerprint=$restored_rls" | tee -a "$PROOF_LOG"
           echo "restored_policy_fingerprint=$restored_policies" | tee -a "$PROOF_LOG"
 
-          npm exec -w @korvi/database -- prisma migrate status 2>&1 | tee -a "$PROOF_LOG"
-          (
-            cd packages/database
-            npx --no-install prisma migrate diff \
-              --from-config-datasource \
-              --to-schema prisma/schema.prisma \
-              --exit-code
-          ) 2>&1 | tee -a "$PROOF_LOG"
+          bash scripts/prove-migration-state.sh 2>&1 | tee -a "$PROOF_LOG"
 
           node scripts/dr-sentinel.mjs verify artifacts/dr-sentinel.json 2>&1 | tee -a "$PROOF_LOG"
 
