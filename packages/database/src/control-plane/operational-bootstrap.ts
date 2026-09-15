@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   MerchantAdminError,
+  OWNER_BOOTSTRAP_ROLE_KEY,
   newId,
   normalizeAdminCode,
   normalizeAdminName,
@@ -22,7 +23,8 @@ import type { TransactionClient } from '../tenant-context.js';
  */
 export const PLATFORM_OPERATIONAL_BOOTSTRAP_SCOPE = 'platform-operational-bootstrap';
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type PlatformOperationalBootstrapRefusal =
   | 'unknown-tenant'
@@ -111,6 +113,10 @@ interface OperationalRow {
   branchNameAr: string;
   branchNameEn: string | null;
   branchActive: boolean;
+}
+
+interface OwnerCandidateRow {
+  userId: string;
 }
 
 function normalize(request: PlatformOperationalBootstrapRequest): NormalizedRequest {
@@ -234,13 +240,66 @@ async function appendAudit(
 }
 
 /**
+ * Bind the initial Owner to the first operational branch when that relationship
+ * is unambiguous.
+ *
+ * Owner bootstrap intentionally creates identity before a merchant has to have
+ * a branch. Cashier authority, however, is branch-pinned. Without this bridge a
+ * correctly bootstrapped Owner can authenticate but cannot discover a terminal
+ * or open the first shift because the session carries `branchId = null`.
+ *
+ * We never guess when multiple system Owners are present. The tenant row is
+ * already locked by the caller; the candidate membership is also locked before
+ * the update so this assignment participates in the same all-or-nothing
+ * transaction as branch/register provisioning.
+ */
+async function bindInitialOwnerToBranch(
+  tx: TransactionClient,
+  tenantId: string,
+  branchId: string,
+  at: Date,
+): Promise<string | null> {
+  const candidates = await tx.$queryRaw<OwnerCandidateRow[]>`
+    SELECT m."userId" AS "userId"
+      FROM "tenant_memberships" m
+      JOIN "user_roles" ur
+        ON ur."tenantId" = m."tenantId" AND ur."userId" = m."userId"
+      JOIN "roles" r
+        ON r."tenantId" = ur."tenantId" AND r."id" = ur."roleId"
+     WHERE m."tenantId" = ${tenantId}::uuid
+       AND m."status" = 'active'
+       AND m."defaultBranchId" IS NULL
+       AND r."key" = ${OWNER_BOOTSTRAP_ROLE_KEY}
+       AND r."isSystem" = true
+     ORDER BY m."userId"
+     LIMIT 2
+     FOR UPDATE OF m
+  `;
+
+  if (candidates.length !== 1) return null;
+  const owner = candidates[0];
+  if (owner === undefined) return null;
+
+  const changed = await tx.tenantMembership.updateMany({
+    where: {
+      tenantId,
+      userId: owner.userId,
+      status: 'active',
+      defaultBranchId: null,
+    },
+    data: { defaultBranchId: branchId, updatedAt: at },
+  });
+  return changed.count === 1 ? owner.userId : null;
+}
+
+/**
  * Atomically create the first operational branch/register pair for a tenant.
  *
  * The target tenant is selected only after Platform authentication at the API
  * boundary. Inside the database we enter that tenant's ordinary RLS context;
  * no bypass role or merchant-user impersonation is introduced. Branch and
- * terminal creation, audit evidence and the idempotency completion record all
- * commit or roll back together.
+ * terminal creation, initial-Owner branch binding, audit evidence and the
+ * idempotency completion record all commit or roll back together.
  */
 export async function provisionTenantOperations(
   prisma: PrismaClient,
@@ -317,6 +376,8 @@ export async function provisionTenantOperations(
       throw new PlatformOperationalBootstrapRefusedError('terminal-code-taken');
     }
 
+    const boundOwnerId = await bindInitialOwnerToBranch(tx, input.tenantId, branchId, at);
+
     await appendAudit(
       tx,
       input.tenantId,
@@ -339,6 +400,19 @@ export async function provisionTenantOperations(
       { code: input.terminal.code, branchId },
       at,
     );
+    if (boundOwnerId !== null) {
+      await appendAudit(
+        tx,
+        input.tenantId,
+        'platform.owner-default-branch-assigned',
+        'user',
+        boundOwnerId,
+        input.actorRef,
+        input.operationId,
+        { branchId },
+        at,
+      );
+    }
 
     await tx.$executeRaw`
       INSERT INTO "idempotency_keys"
