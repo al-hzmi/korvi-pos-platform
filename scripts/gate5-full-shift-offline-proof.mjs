@@ -7,7 +7,8 @@ const tenantSlug = process.env.KORVI_BROWSER_TENANT_SLUG ?? 'stage5d-browser-pro
 const ownerEmail = process.env.KORVI_BROWSER_OWNER_EMAIL ?? 'owner@stage5d-browser-proof.test';
 const password = process.env.KORVI_BROWSER_PASSWORD;
 const chromePort = process.env.KORVI_GATE5_CHROME_PORT ?? '9227';
-const artifactDirectory = process.env.KORVI_GATE5_ARTIFACT_DIR ?? 'artifacts/gate5-full-shift-offline';
+const artifactDirectory =
+  process.env.KORVI_GATE5_ARTIFACT_DIR ?? 'artifacts/gate5-full-shift-offline';
 const phase = process.argv[2] ?? '';
 const representativeSales = Number.parseInt(process.env.KORVI_GATE5_SALES ?? '150', 10);
 const targetStock = Number.parseInt(process.env.KORVI_GATE5_TARGET_STOCK ?? '200', 10);
@@ -16,7 +17,11 @@ const operationsPath = `${artifactDirectory}/operations.json`;
 if (password === undefined || password.length < 16) {
   throw new Error('KORVI_BROWSER_PASSWORD must contain at least 16 characters.');
 }
-if (!Number.isInteger(representativeSales) || representativeSales < 101 || representativeSales > 300) {
+if (
+  !Number.isInteger(representativeSales) ||
+  representativeSales < 101 ||
+  representativeSales > 300
+) {
   throw new Error('KORVI_GATE5_SALES must be an integer between 101 and 300.');
 }
 if (!Number.isInteger(targetStock) || targetStock <= representativeSales) {
@@ -393,7 +398,7 @@ async function killChrome() {
 
 async function navigateOffline(cdp) {
   await setNetwork(cdp, true);
-  await cdp.send('Page.navigate', { url: `${baseUrl}/` });
+  await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText(cdp, 'نقطة بيع كورفي', 30_000);
   await waitFor(cdp, 'navigator.onLine === false', 'offline navigator state');
 }
@@ -453,7 +458,7 @@ async function runQueuePhase() {
     },
   );
 
-  const cdp = await connectTarget(`${baseUrl}/`);
+  const cdp = await connectTarget(`${baseUrl}/cashier`);
   try {
     await waitFor(
       cdp,
@@ -506,7 +511,11 @@ async function runQueuePhase() {
       );
     }
 
-    assert.equal(new Set(operationIds).size, representativeSales, 'Operation IDs must remain unique.');
+    assert.equal(
+      new Set(operationIds).size,
+      representativeSales,
+      'Operation IDs must remain unique.',
+    );
     const orderedIds = [...operationIds].sort();
     assert.deepEqual(operationIds, orderedIds, 'UUIDv7 operation IDs must preserve capture order.');
 
@@ -610,7 +619,7 @@ async function runInterruptSyncPhase() {
   const cdp = await connectTarget('about:blank');
   try {
     await setNetwork(cdp, false, 300);
-    await cdp.send('Page.navigate', { url: `${baseUrl}/` });
+    await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
     await waitForText(cdp, 'ابحث أو امسح الباركود', 30_000);
     await waitFor(cdp, 'navigator.onLine === true', 'restored navigator state');
 
@@ -626,7 +635,10 @@ async function runInterruptSyncPhase() {
     const settledBeforeKill = rows.filter((row) => row.state === 'settled').length;
     const unfinishedBeforeKill = rows.filter((row) => row.state !== 'settled').length;
     assert.ok(settledBeforeKill >= 5, 'Sync did not make partial progress before interruption.');
-    assert.ok(unfinishedBeforeKill > 0, 'Sync finished before restart-during-sync could be proved.');
+    assert.ok(
+      unfinishedBeforeKill > 0,
+      'Sync finished before restart-during-sync could be proved.',
+    );
     await writeEvidence(
       'interrupted-sync-phase.txt',
       [
@@ -644,7 +656,7 @@ async function runInterruptSyncPhase() {
 
 async function runFinalizePhase() {
   const operations = await readOperations();
-  const cdp = await connectTarget(`${baseUrl}/`);
+  const cdp = await connectTarget(`${baseUrl}/cashier`);
   try {
     await waitForText(cdp, 'ابحث أو امسح الباركود', 30_000);
     const deadline = Date.now() + 180_000;
@@ -666,14 +678,24 @@ async function runFinalizePhase() {
     }
 
     assert.equal(rows.length, operations.representativeSales);
-    assert.ok(rows.every((row) => row.state === 'settled'), 'Every queued sale must settle after restart.');
+    assert.ok(
+      rows.every((row) => row.state === 'settled'),
+      'Every queued sale must settle after restart.',
+    );
     assert.ok(rows.every((row) => row.rejectionReason === null));
-    assert.deepEqual(rows.map((row) => row.id), operations.operationIds);
+    assert.deepEqual(
+      rows.map((row) => row.id),
+      operations.operationIds,
+    );
     assert.ok(rows.every((row) => row.attempts >= 1));
     await capture(cdp, '03-full-backlog-settled-after-second-restart');
 
     const drafts = await draftRows(cdp);
-    assert.equal(drafts.length, 1, 'Unsubmitted draft must not be discarded by queue synchronization.');
+    assert.equal(
+      drafts.length,
+      1,
+      'Unsubmitted draft must not be discarded by queue synchronization.',
+    );
 
     await writeEvidence(
       'proof.txt',
