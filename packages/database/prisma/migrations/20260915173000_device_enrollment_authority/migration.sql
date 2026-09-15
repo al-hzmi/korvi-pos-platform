@@ -165,6 +165,7 @@ CREATE TRIGGER "device_enrollment_identity_guard"
 ALTER TABLE "device_enrollments" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "device_enrollments" FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "device_enrollments_isolation" ON "device_enrollments";
 CREATE POLICY "device_enrollments_isolation" ON "device_enrollments"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
