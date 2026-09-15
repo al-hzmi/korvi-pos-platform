@@ -53,8 +53,7 @@ export interface PosAppProps {
    * render a till from local state.
    */
   readonly authorizeOfflineWorkspace?:
-    | ((snapshot: OfflineWorkspaceSnapshot) => Promise<boolean>)
-    | undefined;
+    ((snapshot: OfflineWorkspaceSnapshot) => Promise<boolean>) | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
