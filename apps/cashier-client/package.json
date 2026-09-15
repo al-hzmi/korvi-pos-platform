@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev:frontend": "vite --host 127.0.0.1 --port 1420",
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "tauri": "tauri"
