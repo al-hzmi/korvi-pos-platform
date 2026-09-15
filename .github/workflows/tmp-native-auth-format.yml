@@ -25,7 +25,7 @@ jobs:
         run: npm ci --registry=https://registry.npmjs.org
 
       - name: Apply proof correction
-        run: git apply .github/native-index-proof.patch
+        run: node .github/tmp-native-auth-transform.mjs
 
       - name: Canonical formatting
         run: npm exec prettier -- --write apps/api/src/__tests__/native-auth-e2e-live.test.ts
