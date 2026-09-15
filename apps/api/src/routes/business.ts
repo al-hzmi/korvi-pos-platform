@@ -346,12 +346,19 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       }
 
       const terminals = await deps.terminals.listForBranch(scope, principal.branchId);
+      // Browser sessions may choose among tills in their branch. Installed sessions
+      // are cryptographically pinned to one enrolled terminal, so discovery must not
+      // invite a choice the authority layer will refuse a moment later.
+      const visibleTerminals =
+        principal.terminalId === undefined || principal.terminalId === null
+          ? terminals
+          : terminals.filter((terminal) => terminal.id === principal.terminalId);
       // A deactivated till is not offered. Selecting one would only produce a
       // 404 from the shift route a moment later.
       return reply.code(200).send({
         branchId: principal.branchId,
         settings: { priceMode: settings.priceMode, currency: settings.currency },
-        terminals: terminals
+        terminals: visibleTerminals
           .filter((terminal) => terminal.isActive)
           .map((terminal) => ({
             id: terminal.id,
