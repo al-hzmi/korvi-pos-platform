@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, CardSurface } from '@korvi/ui';
 import { LoginScreen } from './login-screen';
 import { Screen } from './screen';
@@ -12,6 +13,7 @@ import { createApiClient } from '../lib/api';
 import { FOREIGN_SHIFT } from '../lib/shift';
 import { LOGOUT_UNCONFIRMED } from '../lib/session';
 import { readOfflineWorkspace, writeOfflineWorkspace } from '../lib/offline-workspace';
+import { prefersMerchantControl } from '../lib/merchant-landing';
 import { useSession } from '../hooks/use-session';
 import { useTerminal } from '../hooks/use-terminal';
 import { useShift } from '../hooks/use-shift';
@@ -32,6 +34,13 @@ import type { OfflineWorkspaceSnapshot } from '../lib/offline-workspace';
 export interface PosAppProps {
   /** Injected by tests. Production builds the real client against this origin. */
   readonly api?: ApiClient;
+  /**
+   * Root-entry behavior only. A management principal is routed to Merchant
+   * Control before terminal/shift loading begins. The explicit /cashier route
+   * leaves this false so an authorised owner or manager may deliberately use a
+   * till without being bounced back to Control.
+   */
+  readonly redirectManagementOnAuth?: boolean;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -46,13 +55,21 @@ function Waiting({ label }: { readonly label: string }): JSX.Element {
   );
 }
 
-export function PosApp({ api: injected }: PosAppProps = {}): JSX.Element {
+export function PosApp({
+  api: injected,
+  redirectManagementOnAuth = false,
+}: PosAppProps = {}): JSX.Element {
+  const router = useRouter();
   const api = useMemo(() => injected ?? createApiClient(), [injected]);
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
 
   const authenticated = session.state.kind === 'ready';
-  const terminal = useTerminal(api, authenticated, session.expire);
+  const managementLanding =
+    redirectManagementOnAuth &&
+    session.state.kind === 'ready' &&
+    prefersMerchantControl(session.state.principal);
+  const terminal = useTerminal(api, authenticated && !managementLanding, session.expire);
   const chosenTerminalId = terminal.state.kind === 'chosen' ? terminal.state.terminal.id : null;
   const cashierId = session.state.kind === 'ready' ? session.state.principal.user.id : '';
   const shift = useShift(api, chosenTerminalId, cashierId, session.expire);
@@ -60,6 +77,10 @@ export function PosApp({ api: injected }: PosAppProps = {}): JSX.Element {
   const signOut = useCallback(() => {
     session.signOut();
   }, [session]);
+
+  useEffect(() => {
+    if (managementLanding) router.replace('/control');
+  }, [managementLanding, router]);
 
   useEffect(() => {
     if (session.state.kind === 'unavailable') {
@@ -145,6 +166,8 @@ export function PosApp({ api: injected }: PosAppProps = {}): JSX.Element {
       <LoginScreen api={api} onAuthenticated={session.signedIn} notice={session.state.notice} />
     );
   }
+
+  if (managementLanding) return <Waiting label="جارٍ فتح لوحة إدارة المنشأة…" />;
 
   const principal = session.state.principal;
 
