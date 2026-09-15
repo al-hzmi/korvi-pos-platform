@@ -1,0 +1,44 @@
+name: War Room Native Auth Format Export
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+
+permissions:
+  contents: read
+
+jobs:
+  format-export:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format native auth files with repository Prettier
+        run: |
+          npx prettier --write \
+            apps/api/src/native-auth/lazy.ts \
+            apps/api/src/native-auth/service.ts \
+            packages/database/src/native-auth/device-session.ts
+          mkdir -p artifacts/native-format/apps/api/src/native-auth
+          mkdir -p artifacts/native-format/packages/database/src/native-auth
+          cp apps/api/src/native-auth/lazy.ts artifacts/native-format/apps/api/src/native-auth/lazy.ts
+          cp apps/api/src/native-auth/service.ts artifacts/native-format/apps/api/src/native-auth/service.ts
+          cp packages/database/src/native-auth/device-session.ts artifacts/native-format/packages/database/src/native-auth/device-session.ts
+
+      - name: Preserve canonical formatting
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-auth-prettier-${{ github.sha }}
+          path: artifacts/native-format
+          retention-days: 1
