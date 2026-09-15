@@ -1,6 +1,7 @@
 import { readCookie, buildClearedCookieHeader, sessionCookieName } from './cookie.js';
 import { checkOrigin } from './origin.js';
 import { readNativeAuthorization } from '../native-auth/header.js';
+import { nativeAuthServiceFor } from '../native-auth/lazy.js';
 import type { AuthService } from './service.js';
 import type { NativeAuthService, NativeSessionBinding } from '../native-auth/service.js';
 import type { ApiConfig } from '../config.js';
@@ -40,6 +41,8 @@ export function createGuards(
   config: ApiConfig,
   nativeService?: NativeAuthService,
 ): Guards {
+  const installed = nativeService ?? nativeAuthServiceFor(config);
+
   function clearCookie(reply: FastifyReply): void {
     reply.header('set-cookie', buildClearedCookieHeader(config.isProduction));
   }
@@ -67,11 +70,11 @@ export function createGuards(
     }
 
     const nativeToken = readNativeAuthorization(request.headers.authorization);
-    if (nativeToken === null || nativeService === undefined) {
+    if (nativeToken === null || installed === undefined) {
       await reply.code(401).send(UNAUTHENTICATED);
       return;
     }
-    const nativeResult = await nativeService.authenticate(nativeToken);
+    const nativeResult = await installed.authenticate(nativeToken);
     if (nativeResult.outcome === 'failure') {
       request.log.info({ reason: nativeResult.reason }, 'native session rejected');
       await reply.code(401).send(UNAUTHENTICATED);
