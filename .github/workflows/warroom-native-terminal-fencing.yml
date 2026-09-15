@@ -147,6 +147,9 @@ jobs:
       - name: Canonical formatting
         run: npx prettier --write apps/api/src/native-auth/service.ts apps/api/src/routes/business.ts apps/api/src/__tests__/native-terminal-fencing.test.ts
 
+      - name: Build trusted workspaces
+        run: npm run build
+
       - name: Targeted terminal fencing proof
         run: npm test -- apps/api/src/__tests__/native-terminal-fencing.test.ts apps/api/src/__tests__/business-routes.test.ts apps/api/src/__tests__/auth-routes.test.ts
 
