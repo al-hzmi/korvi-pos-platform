@@ -240,8 +240,11 @@ async function setNetwork(cdp, offline, latency = 0) {
     latency,
     downloadThroughput: offline ? 0 : -1,
     uploadThroughput: offline ? 0 : -1,
+    connectionType: offline ? 'none' : 'wifi',
   };
-  await cdp.send('Network.emulateNetworkConditions', conditions);
+  await cdp.send('Network.emulateNetworkConditionsByRule', {
+    matchedNetworkConditions: [{ urlPattern: '', ...conditions }],
+  });
   await cdp.send('Network.overrideNetworkState', conditions);
 }
 

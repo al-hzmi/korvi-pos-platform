@@ -1,10 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
-const proofUrl = new URL(
-  '../../../../scripts/gate5-full-shift-offline-proof.mjs',
-  import.meta.url,
-);
+const proofUrl = new URL('../../../../scripts/gate5-full-shift-offline-proof.mjs', import.meta.url);
 
 describe('Gate 5 Chrome outage proof contract', () => {
   it('separates request outage from navigator network state on current CDP', async () => {
