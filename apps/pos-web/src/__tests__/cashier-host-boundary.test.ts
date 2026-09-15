@@ -4,6 +4,7 @@ import { canOpenControlCentre } from '../lib/control-access';
 import { CONTROL_ENTRIES } from '../components/control/control-nav';
 
 const posAppUrl = new URL('../components/pos-app.tsx', import.meta.url);
+const webPosAppUrl = new URL('../components/web-pos-app.tsx', import.meta.url);
 const cashierScreenUrl = new URL('../components/cashier-screen.tsx', import.meta.url);
 const topBarUrl = new URL('../components/top-bar.tsx', import.meta.url);
 const merchantEntryUrl = new URL('../components/merchant-entry.tsx', import.meta.url);
@@ -15,7 +16,7 @@ async function source(url: URL): Promise<string> {
 }
 
 describe('installed cashier host boundary', () => {
-  it('keeps reusable cashier runtime free of Next routing and Control UI modules', async () => {
+  it('keeps reusable cashier runtime free of Next, Control UI and browser transport bindings', async () => {
     const [posApp, cashierScreen, topBar] = await Promise.all([
       source(posAppUrl),
       source(cashierScreenUrl),
@@ -24,21 +25,28 @@ describe('installed cashier host boundary', () => {
 
     expect(posApp).not.toContain("from 'next/");
     expect(posApp).not.toContain("'/control'");
+    expect(posApp).not.toContain('createApiClient');
+    expect(posApp).toContain('readonly api: ApiClient');
     expect(cashierScreen).not.toContain("'./control/");
     expect(topBar).not.toContain('href="/control"');
   });
 
-  it('leaves browser routing and the Control destination with the web host', async () => {
-    const [merchantEntry, rootPage, cashierPage] = await Promise.all([
+  it('leaves browser routing and browser API transport with the web host', async () => {
+    const [webPosApp, merchantEntry, rootPage, cashierPage] = await Promise.all([
+      source(webPosAppUrl),
       source(merchantEntryUrl),
       source(rootPageUrl),
       source(cashierPageUrl),
     ]);
 
+    expect(webPosApp).toContain('createApiClient');
+    expect(webPosApp).toContain('<PosApp');
     expect(merchantEntry).toContain("from 'next/navigation'");
     expect(merchantEntry).toContain("router.replace('/control')");
+    expect(merchantEntry).toContain('<WebPosApp');
     expect(merchantEntry).toContain('controlCentreHref="/control"');
     expect(rootPage).toContain('<MerchantEntry />');
+    expect(cashierPage).toContain('<WebPosApp');
     expect(cashierPage).toContain('controlCentreHref="/control"');
   });
 
