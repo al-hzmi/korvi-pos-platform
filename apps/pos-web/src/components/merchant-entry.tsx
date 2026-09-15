@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { PosApp } from './pos-app';
+import { WebPosApp } from './web-pos-app';
 import type { JSX } from 'react';
 
 /**
@@ -18,5 +18,5 @@ export function MerchantEntry(): JSX.Element {
     router.replace('/control');
   }, [router]);
 
-  return <PosApp onManagementLanding={openControl} controlCentreHref="/control" />;
+  return <WebPosApp onManagementLanding={openControl} controlCentreHref="/control" />;
 }
