@@ -234,18 +234,26 @@ async function capture(cdp, name) {
   });
 }
 
-async function setNetwork(cdp, offline, latency = 0) {
-  const conditions = {
+function networkConditions(offline, latency = 0) {
+  return {
     offline,
     latency,
     downloadThroughput: offline ? 0 : -1,
     uploadThroughput: offline ? 0 : -1,
     connectionType: offline ? 'none' : 'wifi',
   };
+}
+
+async function overrideNavigatorNetworkState(cdp, offline, latency = 0) {
+  await cdp.send('Network.overrideNetworkState', networkConditions(offline, latency));
+}
+
+async function setNetwork(cdp, offline, latency = 0) {
+  const conditions = networkConditions(offline, latency);
   await cdp.send('Network.emulateNetworkConditionsByRule', {
     matchedNetworkConditions: [{ urlPattern: '', ...conditions }],
   });
-  await cdp.send('Network.overrideNetworkState', conditions);
+  await overrideNavigatorNetworkState(cdp, offline, latency);
 }
 
 async function queueRows(cdp) {
@@ -403,9 +411,32 @@ async function killChrome() {
 
 async function navigateOffline(cdp) {
   await setNetwork(cdp, true);
+  const beforeNavigation = await evaluate(cdp, 'navigator.onLine');
+  assert.equal(
+    beforeNavigation,
+    false,
+    'CDP did not apply offline navigator state before navigation.',
+  );
+
   await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText(cdp, 'نقطة بيع كورفي', 30_000);
+
+  const afterNavigationBeforeReapply = await evaluate(cdp, 'navigator.onLine');
+  await overrideNavigatorNetworkState(cdp, true);
   await waitFor(cdp, 'navigator.onLine === false', 'offline navigator state');
+  const afterReapply = await evaluate(cdp, 'navigator.onLine');
+
+  await writeEvidence(
+    'network-lifecycle.txt',
+    [
+      `commit=${process.env.GITHUB_SHA ?? 'local'}`,
+      `before_navigation_online=${String(beforeNavigation)}`,
+      `after_navigation_before_reapply_online=${String(afterNavigationBeforeReapply)}`,
+      `after_reapply_online=${String(afterReapply)}`,
+      'request_outage_rule=ACTIVE',
+      'navigator_offline_assertion=PASS',
+    ].join('\n'),
+  );
 }
 
 async function addProofProduct(cdp) {
