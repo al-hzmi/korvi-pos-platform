@@ -43,6 +43,11 @@ jobs:
         working-directory: apps/cashier-client/src-tauri
         run: cargo generate-lockfile
 
+      - name: Build shared cashier dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
+
       - name: Format and verify frontend
         shell: bash
         run: |
