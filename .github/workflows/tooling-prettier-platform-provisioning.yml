@@ -9,40 +9,41 @@ permissions:
   contents: write
 
 jobs:
-  format-patch:
+  format-product-head:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 0
+      - name: Guard exact product HEAD
+        run: test "$(git rev-parse HEAD)" = "0b0f28c085b811694a0d60f41a5edfb15afc61ad"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: node scripts/verify-package-manager.mjs
       - run: npm ci --registry=https://registry.npmjs.org
-      - name: Format target files
+      - name: Format target files with repository Prettier
         run: |
           npx --no-install prettier --write \
             apps/api/src/platform/routes.ts \
             apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
             packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
             packages/database/src/control-plane/operational-bootstrap.ts
-      - name: Print canonical patch
+      - name: Verify formatting-only scope
         run: |
-          git diff --no-ext-diff --unified=3 --no-color -- \
+          expected="$(printf '%s\n' \
             apps/api/src/platform/routes.ts \
             apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
             packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
-            packages/database/src/control-plane/operational-bootstrap.ts
-      - name: Persist formatter output on tooling branch
+            packages/database/src/control-plane/operational-bootstrap.ts | sort)"
+          actual="$(git diff --name-only | sort)"
+          printf '%s\n' "$actual"
+          test "$actual" = "$expected"
+          git diff --check
+      - name: Commit formatting-only patch to product branch
         run: |
-          if git diff --quiet -- \
-            apps/api/src/platform/routes.ts \
-            apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
-            packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
-            packages/database/src/control-plane/operational-bootstrap.ts; then
-            echo "No formatting changes to persist."
-            exit 0
-          fi
           git config user.name "korvi-tooling"
           git config user.email "korvi-tooling@users.noreply.github.com"
           git add \
@@ -50,5 +51,5 @@ jobs:
             apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
             packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
             packages/database/src/control-plane/operational-bootstrap.ts
-          git commit -m "chore(tooling): persist canonical prettier output"
-          git push origin HEAD:tooling/prettier-platform-provisioning-20260915
+          git commit -m "style(platform): apply canonical prettier formatting"
+          git push origin HEAD:strike/product-routing-p0
