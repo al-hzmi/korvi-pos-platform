@@ -109,7 +109,11 @@ export function registerNativeAuthRoutes(
       }
       return reply.code(503).send({ error: 'offline_lease_unavailable' });
     }
-    return reply.code(200).send({ lease: result.lease, claims: result.claims });
+    return reply.code(200).send({
+      lease: result.lease,
+      claims: result.claims,
+      verificationKeySpki: result.verificationKeySpki,
+    });
   });
 
   app.post('/v1/native-auth/logout', async (request, reply) => {
