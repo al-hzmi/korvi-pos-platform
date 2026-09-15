@@ -1,0 +1,136 @@
+name: War Room Offline Lease Executor
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+
+permissions:
+  contents: write
+
+concurrency:
+  group: warroom-offline-lease-executor
+  cancel-in-progress: true
+
+jobs:
+  execute-and-prove:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_offline_lease_exec
+      DATABASE_URL: postgresql://korvi_offline_lease_exec:korvi_offline_lease_exec_ci@localhost:5432/korvi_offline_lease_exec?schema=public
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_offline_lease_exec:korvi_offline_lease_exec_ci@localhost:5432/korvi_offline_lease_exec?schema=public
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_offline_lease_exec
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_offline_lease_exec"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out authoritative branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+
+      - name: Create restricted PostgreSQL application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_offline_lease_exec
+            LOGIN PASSWORD 'korvi_offline_lease_exec_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_offline_lease_exec TO korvi_offline_lease_exec;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_offline_lease_exec;
+          SQL
+          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname='korvi_offline_lease_exec'")"
+          test "$flags" = 'f|f|f|f|f|f'
+
+      - name: Apply exact migration history
+        run: bash scripts/prove-migration-state.sh
+
+      - name: Execute corrected canonical lease generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/warroom-offline-lease.yml').read_text()
+          replacements = {
+              "  readonly OFFLINE_LEASE_SIGNING_SEED_B64?: string;":
+                  "  readonly OFFLINE_LEASE_SIGNING_SEED_B64: string | undefined;",
+              "  readonly OFFLINE_LEASE_KEY_ID?: string;":
+                  "  readonly OFFLINE_LEASE_KEY_ID: string | undefined;",
+              "  readonly OFFLINE_LEASE_TTL_SECONDS?: number;":
+                  "  readonly OFFLINE_LEASE_TTL_SECONDS: number;",
+              "registerNativeAuthRoutes(app, { service: native, offlineLease: offlineLeaseServiceFor(config) });":
+                  "const offlineLease = offlineLeaseServiceFor(config);\\n    registerNativeAuthRoutes(app, {\\n      service: native,\\n      ...(offlineLease === undefined ? {} : { offlineLease }),\\n    });",
+          }
+          for old, new in replacements.items():
+              if old not in source:
+                  raise SystemExit(f'lease generator repair anchor missing: {old}')
+              source = source.replace(old, new, 1)
+
+          marker = '      - name: Implement server-governed signed lease\n'
+          next_marker = '\n      - name: Canonical formatting\n'
+          start = source.index(marker)
+          run = source.index('        run: |\n', start) + len('        run: |\n')
+          end = source.index(next_marker, run)
+          body = textwrap.dedent(source[run:end])
+          Path('/tmp/korvi-offline-lease-implement.sh').write_text(body)
+          PY
+          bash /tmp/korvi-offline-lease-implement.sh
+
+      - name: Canonical formatting
+        run: npm exec prettier -- --write apps/api/src/native-auth/offline-lease.ts apps/api/src/native-auth/lazy.ts apps/api/src/routes/native-auth.ts apps/api/src/routes/auth.ts apps/api/src/config.ts apps/api/src/__tests__/native-auth-e2e-live.test.ts apps/api/src/__tests__/config.test.ts render.yaml
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build and typecheck
+        run: |
+          npm run build
+          npm run typecheck
+
+      - name: Config regression proof
+        run: npm test -- apps/api/src/__tests__/config.test.ts
+
+      - name: Restricted PostgreSQL Native + Offline Lease proof
+        run: npm test -- apps/api/src/__tests__/native-auth-e2e-live.test.ts
+
+      - name: Commit proven product changes only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/src/native-auth/offline-lease.ts apps/api/src/native-auth/lazy.ts apps/api/src/routes/native-auth.ts apps/api/src/routes/auth.ts apps/api/src/config.ts apps/api/src/__tests__/native-auth-e2e-live.test.ts apps/api/src/__tests__/config.test.ts render.yaml
+          git commit -m 'feat(installed): issue bounded signed offline authority'
+          git push origin HEAD:strike/product-routing-p0
