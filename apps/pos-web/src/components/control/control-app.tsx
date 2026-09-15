@@ -195,7 +195,7 @@ function Workspace({
             </span>
           ) : (
             <a
-              href="/"
+              href="/cashier"
               className="inline-flex h-touch items-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               نقطة البيع
@@ -218,7 +218,7 @@ function Workspace({
             <div className="flex flex-wrap justify-end gap-2">
               {firstAllowedSection === null ? (
                 <a
-                  href="/"
+                  href="/cashier"
                   className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
                   الانتقال إلى نقطة البيع
