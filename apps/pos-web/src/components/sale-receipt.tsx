@@ -35,11 +35,15 @@ export function SaleReceipt({ sale, replayed, onNewSale }: SaleReceiptProps): JS
               فاتورة <BidiIsolate>{sale.invoiceNumber}</BidiIsolate>
             </h2>
             <p className="text-xs text-muted-foreground">
-              الكاشير {sale.cashierName} · <BidiIsolate>{formatTimestamp(sale.issuedAt)}</BidiIsolate>
+              الكاشير {sale.cashierName} ·{' '}
+              <BidiIsolate>{formatTimestamp(sale.issuedAt)}</BidiIsolate>
             </p>
           </div>
           <span className="flex shrink-0 items-baseline gap-1 text-success">
-            <Numeric value={formatMinor(sale.totalMinor)} className="text-3xl font-bold tracking-tight" />
+            <Numeric
+              value={formatMinor(sale.totalMinor)}
+              className="text-3xl font-bold tracking-tight"
+            />
             <span className="text-xs font-semibold">ر.س</span>
           </span>
         </div>
@@ -56,7 +60,9 @@ export function SaleReceipt({ sale, replayed, onNewSale }: SaleReceiptProps): JS
               className="flex items-center justify-between gap-3 border-b border-border py-3 last:border-b-0"
             >
               <span className="flex min-w-0 flex-col gap-1">
-                <span className="truncate text-sm font-medium text-card-foreground">{line.nameAr}</span>
+                <span className="truncate text-sm font-medium text-card-foreground">
+                  {line.nameAr}
+                </span>
                 <span className="text-xs text-muted-foreground">
                   <Numeric value={formatScaled(line.quantityScaled)} />
                   {' × '}
@@ -75,26 +81,40 @@ export function SaleReceipt({ sale, replayed, onNewSale }: SaleReceiptProps): JS
       <dl className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3 text-sm">
         <div className="flex items-center justify-between text-muted-foreground">
           <dt>قبل الضريبة</dt>
-          <dd><Numeric value={formatMinor(sale.netMinor)} /></dd>
+          <dd>
+            <Numeric value={formatMinor(sale.netMinor)} />
+          </dd>
         </div>
         <div className="flex items-center justify-between text-muted-foreground">
           <dt>ضريبة القيمة المضافة</dt>
-          <dd><Numeric value={formatMinor(sale.vatMinor)} /></dd>
+          <dd>
+            <Numeric value={formatMinor(sale.vatMinor)} />
+          </dd>
         </div>
         <div className="flex items-center justify-between border-t border-border pt-2">
           <dt className="font-medium text-card-foreground">النقد المستلم</dt>
-          <dd><Numeric value={formatMinor(sale.cashReceivedMinor)} /></dd>
+          <dd>
+            <Numeric value={formatMinor(sale.cashReceivedMinor)} />
+          </dd>
         </div>
         <div className="flex items-baseline justify-between rounded-md bg-accent px-3 py-2.5">
           <dt className="font-semibold text-accent-foreground">الباقي للعميل</dt>
           <dd className="flex items-baseline gap-1">
-            <Numeric value={formatMinor(sale.changeMinor)} className="text-2xl font-bold text-accent-foreground" />
+            <Numeric
+              value={formatMinor(sale.changeMinor)}
+              className="text-2xl font-bold text-accent-foreground"
+            />
             <span className="text-[10px] font-medium text-accent-foreground">ر.س</span>
           </dd>
         </div>
       </dl>
 
-      <Button size="lg" className="h-touch-lg w-full text-base font-semibold shadow-sm" autoFocus onClick={onNewSale}>
+      <Button
+        size="lg"
+        className="h-touch-lg w-full text-base font-semibold shadow-sm"
+        autoFocus
+        onClick={onNewSale}
+      >
         عملية بيع جديدة
       </Button>
     </CardSurface>
