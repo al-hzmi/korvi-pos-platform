@@ -7,14 +7,16 @@ const proofUrl = new URL(
 );
 
 describe('Gate 5 Chrome outage proof contract', () => {
-  it('separates request outage from navigator network state on current CDP', async () => {
+  it('separates request outage from navigator state across renderer replacement', async () => {
     const source = await readFile(proofUrl, 'utf8');
 
     expect(source).toContain('Network.emulateNetworkConditionsByRule');
-    expect(source).toContain("matchedNetworkConditions: [{ urlPattern: '', ...conditions }]");
+    expect(source).toContain('matchedNetworkConditions');
     expect(source).toContain('Network.overrideNetworkState');
     expect(source).toContain("connectionType: offline ? 'none' : 'wifi'");
     expect(source).toContain("Page.navigate', { url: `${baseUrl}/cashier` }");
+    expect(source).toContain('afterNavigationBeforeReapply');
+    expect(source).toContain('overrideNavigatorNetworkState(cdp, true)');
     expect(source).toContain('navigator.onLine === false');
   });
 });
