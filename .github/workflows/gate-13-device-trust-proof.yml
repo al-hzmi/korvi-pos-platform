@@ -106,7 +106,7 @@ jobs:
           set -euo pipefail
           psql_url="${DATABASE_URL%%\?*}"
           table_ownership="$(psql "$psql_url" --no-psqlrc --tuples-only --no-align --command \
-            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname = 'public')"
+            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname = 'public'")"
           if [ "$table_ownership" != '1|korvi_gate13' ]; then
             echo "Expected restricted role to own every public table, got $table_ownership" >&2
             exit 1
