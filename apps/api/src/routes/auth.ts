@@ -6,6 +6,8 @@ import {
   sessionCookieName,
 } from '../auth/cookie.js';
 import { createLoginAdmissionController } from '../auth/login-admission.js';
+import { nativeAuthServiceFor } from '../native-auth/lazy.js';
+import { registerNativeAuthRoutes } from './native-auth.js';
 import type { LoginAdmissionController } from '../auth/login-admission.js';
 import type { Guards } from '../auth/guards.js';
 import type { AuthService } from '../auth/service.js';
@@ -14,12 +16,9 @@ import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { FastifyInstance } from 'fastify';
 
 /**
- * The authentication surface. Three routes, plus one convenience.
- *
- * Nothing here reads a tenant, a role or a permission from the request. The
- * only thing the client supplies is a slug, an address and a password on the
- * way in, and a cookie afterwards; everything else is read from the database
- * on the server (ADR-0012).
+ * The browser authentication surface. Native installed-cashier authentication
+ * is registered alongside it but has a separate token format, persistence
+ * table and route prefix.
  */
 
 const loginBody = z.object({
@@ -32,13 +31,6 @@ const loginBody = z.object({
 const INVALID_CREDENTIALS = { error: 'invalid_credentials' } as const;
 const TOO_MANY_REQUESTS = { error: 'too_many_requests' } as const;
 
-/**
- * What a client is allowed to know about itself.
- *
- * Built field by field rather than by spreading the principal: a spread picks
- * up whatever is added to the type later, and the next field added might be one
- * that should not cross the wire.
- */
 function safePrincipal(principal: AuthenticatedPrincipal): Record<string, unknown> {
   return {
     user: {
@@ -53,9 +45,6 @@ function safePrincipal(principal: AuthenticatedPrincipal): Record<string, unknow
     session: { id: principal.sessionId },
     roles: principal.roles,
     permissions: principal.permissions,
-    // A bigint cannot be JSON-serialised, and a number would lose precision at
-    // a scale this value will never reach — but the convention is the same
-    // everywhere in Korvi, so it crosses as a string (ADR-0002).
     maxDiscountBasisPoints: principal.maxDiscountBasisPoints.toString(),
     branchId: principal.branchId,
   };
@@ -83,10 +72,6 @@ function admissionController(config: ApiConfig): LoginAdmissionController {
     maxConcurrent === undefined &&
     maxTrackedIdentities === undefined;
 
-  // A few pre-admission live fixtures hand-build NODE_ENV=test config objects.
-  // They may use the controller's finite defaults, but no deployed environment
-  // may do so: loadConfig resolves every value and production fails closed even
-  // if a caller constructs ApiConfig manually instead of using that parser.
   if (allAbsent) {
     if (config.NODE_ENV !== 'test') {
       throw new Error('Login admission policy is required outside NODE_ENV=test.');
@@ -94,8 +79,6 @@ function admissionController(config: ApiConfig): LoginAdmissionController {
     return createLoginAdmissionController();
   }
 
-  // Never combine explicit operator intent with hidden defaults. A partial
-  // policy is an invalid deployment/test configuration, not a cue to guess.
   if (
     globalLimit === undefined ||
     identityLimit === undefined ||
@@ -117,22 +100,12 @@ function admissionController(config: ApiConfig): LoginAdmissionController {
 
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptions): void {
   const { service, guards, config } = options;
-  // One controller per server process. Creating it inside the handler would
-  // reset counters on every request and turn the protection into decoration.
   const loginAdmission = options.loginAdmission ?? admissionController(config);
 
   app.post('/v1/auth/login', async (request, reply) => {
     const parsed = loginBody.safeParse(request.body);
-    if (!parsed.success) {
-      // A malformed body never reaches tenant lookup or a KDF, so rejecting it
-      // immediately is both cheaper and reveals no account-existence fact.
-      return reply.code(401).send(INVALID_CREDENTIALS);
-    }
+    if (!parsed.success) return reply.code(401).send(INVALID_CREDENTIALS);
 
-    // Admission happens before tenant lookup and before every real/dummy scrypt
-    // verification. The identity key is canonical and hashed inside the
-    // controller; rotating identities is still bounded by the process-wide
-    // budget, and KDF work is never queued without bound.
     const permit = loginAdmission.admit(parsed.data.tenantSlug, parsed.data.email);
     if (!permit.allowed) {
       request.log.warn({ reason: permit.reason }, 'login admission refused');
@@ -160,9 +133,6 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
           maxAgeSeconds: config.SESSION_TTL_SECONDS,
         }),
       );
-      // The token is in the cookie and nowhere else. A copy in the body would be
-      // readable by any script on the page, which is the whole thing HttpOnly is
-      // there to prevent.
       return reply
         .code(200)
         .send({ ...safePrincipal(result.principal), expiresAt: result.expiresAt });
@@ -180,10 +150,6 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   app.post('/v1/auth/logout', async (request, reply) => {
     const raw = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
     if (raw !== null) await service.logout(raw);
-
-    // The cookie is cleared whether or not a session was found. A logout that
-    // reports "no such session" tells a caller their stolen token has already
-    // been revoked, and leaves the browser holding it either way.
     reply.header('set-cookie', buildClearedCookieHeader(config.isProduction));
     return reply.code(204).send();
   });
@@ -194,4 +160,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     reply.header('set-cookie', buildClearedCookieHeader(config.isProduction));
     return reply.code(200).send({ revoked });
   });
+
+  const native = nativeAuthServiceFor(config);
+  if (native !== undefined) registerNativeAuthRoutes(app, { service: native });
 }
