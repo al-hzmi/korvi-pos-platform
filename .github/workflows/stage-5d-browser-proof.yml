@@ -1,0 +1,235 @@
+name: Stage 5D Chrome Browser Proof
+
+on:
+  push:
+    branches:
+      - review/5d-browser-proof
+      - review/operations-50-production-readiness
+      - strike/5c-costing-authority
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  chrome-browser-proof:
+    name: Chrome / PostgreSQL 17 / Stage 5D control workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_stage5d_browser
+      DATABASE_URL: postgresql://korvi_browser:korvi_browser_ci@localhost:5432/korvi_stage5d_browser?schema=public
+      KORVI_BROWSER_TENANT_SLUG: stage5d-browser-proof
+      KORVI_BROWSER_OWNER_EMAIL: owner@stage5d-browser-proof.test
+      KORVI_BROWSER_BASE_URL: http://localhost:3000
+      KORVI_API_ORIGIN: http://localhost:3001
+      KORVI_BROWSER_ARTIFACT_DIR: artifacts/stage5d-browser
+      KORVI_CHROME_DEBUG_PORT: '9222'
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_stage5d_browser
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_stage5d_browser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Locate Chrome and record browser authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_BROWSER_ARTIFACT_DIR"
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No Chrome/Chromium binary exists on this runner.' >&2
+            exit 1
+          fi
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner_image=${ImageOS:-unknown}-${ImageVersion:-unknown}"
+            "$chrome" --version
+          } | tee "$KORVI_BROWSER_ARTIFACT_DIR/authority.txt"
+
+      - name: Create restricted application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_browser
+            LOGIN PASSWORD 'korvi_browser_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_stage5d_browser TO korvi_browser;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_browser;
+          SQL
+
+          role_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = 'korvi_browser'")"
+          if [ "$role_flags" != 'f|f|f|f|f|f' ]; then
+            echo "Browser application role has unsafe authority: $role_flags" >&2
+            exit 1
+          fi
+          echo "app_role_flags=$role_flags" | tee -a "$KORVI_BROWSER_ARTIFACT_DIR/authority.txt"
+
+      - name: Apply migrations and prove exact ledger/schema
+        shell: bash
+        run: bash scripts/prove-migration-state.sh
+
+      - name: Build browser proof runtime
+        run: |
+          npm run db:generate
+          npm run build
+
+      - name: Generate ephemeral synthetic credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -base64 36 | tr -d '\n')"
+          signing_key="$(openssl rand -base64 48 | tr -d '\n')"
+          echo "::add-mask::$password"
+          echo "::add-mask::$signing_key"
+          umask 077
+          {
+            printf 'export KORVI_BROWSER_PASSWORD=%q\n' "$password"
+            printf 'export BOOTSTRAP_SIGNING_KEY=%q\n' "$signing_key"
+          } > "$RUNNER_TEMP/stage5d-secrets.env"
+          echo 'Generated runtime-only synthetic browser credentials in a mode-0600 runner-temporary file.'
+
+      - name: Provision synthetic merchant through Korvi authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/stage5d-secrets.env"
+          node scripts/browser-stage5d-seed.mjs
+
+      - name: Start API, web, and headless Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/stage5d-secrets.env"
+          mkdir -p "$KORVI_BROWSER_ARTIFACT_DIR"
+
+          NODE_ENV=development \
+            API_PORT=3001 \
+            LOG_LEVEL=warn \
+            DATABASE_URL="$DATABASE_URL" \
+            BOOTSTRAP_SIGNING_KEY="$BOOTSTRAP_SIGNING_KEY" \
+            node apps/api/dist/index.js >"$KORVI_BROWSER_ARTIFACT_DIR/api.log" 2>&1 &
+          echo "$!" > "$KORVI_BROWSER_ARTIFACT_DIR/api.pid"
+
+          KORVI_API_ORIGIN="$KORVI_API_ORIGIN" \
+            npm run start -w @korvi/pos-web -- --hostname 127.0.0.1 --port 3000 \
+            >"$KORVI_BROWSER_ARTIFACT_DIR/web.log" 2>&1 &
+          echo "$!" > "$KORVI_BROWSER_ARTIFACT_DIR/web.pid"
+
+          "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_CHROME_DEBUG_PORT" \
+            --user-data-dir="$RUNNER_TEMP/korvi-stage5d-chrome" \
+            --window-size=1440,1200 \
+            about:blank >"$KORVI_BROWSER_ARTIFACT_DIR/chrome.log" 2>&1 &
+          echo "$!" > "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid"
+
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://localhost:3001/health >/dev/null && \
+               curl --fail --silent http://localhost:3000/control >/dev/null && \
+               curl --fail --silent "http://127.0.0.1:$KORVI_CHROME_DEBUG_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+
+          echo 'Browser proof runtime did not become ready.' >&2
+          cat "$KORVI_BROWSER_ARTIFACT_DIR/api.log" >&2 || true
+          cat "$KORVI_BROWSER_ARTIFACT_DIR/web.log" >&2 || true
+          cat "$KORVI_BROWSER_ARTIFACT_DIR/chrome.log" >&2 || true
+          exit 1
+
+      - name: Run actual Chrome Stage 5D workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/stage5d-secrets.env"
+          node scripts/browser-stage5d-proof.mjs
+
+      - name: Prove browser-created state under the restricted role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql_url="${DATABASE_URL%%\?*}"
+          table_ownership="$(psql "$psql_url" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname = 'public'")"
+          if [ "$table_ownership" != '1|korvi_browser' ]; then
+            echo "Expected restricted role to own every public table, got $table_ownership" >&2
+            exit 1
+          fi
+          echo "public_table_ownership=$table_ownership" | tee -a "$KORVI_BROWSER_ARTIFACT_DIR/authority.txt"
+          git diff --check
+
+      - name: Surface runtime logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          for log in api.log web.log chrome.log; do
+            echo "== $log =="
+            tail -n 200 "$KORVI_BROWSER_ARTIFACT_DIR/$log" 2>/dev/null || true
+          done
+
+      - name: Stop browser proof runtime and erase credentials
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for pid_file in \
+            "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid" \
+            "$KORVI_BROWSER_ARTIFACT_DIR/web.pid" \
+            "$KORVI_BROWSER_ARTIFACT_DIR/api.pid"; do
+            if [ -f "$pid_file" ]; then
+              kill "$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done
+          shred -u "$RUNNER_TEMP/stage5d-secrets.env" 2>/dev/null || rm -f "$RUNNER_TEMP/stage5d-secrets.env"
+
+      - name: Preserve sanitized browser proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: stage-5d-browser-proof-${{ github.sha }}
+          path: |
+            artifacts/stage5d-browser/authority.txt
+            artifacts/stage5d-browser/proof.txt
+            artifacts/stage5d-browser/*.png
+          if-no-files-found: error
+          retention-days: 14

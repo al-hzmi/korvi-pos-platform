@@ -6,9 +6,10 @@ import type { CartLineInput, PriceMode, PricedCart, ProductType } from '@korvi/d
 /**
  * The basket, as local intent.
  *
- * Nothing here is persisted and nothing here is authoritative. It is a record
- * of what the cashier has said they want to sell, kept only long enough to be
- * sent as product ids and quantities.
+ * The server remains authoritative for price, tax and stock. Gate 42 persists
+ * this intent locally so a browser restart does not erase what the cashier had
+ * already scanned; only product ids, quantities and display snapshots live in
+ * that durable draft.
  *
  * One line per product, always. The server refuses a duplicate product line —
  * two lines each pass a stock check their sum fails — so a second scan of the
@@ -34,6 +35,7 @@ export type CartAction =
   | { readonly type: 'set-quantity'; readonly productId: string; readonly quantityScaled: string }
   | { readonly type: 'step'; readonly productId: string; readonly direction: 1 | -1 }
   | { readonly type: 'remove'; readonly productId: string }
+  | { readonly type: 'replace'; readonly lines: readonly CartLine[] }
   | { readonly type: 'clear' };
 
 function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
@@ -84,6 +86,8 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
       });
     case 'remove':
       return lines.filter((line) => line.productId !== action.productId);
+    case 'replace':
+      return action.lines;
     case 'clear':
       return [];
   }
