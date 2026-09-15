@@ -37,8 +37,12 @@ impl NativeHttpState {
 }
 
 fn parse_build_origin(value: &str, variable: &str) -> Result<Url, String> {
-    let parsed = Url::parse(value).map_err(|_| format!("{variable} is not a valid absolute URL"))?;
-    let loopback = matches!(parsed.host_str(), Some("127.0.0.1") | Some("localhost") | Some("::1"));
+    let parsed =
+        Url::parse(value).map_err(|_| format!("{variable} is not a valid absolute URL"))?;
+    let loopback = matches!(
+        parsed.host_str(),
+        Some("127.0.0.1") | Some("localhost") | Some("::1")
+    );
     if parsed.scheme() != "https" && !(cfg!(debug_assertions) && loopback) {
         return Err(format!("{variable} must use HTTPS outside debug builds"));
     }
@@ -48,7 +52,9 @@ fn parse_build_origin(value: &str, variable: &str) -> Result<Url, String> {
         || parsed.fragment().is_some()
         || parsed.path() != "/"
     {
-        return Err(format!("{variable} must be an origin without credentials, path, query or fragment"));
+        return Err(format!(
+            "{variable} must be an origin without credentials, path, query or fragment"
+        ));
     }
     Ok(parsed)
 }
@@ -117,7 +123,10 @@ async fn http_request(
         return Err("native transport refused an API-origin escape".into());
     }
 
-    let mut builder = state.client.request(method.clone(), url).header(ACCEPT, "application/json");
+    let mut builder = state
+        .client
+        .request(method.clone(), url)
+        .header(ACCEPT, "application/json");
     if method != Method::GET {
         builder = builder.header(ORIGIN, &state.web_origin);
     }
@@ -143,7 +152,11 @@ async fn http_request(
     let status = response.status().as_u16();
     let mut headers = BTreeMap::new();
     for name in [CONTENT_TYPE, RETRY_AFTER] {
-        if let Some(value) = response.headers().get(&name).and_then(|value| value.to_str().ok()) {
+        if let Some(value) = response
+            .headers()
+            .get(&name)
+            .and_then(|value| value.to_str().ok())
+        {
             headers.insert(name.as_str().to_string(), value.to_string());
         }
     }
@@ -167,7 +180,8 @@ async fn http_request(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let state = NativeHttpState::new().expect("Korvi Cashier native origin configuration is invalid");
+    let state =
+        NativeHttpState::new().expect("Korvi Cashier native origin configuration is invalid");
     tauri::Builder::default()
         .manage(state)
         .invoke_handler(tauri::generate_handler![http_request])
