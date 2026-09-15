@@ -9,11 +9,11 @@ async function workerSource(): Promise<string> {
 }
 
 describe('Gate 41 service worker contract', () => {
-  it('is valid JavaScript and bounds interception to the cashier shell plus immutable assets', async () => {
+  it('is valid JavaScript and bounds interception to the dedicated cashier shell plus immutable assets', async () => {
     const source = await workerSource();
 
     expect(() => new Script(source, { filename: 'sw.js' })).not.toThrow();
-    expect(source).toContain("const SHELL_PATH = '/';");
+    expect(source).toContain("const SHELL_PATH = '/cashier';");
     expect(source).toContain("const STATIC_PREFIXES = ['/_next/static/', '/brand/'];");
     expect(source).toContain("request.mode !== 'navigate'");
     expect(source).toContain("event.request.method !== 'GET'");
