@@ -10,9 +10,9 @@ export type { ControlSection } from '../../lib/control-routes';
 /**
  * The shape of Korvi, stated once.
  *
- * Built merchant sections own real URLs. Entries without an implemented
- * product surface stay explicitly unavailable until their backend and UI
- * authority are complete; they are never represented as finished.
+ * Navigation is a working set, not a permissions report: sections that the
+ * current server-backed principal cannot open stay out of the primary nav.
+ * A direct URL still resolves through the permission boundary in ControlApp.
  */
 export interface ControlEntry {
   readonly key: string;
@@ -81,67 +81,54 @@ export function ControlNav({
   permissions = [],
   locked = false,
 }: ControlNavProps): JSX.Element {
+  const authorizedEntries = CONTROL_ENTRIES.filter(
+    (entry): entry is ControlEntry & { readonly section: ControlSection } =>
+      entry.section !== null &&
+      entry.permission !== undefined &&
+      permissions.includes(entry.permission),
+  );
+
   return (
     <nav
       aria-label="أقسام لوحة التحكم"
-      className="flex gap-1 overflow-x-auto overscroll-x-contain lg:flex-col lg:overflow-visible"
+      className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
     >
-      {CONTROL_ENTRIES.map((entry) => {
-        const built = entry.section !== null;
-        const authorized =
-          built && entry.permission !== undefined && permissions.includes(entry.permission);
-        const navigationLocked = locked && authorized;
-        const badge = !built
-          ? 'غير مكتمل'
-          : !authorized
-            ? 'غير مصرح'
-            : navigationLocked && entry.section !== active
-              ? 'عملية معلقة'
-              : null;
+      {authorizedEntries.map((entry) => {
+        const navigationLocked = locked && entry.section !== active;
+        const isActive = entry.section === active;
         const className = cn(
-          'h-touch shrink-0 items-center justify-between gap-2 rounded-md px-3 text-sm transition-colors lg:w-full',
+          'flex h-touch shrink-0 items-center justify-between gap-3 rounded-lg px-3.5 text-sm font-medium transition-colors lg:w-full',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-          authorized ? 'flex' : 'hidden lg:flex',
-          authorized && !navigationLocked
-            ? 'text-foreground hover:bg-accent'
-            : 'cursor-not-allowed text-muted-foreground',
-          authorized && entry.section === active
-            ? 'bg-accent font-semibold text-accent-foreground'
-            : '',
-        );
-        const content = (
-          <>
-            <span>{entry.label}</span>
-            {badge === null ? null : (
-              <span className="hidden rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground lg:inline-flex">
-                {badge}
-              </span>
-            )}
-          </>
+          navigationLocked
+            ? 'cursor-not-allowed text-muted-foreground'
+            : isActive
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-foreground hover:bg-accent hover:text-accent-foreground',
         );
 
-        if (authorized && !navigationLocked && entry.section !== null) {
+        if (!navigationLocked) {
           return (
             <a
               key={entry.key}
               href={controlSectionHref(entry.section)}
-              aria-current={entry.section === active ? 'page' : undefined}
+              aria-current={isActive ? 'page' : undefined}
               className={className}
             >
-              {content}
+              <span>{entry.label}</span>
+              {isActive ? (
+                <span className="size-1.5 rounded-full bg-primary-foreground/80" aria-hidden="true" />
+              ) : null}
             </a>
           );
         }
 
         return (
-          <span
-            key={entry.key}
-            aria-current={authorized && entry.section === active ? 'page' : undefined}
-            aria-disabled="true"
-            className={className}
-          >
-            {content}
+          <span key={entry.key} aria-disabled="true" className={className}>
+            <span>{entry.label}</span>
+            <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              عملية معلقة
+            </span>
           </span>
         );
       })}
