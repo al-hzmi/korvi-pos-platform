@@ -25,6 +25,10 @@
     "./platform-operational-bootstrap": {
       "types": "./dist/src/control-plane/operational-bootstrap.d.ts",
       "default": "./dist/src/control-plane/operational-bootstrap.js"
+    },
+    "./device-enrollment": {
+      "types": "./dist/src/control-plane/device-enrollment.d.ts",
+      "default": "./dist/src/control-plane/device-enrollment.js"
     }
   },
   "files": [
