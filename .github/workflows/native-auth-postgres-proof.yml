@@ -1,0 +1,125 @@
+name: Native Auth PostgreSQL Proof
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+  pull_request:
+    branches:
+      - strike/product-routing-p0
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-auth-proof:
+    name: Native authentication / PostgreSQL 17
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_native_auth
+      DATABASE_URL: postgresql://korvi_native_auth:korvi_native_auth_ci@localhost:5432/korvi_native_auth?schema=public
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_native_auth:korvi_native_auth_ci@localhost:5432/korvi_native_auth?schema=public
+      KORVI_NATIVE_AUTH_ARTIFACT_DIR: artifacts/native-auth-postgres
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_native_auth
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_native_auth"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out exact SHA
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Create restricted application role
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_NATIVE_AUTH_ARTIFACT_DIR"
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_native_auth
+            LOGIN PASSWORD 'korvi_native_auth_ci'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE korvi_native_auth TO korvi_native_auth;
+          GRANT USAGE, CREATE ON SCHEMA public TO korvi_native_auth;
+          SQL
+
+          role_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = 'korvi_native_auth'")"
+          if [ "$role_flags" != 'f|f|f|f|f|f' ]; then
+            echo "Native Auth gate role has unsafe authority: $role_flags" >&2
+            exit 1
+          fi
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "app_role_flags=$role_flags"
+            echo "postgres=17"
+          } | tee "$KORVI_NATIVE_AUTH_ARTIFACT_DIR/authority.txt"
+
+      - name: Apply migrations and prove exact ledger/checksums/drift
+        run: bash scripts/prove-migration-state.sh
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build trusted workspaces
+        run: npm run build
+
+      - name: Run Native Auth connected proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test -- apps/api/src/__tests__/native-auth-e2e-live.test.ts \
+            2>&1 | tee "$KORVI_NATIVE_AUTH_ARTIFACT_DIR/proof.txt"
+
+      - name: Prove restricted-role ownership and clean tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql_url="${DATABASE_URL%%\?*}"
+          table_ownership="$(psql "$psql_url" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner) FROM pg_tables WHERE schemaname = 'public'")"
+          if [ "$table_ownership" != '1|korvi_native_auth' ]; then
+            echo "Expected restricted role to own every public table, got $table_ownership" >&2
+            exit 1
+          fi
+          echo "public_table_ownership=$table_ownership" | tee -a "$KORVI_NATIVE_AUTH_ARTIFACT_DIR/authority.txt"
+          git diff --check
+
+      - name: Preserve Native Auth evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-auth-postgres-proof-${{ github.sha }}
+          path: |
+            artifacts/native-auth-postgres/authority.txt
+            artifacts/native-auth-postgres/proof.txt
+          if-no-files-found: error
+          retention-days: 14
