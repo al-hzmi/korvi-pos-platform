@@ -7,8 +7,10 @@ describe('Gate 5 Chrome outage proof contract', () => {
   it('separates request outage from navigator network state on current CDP', async () => {
     const source = await readFile(proofUrl, 'utf8');
 
-    expect(source).toContain("cdp.send('Network.emulateNetworkConditions', conditions)");
-    expect(source).toContain("cdp.send('Network.overrideNetworkState', conditions)");
+    expect(source).toContain("Network.emulateNetworkConditionsByRule");
+    expect(source).toContain("matchedNetworkConditions: [{ urlPattern: '', ...conditions }]");
+    expect(source).toContain("Network.overrideNetworkState");
+    expect(source).toContain("connectionType: offline ? 'none' : 'wifi'");
     expect(source).toContain("Page.navigate', { url: `${baseUrl}/cashier` }");
     expect(source).toContain('navigator.onLine === false');
   });
