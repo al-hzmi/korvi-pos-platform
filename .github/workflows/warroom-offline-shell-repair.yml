@@ -57,21 +57,8 @@ jobs:
                   raise SystemExit(f'Missing expected Gate 41 proof fragment: {old}')
               text = text.replace(old, new)
           proof.write_text(text)
-
-          workflow = Path('.github/workflows/gate-41-offline-shell-proof.yml')
-          text = workflow.read_text()
-          old = "    branches:\n      - review/offline-41-service-worker\n"
-          new = "    branches:\n      - review/offline-41-service-worker\n      - warroom/offline-full-shift\n      - strike/product-routing-p0\n"
-          if text.count(old) != 1:
-              raise SystemExit('Expected Gate 41 push branch block once')
-          text = text.replace(old, new)
-          old = 'curl --fail --silent http://127.0.0.1:3000/ >/dev/null'
-          new = 'curl --fail --silent http://127.0.0.1:3000/cashier >/dev/null'
-          if text.count(old) != 1:
-              raise SystemExit('Expected Gate 41 readiness root exactly once')
-          workflow.write_text(text.replace(old, new))
           PY
-          npm exec prettier -- --write scripts/browser-offline-shell-proof.mjs .github/workflows/gate-41-offline-shell-proof.yml
+          npm exec prettier -- --write scripts/browser-offline-shell-proof.mjs
           git diff --check
           grep -Fq "const SHELL_PATH = '/cashier';" apps/pos-web/public/sw.js
           if grep -Fq "const SHELL_PATH = '/';" apps/pos-web/public/sw.js; then
@@ -79,14 +66,13 @@ jobs:
             exit 1
           fi
 
-      - name: Commit cashier-only shell repair
+      - name: Commit cashier-only product and browser-proof repair
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/warroom-offline-shell-repair.yml
           git config user.name 'korvi-release-integrator'
           git config user.email 'actions@users.noreply.github.com'
-          git add apps/pos-web/public/sw.js scripts/browser-offline-shell-proof.mjs .github/workflows/gate-41-offline-shell-proof.yml .github/workflows/warroom-offline-shell-repair.yml
+          git add apps/pos-web/public/sw.js scripts/browser-offline-shell-proof.mjs
           git diff --cached --check
           git commit -m 'fix(offline): cache dedicated cashier shell'
           git push origin HEAD:warroom/offline-full-shift
