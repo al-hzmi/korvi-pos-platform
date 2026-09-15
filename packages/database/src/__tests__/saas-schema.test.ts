@@ -205,20 +205,28 @@ describe('row-level security', () => {
     }
   });
 
-  it('recreates each policy rather than assuming it is absent', () => {
-    // Phase 0 already created policies on tenants and products, and
-    // PostgreSQL has no CREATE POLICY ... IF NOT EXISTS, so a bare CREATE
-    // would abort this migration on any database that has run Phase 0.
-    // Phase 0 wrote the first policies onto an empty database and had
-    // nothing to drop. Every migration after it does.
+  it('recreates each current policy rather than assuming it is absent', () => {
+    // Migration history is immutable. A policy that was originally created
+    // bare can be repaired only by a later DROP + CREATE. Therefore the
+    // contract is on the latest definition of each policy identity, not on
+    // rewriting every historical CREATE statement.
     const created = [...afterBaseline.matchAll(/\nCREATE POLICY "(\w+)" ON "(\w+)"/g)];
-    const pairs = [
-      ...afterBaseline.matchAll(
-        /DROP POLICY IF EXISTS "(\w+)" ON "(\w+)";\nCREATE POLICY "\1" ON "\2"/g,
-      ),
-    ];
-    expect(created.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
-    expect(pairs.length).toBe(created.length);
+    const latest = new Map<string, RegExpMatchArray>();
+    for (const match of created) {
+      latest.set(`${match[1] ?? ''}\u0000${match[2] ?? ''}`, match);
+    }
+
+    expect(latest.size).toBeGreaterThanOrEqual(tenantOwnedTables.length);
+    for (const match of latest.values()) {
+      const name = match[1] ?? '';
+      const table = match[2] ?? '';
+      const index = match.index ?? -1;
+      expect(index, `${name} on ${table}`).toBeGreaterThanOrEqual(0);
+      const beforeCreate = afterBaseline.slice(0, index).trimEnd();
+      expect(beforeCreate, `${name} on ${table}`).toMatch(
+        new RegExp(`DROP POLICY IF EXISTS "${name}" ON "${table}";$`),
+      );
+    }
   });
 
   it('keys the tenants policy on its own id, not on a tenantId column', () => {
