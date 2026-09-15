@@ -264,7 +264,8 @@ export function PosApp({
     return (
       <ShiftGate
         terminal={chosen}
-        opening={shift.opening}
+        busy={shift.opening}
+        failure={shift.openFailure}
         onOpen={shift.open}
         onChangeTerminal={terminal.change}
         onSignOut={signOut}
