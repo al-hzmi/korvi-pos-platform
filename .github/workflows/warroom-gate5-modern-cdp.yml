@@ -1,0 +1,87 @@
+name: War Room Gate 5 Modern CDP
+
+on:
+  push:
+    branches:
+      - warroom/offline-full-shift
+    paths:
+      - .github/workflows/warroom-gate5-modern-cdp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  modernize-proof:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Gate 5 lane
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: warroom/offline-full-shift
+          fetch-depth: 1
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Replace deprecated CDP outage emulation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/gate5-full-shift-offline-proof.mjs')
+          source = path.read_text()
+          old = """async function setNetwork(cdp, offline, latency = 0) {
+            const conditions = {
+              offline,
+              latency,
+              downloadThroughput: offline ? 0 : -1,
+              uploadThroughput: offline ? 0 : -1,
+            };
+            await cdp.send('Network.emulateNetworkConditions', conditions);
+            await cdp.send('Network.overrideNetworkState', conditions);
+          }
+          """
+          new = """async function setNetwork(cdp, offline, latency = 0) {
+            const conditions = {
+              offline,
+              latency,
+              downloadThroughput: offline ? 0 : -1,
+              uploadThroughput: offline ? 0 : -1,
+              connectionType: offline ? 'none' : 'wifi',
+            };
+            await cdp.send('Network.emulateNetworkConditionsByRule', {
+              matchedNetworkConditions: [{ urlPattern: '', ...conditions }],
+            });
+            await cdp.send('Network.overrideNetworkState', conditions);
+          }
+          """
+          if source.count(old) != 1:
+              raise SystemExit('expected exactly one legacy Gate 5 setNetwork implementation')
+          path.write_text(source.replace(old, new))
+          PY
+
+          npm exec prettier -- --write \
+            scripts/gate5-full-shift-offline-proof.mjs \
+            apps/pos-web/src/__tests__/gate5-network-proof-contract.test.ts
+
+          rm .github/workflows/warroom-gate5-modern-cdp.yml
+          git diff --check
+
+      - name: Commit modern CDP proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'korvi-release-integrator'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/gate5-full-shift-offline-proof.mjs apps/pos-web/src/__tests__/gate5-network-proof-contract.test.ts .github/workflows/warroom-gate5-modern-cdp.yml
+          git diff --cached --check
+          git commit -m 'test(offline): use current Chrome network emulation'
+          git push origin HEAD:warroom/offline-full-shift
