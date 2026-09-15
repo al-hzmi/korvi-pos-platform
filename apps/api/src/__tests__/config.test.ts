@@ -7,6 +7,8 @@ const productionEnvironment = {
   DATABASE_URL: 'postgresql://korvi_test@localhost:5432/korvi_test',
   BOOTSTRAP_SIGNING_KEY: 'bootstrap-config-test-key-000000000000000000000001',
   METRICS_AUTH_TOKEN: 'metrics-config-test-token-0000000000000000000000002',
+  OFFLINE_LEASE_SIGNING_SEED_B64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  OFFLINE_LEASE_KEY_ID: 'config-test-v1',
 };
 
 describe('production secret configuration', () => {

@@ -11,6 +11,7 @@ import { z } from 'zod';
 export const PRODUCTION_REQUIRED_SECRET_ENV_KEYS = [
   'BOOTSTRAP_SIGNING_KEY',
   'METRICS_AUTH_TOKEN',
+  'OFFLINE_LEASE_SIGNING_SEED_B64',
 ] as const;
 
 function configuredOrigins(value: string | undefined): string[] {
@@ -112,6 +113,22 @@ const schema = z
      */
     METRICS_AUTH_TOKEN: z.string().min(32).max(512).optional(),
 
+    /** Ed25519 seed for server-signed installed-cashier offline authority. Never ships to clients. */
+    OFFLINE_LEASE_SIGNING_SEED_B64: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{43}$/)
+      .optional(),
+    OFFLINE_LEASE_KEY_ID: z
+      .string()
+      .regex(/^[A-Za-z0-9._-]{1,64}$/)
+      .optional(),
+    OFFLINE_LEASE_TTL_HOURS: z.coerce
+      .number()
+      .int()
+      .min(12)
+      .max(24 * 7)
+      .default(72),
+
     /**
      * Korvi's own SaaS control-plane realm. It is intentionally independent
      * from merchant users and merchant sessions: a platform operator is not a
@@ -131,6 +148,8 @@ const schema = z
     const platformAccessKey = value.PLATFORM_ADMIN_ACCESS_KEY;
     const platformSigningKey = value.PLATFORM_SESSION_SIGNING_KEY;
     const platformActorRef = value.PLATFORM_ADMIN_ACTOR_REF;
+    const offlineSeed = value.OFFLINE_LEASE_SIGNING_SEED_B64;
+    const offlineKeyId = value.OFFLINE_LEASE_KEY_ID;
     const platformConfigured = [platformAccessKey, platformSigningKey, platformActorRef].filter(
       (item) => item !== undefined,
     ).length;
@@ -191,6 +210,33 @@ const schema = z
         code: 'custom',
         path: ['APP_ORIGINS'],
         message: 'is required in production; refusing to accept writes from an unknown origin',
+      });
+    }
+
+    const offlineConfigured = [offlineSeed, offlineKeyId].filter(
+      (item) => item !== undefined,
+    ).length;
+    if (offlineConfigured != 0 && offlineConfigured != 2) {
+      context.addIssue({
+        code: 'custom',
+        path: ['OFFLINE_LEASE_SIGNING_SEED_B64'],
+        message:
+          'OFFLINE_LEASE_SIGNING_SEED_B64 and OFFLINE_LEASE_KEY_ID must be configured together',
+      });
+    }
+    if (value.NODE_ENV === 'production' && offlineSeed === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['OFFLINE_LEASE_SIGNING_SEED_B64'],
+        message:
+          'is required in production; installed cashiers need bounded signed offline authority',
+      });
+    }
+    if (value.NODE_ENV === 'production' && offlineKeyId === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['OFFLINE_LEASE_KEY_ID'],
+        message: 'is required in production so offline signing authority can be rotated explicitly',
       });
     }
 
@@ -286,6 +332,9 @@ export interface ApiConfig {
   readonly BOOTSTRAP_SIGNING_KEY: string | undefined;
   /** Machine-only scrape credential; never logged, echoed or persisted. */
   readonly METRICS_AUTH_TOKEN: string | undefined;
+  readonly OFFLINE_LEASE_SIGNING_SEED_B64: string | undefined;
+  readonly OFFLINE_LEASE_KEY_ID: string | undefined;
+  readonly OFFLINE_LEASE_TTL_SECONDS: number;
   /** Internal SaaS operator credential; never persisted or echoed. */
   readonly PLATFORM_ADMIN_ACCESS_KEY: string | undefined;
   /** Independent HMAC key for the HttpOnly platform session. */
@@ -324,6 +373,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     DATABASE_URL: value.DATABASE_URL,
     BOOTSTRAP_SIGNING_KEY: value.BOOTSTRAP_SIGNING_KEY,
     METRICS_AUTH_TOKEN: value.METRICS_AUTH_TOKEN,
+    OFFLINE_LEASE_SIGNING_SEED_B64: value.OFFLINE_LEASE_SIGNING_SEED_B64,
+    OFFLINE_LEASE_KEY_ID: value.OFFLINE_LEASE_KEY_ID,
+    OFFLINE_LEASE_TTL_SECONDS: value.OFFLINE_LEASE_TTL_HOURS * 3600,
     PLATFORM_ADMIN_ACCESS_KEY: value.PLATFORM_ADMIN_ACCESS_KEY,
     PLATFORM_SESSION_SIGNING_KEY: value.PLATFORM_SESSION_SIGNING_KEY,
     PLATFORM_ADMIN_ACTOR_REF: value.PLATFORM_ADMIN_ACTOR_REF,

@@ -6,7 +6,7 @@ import {
   sessionCookieName,
 } from '../auth/cookie.js';
 import { createLoginAdmissionController } from '../auth/login-admission.js';
-import { nativeAuthServiceFor } from '../native-auth/lazy.js';
+import { nativeAuthServiceFor, offlineLeaseServiceFor } from '../native-auth/lazy.js';
 import { registerNativeAuthRoutes } from './native-auth.js';
 import type { LoginAdmissionController } from '../auth/login-admission.js';
 import type { Guards } from '../auth/guards.js';
@@ -162,5 +162,11 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   });
 
   const native = nativeAuthServiceFor(config);
-  if (native !== undefined) registerNativeAuthRoutes(app, { service: native });
+  if (native !== undefined) {
+    const offlineLease = offlineLeaseServiceFor(config);
+    registerNativeAuthRoutes(app, {
+      service: native,
+      ...(offlineLease === undefined ? {} : { offlineLease }),
+    });
+  }
 }

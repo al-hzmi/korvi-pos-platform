@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { readNativeAuthorization } from '../native-auth/header.js';
 import type { NativeAuthService } from '../native-auth/service.js';
+import type { OfflineLeaseService } from '../native-auth/offline-lease.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { FastifyInstance } from 'fastify';
 
@@ -43,7 +44,7 @@ function safePrincipal(principal: AuthenticatedPrincipal): Record<string, unknow
 
 export function registerNativeAuthRoutes(
   app: FastifyInstance,
-  options: { readonly service: NativeAuthService },
+  options: { readonly service: NativeAuthService; readonly offlineLease?: OfflineLeaseService },
 ): void {
   app.post('/v1/native-auth/challenge', async (request, reply) => {
     const parsed = challengeBody.safeParse(request.body);
@@ -92,6 +93,23 @@ export function registerNativeAuthRoutes(
       principal: safePrincipal(result.principal),
       binding: result.binding,
     });
+  });
+
+  app.post('/v1/native-auth/offline-lease', async (request, reply) => {
+    const token = readNativeAuthorization(request.headers.authorization);
+    if (token === null) return reply.code(401).send(UNAUTHENTICATED);
+    if (options.offlineLease === undefined) {
+      return reply.code(503).send({ error: 'offline_lease_unavailable' });
+    }
+    const result = await options.offlineLease.issue(token);
+    if (result.outcome === 'failure') {
+      if (result.reason === 'unauthenticated') return reply.code(401).send(UNAUTHENTICATED);
+      if (result.reason === 'commercial-inactive') {
+        return reply.code(403).send({ error: 'offline_lease_refused' });
+      }
+      return reply.code(503).send({ error: 'offline_lease_unavailable' });
+    }
+    return reply.code(200).send({ lease: result.lease, claims: result.claims });
   });
 
   app.post('/v1/native-auth/logout', async (request, reply) => {

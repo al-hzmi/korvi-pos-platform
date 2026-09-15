@@ -1,5 +1,12 @@
 import { Buffer } from 'node:buffer';
-import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  sign,
+  verify,
+} from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@korvi/domain';
@@ -23,6 +30,8 @@ const PLATFORM_SIGNING_KEY = 'native-gate-session-'.padEnd(48, 'b');
 const BOOTSTRAP_SIGNING_KEY = 'native-gate-bootstrap-'.padEnd(48, 'c');
 const PLATFORM_ACTOR = 'platform:test/native-auth-live';
 const OWNER_PASSWORD = 'Native-Gate-Owner-Password-9!';
+const OFFLINE_LEASE_SEED = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const OFFLINE_LEASE_KEY_ID = 'native-gate-v1';
 
 interface TenantWire {
   readonly id: string;
@@ -359,6 +368,9 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
         PLATFORM_ADMIN_ACTOR_REF: PLATFORM_ACTOR,
         PLATFORM_SESSION_TTL_HOURS: '1',
         SESSION_TTL_HOURS: '1',
+        OFFLINE_LEASE_SIGNING_SEED_B64: OFFLINE_LEASE_SEED,
+        OFFLINE_LEASE_KEY_ID,
+        OFFLINE_LEASE_TTL_HOURS: '72',
       }),
     );
     await app.ready();
@@ -609,6 +621,62 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
     expect(browserTerminalB.statusCode).toBe(200);
 
     const nativeHeader = headers({ authorization: `KorviNative ${native.token}` });
+    const leaseResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/native-auth/offline-lease',
+      headers: nativeHeader,
+    });
+    expect(leaseResponse.statusCode).toBe(200);
+    const leaseWire = leaseResponse.json<{ lease: string; claims: Record<string, unknown> }>();
+    const parts = leaseWire.lease.split('.');
+    expect(parts).toHaveLength(3);
+    expect(parts[0]).toBe('kol1');
+    const payload = parts[1] ?? '';
+    const signatureBytes = Buffer.from(parts[2] ?? '', 'base64url');
+    const seed = Buffer.from(OFFLINE_LEASE_SEED, 'base64url');
+    const leasePrivate = createPrivateKey({
+      key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]),
+      format: 'der',
+      type: 'pkcs8',
+    });
+    expect(
+      verify(
+        null,
+        Buffer.from(`kol1.${payload}`, 'utf8'),
+        createPublicKey(leasePrivate),
+        signatureBytes,
+      ),
+    ).toBe(true);
+    const leaseClaims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(leaseClaims).toMatchObject({
+      version: 1,
+      issuer: 'korvi-platform',
+      keyId: OFFLINE_LEASE_KEY_ID,
+      tenantId: tenantA.id,
+      branchId: tenantA.branchA,
+      terminalId: tenantA.terminalA,
+      deviceEnrollmentId: enrollmentA.id,
+      devicePublicKeySha256: keyA.publicKeySha256,
+      planKey: 'commercial',
+      planRevision: 1,
+      leaseRevision: 1,
+    });
+    expect(
+      Date.parse(String(leaseClaims['expiresAt'])) - Date.parse(String(leaseClaims['issuedAt'])),
+    ).toBe(72 * 60 * 60 * 1000);
+    expect(Array.isArray(leaseClaims['capabilities'])).toBe(true);
+    expect(JSON.stringify(leaseClaims)).toContain('pos.enabled');
+
+    const browserLease = await app.inject({
+      method: 'POST',
+      url: '/v1/native-auth/offline-lease',
+      headers: headers({ cookie: tenantA.merchantCookie }),
+    });
+    expectError(browserLease, 401, 'native_unauthenticated');
+
     for (const terminalId of [tenantA.terminalB, tenantA.terminalC, tenantB.terminalA]) {
       const refused = await app.inject({
         method: 'GET',
