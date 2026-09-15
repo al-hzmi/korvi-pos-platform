@@ -82,10 +82,7 @@ export function ControlNav({
   locked = false,
 }: ControlNavProps): JSX.Element {
   const authorizedEntries = CONTROL_ENTRIES.filter(
-    (entry): entry is ControlEntry & { readonly section: ControlSection } =>
-      entry.section !== null &&
-      entry.permission !== undefined &&
-      permissions.includes(entry.permission),
+    (entry) => entry.permission !== undefined && permissions.includes(entry.permission),
   );
 
   return (
@@ -94,17 +91,24 @@ export function ControlNav({
       className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
     >
       {authorizedEntries.map((entry) => {
+        if (entry.section === null) return null;
+
         const navigationLocked = locked && entry.section !== active;
         const isActive = entry.section === active;
+        let stateClassName = 'text-foreground hover:bg-accent hover:text-accent-foreground';
+
+        if (isActive) {
+          stateClassName = 'bg-primary text-primary-foreground shadow-sm';
+        }
+        if (navigationLocked) {
+          stateClassName = 'cursor-not-allowed text-muted-foreground';
+        }
+
         const className = cn(
           'flex h-touch shrink-0 items-center justify-between gap-3 rounded-lg px-3.5 text-sm font-medium transition-colors lg:w-full',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-          navigationLocked
-            ? 'cursor-not-allowed text-muted-foreground'
-            : isActive
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-foreground hover:bg-accent hover:text-accent-foreground',
+          stateClassName,
         );
 
         if (!navigationLocked) {
@@ -117,7 +121,10 @@ export function ControlNav({
             >
               <span>{entry.label}</span>
               {isActive ? (
-                <span className="size-1.5 rounded-full bg-primary-foreground/80" aria-hidden="true" />
+                <span
+                  className="size-1.5 rounded-full bg-primary-foreground/80"
+                  aria-hidden="true"
+                />
               ) : null}
             </a>
           );
