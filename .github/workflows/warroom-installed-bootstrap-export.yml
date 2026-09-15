@@ -1,0 +1,71 @@
+name: War Room Installed Cashier Bootstrap Export
+
+on:
+  push:
+    branches:
+      - warroom/installed-cashier
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Resolve exact npm lockfile
+        run: npm install --registry=https://registry.npmjs.org
+
+      - name: Apply repository formatter to installed cashier source
+        run: npx prettier@3.9.6 --write apps/cashier .github/workflows/warroom-installed-bootstrap-export.yml
+
+      - name: Typecheck cashier-only frontend
+        run: npm run typecheck -w @korvi/cashier
+
+      - name: Build cashier-only frontend and reject management surface leakage
+        env:
+          KORVI_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          npm run build:web -w @korvi/cashier
+          if grep -R -E '/control|/platform|/v1/admin/|/v1/platform/' apps/cashier/dist --include='*.js' --include='*.css'; then
+            echo 'Installed cashier bundle contains merchant-control or platform-admin surface.' >&2
+            exit 1
+          fi
+          if find apps/cashier/dist -type f \( -name '*.map' -o -name '*.ts' -o -name '*.tsx' \) -print -quit | grep -q .; then
+            echo 'Installed cashier bundle contains source maps or source files.' >&2
+            exit 1
+          fi
+
+      - name: Resolve exact Rust lockfile
+        run: cargo generate-lockfile --manifest-path apps/cashier/src-tauri/Cargo.toml
+
+      - name: Export deterministic bootstrap state
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installed-cashier-bootstrap-${{ github.sha }}
+          path: |
+            package-lock.json
+            apps/cashier/package.json
+            apps/cashier/tsconfig.json
+            apps/cashier/vite.config.ts
+            apps/cashier/tailwind.config.ts
+            apps/cashier/postcss.config.mjs
+            apps/cashier/index.html
+            apps/cashier/src/*.ts
+            apps/cashier/src/*.tsx
+            apps/cashier/src-tauri/Cargo.toml
+            apps/cashier/src-tauri/Cargo.lock
+            apps/cashier/src-tauri/build.rs
+            apps/cashier/src-tauri/src/*.rs
+            apps/cashier/src-tauri/tauri.conf.json
+            apps/cashier/src-tauri/capabilities/*.json
+            .github/workflows/warroom-installed-bootstrap-export.yml
+          if-no-files-found: error
+          retention-days: 7
