@@ -86,9 +86,10 @@ const CONFIG: ApiConfig = {
   APP_ORIGINS: ['http://localhost:3000'],
   SESSION_TTL_SECONDS: 3600,
   DATABASE_URL: undefined,
-  // This suite exercises the control plane, not owner bootstrap; the route is
-  // deliberately unconfigured here.
+  // This suite exercises the control plane, not owner bootstrap or metrics;
+  // both routes are deliberately unconfigured here.
   BOOTSTRAP_SIGNING_KEY: undefined,
+  METRICS_AUTH_TOKEN: undefined,
   isProduction: false,
 };
 
