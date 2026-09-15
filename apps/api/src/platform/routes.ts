@@ -176,11 +176,7 @@ function handlePlatformError(reply: FastifyReply, error: unknown): FastifyReply 
   }
   if (error instanceof PlatformOperationalBootstrapRefusedError) {
     const status =
-      error.detail === 'unknown-tenant'
-        ? 404
-        : error.detail === 'invalid-input'
-          ? 422
-          : 409;
+      error.detail === 'unknown-tenant' ? 404 : error.detail === 'invalid-input' ? 422 : 409;
     return reply.code(status).send({ error: error.detail.replace(/-/g, '_') });
   }
   if (error instanceof PlatformOwnerBootstrapUnavailableError) {

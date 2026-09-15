@@ -199,11 +199,11 @@ describe.skipIf(url === '')('platform operational bootstrap, live', () => {
       await tx.tenant.update({ where: { id: A }, data: { status: 'suspended' } });
     });
 
-    await expect(provisionTenantOperations(prisma, request(A, 'ops-suspended'))).rejects.toMatchObject(
-      {
-        name: 'PlatformOperationalBootstrapRefusedError',
-        detail: 'tenant-suspended',
-      } satisfies Partial<PlatformOperationalBootstrapRefusedError>,
-    );
+    await expect(
+      provisionTenantOperations(prisma, request(A, 'ops-suspended')),
+    ).rejects.toMatchObject({
+      name: 'PlatformOperationalBootstrapRefusedError',
+      detail: 'tenant-suspended',
+    } satisfies Partial<PlatformOperationalBootstrapRefusedError>);
   });
 });
