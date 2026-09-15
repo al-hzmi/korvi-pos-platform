@@ -6,7 +6,7 @@ on:
       - tooling/prettier-platform-provisioning-20260915
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   format-patch:
@@ -33,3 +33,22 @@ jobs:
             apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
             packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
             packages/database/src/control-plane/operational-bootstrap.ts
+      - name: Persist formatter output on tooling branch
+        run: |
+          if git diff --quiet -- \
+            apps/api/src/platform/routes.ts \
+            apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
+            packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
+            packages/database/src/control-plane/operational-bootstrap.ts; then
+            echo "No formatting changes to persist."
+            exit 0
+          fi
+          git config user.name "korvi-tooling"
+          git config user.email "korvi-tooling@users.noreply.github.com"
+          git add \
+            apps/api/src/platform/routes.ts \
+            apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
+            packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
+            packages/database/src/control-plane/operational-bootstrap.ts
+          git commit -m "chore(tooling): persist canonical prettier output"
+          git push origin HEAD:tooling/prettier-platform-provisioning-20260915
