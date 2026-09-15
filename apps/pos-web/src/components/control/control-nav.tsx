@@ -6,6 +6,7 @@ import type { JSX } from 'react';
 import type { ControlSection } from '../../lib/control-routes';
 
 export type { ControlSection } from '../../lib/control-routes';
+export { canOpenControlCentre } from '../../lib/control-access';
 
 /**
  * The shape of Korvi, stated once.
@@ -61,10 +62,6 @@ export function firstAuthorizedSection(permissions: readonly string[]): ControlS
       permissions.includes(candidate.permission),
   );
   return entry?.section ?? null;
-}
-
-export function canOpenControlCentre(permissions: readonly string[]): boolean {
-  return firstAuthorizedSection(permissions) !== null;
 }
 
 export interface ControlNavProps {

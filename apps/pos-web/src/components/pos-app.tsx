@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button, CardSurface } from '@korvi/ui';
 import { LoginScreen } from './login-screen';
 import { Screen } from './screen';
@@ -30,17 +29,22 @@ import type { OfflineWorkspaceSnapshot } from '../lib/offline-workspace';
  * reach the server, that snapshot may reopen the exact same cashier workspace
  * so the till can queue local sales. It carries no token and grants no server
  * authority; every queued command is still reconciled by the server later.
+ *
+ * Product routing is deliberately host-owned. This runtime has no Next import
+ * and no Control route literal, so the installed Cashier can reuse it without
+ * accidentally shipping the merchant-management navigation realm.
  */
 export interface PosAppProps {
   /** Injected by tests. Production builds the real client against this origin. */
   readonly api?: ApiClient;
   /**
-   * Root-entry behavior only. A management principal is routed to Merchant
-   * Control before terminal/shift loading begins. The explicit /cashier route
-   * leaves this false so an authorised owner or manager may deliberately use a
-   * till without being bounced back to Control.
+   * Browser host capability only. When supplied, a management-oriented
+   * authenticated principal may be handed back to the host before terminal and
+   * shift loading begins. Installed Cashier omits it.
    */
-  readonly redirectManagementOnAuth?: boolean;
+  readonly onManagementLanding?: (() => void) | undefined;
+  /** Optional host-owned Control destination. Installed Cashier omits it. */
+  readonly controlCentreHref?: string | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -57,16 +61,16 @@ function Waiting({ label }: { readonly label: string }): JSX.Element {
 
 export function PosApp({
   api: injected,
-  redirectManagementOnAuth = false,
+  onManagementLanding,
+  controlCentreHref,
 }: PosAppProps = {}): JSX.Element {
-  const router = useRouter();
   const api = useMemo(() => injected ?? createApiClient(), [injected]);
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
 
   const authenticated = session.state.kind === 'ready';
   const managementLanding =
-    redirectManagementOnAuth &&
+    onManagementLanding !== undefined &&
     session.state.kind === 'ready' &&
     prefersMerchantControl(session.state.principal);
   const terminal = useTerminal(api, authenticated && !managementLanding, session.expire);
@@ -79,8 +83,8 @@ export function PosApp({
   }, [session]);
 
   useEffect(() => {
-    if (managementLanding) router.replace('/control');
-  }, [managementLanding, router]);
+    if (managementLanding) onManagementLanding?.();
+  }, [managementLanding, onManagementLanding]);
 
   useEffect(() => {
     if (session.state.kind === 'unavailable') {
@@ -141,6 +145,7 @@ export function PosApp({
           terminal={offlineWorkspace.terminal}
           shift={offlineWorkspace.shift}
           priceMode={offlineWorkspace.priceMode}
+          controlCentreHref={controlCentreHref}
           onSignOut={() => undefined}
           onExpired={session.expire}
           onShiftChanged={() => undefined}
@@ -238,6 +243,7 @@ export function PosApp({
       terminal={chosen}
       shift={shift.state.shift}
       priceMode={settings.priceMode}
+      controlCentreHref={controlCentreHref}
       onSignOut={signOut}
       onExpired={session.expire}
       onShiftChanged={shift.refresh}

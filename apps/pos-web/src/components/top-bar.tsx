@@ -7,8 +7,8 @@ import type { TerminalSummary } from '../lib/api-types';
 
 export interface TopBarProps {
   readonly cashierName: string;
-  /** Shown only to a principal the server would let in anyway. */
-  readonly showControlCentre: boolean;
+  /** Host-owned destination. Installed Cashier omits it entirely. */
+  readonly controlCentreHref?: string | undefined;
   readonly terminal: TerminalSummary;
   readonly onSignOut: () => void;
   /** True while a transaction of unknown outcome is outstanding. */
@@ -19,13 +19,13 @@ export interface TopBarProps {
 /**
  * Where the cashier is, in one line.
  *
- * Offline mode is explicit: the badge changes state, back-office navigation is
- * hidden, and logout is blocked because the HttpOnly server session cannot be
- * revoked without a confirmed response.
+ * Offline mode is explicit: the badge changes state, host navigation is hidden,
+ * and logout is blocked because the HttpOnly server session cannot be revoked
+ * without a confirmed response.
  */
 export function TopBar({
   cashierName,
-  showControlCentre,
+  controlCentreHref,
   terminal,
   onSignOut,
   signOutBlocked,
@@ -83,9 +83,9 @@ export function TopBar({
           </span>
           <span className="sm:hidden">{online ? 'متصل' : 'محلي'}</span>
         </span>
-        {showControlCentre && online ? (
+        {controlCentreHref !== undefined && online ? (
           <a
-            href="/control"
+            href={controlCentreHref}
             className="hidden h-touch items-center rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:inline-flex"
           >
             لوحة التحكم

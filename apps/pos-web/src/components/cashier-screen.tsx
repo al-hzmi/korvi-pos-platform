@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, CardSurface } from '@korvi/ui';
 import { TopBar } from './top-bar';
-import { canOpenControlCentre } from './control/control-nav';
 import { ProductPanel } from './product-panel';
 import { CartPanel } from './cart-panel';
 import { CheckoutPanel } from './checkout-panel';
 import { SaleReceipt } from './sale-receipt';
 import { StatusNote } from './status-note';
 import { previewCart } from '../lib/cart';
+import { canOpenControlCentre } from '../lib/control-access';
 import { intentLocked, signOutBlocked } from '../lib/checkout';
 import { createDurableProductSource } from '../lib/offline-search-source';
 import { shiftNeedsRefresh } from '../lib/shift';
@@ -47,6 +47,8 @@ export interface CashierScreenProps {
   readonly shift: ShiftSummary;
   /** From tenant_settings, by way of GET /v1/terminals. Never guessed here. */
   readonly priceMode: PriceMode;
+  /** Host-owned Control destination. Installed Cashier omits it. */
+  readonly controlCentreHref?: string | undefined;
   readonly onSignOut: () => void;
   readonly onExpired: () => void;
   readonly onShiftChanged: () => void;
@@ -58,6 +60,7 @@ export function CashierScreen({
   terminal,
   shift,
   priceMode,
+  controlCentreHref,
   onSignOut,
   onExpired,
   onShiftChanged,
@@ -204,12 +207,16 @@ export function CashierScreen({
 
   const completed = checkout.state.phase === 'succeeded' ? checkout.state.sale : null;
   const drawerLabel = `الوردية ${shift.id.slice(0, 8)}`;
+  const authorizedControlHref =
+    controlCentreHref !== undefined && canOpenControlCentre(principal.permissions)
+      ? controlCentreHref
+      : undefined;
 
   return (
     <div className="flex h-screen flex-col bg-muted/30">
       <TopBar
         cashierName={principal.user.displayName}
-        showControlCentre={canOpenControlCentre(principal.permissions)}
+        controlCentreHref={authorizedControlHref}
         terminal={terminal}
         busy={checkout.state.phase === 'submitting'}
         signOutBlocked={signOutBlocked(checkout.state)}
