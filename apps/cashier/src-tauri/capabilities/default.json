@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "cashier-main",
+  "description": "Minimum local capability set for the Korvi Cashier window.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
