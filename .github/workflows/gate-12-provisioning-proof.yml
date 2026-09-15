@@ -87,6 +87,9 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
+      - name: Build trusted workspaces
+        run: npm run build
+
       - name: Run connected Gate 12 proof
         shell: bash
         run: |
