@@ -33,60 +33,44 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import re
+
           path = Path('apps/cashier-client/src-tauri/src/device_identity.rs')
           text = path.read_text()
 
-          old = '''        fn NCryptCreatePersistedKey(
-              provider: Handle,
-              key: *mut Handle,
-              algorithm: *const u16,
-              name: *const u16,
-              legacy: u32,
-              flags: u32,
-          ) -> Status;
-          fn NCryptFinalizeKey(key: Handle, flags: u32) -> Status;'''
-          new = '''        fn NCryptCreatePersistedKey(
-              provider: Handle,
-              key: *mut Handle,
-              algorithm: *const u16,
-              name: *const u16,
-              legacy: u32,
-              flags: u32,
-          ) -> Status;
-          fn NCryptGetProperty(
-              object: Handle,
-              property: *const u16,
-              output: *mut u8,
-              output_len: u32,
-              result: *mut u32,
-              flags: u32,
-          ) -> Status;
-          fn NCryptSetProperty(
-              object: Handle,
-              property: *const u16,
-              input: *const u8,
-              input_len: u32,
-              flags: u32,
-          ) -> Status;
-          fn NCryptDeleteKey(key: Handle, flags: u32) -> Status;
-          fn NCryptFinalizeKey(key: Handle, flags: u32) -> Status;'''
-          if old not in text:
-              raise SystemExit('CNG extern anchor changed')
-          text = text.replace(old, new, 1)
-
-          old = '''    const ECDSA_P256: &str = "ECDSA_P256";
-              const ECC_PUBLIC_BLOB: &str = "ECCPUBLICBLOB";'''
-          new = '''    const ECDSA_P256: &str = "ECDSA_P256";
-              const ECC_PUBLIC_BLOB: &str = "ECCPUBLICBLOB";
+          anchor = '    const ECC_PUBLIC_BLOB: &str = "ECCPUBLICBLOB";'
+          if anchor not in text:
+              raise SystemExit('CNG constant anchor changed')
+          text = text.replace(anchor, anchor + '''
               const ECC_PRIVATE_BLOB: &str = "ECCPRIVATEBLOB";
               const EXPORT_POLICY_PROPERTY: &str = "Export Policy";
-              const NCRYPT_PERSIST_FLAG: u32 = 0x8000_0000;'''
-          if old not in text:
-              raise SystemExit('CNG constants anchor changed')
-          text = text.replace(old, new, 1)
+              const NCRYPT_PERSIST_FLAG: u32 = 0x8000_0000;''', 1)
 
-          anchor = '''    fn open_or_create() -> Result<CngKey, String> {'''
-          helper = '''    fn export_policy(key: Handle) -> Result<u32, String> {
+          anchor = '        fn NCryptFinalizeKey(key: Handle, flags: u32) -> Status;'
+          if anchor not in text:
+              raise SystemExit('CNG extern anchor changed')
+          text = text.replace(anchor, '''        fn NCryptGetProperty(
+                  object: Handle,
+                  property: *const u16,
+                  output: *mut u8,
+                  output_len: u32,
+                  result: *mut u32,
+                  flags: u32,
+              ) -> Status;
+              fn NCryptSetProperty(
+                  object: Handle,
+                  property: *const u16,
+                  input: *const u8,
+                  input_len: u32,
+                  flags: u32,
+              ) -> Status;
+              fn NCryptDeleteKey(key: Handle, flags: u32) -> Status;
+              fn NCryptFinalizeKey(key: Handle, flags: u32) -> Status;''', 1)
+
+          anchor = '    fn open_or_create() -> Result<CngKey, String> {'
+          if anchor not in text:
+              raise SystemExit('open_or_create anchor changed')
+          helpers = '''    fn export_policy(key: Handle) -> Result<u32, String> {
               let mut policy = 0u32;
               let mut received = 0u32;
               let status = unsafe {
@@ -122,16 +106,20 @@ jobs:
               Ok(())
           }
 
-          fn verified_existing_key(provider: Handle, key: Handle, hardware: bool) -> Result<CngKey, String> {
+          fn verified_existing_key(
+              provider: Handle,
+              key: Handle,
+              hardware: bool,
+          ) -> Result<CngKey, String> {
               match export_policy(key) {
-                  Ok(0) => Ok(CngKey { provider, key, hardware }),
+                  Ok(0) if private_export_is_refused(key) => Ok(CngKey { provider, key, hardware }),
                   Ok(policy) => {
                       unsafe {
                           let _ = NCryptFreeObject(key);
                           let _ = NCryptFreeObject(provider);
                       }
                       Err(format!(
-                          "Windows CNG device key is exportable (policy {policy:#x}); explicit re-enrollment is required"
+                          "Windows CNG device key failed non-exportability verification (policy {policy:#x}); explicit re-enrollment is required"
                       ))
                   }
                   Err(error) => {
@@ -161,38 +149,26 @@ jobs:
               status != SUCCESS
           }
 
-          ''' + anchor
-          if anchor not in text:
-              raise SystemExit('open_or_create anchor changed')
-          text = text.replace(anchor, helper, 1)
+          '''
+          text = text.replace(anchor, helpers + anchor, 1)
 
-          old = '''                if let Ok(key) = open_existing(provider) {
-                          return Ok(CngKey {
-                              provider,
-                              key,
-                              hardware,
-                          });
-                      }'''
-          new = '''                if let Ok(key) = open_existing(provider) {
-                          return verified_existing_key(provider, key, hardware);
-                      }'''
-          if old not in text:
-              raise SystemExit('existing key anchor changed')
-          text = text.replace(old, new, 1)
+          pattern = re.compile(
+              r'if let Ok\(key\) = open_existing\(provider\) \{\s*return Ok\(CngKey \{\s*provider,\s*key,\s*hardware,\s*\}\);\s*\}',
+              re.S,
+          )
+          text, count = pattern.subn(
+              'if let Ok(key) = open_existing(provider) {\n                    return verified_existing_key(provider, key, hardware);\n                }',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit('existing-key block changed')
 
-          old = '''            if created == SUCCESS && unsafe { NCryptFinalizeKey(key, 0) } == SUCCESS {
-                      return Ok(CngKey {
-                          provider,
-                          key,
-                          hardware,
-                      });
-                  }
-                  if key != 0 {
-                      unsafe {
-                          let _ = NCryptFreeObject(key);
-                      }
-                  }'''
-          new = '''            if created == SUCCESS {
+          pattern = re.compile(
+              r'if created == SUCCESS && unsafe \{ NCryptFinalizeKey\(key, 0\) \} == SUCCESS \{\s*return Ok\(CngKey \{\s*provider,\s*key,\s*hardware,\s*\}\);\s*\}\s*if key != 0 \{\s*unsafe \{\s*let _ = NCryptFreeObject\(key\);\s*\}\s*\}',
+              re.S,
+          )
+          replacement = '''if created == SUCCESS {
                       let policy_set = set_non_exportable(key).is_ok();
                       let finalized = policy_set && unsafe { NCryptFinalizeKey(key, 0) } == SUCCESS;
                       if finalized && export_policy(key) == Ok(0) && private_export_is_refused(key) {
@@ -208,11 +184,13 @@ jobs:
                           let _ = NCryptDeleteKey(key, 0);
                       }
                   }'''
-          if old not in text:
-              raise SystemExit('new key anchor changed')
-          text = text.replace(old, new, 1)
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('new-key block changed')
 
-          anchor = '''    pub fn identity<R: Runtime>(_app: &AppHandle<R>) -> Result<DeviceIdentityInfo, String> {'''
+          anchor = '    pub fn identity<R: Runtime>(_app: &AppHandle<R>) -> Result<DeviceIdentityInfo, String> {'
+          if anchor not in text:
+              raise SystemExit('identity anchor changed')
           tests = '''    #[cfg(test)]
           mod tests {
               use super::*;
@@ -225,17 +203,16 @@ jobs:
               }
           }
 
-          ''' + anchor
-          if anchor not in text:
-              raise SystemExit('identity test anchor changed')
-          text = text.replace(anchor, tests, 1)
-
+          '''
+          text = text.replace(anchor, tests + anchor, 1)
           path.write_text(text)
           PY
 
       - name: Canonical Rust formatting
         shell: bash
-        run: cargo fmt --manifest-path apps/cashier-client/src-tauri/Cargo.toml -- --check
+        run: |
+          cargo fmt --manifest-path apps/cashier-client/src-tauri/Cargo.toml
+          cargo fmt --manifest-path apps/cashier-client/src-tauri/Cargo.toml -- --check
 
       - name: Windows CNG runtime proof
         shell: bash
