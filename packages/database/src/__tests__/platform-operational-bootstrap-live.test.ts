@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createPrismaClient, withTenant } from '../index.js';
+import { activateTenant, createPrismaClient, suspendTenant, withTenant } from '../index.js';
 import {
   PLATFORM_OPERATIONAL_BOOTSTRAP_SCOPE,
   provisionTenantOperations,
@@ -195,8 +195,16 @@ describe.skipIf(url === '')('platform operational bootstrap, live', () => {
   });
 
   it('fails closed while the tenant is suspended', async () => {
-    await withTenant(prisma, A, async (tx) => {
-      await tx.tenant.update({ where: { id: A }, data: { status: 'suspended' } });
+    await activateTenant(prisma, {
+      tenantId: A,
+      operationId: 'ops-suspended-activate',
+      controlPlaneActorRef: 'platform:test/onboarding',
+    });
+    await suspendTenant(prisma, {
+      tenantId: A,
+      operationId: 'ops-suspended-suspend',
+      controlPlaneActorRef: 'platform:test/onboarding',
+      reason: 'Operational bootstrap suspension proof',
     });
 
     await expect(
