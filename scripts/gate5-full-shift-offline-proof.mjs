@@ -235,12 +235,14 @@ async function capture(cdp, name) {
 }
 
 async function setNetwork(cdp, offline, latency = 0) {
-  await cdp.send('Network.emulateNetworkConditions', {
+  const conditions = {
     offline,
     latency,
     downloadThroughput: offline ? 0 : -1,
     uploadThroughput: offline ? 0 : -1,
-  });
+  };
+  await cdp.send('Network.emulateNetworkConditions', conditions);
+  await cdp.send('Network.overrideNetworkState', conditions);
 }
 
 async function queueRows(cdp) {
