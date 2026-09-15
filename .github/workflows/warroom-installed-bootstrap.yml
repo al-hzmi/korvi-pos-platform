@@ -30,6 +30,22 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Install official Tauri Linux check prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
       - name: Refresh exact npm lockfile
         run: npm install --package-lock-only --registry=https://registry.npmjs.org
 
