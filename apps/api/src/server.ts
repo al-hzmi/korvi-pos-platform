@@ -25,6 +25,7 @@ import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { createPlatformAuth } from './platform/auth.js';
+import { registerPlatformDeviceRoutes } from './platform/device-routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { createPlatformService } from './platform/service.js';
 import { registerPlatformSupportRoutes } from './platform/support-routes.js';
@@ -545,6 +546,7 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
     auth: platformAuth,
     service: deps.platform ?? lazyPlatformService(config),
   });
+  registerPlatformDeviceRoutes(app, { auth: platformAuth });
   registerPlatformSupportRoutes(app, {
     auth: platformAuth,
     service: deps.platformSupport ?? lazyPlatformSupportService(config),
