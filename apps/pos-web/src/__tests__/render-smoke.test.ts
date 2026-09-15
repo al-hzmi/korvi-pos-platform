@@ -159,13 +159,14 @@ describe('the cashier workspace', () => {
     expect(markup).toContain('وردية مفتوحة');
   });
 
-  it('gives branch context without printing an internal identifier at a customer', () => {
-    expect(markup).toContain('الفرع الحالي');
+  it('gives terminal context without printing an internal branch identifier at a customer', () => {
+    expect(markup).toContain('نقطة البيع الحالية');
+    expect(markup).toContain('صندوق ١');
     expect(markup).not.toContain(BRANCH.slice(0, 8));
   });
 
   it('shows a zero total rather than nothing', () => {
-    expect(markup).toContain('المطلوب');
+    expect(markup).toContain('الإجمالي المستحق');
     expect(markup).toContain('0.00');
   });
 });
