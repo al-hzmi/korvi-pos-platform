@@ -54,7 +54,21 @@ jobs:
         run: npm run audit
 
       - name: Formatting
-        run: npm run format:check
+        run: |
+          npx prettier --write \
+            apps/pos-web/src/components/cart-panel.tsx \
+            apps/pos-web/src/components/checkout-panel.tsx \
+            apps/pos-web/src/components/product-panel.tsx \
+            apps/pos-web/src/components/sale-receipt.tsx \
+            apps/pos-web/src/components/top-bar.tsx
+          git diff --check
+          git diff -- \
+            apps/pos-web/src/components/cart-panel.tsx \
+            apps/pos-web/src/components/checkout-panel.tsx \
+            apps/pos-web/src/components/product-panel.tsx \
+            apps/pos-web/src/components/sale-receipt.tsx \
+            apps/pos-web/src/components/top-bar.tsx
+          exit 1
 
       - name: Lint
         run: npm run lint
