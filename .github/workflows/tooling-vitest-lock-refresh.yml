@@ -1,0 +1,24 @@
+name: Tooling Vitest Lock Refresh
+
+on:
+  push:
+    branches:
+      - tooling/vitest-5-0-1-lock-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  lock-diff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: node scripts/verify-package-manager.mjs
+      - name: Refresh Vitest pair
+        run: npm install --package-lock-only --ignore-scripts --save-dev --save-exact vitest@5.0.1 @vitest/coverage-v8@5.0.1 --registry=https://registry.npmjs.org
+      - name: Print canonical package diff
+        run: git diff --no-ext-diff --unified=3 --no-color -- package.json package-lock.json
