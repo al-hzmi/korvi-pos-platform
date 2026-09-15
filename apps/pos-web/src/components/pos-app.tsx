@@ -45,6 +45,16 @@ export interface PosAppProps {
   readonly onManagementLanding?: (() => void) | undefined;
   /** Optional host-owned Control destination. Installed Cashier omits it. */
   readonly controlCentreHref?: string | undefined;
+  /**
+   * Optional host trust gate for reopening a local workspace while the server
+   * is unreachable. Browser POS omits it and retains its existing bounded
+   * snapshot behavior. Installed Cashier supplies an OS/native verifier that
+   * checks the signed device-bound offline authority before this component may
+   * render a till from local state.
+   */
+  readonly authorizeOfflineWorkspace?:
+    | ((snapshot: OfflineWorkspaceSnapshot) => Promise<boolean>)
+    | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -59,9 +69,15 @@ function Waiting({ label }: { readonly label: string }): JSX.Element {
   );
 }
 
-export function PosApp({ api, onManagementLanding, controlCentreHref }: PosAppProps): JSX.Element {
+export function PosApp({
+  api,
+  onManagementLanding,
+  controlCentreHref,
+  authorizeOfflineWorkspace,
+}: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
+  const [offlineAuthorizationPending, setOfflineAuthorizationPending] = useState(false);
 
   const authenticated = session.state.kind === 'ready';
   const managementLanding =
@@ -82,12 +98,36 @@ export function PosApp({ api, onManagementLanding, controlCentreHref }: PosAppPr
   }, [managementLanding, onManagementLanding]);
 
   useEffect(() => {
-    if (session.state.kind === 'unavailable') {
-      setOfflineWorkspace(readOfflineWorkspace());
+    if (session.state.kind !== 'unavailable') {
+      setOfflineAuthorizationPending(false);
+      setOfflineWorkspace(null);
       return;
     }
+
+    const snapshot = readOfflineWorkspace();
+    if (snapshot === null || authorizeOfflineWorkspace === undefined) {
+      setOfflineAuthorizationPending(false);
+      setOfflineWorkspace(snapshot);
+      return;
+    }
+
+    let live = true;
     setOfflineWorkspace(null);
-  }, [session.state.kind]);
+    setOfflineAuthorizationPending(true);
+    void authorizeOfflineWorkspace(snapshot)
+      .then((allowed) => {
+        if (live) setOfflineWorkspace(allowed ? snapshot : null);
+      })
+      .catch(() => {
+        if (live) setOfflineWorkspace(null);
+      })
+      .finally(() => {
+        if (live) setOfflineAuthorizationPending(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [authorizeOfflineWorkspace, session.state.kind]);
 
   useEffect(() => {
     if (
@@ -132,6 +172,9 @@ export function PosApp({ api, onManagementLanding, controlCentreHref }: PosAppPr
   }
 
   if (session.state.kind === 'unavailable') {
+    if (offlineAuthorizationPending) {
+      return <Waiting label="جارٍ التحقق من صلاحية العمل دون اتصال…" />;
+    }
     if (offlineWorkspace !== null) {
       return (
         <CashierScreen
@@ -222,8 +265,7 @@ export function PosApp({ api, onManagementLanding, controlCentreHref }: PosAppPr
     return (
       <ShiftGate
         terminal={chosen}
-        busy={shift.opening}
-        failure={shift.openFailure}
+        opening={shift.opening}
         onOpen={shift.open}
         onChangeTerminal={terminal.change}
         onSignOut={signOut}
