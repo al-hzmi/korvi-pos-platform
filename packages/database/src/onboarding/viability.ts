@@ -41,6 +41,19 @@ export const VIABLE_ADMINISTRATOR_PERMISSIONS: readonly Permission[] = [
   'users.manage',
 ];
 
+/**
+ * Minimum effective authority needed for one person to operate the daily POS
+ * lifecycle. Customer authority is deliberately absent: attaching a customer
+ * to a sale is optional, while product lookup, sale creation and opening/closing
+ * the till are not.
+ */
+export const VIABLE_POS_OPERATOR_PERMISSIONS: readonly Permission[] = [
+  'product.read',
+  'sale.create',
+  'shift.open',
+  'shift.close',
+];
+
 /** `u` holds `permission` through any role granted to them in this tenant. */
 function holds(permission: Permission): Prisma.Sql {
   return Prisma.sql`
@@ -60,11 +73,11 @@ function holds(permission: Permission): Prisma.Sql {
  * The predicate itself, as a composable fragment.
  *
  * A fragment rather than a function that runs its own query, so readiness can
- * keep evaluating all six pieces of evidence in one statement while bootstrap
- * asks the same question under its locks. `tenant` and `user` arrive as
- * `Prisma.Sql` because the two callers name the tenant differently — readiness
- * correlates against `t."id"`, bootstrap binds a parameter — and neither is
- * ever a string spliced into SQL.
+ * keep evaluating all pieces of evidence in one statement while bootstrap asks
+ * the same question under its locks. `tenant` and `user` arrive as `Prisma.Sql`
+ * because the two callers name the tenant differently — readiness correlates
+ * against `t."id"`, bootstrap binds a parameter — and neither is ever a string
+ * spliced into SQL.
  *
  * Pass `user` to ask it of one specific account: that is the postcondition form,
  * "is *this* person now a viable administrator", which is the question worth
@@ -85,5 +98,42 @@ export function viableAdministratorExists(tenant: Prisma.Sql, user?: Prisma.Sql)
          AND u."passwordHash" IS NOT NULL
          AND m."status" = 'active'
          AND ${Prisma.join(VIABLE_ADMINISTRATOR_PERMISSIONS.map(holds), ' AND ')}
+    )`;
+}
+
+/**
+ * Present-tense proof that one credentialed, active member can actually enter
+ * the POS lifecycle on their assigned branch.
+ *
+ * The assigned branch and its active terminal are intentionally correlated to
+ * the same membership. A terminal elsewhere in the tenant must not make a user
+ * with no usable branch look ready. Permissions are likewise required on this
+ * same user (their effective union across assigned roles), rather than allowing
+ * four different users to satisfy four independent capability checks.
+ */
+export function viablePosOperatorExists(tenant: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`
+    EXISTS (
+      SELECT 1
+        FROM "users" u
+        JOIN "tenant_memberships" m
+          ON m."tenantId" = u."tenantId"
+         AND m."userId" = u."id"
+        JOIN "branches" b
+          ON b."tenantId" = m."tenantId"
+         AND b."id" = m."defaultBranchId"
+         AND b."isActive" = TRUE
+       WHERE u."tenantId" = ${tenant}
+         AND u."isActive" = TRUE
+         AND u."passwordHash" IS NOT NULL
+         AND m."status" = 'active'
+         AND EXISTS (
+           SELECT 1
+             FROM "terminals" terminal
+            WHERE terminal."tenantId" = b."tenantId"
+              AND terminal."branchId" = b."id"
+              AND terminal."isActive" = TRUE
+         )
+         AND ${Prisma.join(VIABLE_POS_OPERATOR_PERMISSIONS.map(holds), ' AND ')}
     )`;
 }

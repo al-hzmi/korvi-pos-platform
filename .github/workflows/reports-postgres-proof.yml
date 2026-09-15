@@ -1,0 +1,127 @@
+name: Reports PostgreSQL Proof
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - packages/database/src/reports/**
+      - packages/database/src/__tests__/reports-period-live.test.ts
+      - packages/database/prisma/**
+      - scripts/prove-migration-state.sh
+      - scripts/deploy/production-migrate.sh
+      - .github/workflows/reports-browser-proof.yml
+      - .github/workflows/reports-postgres-proof.yml
+  workflow_dispatch:
+
+concurrency:
+  group: reports-postgres-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  report-authority:
+    name: PostgreSQL 17 / RLS / stored financial truth
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_reports
+      MIGRATION_DATABASE_URL: postgresql://korvi_migrator:korvi_reports_migrator@localhost:5432/korvi_reports?schema=public
+      SHADOW_DATABASE_URL: postgresql://korvi_migrator:korvi_reports_migrator@localhost:5432/korvi_reports_shadow?schema=public
+      DATABASE_URL: postgresql://korvi_runtime:korvi_reports_runtime@localhost:5432/korvi_reports
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:korvi_reports_runtime@localhost:5432/korvi_reports
+      PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_reports
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_reports"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Create restricted database identities and isolated shadow
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_migrator
+            LOGIN PASSWORD 'korvi_reports_migrator'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          CREATE ROLE korvi_runtime
+            LOGIN PASSWORD 'korvi_reports_runtime'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          ALTER DATABASE korvi_reports OWNER TO korvi_migrator;
+          SQL
+
+          psql postgresql://postgres:postgres@localhost:5432/postgres \
+            --no-psqlrc --set=ON_ERROR_STOP=1 \
+            --command 'CREATE DATABASE korvi_reports_shadow OWNER korvi_migrator'
+
+          runtime_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls
+               FROM pg_roles WHERE rolname = 'korvi_runtime'")"
+          test "$runtime_flags" = 'f|f|f|f|f|f'
+
+          shadow_owner="$(psql postgresql://postgres:postgres@localhost:5432/postgres \
+            --no-psqlrc --tuples-only --no-align --command \
+            "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'korvi_reports_shadow'")"
+          test "$shadow_owner" = 'korvi_migrator'
+
+      - name: Apply production migrations
+        env:
+          NODE_ENV: production
+          KORVI_ENVIRONMENT: production
+        run: bash scripts/deploy/production-migrate.sh
+
+      - name: Generate Prisma client and build database authority
+        run: |
+          npm run db:generate
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+
+      - name: Prove runtime cannot bypass RLS or own schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = 'korvi_runtime'")"
+          test "$runtime_ownership" = '0'
+          bypass="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolbypassrls FROM pg_roles WHERE rolname = 'korvi_runtime'")"
+          test "$bypass" = 'f'
+
+      - name: Run stored-truth report proof as production runtime
+        run: >-
+          npx --no-install vitest run
+          packages/database/src/__tests__/reports-period-live.test.ts
+
+      - name: Recheck formatting and diff hygiene
+        run: |
+          npm run format:check
+          git diff --check

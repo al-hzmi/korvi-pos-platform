@@ -1,0 +1,49 @@
+# Isolated test environment only. No automatic releases or paid resources.
+# Follow docs/operations/STAGING-DEPLOYMENT.md before creating these resources.
+services:
+  - type: web
+    name: korvi-staging-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: strike/5c-costing-authority
+    autoDeployTrigger: 'off'
+    buildCommand: bash scripts/deploy/build.sh api
+    startCommand: node apps/api/dist/staging.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: KORVI_ENVIRONMENT
+        value: staging
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_ORIGINS
+        sync: false
+      - key: BOOTSTRAP_SIGNING_KEY
+        generateValue: true
+      - key: METRICS_AUTH_TOKEN
+        generateValue: true
+  - type: web
+    name: korvi-staging-web
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: strike/5c-costing-authority
+    autoDeployTrigger: 'off'
+    buildCommand: bash scripts/deploy/build.sh web
+    startCommand: npm run start -w @korvi/pos-web -- --hostname 0.0.0.0
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: KORVI_API_ORIGIN
+        sync: false
+
+databases:
+  - name: korvi-staging-db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: '17'
+    databaseName: korvi_staging
+    ipAllowList: []

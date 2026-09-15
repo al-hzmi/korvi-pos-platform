@@ -11,7 +11,7 @@ import type { Failure } from './failures';
  * what they are allowed to touch.
  */
 
-export type CheckoutPhase = 'idle' | 'submitting' | 'succeeded' | 'failed';
+export type CheckoutPhase = 'idle' | 'submitting' | 'queued' | 'succeeded' | 'failed';
 
 export interface CheckoutState {
   readonly phase: CheckoutPhase;
@@ -36,6 +36,7 @@ export const initialCheckoutState: CheckoutState = {
 
 export type CheckoutEvent =
   | { readonly type: 'submit'; readonly intent: CheckoutIntent }
+  | { readonly type: 'queued'; readonly intent: CheckoutIntent }
   | { readonly type: 'succeeded'; readonly sale: SaleSummary; readonly replayed: boolean }
   | { readonly type: 'failed'; readonly failure: Failure }
   | { readonly type: 'dismiss' }
@@ -45,6 +46,16 @@ export function checkoutReducer(state: CheckoutState, event: CheckoutEvent): Che
   switch (event.type) {
     case 'submit':
       return { ...state, phase: 'submitting', intent: event.intent, failure: null };
+    case 'queued':
+      return {
+        ...state,
+        phase: 'queued',
+        intent: event.intent,
+        attemptOutstanding: false,
+        sale: null,
+        replayed: false,
+        failure: null,
+      };
     case 'succeeded':
       return {
         ...state,
@@ -80,6 +91,7 @@ export function checkoutReducer(state: CheckoutState, event: CheckoutEvent): Che
 export function submitDisabled(state: CheckoutState): boolean {
   return (
     state.phase === 'submitting' ||
+    state.phase === 'queued' ||
     state.phase === 'succeeded' ||
     state.failure?.action === 'blocking'
   );
@@ -94,7 +106,12 @@ export function submitDisabled(state: CheckoutState): boolean {
  * the cash amount in between would turn a safe replay into a conflict.
  */
 export function intentLocked(state: CheckoutState): boolean {
-  return state.phase === 'submitting' || state.phase === 'succeeded' || state.attemptOutstanding;
+  return (
+    state.phase === 'submitting' ||
+    state.phase === 'queued' ||
+    state.phase === 'succeeded' ||
+    state.attemptOutstanding
+  );
 }
 
 /**
