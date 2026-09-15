@@ -29,6 +29,11 @@ declare module 'fastify' {
 
 const UNAUTHENTICATED = { error: 'unauthenticated' } as const;
 const FORBIDDEN = { error: 'forbidden' } as const;
+const NATIVE_PREFIX = 'KorviNative ';
+
+function nativeRealmAttempted(value: string | readonly string[] | undefined): boolean {
+  return typeof value === 'string' && value.startsWith(NATIVE_PREFIX);
+}
 
 export interface Guards {
   readonly enforceOrigin: onRequestAsyncHookHandler;
@@ -48,6 +53,19 @@ export function createGuards(
   }
 
   const enforceOrigin: onRequestAsyncHookHandler = async (request, reply) => {
+    // The exact-Origin gate exists for ambient browser cookies. Installed
+    // clients have no browser cookie authority: challenge/login are explicit
+    // device-proof routes, and authenticated native writes carry KorviNative.
+    // A malformed/invalid KorviNative attempt is still kept in the native realm
+    // by requireSession below, so adding this prefix can never fall back to a
+    // valid browser cookie as a CSRF bypass.
+    if (
+      request.url.startsWith('/v1/native-auth/') ||
+      nativeRealmAttempted(request.headers.authorization)
+    ) {
+      return;
+    }
+
     const decision = checkOrigin(request.method, request.headers.origin, config.APP_ORIGINS);
     if (!decision.allowed) {
       request.log.warn({ reason: decision.reason }, 'origin check refused a write');
@@ -56,32 +74,40 @@ export function createGuards(
   };
 
   const requireSession: preHandlerAsyncHookHandler = async (request, reply) => {
-    const browserToken = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
-    if (browserToken !== null) {
-      const result = await service.authenticate(browserToken);
-      if (result.outcome === 'failure') {
-        request.log.info({ reason: result.reason }, 'browser session rejected');
-        clearCookie(reply);
+    // Realm selection is exclusive. Once a caller presents the KorviNative
+    // scheme it can never be rescued by an unrelated valid browser cookie.
+    // This prevents mixed-credential requests from becoming an Origin bypass.
+    if (nativeRealmAttempted(request.headers.authorization)) {
+      const nativeToken = readNativeAuthorization(request.headers.authorization);
+      if (nativeToken === null || installed === undefined) {
         await reply.code(401).send(UNAUTHENTICATED);
         return;
       }
-      request.auth = result.principal;
+      const nativeResult = await installed.authenticate(nativeToken);
+      if (nativeResult.outcome === 'failure') {
+        request.log.info({ reason: nativeResult.reason }, 'native session rejected');
+        await reply.code(401).send(UNAUTHENTICATED);
+        return;
+      }
+      request.auth = nativeResult.principal;
+      request.nativeAuth = nativeResult.binding;
       return;
     }
 
-    const nativeToken = readNativeAuthorization(request.headers.authorization);
-    if (nativeToken === null || installed === undefined) {
+    const browserToken = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
+    if (browserToken === null) {
       await reply.code(401).send(UNAUTHENTICATED);
       return;
     }
-    const nativeResult = await installed.authenticate(nativeToken);
-    if (nativeResult.outcome === 'failure') {
-      request.log.info({ reason: nativeResult.reason }, 'native session rejected');
+
+    const result = await service.authenticate(browserToken);
+    if (result.outcome === 'failure') {
+      request.log.info({ reason: result.reason }, 'browser session rejected');
+      clearCookie(reply);
       await reply.code(401).send(UNAUTHENTICATED);
       return;
     }
-    request.auth = nativeResult.principal;
-    request.nativeAuth = nativeResult.binding;
+    request.auth = result.principal;
   };
 
   function requirePermission(permission: Permission): preHandlerAsyncHookHandler {
