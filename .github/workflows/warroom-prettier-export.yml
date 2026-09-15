@@ -1,0 +1,60 @@
+name: War Room Prettier Export
+
+on:
+  push:
+    branches:
+      - warroom/prettier-1835
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format exact CI failures with pinned Prettier
+        run: >-
+          npx --no-install prettier --write
+          apps/api/src/__tests__/platform-device-routes.test.ts
+          apps/api/src/platform/device-routes.ts
+          packages/database/src/control-plane/device-enrollment.ts
+
+      - name: Verify scope is formatting-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          expected="$(printf '%s\n' \
+            apps/api/src/__tests__/platform-device-routes.test.ts \
+            apps/api/src/platform/device-routes.ts \
+            packages/database/src/control-plane/device-enrollment.ts)"
+          if [ "$changed" != "$expected" ]; then
+            echo "Unexpected formatted scope:" >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Upload exact formatted files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: prettier-3.9.6-device-authority
+          path: |
+            apps/api/src/__tests__/platform-device-routes.test.ts
+            apps/api/src/platform/device-routes.ts
+            packages/database/src/control-plane/device-enrollment.ts
+          if-no-files-found: error
+          retention-days: 1
