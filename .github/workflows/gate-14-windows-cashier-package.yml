@@ -1,0 +1,70 @@
+name: Gate 14 Windows Cashier Package
+
+on:
+  push:
+    branches:
+      - warroom/installed-cashier
+    paths:
+      - .github/workflows/gate-14-windows-cashier-package.yml
+      - apps/cashier-client/**
+      - apps/pos-web/src/components/pos-app.tsx
+      - apps/pos-web/src/lib/api.ts
+      - packages/domain/**
+      - packages/ui/**
+      - package.json
+      - package-lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-package:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      KORVI_NATIVE_API_ORIGIN: https://api.staging.invalid/
+      KORVI_NATIVE_WEB_ORIGIN: https://staging.invalid/
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact dependency graph
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Verify dependency pins
+        run: npm run versions:verify
+
+      - name: Build shared cashier packages
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
+
+      - name: Build Windows NSIS package
+        run: npm run tauri -w @korvi/cashier-client -- build --bundles nsis
+
+      - name: Verify package exists
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -Path "apps/cashier-client/src-tauri/target/release/bundle/nsis/*-setup.exe")
+          if ($files.Count -lt 1) { throw 'No NSIS package was produced.' }
+          foreach ($file in $files) {
+            if ($file.Length -le 0) { throw "Empty package: $($file.FullName)" }
+            Write-Host "$($file.Name) $($file.Length) bytes"
+            Get-FileHash -Algorithm SHA256 $file.FullName
+          }
+
+      - name: Preserve Windows package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: korvi-cashier-windows-${{ github.sha }}
+          path: apps/cashier-client/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30
