@@ -27,8 +27,9 @@ jobs:
             packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
             packages/database/src/control-plane/operational-bootstrap.ts
       - name: Print canonical patch
-        run: git diff --no-ext-diff --unified=3 --no-color -- \
-          apps/api/src/platform/routes.ts \
-          apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
-          packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
-          packages/database/src/control-plane/operational-bootstrap.ts
+        run: |
+          git diff --no-ext-diff --unified=3 --no-color -- \
+            apps/api/src/platform/routes.ts \
+            apps/pos-web/src/components/platform/platform-operational-bootstrap.tsx \
+            packages/database/src/__tests__/platform-operational-bootstrap-live.test.ts \
+            packages/database/src/control-plane/operational-bootstrap.ts
