@@ -6,7 +6,7 @@ on:
       - strike/product-routing-p0
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   format-export:
@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Check out exact commit
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 1
 
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
@@ -30,15 +32,22 @@ jobs:
             apps/api/src/native-auth/lazy.ts \
             apps/api/src/native-auth/service.ts \
             packages/database/src/native-auth/device-session.ts
-          mkdir -p artifacts/native-format/apps/api/src/native-auth
-          mkdir -p artifacts/native-format/packages/database/src/native-auth
-          cp apps/api/src/native-auth/lazy.ts artifacts/native-format/apps/api/src/native-auth/lazy.ts
-          cp apps/api/src/native-auth/service.ts artifacts/native-format/apps/api/src/native-auth/service.ts
-          cp packages/database/src/native-auth/device-session.ts artifacts/native-format/packages/database/src/native-auth/device-session.ts
+          git diff --check
 
-      - name: Preserve canonical formatting
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: native-auth-prettier-${{ github.sha }}
-          path: artifacts/native-format
-          retention-days: 1
+      - name: Commit exact formatter output
+        run: |
+          if git diff --quiet -- \
+            apps/api/src/native-auth/lazy.ts \
+            apps/api/src/native-auth/service.ts \
+            packages/database/src/native-auth/device-session.ts; then
+            echo 'Native auth sources already match repository Prettier.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            apps/api/src/native-auth/lazy.ts \
+            apps/api/src/native-auth/service.ts \
+            packages/database/src/native-auth/device-session.ts
+          git commit -m 'style(native-auth): apply repository Prettier'
+          git push origin HEAD:strike/product-routing-p0
