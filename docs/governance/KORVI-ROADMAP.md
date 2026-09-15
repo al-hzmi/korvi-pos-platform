@@ -35,19 +35,25 @@ Continue from the first real open blocker on the active Product P0 branch. Requi
 
 Close the gap between “tenant row exists” and “customer can actually sign in”. Required flow:
 
-**Platform Admin → create tenant/business → assign plan → create/bootstrap initial owner → create/activate branch → register terminal/device → securely present tenant code/login facts → sign in as merchant owner → complete merchant onboarding → open cashier.**
+**Platform Admin → create tenant/business → assign plan → create/bootstrap initial owner → create/activate branch → register/enroll terminal/device → securely present tenant code/login facts → sign in as merchant owner → complete merchant onboarding → open cashier.**
 
 Direct SQL/manual database work is not the normal customer-creation path.
 
 Create a safe demo tenant only through supported product/admin flows; never commit credentials or secrets to GitHub.
 
-### P0-3 — Installed Korvi for Windows and Android
+### P0-3 — Installed Korvi Cashier for Windows and Android
 
-Installed Korvi is now a B0 commercial requirement.
+Installed Korvi is now a B0 commercial requirement, with an explicit surface split:
+
+- **Korvi Cashier** = installed Windows/Android till application.
+- **Korvi Control** = responsive merchant-management web application.
+- **Korvi Platform Admin** = separated platform-operator web application.
+
+Do not ship the full management/platform product inside the till package merely hidden behind navigation.
 
 Implementation must reuse the existing client/domain/API boundaries rather than rewrite Korvi separately per platform. Choose the smallest production-grade packaging architecture that can satisfy the gates without weakening the current system.
 
-Required outcomes:
+Required cashier outcomes:
 
 - Windows installable release artifact;
 - Android installable release artifact;
@@ -59,35 +65,60 @@ Required outcomes:
 - end-of-day reconnect sync with no loss/duplication/reordering;
 - deterministic conflict/review handling;
 - printer/scanner/device integration for supported profiles;
-- no secrets embedded in packages;
+- no reusable cloud/platform secrets embedded in packages;
 - controlled app version/update/local-schema migration behavior;
 - real Windows + Android evidence, not report-only proof.
 
 Do not declare victory from existing browser/PWA offline evidence alone. Reuse that proven engine as foundation, then prove the installed clients.
 
-### P0-4 — Unify all final work on one release lineage
+### P0-4 — Harden Client Trust / Anti-Cloning
 
-Once Product P0 + provisioning + installed-client requirements are implemented:
+Before external distribution, close the B0 client-integrity objective:
+
+> **STOLEN CLIENT ≠ STOLEN PRODUCT**
+
+Required work:
+
+- distinct enrolled device identity;
+- tenant/branch/terminal/installation binding;
+- OS-backed device-key protection where supported;
+- signed bounded offline license/lease that supports long WAN outages without embedding private platform signing keys;
+- encrypted/bound local operational store;
+- no production DB/admin/platform secrets in EXE/APK/local files;
+- cloud-only customer provisioning, plan/license issuance and Platform Admin authority;
+- server-side RBAC/RLS/idempotency safe against patched clients;
+- signed/versioned Windows and Android packages and updates;
+- no unjustified debug tooling/public production source maps;
+- minification/obfuscation/tamper checks as secondary defense-in-depth;
+- device revocation, duplicate-device fencing and audited suspicious-device behavior;
+- adversarial proof that copying/rebranding the binary does not yield an independently authorized Korvi platform.
+
+Read and satisfy `docs/governance/KORVI-CLIENT-TRUST-ANTI-CLONING.md` and Gate 13 before calling the distributed cashier commercially hardened.
+
+### P0-5 — Unify all final work on one release lineage
+
+Once Product P0 + provisioning + installed-client + anti-cloning requirements are implemented:
 
 1. reconcile with the current official RC baseline;
 2. preserve all closed financial/security/offline/ZATCA/inventory evidence;
 3. advance one final release lineage;
-4. run full CI/live PostgreSQL/visual/offline/installed-client proof on the exact final SHA/build;
+4. run full CI/live PostgreSQL/visual/offline/installed-client/client-integrity proof on the exact final SHA/build;
 5. deploy the same final code to Staging;
 6. run the full administrative and merchant dry run from Staging/installed clients.
 
 Intermediate green SHAs do not substitute for final exact-head evidence.
 
-### P0-5 — User-visible full dry run
+### P0-6 — User-visible full dry run
 
 Provide the executive operator with exactly what is needed to test personally:
 
-- Platform Admin URL/installed entry point;
+- Platform Admin URL/entry point;
 - safe temporary Platform Admin access mechanism;
 - tenant/customer code;
 - demo owner email/user identity;
 - safe temporary/one-time credential path;
-- merchant login URL/installed entry point;
+- merchant login URL;
+- installed cashier package/entry point for Windows/Android as available;
 - branch/register/device setup facts;
 - instructions for first login only where unavoidable.
 
@@ -125,7 +156,7 @@ Finish Platform Admin, customer provisioning, owner bootstrap/recovery boundarie
 
 ### Stage 3 — Installed / Offline / Device Continuity — active B0 completion
 
-Move the already-proven browser offline engine into official Windows/Android Installed Korvi release paths and close real-device/full-shift evidence. Then complete Liquid Cashier authorized recovery/device replacement.
+Move the already-proven browser offline engine into official Windows/Android Korvi Cashier release paths and close real-device/full-shift evidence. Then complete Liquid Cashier authorized recovery/device replacement.
 
 ### Stage 4 — Retail / Grocery Competitive Parity
 
@@ -200,6 +231,7 @@ After merchant purchasing/integration identities are stable, expand governed sup
 - ZATCA
 - Offline/Continuity
 - Installed Application
+- Client Trust / Anti-Cloning / IP Defense
 - Device/Printing
 - Performance
 - UX/Accessibility/Visual Truth
@@ -212,10 +244,16 @@ After merchant purchasing/integration identities are stable, expand governed sup
 Never use a single percentage or completion phrase without naming the denominator.
 
 - **Release Gate Readiness** = current release scorecard denominator.
-- **Commercial V1 Completeness** = every current sellable-V1 capability plus installed-client/provisioning/acceptance requirements.
+- **Commercial V1 Completeness** = every current sellable-V1 capability plus installed-client/provisioning/client-integrity/acceptance requirements.
 - **Master Product Vision Completeness** = the broader accepted platform scope in the Master Product Directive/Capability Matrix.
 
 `Korvi مكتمل ✅` may only be shown with the scope explicitly named and only when that scope has no known missing capability or open required blocker. Deadline pressure is never evidence.
+
+## Executive decision capture
+
+Material accepted decisions from executive conversation must not remain chat-only. Promote them into the applicable governance source and record the dated decision in `docs/governance/KORVI-EXECUTIVE-DECISION-REGISTER.md`.
+
+Rejected brainstorming/hypotheticals are not binding until explicitly accepted.
 
 ## Execution behavior
 
@@ -223,6 +261,6 @@ Never use a single percentage or completion phrase without naming the denominato
 - Continue from the **FIRST REAL OPEN BLOCKER**.
 - Do not reopen proven closed work without contradictory live evidence.
 - Do not stop at planning/testing/reporting when an implementable blocker remains and the task context authorizes implementation.
-- Do not weaken quality, security, financial correctness, inventory truth, ZATCA or offline guarantees to move faster.
+- Do not weaken quality, security, financial correctness, inventory truth, ZATCA, offline guarantees or client-integrity boundaries to move faster.
 - Prefer root-cause fixes and reusable architecture over temporary patches.
 - Preserve evidence and exact-head traceability.
