@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, CardSurface } from '@korvi/ui';
 import { LoginScreen } from './login-screen';
 import { Screen } from './screen';
@@ -8,7 +8,6 @@ import { StatusNote } from './status-note';
 import { BlockedScreen, TerminalPicker } from './terminal-picker';
 import { ShiftGate } from './shift-gate';
 import { CashierScreen } from './cashier-screen';
-import { createApiClient } from '../lib/api';
 import { FOREIGN_SHIFT } from '../lib/shift';
 import { LOGOUT_UNCONFIRMED } from '../lib/session';
 import { readOfflineWorkspace, writeOfflineWorkspace } from '../lib/offline-workspace';
@@ -30,13 +29,14 @@ import type { OfflineWorkspaceSnapshot } from '../lib/offline-workspace';
  * so the till can queue local sales. It carries no token and grants no server
  * authority; every queued command is still reconciled by the server later.
  *
- * Product routing is deliberately host-owned. This runtime has no Next import
- * and no Control route literal, so the installed Cashier can reuse it without
- * accidentally shipping the merchant-management navigation realm.
+ * Product routing and API transport are deliberately host-owned. This runtime
+ * has no Next import, no Control route literal and no browser fetch binding.
+ * Web binds the same-origin cookie client; installed Cashier must inject its
+ * native transport instead.
  */
 export interface PosAppProps {
-  /** Injected by tests. Production builds the real client against this origin. */
-  readonly api?: ApiClient;
+  /** Required host transport. The cashier runtime never guesses one. */
+  readonly api: ApiClient;
   /**
    * Browser host capability only. When supplied, a management-oriented
    * authenticated principal may be handed back to the host before terminal and
@@ -60,11 +60,10 @@ function Waiting({ label }: { readonly label: string }): JSX.Element {
 }
 
 export function PosApp({
-  api: injected,
+  api,
   onManagementLanding,
   controlCentreHref,
-}: PosAppProps = {}): JSX.Element {
-  const api = useMemo(() => injected ?? createApiClient(), [injected]);
+}: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
 
