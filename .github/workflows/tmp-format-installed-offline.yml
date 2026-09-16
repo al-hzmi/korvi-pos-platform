@@ -1,0 +1,36 @@
+name: Temporary Format Installed Offline
+
+on:
+  push:
+    branches: ['strike/product-routing-p0']
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format target files
+        run: npx prettier apps/cashier-client/src/installed-offline-authority.ts apps/cashier-client/src/main.tsx --write
+
+      - name: Emit formatted files
+        run: |
+          echo '===OFFLINE_AUTHORITY_BEGIN==='
+          cat apps/cashier-client/src/installed-offline-authority.ts
+          echo '===OFFLINE_AUTHORITY_END==='
+          echo '===MAIN_BEGIN==='
+          cat apps/cashier-client/src/main.tsx
+          echo '===MAIN_END==='
