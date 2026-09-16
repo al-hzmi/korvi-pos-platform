@@ -1,4 +1,5 @@
 mod device_identity;
+mod offline_authority;
 
 use reqwest::{
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER},
@@ -32,6 +33,7 @@ struct NativeHttpState {
     api_origin: Url,
     session: Mutex<Option<String>>,
     binding_path: PathBuf,
+    offline_authority_path: PathBuf,
 }
 
 impl NativeHttpState {
@@ -53,6 +55,7 @@ impl NativeHttpState {
             api_origin,
             session: Mutex::new(None),
             binding_path: dir.join("device-binding.json"),
+            offline_authority_path: dir.join("offline-authority.json"),
         })
     }
     fn binding(&self) -> Result<Option<DeviceBinding>, String> {
@@ -72,6 +75,31 @@ impl NativeHttpState {
         fs::write(&temp, bytes).map_err(|e| format!("cannot write device binding: {e}"))?;
         fs::rename(temp, &self.binding_path)
             .map_err(|e| format!("cannot commit device binding: {e}"))
+    }
+    fn offline_authority(&self) -> Result<offline_authority::CachedOfflineAuthority, String> {
+        let bytes = fs::read(&self.offline_authority_path)
+            .map_err(|_| "no signed offline authority is cached for this device".to_string())?;
+        let cached = serde_json::from_slice(&bytes)
+            .map_err(|_| "offline authority cache is corrupt".to_string())?;
+        offline_authority::validate_cached(cached)
+    }
+    fn write_offline_authority(
+        &self,
+        cached: &offline_authority::CachedOfflineAuthority,
+    ) -> Result<(), String> {
+        let bytes = serde_json::to_vec(cached)
+            .map_err(|e| format!("cannot encode offline authority cache: {e}"))?;
+        let temp = self.offline_authority_path.with_extension("json.tmp");
+        fs::write(&temp, bytes).map_err(|e| format!("cannot write offline authority cache: {e}"))?;
+        fs::rename(temp, &self.offline_authority_path)
+            .map_err(|e| format!("cannot commit offline authority cache: {e}"))
+    }
+    fn clear_offline_authority(&self) -> Result<(), String> {
+        match fs::remove_file(&self.offline_authority_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("cannot clear offline authority cache: {error}")),
+        }
     }
 }
 
@@ -193,6 +221,37 @@ async fn body_response(resp: reqwest::Response) -> Result<NativeHttpResponse, St
     })
 }
 
+async fn refresh_offline_authority<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &NativeHttpState,
+    token: &str,
+) -> Result<(), String> {
+    let resp = state
+        .client
+        .post(api_url(state, "/v1/native-auth/offline-lease")?)
+        .header(AUTHORIZATION, format!("KorviNative {token}"))
+        .header(ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("offline authority request failed: {e}"))?;
+    let status = resp.status().as_u16();
+    if !(200..300).contains(&status) {
+        return Err(format!("offline authority request was refused with HTTP {status}"));
+    }
+    let issued: offline_authority::OfflineLeaseServerResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("offline authority response decoding failed: {e}"))?;
+    let envelope = offline_authority::device_envelope(&issued.lease, &issued.verification_key_spki)?;
+    let device_signature = device_identity::sign(app, &envelope)?;
+    let cached = offline_authority::cached(
+        issued.lease,
+        issued.verification_key_spki,
+        device_signature,
+    )?;
+    state.write_offline_authority(&cached)
+}
+
 #[tauri::command]
 fn device_status<R: Runtime>(
     app: AppHandle<R>,
@@ -202,6 +261,13 @@ fn device_status<R: Runtime>(
         identity: device_identity::identity(&app)?,
         binding: state.binding()?,
     })
+}
+
+#[tauri::command]
+fn offline_authority_material(
+    state: State<'_, NativeHttpState>,
+) -> Result<offline_authority::CachedOfflineAuthority, String> {
+    state.offline_authority()
 }
 
 #[tauri::command]
@@ -216,7 +282,8 @@ fn bind_device(
     state.write_binding(&DeviceBinding {
         tenant_id,
         device_enrollment_id,
-    })
+    })?;
+    state.clear_offline_authority()
 }
 
 #[tauri::command]
@@ -273,6 +340,13 @@ async fn native_login<R: Runtime>(
         .get("principal")
         .cloned()
         .ok_or("native login omitted principal")?;
+    if let Err(error) = refresh_offline_authority(&app, &state, &token).await {
+        let _ = state.clear_offline_authority();
+        return Ok(json_response(
+            503,
+            json!({"error":"offline-authority-unavailable","message":error}),
+        ));
+    }
     *state
         .session
         .lock()
@@ -281,7 +355,10 @@ async fn native_login<R: Runtime>(
 }
 
 #[tauri::command]
-async fn native_me(state: State<'_, NativeHttpState>) -> Result<NativeHttpResponse, String> {
+async fn native_me<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, NativeHttpState>,
+) -> Result<NativeHttpResponse, String> {
     let token = state
         .session
         .lock()
@@ -305,10 +382,12 @@ async fn native_me(state: State<'_, NativeHttpState>) -> Result<NativeHttpRespon
             .session
             .lock()
             .map_err(|_| "native session state poisoned")? = None;
+        let _ = state.clear_offline_authority();
     }
     if !(200..300).contains(&status) {
         return Ok(json_response(status, value));
     }
+    let _ = refresh_offline_authority(&app, &state, &token).await;
     Ok(json_response(
         status,
         value
@@ -333,6 +412,7 @@ async fn native_logout(state: State<'_, NativeHttpState>) -> Result<NativeHttpRe
             .send()
             .await;
     }
+    state.clear_offline_authority()?;
     Ok(response(204, None))
 }
 
@@ -387,6 +467,7 @@ async fn http_request(
             .session
             .lock()
             .map_err(|_| "native session state poisoned")? = None;
+        let _ = state.clear_offline_authority();
     }
     body_response(resp).await
 }
@@ -404,6 +485,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             device_status,
+            offline_authority_material,
             bind_device,
             native_login,
             native_me,
