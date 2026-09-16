@@ -17,6 +17,7 @@ import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.PrivateKey
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import javax.crypto.Cipher
@@ -64,6 +65,15 @@ class DeviceIdentityPlugin(private val activity: Activity) : Plugin(activity) {
         createKey(false)
     }
 
+    private fun identityPrivateKey(): PrivateKey {
+        ensureKey()
+        val key = store().getKey(alias, null)
+        if (key !is PrivateKey) {
+            throw IllegalStateException("device identity key is unavailable or not a PrivateKey")
+        }
+        return key
+    }
+
     private fun createLocalStoreKey(strongBox: Boolean) {
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         val builder = KeyGenParameterSpec.Builder(
@@ -97,7 +107,7 @@ class DeviceIdentityPlugin(private val activity: Activity) : Plugin(activity) {
     private fun encode(value: ByteArray): String = Base64.encodeToString(value, Base64.NO_WRAP)
     private fun publicEncoded(): ByteArray { ensureKey(); return store().getCertificate(alias).publicKey.encoded }
     private fun keyInfo(): KeyInfo {
-        ensureKey(); val privateKey = store().getKey(alias, null)
+        val privateKey = identityPrivateKey()
         return KeyFactory.getInstance(privateKey.algorithm, "AndroidKeyStore").getKeySpec(privateKey, KeyInfo::class.java)
     }
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }
@@ -122,7 +132,7 @@ class DeviceIdentityPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun sign(invoke: Invoke) {
         try {
-            val args = invoke.parseArgs(SignArgs::class.java); ensureKey(); val privateKey = store().getKey(alias, null)
+            val args = invoke.parseArgs(SignArgs::class.java); val privateKey = identityPrivateKey()
             val signer = Signature.getInstance("SHA256withECDSA"); signer.initSign(privateKey); signer.update(args.payload.toByteArray(Charsets.UTF_8))
             val ret = JSObject(); ret.put("signature", Base64.encodeToString(signer.sign(), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)); invoke.resolve(ret)
         } catch (error: Exception) { invoke.reject("Android Keystore signing failed: ${error.javaClass.simpleName}") }
