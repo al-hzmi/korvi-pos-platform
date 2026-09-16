@@ -1,38 +1,27 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { PosApp } from '../../pos-web/src/components/pos-app';
 import { createApiClient } from '../../pos-web/src/lib/api';
+import {
+  verifyInstalledOfflineAuthority,
+  type InstalledDeviceStatus,
+  type NativeOfflineAuthorityMaterial,
+} from './installed-offline-authority';
 import { nativeFetch } from './native-fetch';
 import '../../pos-web/src/app/globals.css';
-
-interface DeviceBinding {
-  readonly tenantId: string;
-  readonly deviceEnrollmentId: string;
-}
-interface DeviceStatus {
-  readonly platform: string;
-  readonly installationId: string;
-  readonly keyAlgorithm: string;
-  readonly publicKeySpki: string;
-  readonly publicKeySha256: string;
-  readonly custody: string;
-  readonly hardwareBacked: boolean;
-  readonly strongboxBacked: boolean;
-  readonly binding: DeviceBinding | null;
-}
 
 const api = createApiClient(nativeFetch);
 
 function InstalledCashier(): React.JSX.Element {
-  const [status, setStatus] = useState<DeviceStatus | null>(null);
+  const [status, setStatus] = useState<InstalledDeviceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState('');
   const [enrollmentId, setEnrollmentId] = useState('');
 
   const load = async () => {
     try {
-      setStatus(await invoke<DeviceStatus>('device_status'));
+      setStatus(await invoke<InstalledDeviceStatus>('device_status'));
       setError(null);
     } catch (cause) {
       setError(String(cause));
@@ -41,6 +30,23 @@ function InstalledCashier(): React.JSX.Element {
   useEffect(() => {
     void load();
   }, []);
+
+  const authorizeOfflineWorkspace = useCallback(
+    async (snapshot: Parameters<typeof verifyInstalledOfflineAuthority>[2]): Promise<boolean> => {
+      if (status?.binding === null || status === null) return false;
+      try {
+        const material = await invoke<NativeOfflineAuthorityMaterial>('offline_authority_material');
+        const authority = await verifyInstalledOfflineAuthority(material, status, snapshot);
+        return (
+          authority !== null &&
+          authority.deviceEnrollmentId === status.binding.deviceEnrollmentId
+        );
+      } catch {
+        return false;
+      }
+    },
+    [status],
+  );
 
   if (error !== null)
     return (
@@ -110,7 +116,13 @@ function InstalledCashier(): React.JSX.Element {
       </main>
     );
   }
-  return <PosApp api={api} />;
+  return (
+    <PosApp
+      api={api}
+      authorizeOfflineWorkspace={authorizeOfflineWorkspace}
+      offlineWorkspaceMaxAgeMs={null}
+    />
+  );
 }
 
 createRoot(document.getElementById('root')!).render(
