@@ -65,6 +65,7 @@ jobs:
           patch('apps/pos-web/src/components/pos-app.tsx', [
               ("  readonly offlineWorkspaceMaxAgeMs?: number | null | undefined;\n}", "  readonly offlineWorkspaceMaxAgeMs?: number | null | undefined;\n  /** Stable installed-device enrollment used to isolate durable queue and drafts. */\n  readonly offlineStoreDeviceEnrollmentId?: string | undefined;\n}"),
               ("  authorizeOfflineWorkspace,\n  offlineWorkspaceMaxAgeMs,\n}: PosAppProps)", "  authorizeOfflineWorkspace,\n  offlineWorkspaceMaxAgeMs,\n  offlineStoreDeviceEnrollmentId,\n}: PosAppProps)"),
+              ("    const snapshot = readOfflineWorkspace(new Date(), { maxAgeMs: offlineWorkspaceMaxAgeMs });", "    const snapshot = readOfflineWorkspace(\n      new Date(),\n      offlineWorkspaceMaxAgeMs === undefined ? {} : { maxAgeMs: offlineWorkspaceMaxAgeMs },\n    );"),
               ("          controlCentreHref={controlCentreHref}\n          onSignOut={() => undefined}", "          controlCentreHref={controlCentreHref}\n          offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}\n          onSignOut={() => undefined}"),
               ("      controlCentreHref={controlCentreHref}\n      onSignOut={signOut}", "      controlCentreHref={controlCentreHref}\n      offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}\n      onSignOut={signOut}")
           ])
@@ -82,9 +83,15 @@ jobs:
       - name: Format changed files
         run: npx prettier apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-store.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/components/pos-app.tsx apps/cashier-client/src/main.tsx --write
 
+      - name: Prisma client
+        run: npm run db:generate
+        env:
+          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+
       - name: Prepare workspace dependencies
         run: |
           npm run build -w @korvi/domain
+          npm run build -w @korvi/database
           npm run build -w @korvi/ui
 
       - name: Device-bound offline store tests
