@@ -39,6 +39,8 @@ jobs:
     name: Windows DPAPI / CNG / NSIS
     runs-on: windows-2022
     timeout-minutes: 45
+    env:
+      KORVI_NATIVE_API_ORIGIN: ${{ vars.KORVI_NATIVE_API_ORIGIN }}
 
     steps:
       - name: Check out exact commit
@@ -71,6 +73,8 @@ jobs:
 
       - name: Prove Windows OS-bound device identity and local protection
         shell: pwsh
+        env:
+          KORVI_NATIVE_API_ORIGIN: http://127.0.0.1:3001
         run: cargo test --manifest-path apps/cashier-client/src-tauri/Cargo.toml --locked --target-dir apps/cashier-client/src-tauri/target
 
       - name: Typecheck installed Cashier
@@ -78,6 +82,12 @@ jobs:
 
       - name: Build installed Cashier frontend
         run: npm run build -w @korvi/cashier-client
+
+      - name: Require controlled Windows release origin
+        shell: pwsh
+        run: |
+          if (-not $env:KORVI_NATIVE_API_ORIGIN) { throw 'Missing repository variable KORVI_NATIVE_API_ORIGIN' }
+          if (-not $env:KORVI_NATIVE_API_ORIGIN.StartsWith('https://')) { throw 'KORVI_NATIVE_API_ORIGIN must be an HTTPS origin for release' }
 
       - name: Build current-lineage Windows installer
         run: npm run tauri -w @korvi/cashier-client -- build --bundles nsis
