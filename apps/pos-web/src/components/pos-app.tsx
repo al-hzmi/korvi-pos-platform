@@ -54,6 +54,12 @@ export interface PosAppProps {
    */
   readonly authorizeOfflineWorkspace?:
     ((snapshot: OfflineWorkspaceSnapshot) => Promise<boolean>) | undefined;
+  /**
+   * Host-specific local snapshot age. Undefined preserves the browser's 12h
+   * policy; installed Cashier supplies null because the signed kol1 lease is
+   * the bounded authority and must not be pre-empted by an arbitrary local TTL.
+   */
+  readonly offlineWorkspaceMaxAgeMs?: number | null | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -73,6 +79,7 @@ export function PosApp({
   onManagementLanding,
   controlCentreHref,
   authorizeOfflineWorkspace,
+  offlineWorkspaceMaxAgeMs,
 }: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
@@ -103,7 +110,7 @@ export function PosApp({
       return;
     }
 
-    const snapshot = readOfflineWorkspace();
+    const snapshot = readOfflineWorkspace(new Date(), { maxAgeMs: offlineWorkspaceMaxAgeMs });
     if (snapshot === null || authorizeOfflineWorkspace === undefined) {
       setOfflineAuthorizationPending(false);
       setOfflineWorkspace(snapshot);
@@ -126,7 +133,7 @@ export function PosApp({
     return () => {
       live = false;
     };
-  }, [authorizeOfflineWorkspace, session.state.kind]);
+  }, [authorizeOfflineWorkspace, offlineWorkspaceMaxAgeMs, session.state.kind]);
 
   useEffect(() => {
     if (
