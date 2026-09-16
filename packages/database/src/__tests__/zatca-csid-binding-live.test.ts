@@ -196,11 +196,17 @@ describe.skipIf(url === '')('ZATCA active CSID binding repository, PostgreSQL li
     const badCredentialId = `sha256:${'33'.repeat(32)}`;
     const badSecretId = 'production-secret-3';
     const badAttemptId = await issueProductionAttempt(badCredentialId, badSecretId);
-    const bad = binding(badCredentialId, badSecretId);
-    bad.certificatePath[0] = {
-      certificateDer: Uint8Array.from(OTHER_LEAF_DER),
-      issuerName: 'CN=Korvi Test Root',
-      serialNumber: '3',
+    const validBadSource = binding(badCredentialId, badSecretId);
+    const bad: ZatcaCsidBinding = {
+      ...validBadSource,
+      certificatePath: [
+        {
+          certificateDer: Uint8Array.from(OTHER_LEAF_DER),
+          issuerName: 'CN=Korvi Test Root',
+          serialNumber: '3',
+        },
+        ...validBadSource.certificatePath.slice(1),
+      ],
     };
 
     await expect(
