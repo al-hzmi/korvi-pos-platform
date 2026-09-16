@@ -81,12 +81,16 @@ function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-function parseDerLength(bytes: Uint8Array, offset: number): { readonly length: number; readonly next: number } {
+function parseDerLength(
+  bytes: Uint8Array,
+  offset: number,
+): { readonly length: number; readonly next: number } {
   const first = bytes[offset];
   if (first === undefined) throw new Error('invalid DER length');
   if ((first & 0x80) === 0) return { length: first, next: offset + 1 };
   const count = first & 0x7f;
-  if (count < 1 || count > 2 || offset + count >= bytes.length) throw new Error('invalid DER length');
+  if (count < 1 || count > 2 || offset + count >= bytes.length)
+    throw new Error('invalid DER length');
   let length = 0;
   for (let index = 0; index < count; index += 1) {
     const byte = bytes[offset + 1 + index];
@@ -96,7 +100,10 @@ function parseDerLength(bytes: Uint8Array, offset: number): { readonly length: n
   return { length, next: offset + 1 + count };
 }
 
-function derInteger(bytes: Uint8Array, offset: number): { readonly value: Uint8Array; readonly next: number } {
+function derInteger(
+  bytes: Uint8Array,
+  offset: number,
+): { readonly value: Uint8Array; readonly next: number } {
   if (bytes[offset] !== 0x02) throw new Error('invalid ECDSA DER integer');
   const parsed = parseDerLength(bytes, offset + 1);
   const end = parsed.next + parsed.length;
@@ -113,7 +120,8 @@ function derInteger(bytes: Uint8Array, offset: number): { readonly value: Uint8A
 export function ecdsaDerToP1363(signature: Uint8Array): Uint8Array {
   if (signature[0] !== 0x30) throw new Error('invalid ECDSA DER sequence');
   const sequence = parseDerLength(signature, 1);
-  if (sequence.next + sequence.length !== signature.length) throw new Error('invalid ECDSA DER sequence');
+  if (sequence.next + sequence.length !== signature.length)
+    throw new Error('invalid ECDSA DER sequence');
   const r = derInteger(signature, sequence.next);
   const s = derInteger(signature, r.next);
   if (s.next !== signature.length) throw new Error('invalid ECDSA DER sequence');
@@ -124,7 +132,8 @@ export function ecdsaDerToP1363(signature: Uint8Array): Uint8Array {
 }
 
 function stringArray(value: unknown): readonly string[] | null {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim() === '')) return null;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim() === ''))
+    return null;
   return value as readonly string[];
 }
 
@@ -147,7 +156,8 @@ function parseEntitlements(value: unknown): readonly LeaseEntitlement[] | null {
       entry.kind.trim() === '' ||
       !(entry.flagValue === null || typeof entry.flagValue === 'boolean') ||
       !(entry.limitValue === null || typeof entry.limitValue === 'string')
-    ) return null;
+    )
+      return null;
     result.push({
       key: entry.key,
       kind: entry.kind,
@@ -164,22 +174,47 @@ function parseLeaseClaims(value: unknown): LeaseClaims | null {
   const capabilities = stringArray(value.capabilities);
   const entitlements = parseEntitlements(value.entitlements);
   const strings = [
-    'issuer', 'leaseId', 'keyId', 'tenantId', 'tenantSlug', 'branchId', 'terminalId',
-    'deviceEnrollmentId', 'devicePublicKeySha256', 'userId', 'userEmail', 'userDisplayName',
-    'sessionId', 'maxDiscountBasisPoints', 'assignmentId', 'planKey', 'entitlementRevision',
-    'issuedAt', 'notBefore', 'expiresAt',
+    'issuer',
+    'leaseId',
+    'keyId',
+    'tenantId',
+    'tenantSlug',
+    'branchId',
+    'terminalId',
+    'deviceEnrollmentId',
+    'devicePublicKeySha256',
+    'userId',
+    'userEmail',
+    'userDisplayName',
+    'sessionId',
+    'maxDiscountBasisPoints',
+    'assignmentId',
+    'planKey',
+    'entitlementRevision',
+    'issuedAt',
+    'notBefore',
+    'expiresAt',
   ] as const;
-  if (strings.some((key) => typeof value[key] !== 'string' || (value[key] as string).trim() === '')) return null;
+  if (strings.some((key) => typeof value[key] !== 'string' || (value[key] as string).trim() === ''))
+    return null;
   if (
     value.version !== 1 ||
     value.issuer !== 'korvi-platform' ||
     value.leaseRevision !== 1 ||
-    typeof value.planRevision !== 'number' || !Number.isSafeInteger(value.planRevision) || value.planRevision < 0 ||
-    typeof value.issuedAtUnixMs !== 'number' || !Number.isSafeInteger(value.issuedAtUnixMs) ||
-    typeof value.notBeforeUnixMs !== 'number' || !Number.isSafeInteger(value.notBeforeUnixMs) ||
-    typeof value.expiresAtUnixMs !== 'number' || !Number.isSafeInteger(value.expiresAtUnixMs) ||
-    roles === null || capabilities === null || entitlements === null
-  ) return null;
+    typeof value.planRevision !== 'number' ||
+    !Number.isSafeInteger(value.planRevision) ||
+    value.planRevision < 0 ||
+    typeof value.issuedAtUnixMs !== 'number' ||
+    !Number.isSafeInteger(value.issuedAtUnixMs) ||
+    typeof value.notBeforeUnixMs !== 'number' ||
+    !Number.isSafeInteger(value.notBeforeUnixMs) ||
+    typeof value.expiresAtUnixMs !== 'number' ||
+    !Number.isSafeInteger(value.expiresAtUnixMs) ||
+    roles === null ||
+    capabilities === null ||
+    entitlements === null
+  )
+    return null;
   return {
     ...(value as unknown as Omit<LeaseClaims, 'roles' | 'capabilities' | 'entitlements'>),
     roles,
@@ -214,7 +249,8 @@ function validateClaims(
     !canonicalUuid(claims.userId) ||
     !canonicalUuid(claims.sessionId) ||
     !canonicalUuid(claims.assignmentId)
-  ) return false;
+  )
+    return false;
   if (
     claims.tenantId !== binding.tenantId ||
     claims.deviceEnrollmentId !== binding.deviceEnrollmentId ||
@@ -226,10 +262,12 @@ function validateClaims(
     claims.userEmail !== snapshot.principal.user.email ||
     claims.userDisplayName !== snapshot.principal.user.displayName ||
     claims.sessionId !== snapshot.principal.session.id ||
-    (snapshot.principal.tenant.slug !== undefined && claims.tenantSlug !== snapshot.principal.tenant.slug) ||
+    (snapshot.principal.tenant.slug !== undefined &&
+      claims.tenantSlug !== snapshot.principal.tenant.slug) ||
     !sameStrings(claims.roles, snapshot.principal.roles) ||
     !sameStrings(claims.capabilities, snapshot.principal.permissions)
-  ) return false;
+  )
+    return false;
   if (
     !/^\d{1,5}$/.test(claims.maxDiscountBasisPoints) ||
     Number(claims.maxDiscountBasisPoints) > 10_000 ||
@@ -241,7 +279,8 @@ function validateClaims(
     claims.expiresAtUnixMs - claims.issuedAtUnixMs > MAX_OFFLINE_LEASE_MS ||
     nowUnixMs < claims.notBeforeUnixMs ||
     nowUnixMs >= claims.expiresAtUnixMs
-  ) return false;
+  )
+    return false;
   return claims.entitlements.some(
     (entry) => entry.key === 'pos.enabled' && entry.kind === 'flag' && entry.flagValue === true,
   );
@@ -262,7 +301,8 @@ async function verifyDeviceEnvelope(
     envelope.version !== 1 ||
     envelope.lease !== material.lease ||
     envelope.verificationKeySpki !== material.verificationKeySpki
-  ) return false;
+  )
+    return false;
   try {
     const key = await crypto.subtle.importKey(
       'spki',
@@ -282,11 +322,10 @@ async function verifyDeviceEnvelope(
   }
 }
 
-async function verifyKol1(
-  material: NativeOfflineAuthorityMaterial,
-): Promise<LeaseClaims | null> {
+async function verifyKol1(material: NativeOfflineAuthorityMaterial): Promise<LeaseClaims | null> {
   const parts = material.lease.split('.');
-  if (parts.length !== 3 || parts[0] !== KOL_VERSION || parts[1] === '' || parts[2] === '') return null;
+  if (parts.length !== 3 || parts[0] !== KOL_VERSION || parts[1] === '' || parts[2] === '')
+    return null;
   try {
     const key = await crypto.subtle.importKey(
       'spki',

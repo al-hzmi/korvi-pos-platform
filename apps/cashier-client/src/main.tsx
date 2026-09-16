@@ -38,8 +38,7 @@ function InstalledCashier(): React.JSX.Element {
         const material = await invoke<NativeOfflineAuthorityMaterial>('offline_authority_material');
         const authority = await verifyInstalledOfflineAuthority(material, status, snapshot);
         return (
-          authority !== null &&
-          authority.deviceEnrollmentId === status.binding.deviceEnrollmentId
+          authority !== null && authority.deviceEnrollmentId === status.binding.deviceEnrollmentId
         );
       } catch {
         return false;
