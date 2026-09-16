@@ -18,6 +18,7 @@ import { useShift } from '../hooks/use-shift';
 import type { JSX } from 'react';
 import type { ApiClient } from '../lib/api';
 import type { OfflineWorkspaceSnapshot } from '../lib/offline-workspace';
+import type { OfflineStoreProtector } from '../lib/offline-protection';
 
 /**
  * One decision, made in one place: which screen is the cashier on.
@@ -62,6 +63,8 @@ export interface PosAppProps {
   readonly offlineWorkspaceMaxAgeMs?: number | null | undefined;
   /** Stable installed-device enrollment used to isolate durable queue and drafts. */
   readonly offlineStoreDeviceEnrollmentId?: string | undefined;
+  /** OS-backed at-rest protection supplied only by Installed Cashier. */
+  readonly offlineStoreProtector?: OfflineStoreProtector | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -83,6 +86,7 @@ export function PosApp({
   authorizeOfflineWorkspace,
   offlineWorkspaceMaxAgeMs,
   offlineStoreDeviceEnrollmentId,
+  offlineStoreProtector,
 }: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
@@ -197,6 +201,7 @@ export function PosApp({
           priceMode={offlineWorkspace.priceMode}
           controlCentreHref={controlCentreHref}
           offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
+          offlineStoreProtector={offlineStoreProtector}
           onSignOut={() => undefined}
           onExpired={session.expire}
           onShiftChanged={() => undefined}
@@ -296,6 +301,7 @@ export function PosApp({
       priceMode={settings.priceMode}
       controlCentreHref={controlCentreHref}
       offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
+      offlineStoreProtector={offlineStoreProtector}
       onSignOut={signOut}
       onExpired={session.expire}
       onShiftChanged={shift.refresh}

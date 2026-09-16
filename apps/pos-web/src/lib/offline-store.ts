@@ -12,9 +12,10 @@ import type { ProductSummary } from './api-types';
 import type { CartLine } from './cart';
 
 export const OFFLINE_DB_NAME = 'korvi-pos-offline';
-export const OFFLINE_DB_VERSION = 4;
+export const OFFLINE_DB_VERSION = 5;
 export const OFFLINE_CATALOGUE_STORE = 'catalogue-v1';
 export const OFFLINE_SALE_DRAFT_STORE = 'sale-drafts-v1';
+export const OFFLINE_PROTECTED_SALE_DRAFT_STORE = 'protected-sale-drafts-v1';
 export const OFFLINE_TRANSACTION_QUEUE_STORE = 'transaction-queue-v1';
 
 const TENANT_INDEX = 'tenantId';
@@ -69,6 +70,17 @@ interface StoredSaleDraft extends OfflineSaleDraft, OfflineSaleScope {
   readonly scopeKey: string;
 }
 
+export interface ProtectedSaleDraftPayload {
+  readonly protectionVersion: 1;
+  readonly databaseVersion: number;
+  readonly ciphertext: string;
+  readonly updatedAt: string;
+}
+
+interface StoredProtectedSaleDraft extends ProtectedSaleDraftPayload, OfflineSaleScope {
+  readonly scopeKey: string;
+}
+
 interface StoredQueuedOperation {
   readonly queueKey: string;
   readonly partitionKey: string;
@@ -114,6 +126,18 @@ export interface KorviOfflineStore extends TransactionQueuePort {
   saveSaleDraft(scope: OfflineSaleScope, draft: OfflineSaleDraft): Promise<void>;
   loadSaleDraft(scope: OfflineSaleScope): Promise<OfflineSaleDraft | null>;
   deleteSaleDraft(scope: OfflineSaleScope): Promise<void>;
+  saveProtectedSaleDraft(
+    scope: OfflineSaleScope,
+    payload: ProtectedSaleDraftPayload,
+  ): Promise<void>;
+  loadProtectedSaleDraft(scope: OfflineSaleScope): Promise<ProtectedSaleDraftPayload | null>;
+  deleteProtectedSaleDraft(scope: OfflineSaleScope): Promise<void>;
+  migrateQueuePayload(
+    partition: QueuePartition,
+    id: string,
+    expectedPayload: unknown,
+    replacementPayload: unknown,
+  ): Promise<void>;
   queueCount(partition: QueuePartition): Promise<number>;
   rejected(partition: QueuePartition, limit?: number): Promise<readonly QueuedOperation[]>;
   describe(): OfflineStoreDescription;
@@ -570,6 +594,13 @@ function createQueueSchema(database: IDBDatabase): void {
   queue.createIndex(QUEUE_ID_INDEX, 'id', { unique: true });
 }
 
+function createProtectedDraftSchema(database: IDBDatabase): void {
+  const drafts = database.createObjectStore(OFFLINE_PROTECTED_SALE_DRAFT_STORE, {
+    keyPath: 'scopeKey',
+  });
+  drafts.createIndex(TENANT_INDEX, TENANT_INDEX, { unique: false });
+}
+
 function migrateQueueLifecycleV3(transaction: IDBTransaction): void {
   const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
   const request = store.openCursor();
@@ -622,6 +653,7 @@ function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
         migrateQueueLifecycleV3(request.transaction);
       if (event.oldVersion < 4 && request.transaction !== null)
         migrateDraftPriceModeV4(request.transaction);
+      if (event.oldVersion < 5) createProtectedDraftSchema(request.result);
     };
     request.onblocked = () => {
       if (settled) return;
@@ -1169,6 +1201,123 @@ export async function openKorviOfflineStore(factory?: IDBFactory): Promise<Korvi
       const transaction = database.transaction(OFFLINE_SALE_DRAFT_STORE, 'readwrite');
       transaction.objectStore(OFFLINE_SALE_DRAFT_STORE).delete(offlineSaleScopeKey(scope));
       await transactionDone(transaction);
+    },
+
+    async saveProtectedSaleDraft(scope, payload) {
+      if (
+        scope.deviceEnrollmentId === undefined ||
+        !isUuidV7(scope.tenantId) ||
+        !isUuidV7(scope.branchId) ||
+        !isUuidV7(scope.terminalId) ||
+        !isUuidV7(scope.deviceEnrollmentId) ||
+        !isUuidV7(scope.userId) ||
+        !isUuidV7(scope.shiftId) ||
+        payload.protectionVersion !== 1 ||
+        payload.databaseVersion !== OFFLINE_DB_VERSION ||
+        payload.ciphertext.length === 0 ||
+        !Number.isFinite(Date.parse(payload.updatedAt))
+      ) {
+        throw new OfflineStoreError('corrupt', 'Protected sale draft metadata is invalid.');
+      }
+      const row: StoredProtectedSaleDraft = {
+        ...scope,
+        ...payload,
+        scopeKey: offlineSaleScopeKey(scope),
+      };
+      const transaction = database.transaction(OFFLINE_PROTECTED_SALE_DRAFT_STORE, 'readwrite');
+      transaction.objectStore(OFFLINE_PROTECTED_SALE_DRAFT_STORE).put(row);
+      await transactionDone(transaction);
+    },
+
+    async loadProtectedSaleDraft(scope) {
+      const transaction = database.transaction(OFFLINE_PROTECTED_SALE_DRAFT_STORE, 'readonly');
+      const request = transaction
+        .objectStore(OFFLINE_PROTECTED_SALE_DRAFT_STORE)
+        .get(offlineSaleScopeKey(scope));
+      const value = await requestValue(request);
+      await transactionDone(transaction);
+      if (value === undefined) return null;
+      if (
+        !isRecord(value) ||
+        value.scopeKey !== offlineSaleScopeKey(scope) ||
+        value.tenantId !== scope.tenantId ||
+        value.branchId !== scope.branchId ||
+        value.terminalId !== scope.terminalId ||
+        !recordMatchesDeviceEnrollment(value, scope.deviceEnrollmentId) ||
+        value.userId !== scope.userId ||
+        value.shiftId !== scope.shiftId ||
+        value.protectionVersion !== 1 ||
+        value.databaseVersion !== OFFLINE_DB_VERSION ||
+        typeof value.ciphertext !== 'string' ||
+        value.ciphertext.length === 0 ||
+        typeof value.updatedAt !== 'string' ||
+        !Number.isFinite(Date.parse(value.updatedAt))
+      ) {
+        throw new OfflineStoreError('corrupt', 'Protected sale draft failed binding validation.');
+      }
+      return {
+        protectionVersion: 1,
+        databaseVersion: OFFLINE_DB_VERSION,
+        ciphertext: value.ciphertext,
+        updatedAt: value.updatedAt,
+      };
+    },
+
+    async deleteProtectedSaleDraft(scope) {
+      const transaction = database.transaction(OFFLINE_PROTECTED_SALE_DRAFT_STORE, 'readwrite');
+      transaction
+        .objectStore(OFFLINE_PROTECTED_SALE_DRAFT_STORE)
+        .delete(offlineSaleScopeKey(scope));
+      await transactionDone(transaction);
+    },
+
+    async migrateQueuePayload(partition, id, expectedPayload, replacementPayload) {
+      const key = queueRecordKey(partition, id);
+      const expectedJson = serializeQueuePayload(expectedPayload);
+      const replacementJson = serializeQueuePayload(replacementPayload);
+      const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+      const done = transactionDone(transaction);
+      const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+      const request = store.get(key);
+      let failure: OfflineStoreError | null = null;
+      request.onerror = () => {
+        failure = classifyIndexedDbError(request.error);
+        transaction.abort();
+      };
+      request.onsuccess = () => {
+        try {
+          if (request.result === undefined) {
+            failure = new OfflineStoreError(
+              'conflict',
+              'Queue operation is missing during protection migration.',
+            );
+            transaction.abort();
+            return;
+          }
+          const decoded = decodeStoredQueueRow(request.result, partition);
+          if (serializeQueuePayload(decoded.operation.payload) !== expectedJson) {
+            failure = new OfflineStoreError(
+              'conflict',
+              'Queue payload changed during protection migration.',
+            );
+            transaction.abort();
+            return;
+          }
+          store.put({
+            ...decoded.stored,
+            payloadJson: replacementJson,
+          } satisfies StoredQueuedOperation);
+        } catch (error) {
+          failure = classifyIndexedDbError(error);
+          transaction.abort();
+        }
+      };
+      try {
+        await done;
+      } catch (error) {
+        if (failure !== null) throw failure;
+        throw classifyIndexedDbError(error);
+      }
     },
 
     async enqueue(partition, operation) {

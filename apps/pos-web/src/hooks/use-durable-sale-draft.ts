@@ -6,6 +6,11 @@ import {
   offlineSaleScopeKey,
   openKorviOfflineStore,
 } from '../lib/offline-store';
+import {
+  decodeProtectedSaleDraft,
+  protectSaleDraft,
+  type OfflineStoreProtector,
+} from '../lib/offline-protection';
 import type {
   KorviOfflineStore,
   OfflineSaleDraft,
@@ -29,7 +34,10 @@ interface OwnedStore {
   readonly store: KorviOfflineStore;
 }
 
-export function useDurableSaleDraft(scope: OfflineSaleScope): DurableDraftHandle {
+export function useDurableSaleDraft(
+  scope: OfflineSaleScope,
+  protector?: OfflineStoreProtector,
+): DurableDraftHandle {
   const stableScope = useMemo<OfflineSaleScope>(
     () => ({
       tenantId: scope.tenantId,
@@ -66,7 +74,22 @@ export function useDurableSaleDraft(scope: OfflineSaleScope): DurableDraftHandle
     void openKorviOfflineStore()
       .then(async (store) => {
         try {
-          const draft = await store.loadSaleDraft(stableScope);
+          let draft: OfflineSaleDraft | null;
+          if (protector === undefined) {
+            draft = await store.loadSaleDraft(stableScope);
+          } else {
+            const protectedDraft = await store.loadProtectedSaleDraft(stableScope);
+            if (protectedDraft !== null) {
+              draft = await decodeProtectedSaleDraft(stableScope, protectedDraft, protector);
+            } else {
+              draft = await store.loadSaleDraft(stableScope);
+              if (draft !== null) {
+                const protectedPayload = await protectSaleDraft(stableScope, draft, protector);
+                await store.saveProtectedSaleDraft(stableScope, protectedPayload);
+                await store.deleteSaleDraft(stableScope);
+              }
+            }
+          }
           if (!live) {
             store.close();
             return;
@@ -94,7 +117,7 @@ export function useDurableSaleDraft(scope: OfflineSaleScope): DurableDraftHandle
       owned.current = null;
       void writeChain.current.finally(() => current.store.close());
     };
-  }, [key, stableScope]);
+  }, [key, protector, stableScope]);
 
   const recordFailure = useCallback((error: unknown) => {
     setState({
@@ -110,10 +133,18 @@ export function useDurableSaleDraft(scope: OfflineSaleScope): DurableDraftHandle
       if (current === null || current.key !== key) return;
       writeChain.current = writeChain.current
         .catch(() => undefined)
-        .then(() => current.store.saveSaleDraft(stableScope, draft))
+        .then(async () => {
+          if (protector === undefined) {
+            await current.store.saveSaleDraft(stableScope, draft);
+            return;
+          }
+          const protectedPayload = await protectSaleDraft(stableScope, draft, protector);
+          await current.store.saveProtectedSaleDraft(stableScope, protectedPayload);
+          await current.store.deleteSaleDraft(stableScope);
+        })
         .catch((error: unknown) => recordFailure(error));
     },
-    [key, recordFailure, stableScope],
+    [key, protector, recordFailure, stableScope],
   );
 
   const clear = useCallback(() => {
@@ -121,7 +152,10 @@ export function useDurableSaleDraft(scope: OfflineSaleScope): DurableDraftHandle
     if (current === null || current.key !== key) return;
     writeChain.current = writeChain.current
       .catch(() => undefined)
-      .then(() => current.store.deleteSaleDraft(stableScope))
+      .then(async () => {
+        await current.store.deleteProtectedSaleDraft(stableScope);
+        await current.store.deleteSaleDraft(stableScope);
+      })
       .catch((error: unknown) => recordFailure(error));
   }, [key, recordFailure, stableScope]);
 

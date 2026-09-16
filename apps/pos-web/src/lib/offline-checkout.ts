@@ -9,6 +9,12 @@ import type { CheckoutRequest } from './api-types';
 import type { CheckoutIntent } from './checkout-flight';
 import { createCheckoutSyncExecutor, isCheckoutQueuePayload } from './checkout-sync-executor';
 import { OfflineStoreError, openKorviOfflineStore, type KorviOfflineStore } from './offline-store';
+import {
+  decodeProtectedCheckoutOperation,
+  isProtectedCheckoutPayload,
+  protectCheckoutQueueOperation,
+  type OfflineStoreProtector,
+} from './offline-protection';
 import { createQueuePushSyncEngine } from './sync-engine';
 
 export interface OfflineSaleReviewCase {
@@ -16,7 +22,8 @@ export interface OfflineSaleReviewCase {
   readonly enqueuedAt: string;
   readonly attempts: number;
   readonly reason: string;
-  readonly intent: CheckoutRequest;
+  readonly intent: CheckoutRequest | null;
+  readonly localEvidence: 'decoded' | 'protected-unreadable';
   readonly disposition: 'needs-review';
 }
 
@@ -77,10 +84,17 @@ export async function enqueueOfflineCheckout(
   partition: QueuePartition,
   intent: CheckoutIntent,
   openStore: OpenStore = () => openKorviOfflineStore(),
+  protector?: OfflineStoreProtector,
 ): Promise<void> {
   const store = await openStore();
   try {
-    await store.enqueue(partition, checkoutQueueOperation(intent));
+    const operation = checkoutQueueOperation(intent);
+    await store.enqueue(
+      partition,
+      protector === undefined
+        ? operation
+        : await protectCheckoutQueueOperation(partition, operation, protector),
+    );
   } finally {
     store.close();
   }
@@ -96,32 +110,112 @@ export async function syncOfflineCheckouts(
   partition: QueuePartition,
   onUnauthenticated?: () => void,
   openStore: OpenStore = () => openKorviOfflineStore(),
+  protector?: OfflineStoreProtector,
 ): Promise<OfflineCheckoutSyncSnapshot> {
   const store = await openStore();
   try {
-    const engine = createQueuePushSyncEngine(
-      store,
-      partition,
-      createCheckoutSyncExecutor(api, { onUnauthenticated }),
-    );
+    if (protector !== undefined) {
+      const legacy = [
+        ...(await store.pending(partition, 500)),
+        ...(await store.rejected(partition, 500)),
+      ];
+      for (const operation of legacy) {
+        if (!isCheckoutQueuePayload(operation.payload)) continue;
+        const protectedOperation = await protectCheckoutQueueOperation(
+          partition,
+          {
+            id: operation.id,
+            kind: operation.kind,
+            payload: operation.payload,
+            enqueuedAt: operation.enqueuedAt,
+          },
+          protector,
+        );
+        await store.migrateQueuePayload(
+          partition,
+          operation.id,
+          operation.payload,
+          protectedOperation.payload,
+        );
+      }
+    }
+
+    const checkoutExecutor = createCheckoutSyncExecutor(api, { onUnauthenticated });
+    const engine = createQueuePushSyncEngine(store, partition, {
+      async execute(operation) {
+        if (protector === undefined) return checkoutExecutor.execute(operation);
+        try {
+          if (isCheckoutQueuePayload(operation.payload)) {
+            const protectedOperation = await protectCheckoutQueueOperation(
+              partition,
+              {
+                id: operation.id,
+                kind: operation.kind,
+                payload: operation.payload,
+                enqueuedAt: operation.enqueuedAt,
+              },
+              protector,
+            );
+            await store.migrateQueuePayload(
+              partition,
+              operation.id,
+              operation.payload,
+              protectedOperation.payload,
+            );
+            return checkoutExecutor.execute(operation);
+          }
+          const decoded = await decodeProtectedCheckoutOperation(partition, operation, protector);
+          return checkoutExecutor.execute(decoded);
+        } catch {
+          return { outcome: 'rejected', reason: 'local-protection-invalid' } as const;
+        }
+      },
+    });
     const report = await engine.push();
     const pending = await store.pending(partition, 500);
     const rejected = await store.rejected(partition, 500);
     const needsReview: OfflineSaleReviewCase[] = [];
     for (const operation of rejected) {
-      if (operation.kind !== 'sale.checkout') continue;
-      if (!isCheckoutQueuePayload(operation.payload) || operation.rejectionReason === null) {
-        throw new OfflineStoreError(
-          'corrupt',
-          'Rejected checkout reconciliation evidence is corrupt.',
-        );
+      if (operation.kind !== 'sale.checkout' || operation.rejectionReason === null) continue;
+      let intent: CheckoutRequest | null = null;
+      let localEvidence: OfflineSaleReviewCase['localEvidence'] = 'decoded';
+      try {
+        if (isCheckoutQueuePayload(operation.payload)) {
+          intent = operation.payload;
+          if (protector !== undefined) {
+            const protectedOperation = await protectCheckoutQueueOperation(
+              partition,
+              {
+                id: operation.id,
+                kind: operation.kind,
+                payload: operation.payload,
+                enqueuedAt: operation.enqueuedAt,
+              },
+              protector,
+            );
+            await store.migrateQueuePayload(
+              partition,
+              operation.id,
+              operation.payload,
+              protectedOperation.payload,
+            );
+          }
+        } else if (protector !== undefined && isProtectedCheckoutPayload(operation.payload)) {
+          intent = (await decodeProtectedCheckoutOperation(partition, operation, protector))
+            .payload;
+        } else {
+          throw new OfflineStoreError('corrupt', 'Rejected checkout payload is unreadable.');
+        }
+      } catch {
+        localEvidence = 'protected-unreadable';
       }
       needsReview.push({
         operationId: operation.id,
         enqueuedAt: operation.enqueuedAt,
         attempts: operation.attempts,
         reason: operation.rejectionReason,
-        intent: operation.payload,
+        intent,
+        localEvidence,
         disposition: 'needs-review',
       });
     }

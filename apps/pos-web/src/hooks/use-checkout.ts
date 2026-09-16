@@ -5,6 +5,8 @@ import { checkoutReducer, initialCheckoutState } from '../lib/checkout';
 import { createCheckoutFlight } from '../lib/checkout-flight';
 import { runCheckout } from '../lib/checkout-submit';
 import { enqueueOfflineCheckout } from '../lib/offline-checkout';
+import { openKorviOfflineStore } from '../lib/offline-store';
+import type { OfflineStoreProtector } from '../lib/offline-protection';
 import type { QueuePartition } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
 import type { CartLine } from '../lib/cart';
@@ -36,6 +38,7 @@ export function useCheckout(
   api: ApiClient,
   onUnauthenticated: () => void,
   offlinePartition?: QueuePartition,
+  offlineProtector?: OfflineStoreProtector,
 ): CheckoutHandle {
   const [state, dispatch] = useReducer(checkoutReducer, initialCheckoutState);
   const flight = useRef<CheckoutFlight | null>(null);
@@ -59,10 +62,16 @@ export function useCheckout(
         undefined,
         offlinePartition === undefined
           ? undefined
-          : (intent) => enqueueOfflineCheckout(offlinePartition, intent),
+          : (intent) =>
+              enqueueOfflineCheckout(
+                offlinePartition,
+                intent,
+                () => openKorviOfflineStore(),
+                offlineProtector,
+              ),
       );
     },
-    [api, offlinePartition, onUnauthenticated],
+    [api, offlinePartition, offlineProtector, onUnauthenticated],
   );
 
   const dismiss = useCallback(() => {

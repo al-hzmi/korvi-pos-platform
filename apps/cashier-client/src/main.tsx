@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { PosApp } from '../../pos-web/src/components/pos-app';
 import { createApiClient } from '../../pos-web/src/lib/api';
+import type { OfflineStoreProtector } from '../../pos-web/src/lib/offline-protection';
 import {
   verifyInstalledOfflineAuthority,
   type InstalledDeviceStatus,
@@ -13,11 +14,51 @@ import '../../pos-web/src/app/globals.css';
 
 const api = createApiClient(nativeFetch);
 
+function utf8ToBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToUtf8(value: string): string {
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
+function nativeLocalStoreProtector(
+  status: InstalledDeviceStatus,
+): OfflineStoreProtector | undefined {
+  if (status.binding === null) return undefined;
+  return {
+    installationId: status.installationId,
+    deviceEnrollmentId: status.binding.deviceEnrollmentId,
+    async protect(plaintextUtf8, aadUtf8) {
+      return invoke<string>('protect_local_store', {
+        plaintextBase64: utf8ToBase64(plaintextUtf8),
+        aadBase64: utf8ToBase64(aadUtf8),
+      });
+    },
+    async unprotect(ciphertextBase64, aadUtf8) {
+      const plaintextBase64 = await invoke<string>('unprotect_local_store', {
+        protectedBase64: ciphertextBase64,
+        aadBase64: utf8ToBase64(aadUtf8),
+      });
+      return base64ToUtf8(plaintextBase64);
+    },
+  };
+}
+
 function InstalledCashier(): React.JSX.Element {
   const [status, setStatus] = useState<InstalledDeviceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState('');
   const [enrollmentId, setEnrollmentId] = useState('');
+  const offlineStoreProtector = useMemo(
+    () => (status === null ? undefined : nativeLocalStoreProtector(status)),
+    [status],
+  );
 
   const load = async () => {
     try {
@@ -121,6 +162,7 @@ function InstalledCashier(): React.JSX.Element {
       authorizeOfflineWorkspace={authorizeOfflineWorkspace}
       offlineWorkspaceMaxAgeMs={null}
       offlineStoreDeviceEnrollmentId={status.binding.deviceEnrollmentId}
+      offlineStoreProtector={offlineStoreProtector}
     />
   );
 }

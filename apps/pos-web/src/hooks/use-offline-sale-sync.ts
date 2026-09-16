@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QueuePartition } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
 import { syncOfflineCheckouts, type OfflineSaleReviewCase } from '../lib/offline-checkout';
+import { openKorviOfflineStore } from '../lib/offline-store';
+import type { OfflineStoreProtector } from '../lib/offline-protection';
 
 export interface OfflineSaleSyncState {
   readonly status: 'idle' | 'syncing' | 'ready' | 'failed';
@@ -17,6 +19,7 @@ export function useOfflineSaleSync(
   api: ApiClient,
   partition: QueuePartition,
   onUnauthenticated: () => void,
+  protector?: OfflineStoreProtector,
 ): { readonly state: OfflineSaleSyncState; readonly retry: () => void } {
   const [state, setState] = useState<OfflineSaleSyncState>(INITIAL);
   const running = useRef(false);
@@ -27,7 +30,13 @@ export function useOfflineSaleSync(
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     running.current = true;
     setState((current) => ({ ...current, status: 'syncing' }));
-    void syncOfflineCheckouts(api, partition, onUnauthenticated)
+    void syncOfflineCheckouts(
+      api,
+      partition,
+      onUnauthenticated,
+      () => openKorviOfflineStore(),
+      protector,
+    )
       .then((snapshot) => {
         if (!mounted.current) return;
         setState({
@@ -43,7 +52,7 @@ export function useOfflineSaleSync(
       .finally(() => {
         running.current = false;
       });
-  }, [api, onUnauthenticated, partition]);
+  }, [api, onUnauthenticated, partition, protector]);
 
   useEffect(() => {
     mounted.current = true;

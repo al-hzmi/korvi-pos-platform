@@ -25,6 +25,7 @@ import type { PriceMode } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
 import type { Principal, ProductSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
 import type { OfflineSaleScope } from '../lib/offline-store';
+import type { OfflineStoreProtector } from '../lib/offline-protection';
 
 /**
  * Where a cashier spends the whole day.
@@ -51,6 +52,7 @@ export interface CashierScreenProps {
   readonly controlCentreHref?: string | undefined;
   /** Stable OS/server enrollment identity used only to partition installed durable state. */
   readonly offlineStoreDeviceEnrollmentId?: string | undefined;
+  readonly offlineStoreProtector?: OfflineStoreProtector | undefined;
   readonly onSignOut: () => void;
   readonly onExpired: () => void;
   readonly onShiftChanged: () => void;
@@ -64,6 +66,7 @@ export function CashierScreen({
   priceMode,
   controlCentreHref,
   offlineStoreDeviceEnrollmentId,
+  offlineStoreProtector,
   onSignOut,
   onExpired,
   onShiftChanged,
@@ -85,8 +88,8 @@ export function CashierScreen({
     }),
     [offlineStoreDeviceEnrollmentId, principal.tenant.id, terminal.branchId, terminal.id],
   );
-  const checkout = useCheckout(api, onExpired, queuePartition);
-  const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired);
+  const checkout = useCheckout(api, onExpired, queuePartition, offlineStoreProtector);
+  const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);
   const [cash, setCash] = useState('');
   const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -116,7 +119,7 @@ export function CashierScreen({
     state: durableState,
     persist: persistDraft,
     clear: clearDraft,
-  } = useDurableSaleDraft(durableScope);
+  } = useDurableSaleDraft(durableScope, offlineStoreProtector);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
   const parsedCash = parseSarToMinor(cash);
