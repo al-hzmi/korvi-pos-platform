@@ -1,0 +1,43 @@
+name: Temporary Fix Protected Enqueue Type Path
+
+on:
+  push:
+    branches: ['strike/product-routing-p0']
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: strike/product-routing-p0
+
+      - name: Split plaintext and protected enqueue paths
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('.github/workflows/tmp-format-installed-offline.yml')
+          text = path.read_text()
+          old = '''    const operation = checkoutQueueOperation(intent);\\n    await store.enqueue(\\n      partition,\\n      protector === undefined\\n        ? operation\\n        : await protectCheckoutQueueOperation(partition, operation, protector),\\n    );'''
+          new = '''    const operation = checkoutQueueOperation(intent);\\n    if (protector === undefined) {\\n      await store.enqueue(partition, operation);\\n    } else {\\n      const protectedOperation = await protectCheckoutQueueOperation(\\n        partition,\\n        operation,\\n        protector,\\n      );\\n      await store.enqueue(partition, protectedOperation);\\n    }'''
+          if old not in text:
+              if new in text:
+                  raise SystemExit(0)
+              raise SystemExit('target enqueue patch not found')
+          path.write_text(text.replace(old, new))
+
+      - name: Commit workflow correction
+        run: |
+          if git diff --quiet -- .github/workflows/tmp-format-installed-offline.yml; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/tmp-format-installed-offline.yml
+          git commit -m "chore(ci): split protected enqueue type paths"
+          git push origin HEAD:strike/product-routing-p0
