@@ -13,6 +13,11 @@ export interface OfflineWorkspaceSnapshot {
   readonly capturedAt: string;
 }
 
+export interface OfflineWorkspaceReadPolicy {
+  /** Browser defaults to 12h. Installed Cashier sets null because its signed kol1 lease owns expiry. */
+  readonly maxAgeMs?: number | null;
+}
+
 function record(value: unknown): Readonly<Record<string, unknown>> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Readonly<Record<string, unknown>>)
@@ -125,7 +130,10 @@ function storage(): Storage | null {
   }
 }
 
-export function readOfflineWorkspace(now: Date = new Date()): OfflineWorkspaceSnapshot | null {
+export function readOfflineWorkspace(
+  now: Date = new Date(),
+  policy: OfflineWorkspaceReadPolicy = {},
+): OfflineWorkspaceSnapshot | null {
   const local = storage();
   if (local === null) return null;
   let parsed: unknown;
@@ -157,11 +165,12 @@ export function readOfflineWorkspace(now: Date = new Date()): OfflineWorkspaceSn
 
   const captured = Date.parse(capturedAt);
   const current = now.getTime();
+  const maxAgeMs = policy.maxAgeMs === undefined ? OFFLINE_WORKSPACE_LEASE_MS : policy.maxAgeMs;
   if (
     !Number.isFinite(captured) ||
     !Number.isFinite(current) ||
     captured > current + MAX_CLOCK_SKEW_MS ||
-    current - captured > OFFLINE_WORKSPACE_LEASE_MS ||
+    (maxAgeMs !== null && current - captured > maxAgeMs) ||
     savedShift.terminalId !== savedTerminal.id ||
     savedShift.branchId !== savedTerminal.branchId ||
     savedShift.userId !== savedPrincipal.user.id ||
