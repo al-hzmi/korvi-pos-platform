@@ -105,7 +105,7 @@ jobs:
           test "$binding_policies" = '1'
           binding_guard="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_trigger WHERE tgrelid='zatca_csid_bindings'::regclass AND tgname='zatca_csid_binding_guard' AND NOT tgisinternal")"
           test "$binding_guard" = '1'
-          binding_active_unique="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='zatca_csid_bindings' AND indexname='zatca_csid_bindings_one_active_per_terminal'")"
+          binding_active_unique="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='zatca_csid_bindings' AND indexname='zatca_csid_bindings_one_active_per_terminal_key'")"
           test "$binding_active_unique" = '1'
           binding_forbidden="$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='zatca_csid_bindings' AND lower(column_name) IN ('privatekey','privatekeyder','secret','fatoorasecret','fatoorasecretplaintext','rawsecret')")"
           test "$binding_forbidden" = '0'
