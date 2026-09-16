@@ -120,6 +120,7 @@ function InstalledCashier(): React.JSX.Element {
       api={api}
       authorizeOfflineWorkspace={authorizeOfflineWorkspace}
       offlineWorkspaceMaxAgeMs={null}
+      offlineStoreDeviceEnrollmentId={status.binding.deviceEnrollmentId}
     />
   );
 }

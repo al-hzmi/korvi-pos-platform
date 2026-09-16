@@ -46,6 +46,7 @@ export interface OfflineSaleScope {
   readonly tenantId: string;
   readonly branchId: string;
   readonly terminalId: string;
+  readonly deviceEnrollmentId?: string | undefined;
   readonly userId: string;
   readonly shiftId: string;
 }
@@ -74,6 +75,7 @@ interface StoredQueuedOperation {
   readonly tenantId: string;
   readonly branchId: string;
   readonly terminalId: string;
+  readonly deviceEnrollmentId?: string | undefined;
   readonly id: string;
   readonly kind: string;
   readonly payloadJson: string;
@@ -184,20 +186,28 @@ export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
 }
 
 export function offlineSaleScopeKey(scope: OfflineSaleScope): string {
-  return JSON.stringify([
-    scope.tenantId,
-    scope.branchId,
-    scope.terminalId,
-    scope.userId,
-    scope.shiftId,
-  ]);
+  const identity = [scope.tenantId, scope.branchId, scope.terminalId];
+  if (scope.deviceEnrollmentId !== undefined) identity.push(scope.deviceEnrollmentId);
+  identity.push(scope.userId, scope.shiftId);
+  return JSON.stringify(identity);
+}
+
+export function recordMatchesDeviceEnrollment(
+  value: Readonly<Record<string, unknown>>,
+  deviceEnrollmentId: string | undefined,
+): boolean {
+  const hasDeviceEnrollmentId = Object.prototype.hasOwnProperty.call(value, 'deviceEnrollmentId');
+  return deviceEnrollmentId === undefined
+    ? !hasDeviceEnrollmentId
+    : hasDeviceEnrollmentId && value.deviceEnrollmentId === deviceEnrollmentId;
 }
 
 function assertQueuePartition(partition: QueuePartition): void {
   if (
     !isUuidV7(partition.tenantId) ||
     !isUuidV7(partition.branchId) ||
-    !isUuidV7(partition.terminalId)
+    !isUuidV7(partition.terminalId) ||
+    (partition.deviceEnrollmentId !== undefined && !isUuidV7(partition.deviceEnrollmentId))
   ) {
     throw new OfflineStoreError(
       'corrupt',
@@ -208,14 +218,20 @@ function assertQueuePartition(partition: QueuePartition): void {
 
 export function queuePartitionKey(partition: QueuePartition): string {
   assertQueuePartition(partition);
-  return JSON.stringify([partition.tenantId, partition.branchId, partition.terminalId]);
+  const identity = [partition.tenantId, partition.branchId, partition.terminalId];
+  if (partition.deviceEnrollmentId !== undefined) identity.push(partition.deviceEnrollmentId);
+  return JSON.stringify(identity);
 }
 
-function queueRecordKey(partition: QueuePartition, id: string): string {
+export function queueRecordKey(partition: QueuePartition, id: string): string {
+  assertQueuePartition(partition);
   if (!isUuidV7(id)) {
     throw new OfflineStoreError('corrupt', 'Queue operation id must be a canonical UUIDv7.');
   }
-  return JSON.stringify([partition.tenantId, partition.branchId, partition.terminalId, id]);
+  const identity = [partition.tenantId, partition.branchId, partition.terminalId];
+  if (partition.deviceEnrollmentId !== undefined) identity.push(partition.deviceEnrollmentId);
+  identity.push(id);
+  return JSON.stringify(identity);
 }
 
 function canonicalJson(value: unknown, seen: Set<object>): string {
@@ -418,6 +434,7 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
     value.tenantId !== scope.tenantId ||
     value.branchId !== scope.branchId ||
     value.terminalId !== scope.terminalId ||
+    !recordMatchesDeviceEnrollment(value, scope.deviceEnrollmentId) ||
     value.userId !== scope.userId ||
     value.shiftId !== scope.shiftId ||
     !isOfflineSaleDraft(value)
@@ -446,6 +463,9 @@ function toStoredQueueRow(
     tenantId: partition.tenantId,
     branchId: partition.branchId,
     terminalId: partition.terminalId,
+    ...(partition.deviceEnrollmentId === undefined
+      ? {}
+      : { deviceEnrollmentId: partition.deviceEnrollmentId }),
     id: operation.id,
     kind: operation.kind,
     payloadJson: serializeQueuePayload(operation.payload),
@@ -473,6 +493,7 @@ function decodeStoredQueueRow(
     value.tenantId !== partition.tenantId ||
     value.branchId !== partition.branchId ||
     value.terminalId !== partition.terminalId ||
+    !recordMatchesDeviceEnrollment(value, partition.deviceEnrollmentId) ||
     typeof value.kind !== 'string' ||
     !QUEUE_KIND_PATTERN.test(value.kind) ||
     typeof value.payloadJson !== 'string' ||
@@ -1111,8 +1132,21 @@ export async function openKorviOfflineStore(factory?: IDBFactory): Promise<Korvi
       if (!isOfflineSaleDraft(draft)) {
         throw new OfflineStoreError('corrupt', 'Refusing to persist an invalid sale draft.');
       }
+      if (scope.deviceEnrollmentId !== undefined && !isUuidV7(scope.deviceEnrollmentId)) {
+        throw new OfflineStoreError(
+          'corrupt',
+          'Sale draft device enrollment must be a canonical UUIDv7 value.',
+        );
+      }
       const row: StoredSaleDraft = {
-        ...scope,
+        tenantId: scope.tenantId,
+        branchId: scope.branchId,
+        terminalId: scope.terminalId,
+        ...(scope.deviceEnrollmentId === undefined
+          ? {}
+          : { deviceEnrollmentId: scope.deviceEnrollmentId }),
+        userId: scope.userId,
+        shiftId: scope.shiftId,
         ...draft,
         scopeKey: offlineSaleScopeKey(scope),
       };

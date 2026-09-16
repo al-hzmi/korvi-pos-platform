@@ -60,6 +60,8 @@ export interface PosAppProps {
    * the bounded authority and must not be pre-empted by an arbitrary local TTL.
    */
   readonly offlineWorkspaceMaxAgeMs?: number | null | undefined;
+  /** Stable installed-device enrollment used to isolate durable queue and drafts. */
+  readonly offlineStoreDeviceEnrollmentId?: string | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -80,6 +82,7 @@ export function PosApp({
   controlCentreHref,
   authorizeOfflineWorkspace,
   offlineWorkspaceMaxAgeMs,
+  offlineStoreDeviceEnrollmentId,
 }: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
@@ -110,7 +113,10 @@ export function PosApp({
       return;
     }
 
-    const snapshot = readOfflineWorkspace(new Date(), { maxAgeMs: offlineWorkspaceMaxAgeMs });
+    const snapshot = readOfflineWorkspace(
+      new Date(),
+      offlineWorkspaceMaxAgeMs === undefined ? {} : { maxAgeMs: offlineWorkspaceMaxAgeMs },
+    );
     if (snapshot === null || authorizeOfflineWorkspace === undefined) {
       setOfflineAuthorizationPending(false);
       setOfflineWorkspace(snapshot);
@@ -190,6 +196,7 @@ export function PosApp({
           shift={offlineWorkspace.shift}
           priceMode={offlineWorkspace.priceMode}
           controlCentreHref={controlCentreHref}
+          offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
           onSignOut={() => undefined}
           onExpired={session.expire}
           onShiftChanged={() => undefined}
@@ -288,6 +295,7 @@ export function PosApp({
       shift={shift.state.shift}
       priceMode={settings.priceMode}
       controlCentreHref={controlCentreHref}
+      offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
       onSignOut={signOut}
       onExpired={session.expire}
       onShiftChanged={shift.refresh}

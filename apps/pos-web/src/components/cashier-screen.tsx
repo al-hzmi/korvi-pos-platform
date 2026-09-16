@@ -49,6 +49,8 @@ export interface CashierScreenProps {
   readonly priceMode: PriceMode;
   /** Host-owned Control destination. Installed Cashier omits it. */
   readonly controlCentreHref?: string | undefined;
+  /** Stable OS/server enrollment identity used only to partition installed durable state. */
+  readonly offlineStoreDeviceEnrollmentId?: string | undefined;
   readonly onSignOut: () => void;
   readonly onExpired: () => void;
   readonly onShiftChanged: () => void;
@@ -61,6 +63,7 @@ export function CashierScreen({
   shift,
   priceMode,
   controlCentreHref,
+  offlineStoreDeviceEnrollmentId,
   onSignOut,
   onExpired,
   onShiftChanged,
@@ -76,8 +79,11 @@ export function CashierScreen({
       tenantId: principal.tenant.id,
       branchId: terminal.branchId,
       terminalId: terminal.id,
+      ...(offlineStoreDeviceEnrollmentId === undefined
+        ? {}
+        : { deviceEnrollmentId: offlineStoreDeviceEnrollmentId }),
     }),
-    [principal.tenant.id, terminal.branchId, terminal.id],
+    [offlineStoreDeviceEnrollmentId, principal.tenant.id, terminal.branchId, terminal.id],
   );
   const checkout = useCheckout(api, onExpired, queuePartition);
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired);
@@ -91,10 +97,20 @@ export function CashierScreen({
       tenantId: principal.tenant.id,
       branchId: terminal.branchId,
       terminalId: terminal.id,
+      ...(offlineStoreDeviceEnrollmentId === undefined
+        ? {}
+        : { deviceEnrollmentId: offlineStoreDeviceEnrollmentId }),
       userId: principal.user.id,
       shiftId: shift.id,
     }),
-    [principal.tenant.id, principal.user.id, shift.id, terminal.branchId, terminal.id],
+    [
+      offlineStoreDeviceEnrollmentId,
+      principal.tenant.id,
+      principal.user.id,
+      shift.id,
+      terminal.branchId,
+      terminal.id,
+    ],
   );
   const {
     state: durableState,

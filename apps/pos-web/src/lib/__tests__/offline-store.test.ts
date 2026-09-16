@@ -8,6 +8,8 @@ import {
   isQueueOperationInput,
   offlineSaleScopeKey,
   queuePartitionKey,
+  queueRecordKey,
+  recordMatchesDeviceEnrollment,
   serializeQueuePayload,
 } from '../offline-store';
 
@@ -32,11 +34,16 @@ const SCOPE = {
   shiftId: '018f2000-0000-7000-8000-000000000005',
 } as const;
 
+const DEVICE_A = '018f2000-0000-7000-8000-000000000006';
+const DEVICE_B = '018f2000-0000-7000-8000-000000000007';
+
 const QUEUE_PARTITION: QueuePartition = {
   tenantId: SCOPE.tenantId,
   branchId: SCOPE.branchId,
   terminalId: SCOPE.terminalId,
 };
+const DEVICE_A_PARTITION: QueuePartition = { ...QUEUE_PARTITION, deviceEnrollmentId: DEVICE_A };
+const DEVICE_B_PARTITION: QueuePartition = { ...QUEUE_PARTITION, deviceEnrollmentId: DEVICE_B };
 
 const QUEUE_OPERATION: QueueOperationInput = {
   id: '018f2000-0001-7000-8000-000000000101',
@@ -107,6 +114,64 @@ describe('offline store validation', () => {
     );
     expect(() => queuePartitionKey({ ...QUEUE_PARTITION, tenantId: 'not-a-uuid' })).toThrow(
       OfflineStoreError,
+    );
+  });
+
+  it('preserves legacy browser keys while isolating installed queues by enrollment', () => {
+    expect(queuePartitionKey(QUEUE_PARTITION)).toBe(
+      JSON.stringify([SCOPE.tenantId, SCOPE.branchId, SCOPE.terminalId]),
+    );
+    expect(queuePartitionKey(DEVICE_A_PARTITION)).not.toBe(queuePartitionKey(QUEUE_PARTITION));
+    expect(queuePartitionKey(DEVICE_A_PARTITION)).not.toBe(queuePartitionKey(DEVICE_B_PARTITION));
+    expect(queueRecordKey(DEVICE_A_PARTITION, QUEUE_OPERATION.id)).not.toBe(
+      queueRecordKey(DEVICE_B_PARTITION, QUEUE_OPERATION.id),
+    );
+    expect(() =>
+      queuePartitionKey({ ...QUEUE_PARTITION, deviceEnrollmentId: 'not-a-uuid' }),
+    ).toThrow(OfflineStoreError);
+  });
+
+  it('isolates installed drafts and refuses cloned or legacy-unbound device records', () => {
+    const browserKey = offlineSaleScopeKey(SCOPE);
+    const deviceAKey = offlineSaleScopeKey({ ...SCOPE, deviceEnrollmentId: DEVICE_A });
+    const deviceBKey = offlineSaleScopeKey({ ...SCOPE, deviceEnrollmentId: DEVICE_B });
+    expect(browserKey).toBe(
+      JSON.stringify([
+        SCOPE.tenantId,
+        SCOPE.branchId,
+        SCOPE.terminalId,
+        SCOPE.userId,
+        SCOPE.shiftId,
+      ]),
+    );
+    expect(deviceAKey).not.toBe(browserKey);
+    expect(deviceAKey).not.toBe(deviceBKey);
+    expect(recordMatchesDeviceEnrollment({}, undefined)).toBe(true);
+    expect(recordMatchesDeviceEnrollment({}, DEVICE_A)).toBe(false);
+    expect(recordMatchesDeviceEnrollment({ deviceEnrollmentId: DEVICE_A }, DEVICE_A)).toBe(true);
+    expect(recordMatchesDeviceEnrollment({ deviceEnrollmentId: DEVICE_A }, DEVICE_B)).toBe(false);
+    expect(recordMatchesDeviceEnrollment({ deviceEnrollmentId: DEVICE_A }, undefined)).toBe(false);
+  });
+
+  it('keeps tenant branch and terminal partition isolation with device binding', () => {
+    const key = queuePartitionKey(DEVICE_A_PARTITION);
+    expect(key).not.toBe(
+      queuePartitionKey({
+        ...DEVICE_A_PARTITION,
+        tenantId: '018f2000-0000-7000-8000-000000000011',
+      }),
+    );
+    expect(key).not.toBe(
+      queuePartitionKey({
+        ...DEVICE_A_PARTITION,
+        branchId: '018f2000-0000-7000-8000-000000000012',
+      }),
+    );
+    expect(key).not.toBe(
+      queuePartitionKey({
+        ...DEVICE_A_PARTITION,
+        terminalId: '018f2000-0000-7000-8000-000000000013',
+      }),
     );
   });
 
