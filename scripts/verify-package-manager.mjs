@@ -23,7 +23,14 @@ const expected = match[1];
 const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 let actual;
 try {
-  actual = execFileSync(command, ['--version'], { encoding: 'utf8' }).trim();
+  // Windows command shims such as npm.cmd are batch files rather than native
+  // executables. Node 24 rejects direct spawnSync of .cmd files with EINVAL,
+  // so only that platform uses its command interpreter. The command and
+  // argument are fixed constants; no user-controlled value reaches the shell.
+  actual = execFileSync(command, ['--version'], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  }).trim();
 } catch (error) {
   console.error('[fail] npm is not executable in this environment');
   throw error;
