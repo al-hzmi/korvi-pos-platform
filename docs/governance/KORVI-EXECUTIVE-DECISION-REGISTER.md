@@ -189,6 +189,22 @@ Source promotion:
 
 ---
 
+## 2026-09-16 — Installed cashier distribution is private/direct, not public app-store distribution
+
+**Decision:** ACCEPTED.
+
+Official Korvi Cashier for Windows and Android must be distributed through a controlled private/direct Korvi channel for authorized customers/devices. Korvi Cashier is not to be published as a publicly discoverable consumer application through public app stores such as Google Play or Microsoft Store.
+
+Accepted delivery models include Korvi-controlled authenticated download links, operator-assisted installation, customer-specific/private deployment channels and controlled signed update delivery, provided release authenticity, device enrollment, revocation, update integrity and exact-build provenance remain enforced.
+
+This decision does not permit unsigned APK/EXE distribution, shared reusable secrets, weakened OS security controls or uncontrolled permanent download URLs. Privacy/discoverability is a commercial distribution requirement; cryptographic signing and server-side authorization remain mandatory security requirements.
+
+Source promotion:
+- `KORVI-CLIENT-TRUST-ANTI-CLONING.md`
+- installed-client release/distribution gates
+
+---
+
 ## Register maintenance rule
 
 When a later executive decision supersedes one above, do not silently edit history. Add a new dated entry marked **SUPERSEDES** and update the affected authoritative source document.
