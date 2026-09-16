@@ -205,6 +205,33 @@ Source promotion:
 
 ---
 
+## 2026-09-16 — Food-service scope is narrowed to light/quick-service, not full-service restaurant parity
+
+**Decision:** ACCEPTED — SUPERSEDES the active execution interpretation that Korvi must pursue full-service restaurant parity as a near-term commercial target.
+
+Korvi will support food merchants whose operational model is close to a fast retail cashier workflow, including cafes, cafeterias, juice shops, shawarma/quick-service counters and other small restaurants that do not require a full restaurant-management suite.
+
+The supported near-term food profile is cashier-first and may add food-specific presentation and preparation output without forking financial/inventory truth. Its target capabilities include:
+
+- image/category-oriented product selection in addition to search/barcode where useful;
+- simple takeaway / counter-service order flow;
+- stable order/queue number;
+- normal customer receipt/invoice plus a separate non-fiscal preparation/kitchen ticket;
+- optional second-printer routing for preparation staff, with explicit printer failure/retry state;
+- simple item notes/options only where they can be represented deterministically without introducing the full restaurant domain;
+- the same Korvi cashier, tenant, branch, terminal, payment, offline, inventory, audit and ZATCA authorities as retail.
+
+The preparation ticket is operational output, not a second fiscal/tax invoice. Reprints must remain traceable and must not create duplicate sales or duplicate fiscal documents.
+
+The following advanced full-service restaurant capabilities are **not current Commercial V1 requirements** and must not block the retail/quick-service product: table maps/zones, waiter/server application, courses, complex split/merge bills, KDS orchestration, QR table ordering/payment, self-service kiosk, full recipe/ingredient/waste suite, online ordering and delivery-platform integrations. They may remain future optional capabilities and require a separate explicit decision before being promoted back into active execution.
+
+Source promotion:
+- Roadmap
+- Capability Matrix / product scope annotations when next edited
+- Master Product Directive scope interpretation when next edited
+
+---
+
 ## Register maintenance rule
 
 When a later executive decision supersedes one above, do not silently edit history. Add a new dated entry marked **SUPERSEDES** and update the affected authoritative source document.
