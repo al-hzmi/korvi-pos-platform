@@ -21,6 +21,7 @@ import {
   type SaleRecord,
   type ZatcaCertificateStatusEvidence,
   type ZatcaCsidBinding,
+  type ZatcaCsidBindingRepository,
   type ZatcaSigningKeyHandle,
   type ZatcaSigningKeyPort,
   type ZatcaSimplifiedInvoiceHashInput,
@@ -307,6 +308,17 @@ function csid(overrides: Partial<ZatcaCsidBinding> = {}): ZatcaCsidBinding {
   };
 }
 
+function bindingRepository(binding: ZatcaCsidBinding | null): ZatcaCsidBindingRepository {
+  return {
+    async findActiveForTerminal() {
+      return binding;
+    },
+    async activate() {
+      throw new Error('not used by sealing tests');
+    },
+  };
+}
+
 function invoiceInput(): ZatcaSimplifiedInvoiceHashInput {
   const sale: SaleRecord = {
     id: '018f2e20-7b7a-7c00-8000-000000000001',
@@ -498,6 +510,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
     const sealer = createZatcaSimplifiedInvoiceSealer({
       canonicalizer,
       signingKey: signing.port,
+      csidBindings: bindingRepository(csid()),
       trustedAnchorSha256Hex: [ROOT_SHA256],
     });
 
@@ -505,7 +518,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
       scope: SCOPE,
       terminalId: TERMINAL_ID,
       stampingTime: STAMPING_TIME,
-      csid: csid(),
       invoice: invoiceInput(),
     });
 
@@ -540,11 +552,32 @@ describe('ZATCA simplified invoice sealing authority', () => {
     await writeSafeProofArtifacts(result, canonicalizer);
   });
 
+  it('fails closed before HSM use when no active server-owned CSID exists', async () => {
+    const signing = signingPort();
+    const sealer = createZatcaSimplifiedInvoiceSealer({
+      canonicalizer: new Libxml2ZatcaCanonicalizer(),
+      signingKey: signing.port,
+      csidBindings: bindingRepository(null),
+      trustedAnchorSha256Hex: [ROOT_SHA256],
+    });
+
+    await expect(
+      sealer.seal({
+        scope: SCOPE,
+        terminalId: TERMINAL_ID,
+        stampingTime: STAMPING_TIME,
+        invoice: invoiceInput(),
+      }),
+    ).rejects.toThrow(/active server-owned Production CSID/);
+    expect(signing.signSha256).not.toHaveBeenCalled();
+  });
+
   it('fails closed before signing when the trust anchor is not pinned', async () => {
     const signing = signingPort();
     const sealer = createZatcaSimplifiedInvoiceSealer({
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
+      csidBindings: bindingRepository(csid()),
       trustedAnchorSha256Hex: ['0'.repeat(64)],
     });
 
@@ -553,7 +586,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
         scope: SCOPE,
         terminalId: TERMINAL_ID,
         stampingTime: STAMPING_TIME,
-        csid: csid(),
         invoice: invoiceInput(),
       }),
     ).rejects.toThrow(/server-pinned trust anchor/);
@@ -567,6 +599,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
     const sealer = createZatcaSimplifiedInvoiceSealer({
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
+      csidBindings: bindingRepository(csid({ signingPublicKeySpkiDer: forgedSpki })),
       trustedAnchorSha256Hex: [ROOT_SHA256],
     });
 
@@ -575,7 +608,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
         scope: SCOPE,
         terminalId: TERMINAL_ID,
         stampingTime: STAMPING_TIME,
-        csid: csid({ signingPublicKeySpkiDer: forgedSpki }),
         invoice: invoiceInput(),
       }),
     ).rejects.toThrow(/certificate SPKI \/ persisted CSID SPKI/);
@@ -587,6 +619,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
     const sealer = createZatcaSimplifiedInvoiceSealer({
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
+      csidBindings: bindingRepository(csid()),
       trustedAnchorSha256Hex: [ROOT_SHA256],
     });
 
@@ -595,7 +628,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
         scope: SCOPE,
         terminalId: TERMINAL_ID,
         stampingTime: STAMPING_TIME,
-        csid: csid(),
         invoice: invoiceInput(),
       }),
     ).rejects.toThrow(/does not verify against the CSID certificate/);
@@ -607,6 +639,7 @@ describe('ZATCA simplified invoice sealing authority', () => {
     const sealer = createZatcaSimplifiedInvoiceSealer({
       canonicalizer: new Libxml2ZatcaCanonicalizer(),
       signingKey: signing.port,
+      csidBindings: bindingRepository(csid()),
       trustedAnchorSha256Hex: [ROOT_SHA256],
     });
 
@@ -615,7 +648,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
         scope: { tenantId: tenantId('tenant-b') },
         terminalId: TERMINAL_ID,
         stampingTime: STAMPING_TIME,
-        csid: csid(),
         invoice: invoiceInput(),
       }),
     ).rejects.toThrow(/cross-tenant/);
@@ -624,7 +656,6 @@ describe('ZATCA simplified invoice sealing authority', () => {
         scope: SCOPE,
         terminalId: TERMINAL_ID,
         stampingTime: utcSecond(Date.parse(ISSUED_AT) - 1000),
-        csid: csid(),
         invoice: invoiceInput(),
       }),
     ).rejects.toThrow(/cannot precede/);
