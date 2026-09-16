@@ -77,7 +77,9 @@ export function OwnerBootstrapForm(): JSX.Element {
       if (response.status === 204) {
         const activated = bootstrapSuccess(response);
         if (activated === null) {
-          setError('تم التفعيل لكن تعذّر قراءة بيانات الدخول. تواصل مع دعم كورفي قبل إعادة المحاولة.');
+          setError(
+            'تم التفعيل لكن تعذّر قراءة بيانات الدخول. تواصل مع دعم كورفي قبل إعادة المحاولة.',
+          );
           setToken(null);
           return;
         }
