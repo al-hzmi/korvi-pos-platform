@@ -141,7 +141,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     }
   });
 
-  app.get('/v1/auth/me', { preHandler: guards.requireSession }, async (request, reply) => {
+  app.get('/v1/auth/me', { preHandler: guards.requireBrowserSession }, async (request, reply) => {
     const principal = request.auth;
     if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
     return reply.code(200).send(safePrincipal(principal));
@@ -154,12 +154,16 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     return reply.code(204).send();
   });
 
-  app.post('/v1/auth/logout-all', { preHandler: guards.requireSession }, async (request, reply) => {
-    const raw = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
-    const revoked = raw === null ? 0 : await service.logoutAll(raw);
-    reply.header('set-cookie', buildClearedCookieHeader(config.isProduction));
-    return reply.code(200).send({ revoked });
-  });
+  app.post(
+    '/v1/auth/logout-all',
+    { preHandler: guards.requireBrowserSession },
+    async (request, reply) => {
+      const raw = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
+      const revoked = raw === null ? 0 : await service.logoutAll(raw);
+      reply.header('set-cookie', buildClearedCookieHeader(config.isProduction));
+      return reply.code(200).send({ revoked });
+    },
+  );
 
   const native = nativeAuthServiceFor(config);
   if (native !== undefined) {

@@ -37,7 +37,10 @@ function nativeRealmAttempted(value: string | readonly string[] | undefined): bo
 
 export interface Guards {
   readonly enforceOrigin: onRequestAsyncHookHandler;
+  /** Business/session surface: browser or installed Native realm, exclusively selected. */
   readonly requireSession: preHandlerAsyncHookHandler;
+  /** Browser-auth surface only. Native credentials never become browser sessions. */
+  readonly requireBrowserSession: preHandlerAsyncHookHandler;
   requirePermission(permission: Permission): preHandlerAsyncHookHandler;
 }
 
@@ -73,6 +76,31 @@ export function createGuards(
     }
   };
 
+  const requireBrowserSession: preHandlerAsyncHookHandler = async (request, reply) => {
+    // Browser-auth endpoints are not a generic authenticated surface. A Native
+    // credential presented here is refused even if a valid browser cookie is
+    // also present; realm selection must never be implicit or fallback-based.
+    if (nativeRealmAttempted(request.headers.authorization)) {
+      await reply.code(401).send(UNAUTHENTICATED);
+      return;
+    }
+
+    const browserToken = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
+    if (browserToken === null) {
+      await reply.code(401).send(UNAUTHENTICATED);
+      return;
+    }
+
+    const result = await service.authenticate(browserToken);
+    if (result.outcome === 'failure') {
+      request.log.info({ reason: result.reason }, 'browser session rejected');
+      clearCookie(reply);
+      await reply.code(401).send(UNAUTHENTICATED);
+      return;
+    }
+    request.auth = result.principal;
+  };
+
   const requireSession: preHandlerAsyncHookHandler = async (request, reply) => {
     // Realm selection is exclusive. Once a caller presents the KorviNative
     // scheme it can never be rescued by an unrelated valid browser cookie.
@@ -94,20 +122,7 @@ export function createGuards(
       return;
     }
 
-    const browserToken = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
-    if (browserToken === null) {
-      await reply.code(401).send(UNAUTHENTICATED);
-      return;
-    }
-
-    const result = await service.authenticate(browserToken);
-    if (result.outcome === 'failure') {
-      request.log.info({ reason: result.reason }, 'browser session rejected');
-      clearCookie(reply);
-      await reply.code(401).send(UNAUTHENTICATED);
-      return;
-    }
-    request.auth = result.principal;
+    await requireBrowserSession(request, reply);
   };
 
   function requirePermission(permission: Permission): preHandlerAsyncHookHandler {
@@ -125,5 +140,5 @@ export function createGuards(
     };
   }
 
-  return { enforceOrigin, requireSession, requirePermission };
+  return { enforceOrigin, requireSession, requireBrowserSession, requirePermission };
 }

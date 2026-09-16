@@ -59,7 +59,10 @@ jobs:
         run: npm ci --registry=https://registry.npmjs.org
 
       - name: Verify permanent Native Auth proof formatting
-        run: npm exec prettier -- --check apps/api/src/__tests__/native-auth-e2e-live.test.ts
+        run: >-
+          npm exec prettier -- --check
+          apps/api/src/__tests__/native-auth-e2e-live.test.ts
+          apps/api/src/__tests__/native-auth-realm-e2e-live.test.ts
 
       - name: Create restricted application role
         shell: bash
@@ -99,7 +102,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm test -- apps/api/src/__tests__/native-auth-e2e-live.test.ts \
+          npm test -- \
+            apps/api/src/__tests__/native-auth-e2e-live.test.ts \
+            apps/api/src/__tests__/native-auth-realm-e2e-live.test.ts \
             2>&1 | tee "$KORVI_NATIVE_AUTH_ARTIFACT_DIR/proof.txt"
 
       - name: Prove restricted-role ownership and clean tree
