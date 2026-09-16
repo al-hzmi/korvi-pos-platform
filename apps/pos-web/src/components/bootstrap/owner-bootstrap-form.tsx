@@ -5,6 +5,14 @@ import { useEffect, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import type { FormEvent, JSX } from 'react';
 
+interface BootstrapSuccess {
+  readonly email: string;
+  readonly tenant: {
+    readonly slug: string;
+    readonly name: string;
+  };
+}
+
 function readCapabilityFromFragment(): string | null {
   const fragment = window.location.hash.startsWith('#')
     ? window.location.hash.slice(1)
@@ -16,6 +24,30 @@ function readCapabilityFromFragment(): string | null {
   return token === null || token === '' ? null : token;
 }
 
+function bootstrapSuccess(body: unknown): BootstrapSuccess | null {
+  if (body === null || typeof body !== 'object') return null;
+  const value = body as {
+    readonly email?: unknown;
+    readonly tenant?: { readonly slug?: unknown; readonly name?: unknown } | null;
+  };
+  if (
+    typeof value.email !== 'string' ||
+    value.email === '' ||
+    value.tenant === null ||
+    typeof value.tenant !== 'object' ||
+    typeof value.tenant.slug !== 'string' ||
+    value.tenant.slug === '' ||
+    typeof value.tenant.name !== 'string' ||
+    value.tenant.name === ''
+  ) {
+    return null;
+  }
+  return {
+    email: value.email,
+    tenant: { slug: value.tenant.slug, name: value.tenant.name },
+  };
+}
+
 export function OwnerBootstrapForm(): JSX.Element {
   const [token, setToken] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -23,7 +55,7 @@ export function OwnerBootstrapForm(): JSX.Element {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [complete, setComplete] = useState(false);
+  const [complete, setComplete] = useState<BootstrapSuccess | null>(null);
 
   useEffect(() => {
     setToken(readCapabilityFromFragment());
@@ -47,14 +79,19 @@ export function OwnerBootstrapForm(): JSX.Element {
         headers: { 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({ token, password }),
       });
-      if (response.status === 204) {
+      const body: unknown = await response.json().catch(() => null);
+      if (response.ok) {
+        const activated = bootstrapSuccess(body);
+        if (activated === null) {
+          setError('تمت الاستجابة بصيغة غير متوقعة. تواصل مع دعم كورفي قبل إعادة التفعيل.');
+          return;
+        }
         setToken(null);
         setPassword('');
         setConfirm('');
-        setComplete(true);
+        setComplete(activated);
         return;
       }
-      const body: unknown = await response.json().catch(() => null);
       const code =
         body !== null &&
         typeof body === 'object' &&
@@ -89,15 +126,41 @@ export function OwnerBootstrapForm(): JSX.Element {
           </div>
         </div>
 
-        {complete ? (
+        {complete !== null ? (
           <div className="mt-8">
             <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
               <h1 className="text-lg font-semibold text-card-foreground">تم إنشاء حساب المالك</h1>
               <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                تم استهلاك رابط التفعيل بنجاح. سجّل الدخول الآن برمز المنشأة والبريد وكلمة المرور
-                التي اخترتها.
+                تم استهلاك رابط التفعيل بنجاح. احتفظ ببيانات الدخول التالية؛ كلمة المرور هي التي
+                اخترتها في الخطوة السابقة.
               </p>
             </div>
+
+            <div className="mt-4 grid gap-3 rounded-lg border border-border bg-background p-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">المنشأة</p>
+                <p className="mt-1 text-sm font-semibold text-card-foreground">
+                  {complete.tenant.name}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">رمز المنشأة</p>
+                <p className="mt-1 break-all font-mono text-base font-semibold" dir="ltr">
+                  {complete.tenant.slug}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">البريد الإلكتروني</p>
+                <p className="mt-1 break-all font-mono text-sm" dir="ltr">
+                  {complete.email}
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs leading-6 text-muted-foreground">
+              تسجيل الدخول العادي يتطلب رمز المنشأة والبريد الإلكتروني وكلمة المرور. رابط التفعيل
+              انتهى دوره ولا يُستخدم للدخول مرة أخرى.
+            </p>
             <Link
               className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               href="/"
