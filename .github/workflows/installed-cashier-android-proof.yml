@@ -74,6 +74,15 @@ jobs:
           test -d "$ANDROID_NDK_LATEST_HOME"
           echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
 
+      - name: Typecheck installed Cashier
+        run: npm run typecheck -w @korvi/cashier-client
+
+      - name: Build installed Cashier frontend
+        run: npm run build -w @korvi/cashier-client
+
+      - name: Prove Android runtime compiles without signing authority
+        run: npm run tauri -w @korvi/cashier-client -- android build --apk --target aarch64 --debug
+
       - name: Require controlled Android release signing material
         shell: bash
         run: |
@@ -95,12 +104,7 @@ jobs:
           keyPassword=$KORVI_ANDROID_RELEASE_KEY_PASSWORD
           EOF
           chmod 600 apps/cashier-client/src-tauri/gen/android/keystore.properties
-
-      - name: Typecheck installed Cashier
-        run: npm run typecheck -w @korvi/cashier-client
-
-      - name: Build installed Cashier frontend
-        run: npm run build -w @korvi/cashier-client
+          rm -rf apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk
 
       - name: Build signed private-distribution APK
         run: npm run tauri -w @korvi/cashier-client -- android build --apk --target aarch64
@@ -109,8 +113,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t apks < <(find apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort)
-          test "${#apks[@]}" -eq 1 || { printf 'Expected exactly one APK, found %s\n' "${#apks[@]}"; printf '%s\n' "${apks[@]}"; exit 1; }
+          mapfile -t apks < <(find apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk -type f -name '*release*.apk' | sort)
+          test "${#apks[@]}" -eq 1 || { printf 'Expected exactly one release APK, found %s\n' "${#apks[@]}"; printf '%s\n' "${apks[@]}"; exit 1; }
           apk="${apks[0]}"
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$apksigner"
