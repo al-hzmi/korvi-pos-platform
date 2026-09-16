@@ -19,13 +19,30 @@ import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 @InvokeArg
 class SignArgs { lateinit var payload: String }
 
+@InvokeArg
+class ProtectArgs {
+    lateinit var plaintextBase64: String
+    lateinit var aadBase64: String
+}
+
+@InvokeArg
+class UnprotectArgs {
+    lateinit var protectedBase64: String
+    lateinit var aadBase64: String
+}
+
 @TauriPlugin
 class DeviceIdentityPlugin(private val activity: Activity) : Plugin(activity) {
     private val alias = "com.korvi.cashier.device.identity.v1"
+    private val localStoreAlias = "com.korvi.cashier.local.store.v1"
     private fun store(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     private fun createKey(strongBox: Boolean) {
@@ -47,6 +64,37 @@ class DeviceIdentityPlugin(private val activity: Activity) : Plugin(activity) {
         createKey(false)
     }
 
+    private fun createLocalStoreKey(strongBox: Boolean) {
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        val builder = KeyGenParameterSpec.Builder(
+            localStoreAlias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true)
+            .setKeySize(256)
+        if (strongBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) builder.setIsStrongBoxBacked(true)
+        generator.init(builder.build())
+        generator.generateKey()
+    }
+
+    private fun ensureLocalStoreKey(): SecretKey {
+        val keyStore = store()
+        val existing = keyStore.getKey(localStoreAlias, null)
+        if (existing is SecretKey) return existing
+        val wantsStrongBox = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && activity.packageManager.hasSystemFeature("android.hardware.strongbox_keystore")
+        if (wantsStrongBox) {
+            try { createLocalStoreKey(true) } catch (_: StrongBoxUnavailableException) { createLocalStoreKey(false) }
+        } else {
+            createLocalStoreKey(false)
+        }
+        return store().getKey(localStoreAlias, null) as? SecretKey
+            ?: throw IllegalStateException("local-store key unavailable")
+    }
+
+    private fun decode(value: String): ByteArray = Base64.decode(value, Base64.DEFAULT)
+    private fun encode(value: ByteArray): String = Base64.encodeToString(value, Base64.NO_WRAP)
     private fun publicEncoded(): ByteArray { ensureKey(); return store().getCertificate(alias).publicKey.encoded }
     private fun keyInfo(): KeyInfo {
         ensureKey(); val privateKey = store().getKey(alias, null)
@@ -78,5 +126,40 @@ class DeviceIdentityPlugin(private val activity: Activity) : Plugin(activity) {
             val signer = Signature.getInstance("SHA256withECDSA"); signer.initSign(privateKey); signer.update(args.payload.toByteArray(Charsets.UTF_8))
             val ret = JSObject(); ret.put("signature", Base64.encodeToString(signer.sign(), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)); invoke.resolve(ret)
         } catch (error: Exception) { invoke.reject("Android Keystore signing failed: ${error.javaClass.simpleName}") }
+    }
+
+    @Command
+    fun protect(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ProtectArgs::class.java)
+            val plaintext = decode(args.plaintextBase64)
+            val aad = decode(args.aadBase64)
+            require(plaintext.isNotEmpty() && aad.isNotEmpty())
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, ensureLocalStoreKey())
+            cipher.updateAAD(aad)
+            val ciphertext = cipher.doFinal(plaintext)
+            val packed = ByteArray(cipher.iv.size + ciphertext.size)
+            System.arraycopy(cipher.iv, 0, packed, 0, cipher.iv.size)
+            System.arraycopy(ciphertext, 0, packed, cipher.iv.size, ciphertext.size)
+            val ret = JSObject(); ret.put("protectedBase64", encode(packed)); invoke.resolve(ret)
+        } catch (error: Exception) { invoke.reject("Android Keystore local-store protection failed: ${error.javaClass.simpleName}") }
+    }
+
+    @Command
+    fun unprotect(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(UnprotectArgs::class.java)
+            val packed = decode(args.protectedBase64)
+            val aad = decode(args.aadBase64)
+            require(packed.size > 28 && aad.isNotEmpty())
+            val iv = packed.copyOfRange(0, 12)
+            val ciphertext = packed.copyOfRange(12, packed.size)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, ensureLocalStoreKey(), GCMParameterSpec(128, iv))
+            cipher.updateAAD(aad)
+            val plaintext = cipher.doFinal(ciphertext)
+            val ret = JSObject(); ret.put("plaintextBase64", encode(plaintext)); invoke.resolve(ret)
+        } catch (error: Exception) { invoke.reject("Android Keystore refused local-store ciphertext or binding metadata: ${error.javaClass.simpleName}") }
     }
 }
