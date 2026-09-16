@@ -1,0 +1,133 @@
+name: Installed Cashier Android Proof
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - 'apps/cashier-client/**'
+      - 'packages/domain/**'
+      - 'packages/pos-web/**'
+      - 'scripts/verify-package-manager.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - '.github/workflows/installed-cashier-android-proof.yml'
+  pull_request:
+    paths:
+      - 'apps/cashier-client/**'
+      - 'packages/domain/**'
+      - 'packages/pos-web/**'
+      - 'scripts/verify-package-manager.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - '.github/workflows/installed-cashier-android-proof.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-installed-cashier:
+    name: Android Keystore / signed APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+      KORVI_ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.KORVI_ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      KORVI_ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.KORVI_ANDROID_RELEASE_STORE_PASSWORD }}
+      KORVI_ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.KORVI_ANDROID_RELEASE_KEY_ALIAS }}
+      KORVI_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.KORVI_ANDROID_RELEASE_KEY_PASSWORD }}
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Install exact Rust toolchain and Android targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+          rustc --version
+          cargo --version
+          java -version
+          test -d "$ANDROID_HOME"
+          test -d "$ANDROID_NDK_LATEST_HOME"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: Require controlled Android release signing material
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KORVI_ANDROID_RELEASE_KEYSTORE_BASE64" || { echo 'Missing KORVI_ANDROID_RELEASE_KEYSTORE_BASE64'; exit 1; }
+          test -n "$KORVI_ANDROID_RELEASE_STORE_PASSWORD" || { echo 'Missing KORVI_ANDROID_RELEASE_STORE_PASSWORD'; exit 1; }
+          test -n "$KORVI_ANDROID_RELEASE_KEY_ALIAS" || { echo 'Missing KORVI_ANDROID_RELEASE_KEY_ALIAS'; exit 1; }
+          test -n "$KORVI_ANDROID_RELEASE_KEY_PASSWORD" || { echo 'Missing KORVI_ANDROID_RELEASE_KEY_PASSWORD'; exit 1; }
+          printf '%s' "$KORVI_ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/korvi-android-release.jks"
+          chmod 600 "$RUNNER_TEMP/korvi-android-release.jks"
+          keytool -list \
+            -keystore "$RUNNER_TEMP/korvi-android-release.jks" \
+            -storepass "$KORVI_ANDROID_RELEASE_STORE_PASSWORD" \
+            -alias "$KORVI_ANDROID_RELEASE_KEY_ALIAS" >/dev/null
+          cat > apps/cashier-client/src-tauri/gen/android/keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/korvi-android-release.jks
+          storePassword=$KORVI_ANDROID_RELEASE_STORE_PASSWORD
+          keyAlias=$KORVI_ANDROID_RELEASE_KEY_ALIAS
+          keyPassword=$KORVI_ANDROID_RELEASE_KEY_PASSWORD
+          EOF
+          chmod 600 apps/cashier-client/src-tauri/gen/android/keystore.properties
+
+      - name: Typecheck installed Cashier
+        run: npm run typecheck -w @korvi/cashier-client
+
+      - name: Build installed Cashier frontend
+        run: npm run build -w @korvi/cashier-client
+
+      - name: Build signed private-distribution APK
+        run: npm run tauri -w @korvi/cashier-client -- android build --apk --target aarch64
+
+      - name: Prove APK signature and bind artifact to exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | sort)
+          test "${#apks[@]}" -eq 1 || { printf 'Expected exactly one APK, found %s\n' "${#apks[@]}"; printf '%s\n' "${apks[@]}"; exit 1; }
+          apk="${apks[0]}"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk" | tee android-apk-signature.txt
+          hash="$(sha256sum "$apk" | awk '{print $1}')"
+          printf 'git_sha=%s\nartifact=%s\nsha256=%s\n' "${GITHUB_SHA}" "$(basename "$apk")" "$hash" > android-artifact-sha256.txt
+          cat android-artifact-sha256.txt
+          mkdir -p android-artifact
+          cp "$apk" android-artifact/
+
+      - name: Upload exact-lineage signed Android evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: korvi-cashier-android-${{ github.sha }}
+          path: |
+            android-artifact/*.apk
+            android-artifact-sha256.txt
+            android-apk-signature.txt
+          if-no-files-found: error
+          retention-days: 14
