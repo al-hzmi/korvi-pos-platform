@@ -1,4 +1,4 @@
-name: Temporary Format Installed Offline
+name: Temporary Wire Local Store Protection
 
 on:
   push:
@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  format:
+  wire:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -16,100 +16,47 @@ jobs:
         with:
           ref: strike/product-routing-p0
 
-      - name: Set up Node
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-
-      - name: Install
-        run: npm ci --registry=https://registry.npmjs.org
-
-      - name: Apply device-bound offline store patch
+      - name: Wire Native commands
         shell: python
         run: |
           from pathlib import Path
+          p = Path('apps/cashier-client/src-tauri/src/lib.rs')
+          text = p.read_text()
 
-          def patch(path, replacements):
-              p = Path(path)
-              text = p.read_text()
-              for old, new in replacements:
-                  if old in text:
-                      if text.count(old) != 1:
-                          raise SystemExit(f"ambiguous patch in {path}: {old[:80]!r}")
-                      text = text.replace(old, new)
-                  elif new not in text:
-                      raise SystemExit(f"patch context missing in {path}: {old[:80]!r}")
-              p.write_text(text)
+          if 'mod local_protection;' not in text:
+              text = text.replace('mod device_identity;\nmod offline_authority;', 'mod device_identity;\nmod local_protection;\nmod offline_authority;')
 
-          patch('apps/pos-web/src/lib/offline-store.ts', [
-              ("  readonly terminalId: string;\n  readonly userId: string;", "  readonly terminalId: string;\n  readonly deviceEnrollmentId?: string | undefined;\n  readonly userId: string;"),
-              ("  readonly terminalId: string;\n  readonly id: string;", "  readonly terminalId: string;\n  readonly deviceEnrollmentId?: string | undefined;\n  readonly id: string;"),
-              ("export function offlineSaleScopeKey(scope: OfflineSaleScope): string {\n  return JSON.stringify([\n    scope.tenantId,\n    scope.branchId,\n    scope.terminalId,\n    scope.userId,\n    scope.shiftId,\n  ]);\n}", "export function offlineSaleScopeKey(scope: OfflineSaleScope): string {\n  const identity = [scope.tenantId, scope.branchId, scope.terminalId];\n  if (scope.deviceEnrollmentId !== undefined) identity.push(scope.deviceEnrollmentId);\n  identity.push(scope.userId, scope.shiftId);\n  return JSON.stringify(identity);\n}\n\nexport function recordMatchesDeviceEnrollment(\n  value: Readonly<Record<string, unknown>>,\n  deviceEnrollmentId: string | undefined,\n): boolean {\n  const hasDeviceEnrollmentId = Object.prototype.hasOwnProperty.call(\n    value,\n    'deviceEnrollmentId',\n  );\n  return deviceEnrollmentId === undefined\n    ? !hasDeviceEnrollmentId\n    : hasDeviceEnrollmentId && value.deviceEnrollmentId === deviceEnrollmentId;\n}"),
-              ("    !isUuidV7(partition.terminalId)\n  )", "    !isUuidV7(partition.terminalId) ||\n    (partition.deviceEnrollmentId !== undefined && !isUuidV7(partition.deviceEnrollmentId))\n  )"),
-              ("export function queuePartitionKey(partition: QueuePartition): string {\n  assertQueuePartition(partition);\n  return JSON.stringify([partition.tenantId, partition.branchId, partition.terminalId]);\n}\n\nfunction queueRecordKey(partition: QueuePartition, id: string): string {\n  if (!isUuidV7(id)) {\n    throw new OfflineStoreError('corrupt', 'Queue operation id must be a canonical UUIDv7.');\n  }\n  return JSON.stringify([partition.tenantId, partition.branchId, partition.terminalId, id]);\n}", "export function queuePartitionKey(partition: QueuePartition): string {\n  assertQueuePartition(partition);\n  const identity = [partition.tenantId, partition.branchId, partition.terminalId];\n  if (partition.deviceEnrollmentId !== undefined) identity.push(partition.deviceEnrollmentId);\n  return JSON.stringify(identity);\n}\n\nexport function queueRecordKey(partition: QueuePartition, id: string): string {\n  assertQueuePartition(partition);\n  if (!isUuidV7(id)) {\n    throw new OfflineStoreError('corrupt', 'Queue operation id must be a canonical UUIDv7.');\n  }\n  const identity = [partition.tenantId, partition.branchId, partition.terminalId];\n  if (partition.deviceEnrollmentId !== undefined) identity.push(partition.deviceEnrollmentId);\n  identity.push(id);\n  return JSON.stringify(identity);\n}"),
-              ("    value.terminalId !== scope.terminalId ||\n    value.userId !== scope.userId ||", "    value.terminalId !== scope.terminalId ||\n    !recordMatchesDeviceEnrollment(value, scope.deviceEnrollmentId) ||\n    value.userId !== scope.userId ||"),
-              ("    terminalId: partition.terminalId,\n    id: operation.id,", "    terminalId: partition.terminalId,\n    ...(partition.deviceEnrollmentId === undefined\n      ? {}\n      : { deviceEnrollmentId: partition.deviceEnrollmentId }),\n    id: operation.id,"),
-              ("    value.terminalId !== partition.terminalId ||\n    typeof value.kind !== 'string' ||", "    value.terminalId !== partition.terminalId ||\n    !recordMatchesDeviceEnrollment(value, partition.deviceEnrollmentId) ||\n    typeof value.kind !== 'string' ||"),
-              ("      const row: StoredSaleDraft = {\n        ...scope,\n        ...draft,\n        scopeKey: offlineSaleScopeKey(scope),\n      };", "      if (\n        scope.deviceEnrollmentId !== undefined &&\n        !isUuidV7(scope.deviceEnrollmentId)\n      ) {\n        throw new OfflineStoreError(\n          'corrupt',\n          'Sale draft device enrollment must be a canonical UUIDv7 value.',\n        );\n      }\n      const row: StoredSaleDraft = {\n        tenantId: scope.tenantId,\n        branchId: scope.branchId,\n        terminalId: scope.terminalId,\n        ...(scope.deviceEnrollmentId === undefined\n          ? {}\n          : { deviceEnrollmentId: scope.deviceEnrollmentId }),\n        userId: scope.userId,\n        shiftId: scope.shiftId,\n        ...draft,\n        scopeKey: offlineSaleScopeKey(scope),\n      };")
-          ])
+          marker = '#[tauri::command]\nasync fn native_login<R: Runtime>('
+          commands = '''#[tauri::command]\nfn protect_local_store<R: Runtime>(\n    app: AppHandle<R>,\n    plaintext_base64: String,\n    aad_base64: String,\n) -> Result<String, String> {\n    local_protection::protect(&app, &plaintext_base64, &aad_base64)\n}\n\n#[tauri::command]\nfn unprotect_local_store<R: Runtime>(\n    app: AppHandle<R>,\n    protected_base64: String,\n    aad_base64: String,\n) -> Result<String, String> {\n    local_protection::unprotect(&app, &protected_base64, &aad_base64)\n}\n\n'''
+          if 'fn protect_local_store<R: Runtime>(' not in text:
+              if marker not in text:
+                  raise SystemExit('native_login marker missing')
+              text = text.replace(marker, commands + marker)
 
-          patch('apps/pos-web/src/components/cashier-screen.tsx', [
-              ("  /** Host-owned Control destination. Installed Cashier omits it. */\n  readonly controlCentreHref?: string | undefined;", "  /** Host-owned Control destination. Installed Cashier omits it. */\n  readonly controlCentreHref?: string | undefined;\n  /** Stable OS/server enrollment identity used only to partition installed durable state. */\n  readonly offlineStoreDeviceEnrollmentId?: string | undefined;"),
-              ("  controlCentreHref,\n  onSignOut,", "  controlCentreHref,\n  offlineStoreDeviceEnrollmentId,\n  onSignOut,"),
-              ("      terminalId: terminal.id,\n    }),\n    [principal.tenant.id, terminal.branchId, terminal.id],", "      terminalId: terminal.id,\n      ...(offlineStoreDeviceEnrollmentId === undefined\n        ? {}\n        : { deviceEnrollmentId: offlineStoreDeviceEnrollmentId }),\n    }),\n    [offlineStoreDeviceEnrollmentId, principal.tenant.id, terminal.branchId, terminal.id],"),
-              ("      terminalId: terminal.id,\n      userId: principal.user.id,\n      shiftId: shift.id,", "      terminalId: terminal.id,\n      ...(offlineStoreDeviceEnrollmentId === undefined\n        ? {}\n        : { deviceEnrollmentId: offlineStoreDeviceEnrollmentId }),\n      userId: principal.user.id,\n      shiftId: shift.id,"),
-              ("    [principal.tenant.id, principal.user.id, shift.id, terminal.branchId, terminal.id],", "    [\n      offlineStoreDeviceEnrollmentId,\n      principal.tenant.id,\n      principal.user.id,\n      shift.id,\n      terminal.branchId,\n      terminal.id,\n    ],")
-          ])
+          handler_marker = '            offline_authority_material,\n            bind_device,'
+          handler_new = '            offline_authority_material,\n            protect_local_store,\n            unprotect_local_store,\n            bind_device,'
+          if '            protect_local_store,\n            unprotect_local_store,' not in text:
+              if handler_marker not in text:
+                  raise SystemExit('invoke handler marker missing')
+              text = text.replace(handler_marker, handler_new)
 
-          patch('apps/pos-web/src/components/pos-app.tsx', [
-              ("  readonly offlineWorkspaceMaxAgeMs?: number | null | undefined;\n}", "  readonly offlineWorkspaceMaxAgeMs?: number | null | undefined;\n  /** Stable installed-device enrollment used to isolate durable queue and drafts. */\n  readonly offlineStoreDeviceEnrollmentId?: string | undefined;\n}"),
-              ("  authorizeOfflineWorkspace,\n  offlineWorkspaceMaxAgeMs,\n}: PosAppProps)", "  authorizeOfflineWorkspace,\n  offlineWorkspaceMaxAgeMs,\n  offlineStoreDeviceEnrollmentId,\n}: PosAppProps)"),
-              ("    const snapshot = readOfflineWorkspace(new Date(), { maxAgeMs: offlineWorkspaceMaxAgeMs });", "    const snapshot = readOfflineWorkspace(\n      new Date(),\n      offlineWorkspaceMaxAgeMs === undefined ? {} : { maxAgeMs: offlineWorkspaceMaxAgeMs },\n    );"),
-              ("          controlCentreHref={controlCentreHref}\n          onSignOut={() => undefined}", "          controlCentreHref={controlCentreHref}\n          offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}\n          onSignOut={() => undefined}"),
-              ("      controlCentreHref={controlCentreHref}\n      onSignOut={signOut}", "      controlCentreHref={controlCentreHref}\n      offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}\n      onSignOut={signOut}")
-          ])
+          p.write_text(text)
 
-          patch('apps/cashier-client/src/main.tsx', [
-              ("      offlineWorkspaceMaxAgeMs={null}\n    />", "      offlineWorkspaceMaxAgeMs={null}\n      offlineStoreDeviceEnrollmentId={status.binding.deviceEnrollmentId}\n    />")
-          ])
+      - name: Rust format
+        run: cargo fmt --manifest-path apps/cashier-client/src-tauri/Cargo.toml
 
-          patch('apps/pos-web/src/lib/__tests__/offline-store.test.ts', [
-              ("  offlineSaleScopeKey,\n  queuePartitionKey,", "  offlineSaleScopeKey,\n  queuePartitionKey,\n  queueRecordKey,\n  recordMatchesDeviceEnrollment,"),
-              ("const QUEUE_PARTITION: QueuePartition = {\n  tenantId: SCOPE.tenantId,\n  branchId: SCOPE.branchId,\n  terminalId: SCOPE.terminalId,\n};", "const DEVICE_A = '018f2000-0000-7000-8000-000000000006';\nconst DEVICE_B = '018f2000-0000-7000-8000-000000000007';\n\nconst QUEUE_PARTITION: QueuePartition = {\n  tenantId: SCOPE.tenantId,\n  branchId: SCOPE.branchId,\n  terminalId: SCOPE.terminalId,\n};\nconst DEVICE_A_PARTITION: QueuePartition = { ...QUEUE_PARTITION, deviceEnrollmentId: DEVICE_A };\nconst DEVICE_B_PARTITION: QueuePartition = { ...QUEUE_PARTITION, deviceEnrollmentId: DEVICE_B };") ,
-              ("  it('canonicalizes queue payload identity independent of object key insertion order', () => {", "  it('preserves legacy browser keys while isolating installed queues by enrollment', () => {\n    expect(queuePartitionKey(QUEUE_PARTITION)).toBe(\n      JSON.stringify([SCOPE.tenantId, SCOPE.branchId, SCOPE.terminalId]),\n    );\n    expect(queuePartitionKey(DEVICE_A_PARTITION)).not.toBe(queuePartitionKey(QUEUE_PARTITION));\n    expect(queuePartitionKey(DEVICE_A_PARTITION)).not.toBe(queuePartitionKey(DEVICE_B_PARTITION));\n    expect(queueRecordKey(DEVICE_A_PARTITION, QUEUE_OPERATION.id)).not.toBe(\n      queueRecordKey(DEVICE_B_PARTITION, QUEUE_OPERATION.id),\n    );\n    expect(() =>\n      queuePartitionKey({ ...QUEUE_PARTITION, deviceEnrollmentId: 'not-a-uuid' }),\n    ).toThrow(OfflineStoreError);\n  });\n\n  it('isolates installed drafts and refuses cloned or legacy-unbound device records', () => {\n    const browserKey = offlineSaleScopeKey(SCOPE);\n    const deviceAKey = offlineSaleScopeKey({ ...SCOPE, deviceEnrollmentId: DEVICE_A });\n    const deviceBKey = offlineSaleScopeKey({ ...SCOPE, deviceEnrollmentId: DEVICE_B });\n    expect(browserKey).toBe(\n      JSON.stringify([SCOPE.tenantId, SCOPE.branchId, SCOPE.terminalId, SCOPE.userId, SCOPE.shiftId]),\n    );\n    expect(deviceAKey).not.toBe(browserKey);\n    expect(deviceAKey).not.toBe(deviceBKey);\n    expect(recordMatchesDeviceEnrollment({}, undefined)).toBe(true);\n    expect(recordMatchesDeviceEnrollment({}, DEVICE_A)).toBe(false);\n    expect(recordMatchesDeviceEnrollment({ deviceEnrollmentId: DEVICE_A }, DEVICE_A)).toBe(true);\n    expect(recordMatchesDeviceEnrollment({ deviceEnrollmentId: DEVICE_A }, DEVICE_B)).toBe(false);\n    expect(recordMatchesDeviceEnrollment({ deviceEnrollmentId: DEVICE_A }, undefined)).toBe(false);\n  });\n\n  it('keeps tenant branch and terminal partition isolation with device binding', () => {\n    const key = queuePartitionKey(DEVICE_A_PARTITION);\n    expect(key).not.toBe(\n      queuePartitionKey({ ...DEVICE_A_PARTITION, tenantId: '018f2000-0000-7000-8000-000000000011' }),\n    );\n    expect(key).not.toBe(\n      queuePartitionKey({ ...DEVICE_A_PARTITION, branchId: '018f2000-0000-7000-8000-000000000012' }),\n    );\n    expect(key).not.toBe(\n      queuePartitionKey({ ...DEVICE_A_PARTITION, terminalId: '018f2000-0000-7000-8000-000000000013' }),\n    );\n  });\n\n  it('canonicalizes queue payload identity independent of object key insertion order', () => {")
-          ])
-
-      - name: Format changed files
-        run: npx prettier apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-store.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/components/pos-app.tsx apps/cashier-client/src/main.tsx --write
-
-      - name: Prisma client
-        run: npm run db:generate
+      - name: Rust host check
+        run: cargo check --manifest-path apps/cashier-client/src-tauri/Cargo.toml
         env:
-          DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+          KORVI_NATIVE_API_ORIGIN: https://api.example.invalid
 
-      - name: Prepare workspace dependencies
+      - name: Commit Native command wiring
         run: |
-          npm run build -w @korvi/domain
-          npm run build -w @korvi/database
-          npm run build -w @korvi/ui
-
-      - name: Device-bound offline store tests
-        run: npx vitest run apps/pos-web/src/lib/__tests__/offline-store.test.ts
-
-      - name: POS web typecheck
-        run: npm run typecheck -w @korvi/pos-web
-
-      - name: Cashier client typecheck
-        run: npm run typecheck -w @korvi/cashier-client
-
-      - name: Commit meaningful implementation if needed
-        run: |
-          if git diff --quiet -- apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-store.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/components/pos-app.tsx apps/cashier-client/src/main.tsx; then
+          if git diff --quiet -- apps/cashier-client/src-tauri/src/lib.rs apps/cashier-client/src-tauri/src/local_protection.rs apps/cashier-client/src-tauri/tauri-plugin-korvi-device-identity/src/lib.rs apps/cashier-client/src-tauri/tauri-plugin-korvi-device-identity/android/src/main/java/DeviceIdentityPlugin.kt; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-store.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/components/pos-app.tsx apps/cashier-client/src/main.tsx
-          git commit -m "feat(offline): bind local store to device enrollment"
+          git add apps/cashier-client/src-tauri/src/lib.rs apps/cashier-client/src-tauri/src/local_protection.rs apps/cashier-client/src-tauri/tauri-plugin-korvi-device-identity/src/lib.rs apps/cashier-client/src-tauri/tauri-plugin-korvi-device-identity/android/src/main/java/DeviceIdentityPlugin.kt
+          git commit -m "feat(cashier): wire OS-backed local store protection"
           git push origin HEAD:strike/product-routing-p0
