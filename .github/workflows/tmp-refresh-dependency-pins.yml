@@ -1,0 +1,65 @@
+name: Temporary Refresh Dependency Pins
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - .github/workflows/tmp-refresh-dependency-pins.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out authoritative branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Refresh exact dependency pins and lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          import fs from 'node:fs';
+
+          const rootPath = 'package.json';
+          const apiPath = 'apps/api/package.json';
+
+          const root = JSON.parse(fs.readFileSync(rootPath, 'utf8'));
+          const api = JSON.parse(fs.readFileSync(apiPath, 'utf8'));
+
+          root.devDependencies.prettier = '3.9.7';
+          api.dependencies.fastify = '5.12.5';
+
+          fs.writeFileSync(rootPath, `${JSON.stringify(root, null, 2)}\n`);
+          fs.writeFileSync(apiPath, `${JSON.stringify(api, null, 2)}\n`);
+          NODE
+
+          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          npm run versions:verify
+
+      - name: Commit refreshed pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json apps/api/package.json package-lock.json
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No dependency refresh was necessary."
+            exit 0
+          fi
+          git commit -m "chore(deps): refresh verified patch pins"
+          git push origin HEAD:strike/product-routing-p0
