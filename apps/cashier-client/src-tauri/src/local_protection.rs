@@ -104,6 +104,30 @@ mod platform {
         Ok(encoded)
     }
 
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn windows_dpapi_roundtrip_and_binding_entropy_are_enforced() {
+            let plaintext = general_purpose::STANDARD.encode(b"korvi-offline-state-v1");
+            let binding = general_purpose::STANDARD.encode(
+                b"tenant/branch/terminal/device-enrollment/schema-v1",
+            );
+            let wrong_binding = general_purpose::STANDARD.encode(
+                b"tenant/branch/terminal/other-device/schema-v1",
+            );
+
+            let protected = run(true, &plaintext, &binding).expect("protect with Windows DPAPI");
+            assert_ne!(protected, plaintext);
+            assert_eq!(
+                run(false, &protected, &binding).expect("unprotect with matching binding"),
+                plaintext
+            );
+            assert!(run(false, &protected, &wrong_binding).is_err());
+        }
+    }
+
     pub fn protect<R: Runtime>(
         _app: &AppHandle<R>,
         plaintext_base64: &str,
