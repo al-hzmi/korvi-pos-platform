@@ -84,7 +84,9 @@ export function createZatcaCsidBindingRepository(prisma: PrismaClient): ZatcaCsi
              AND "terminalId" = ${input.binding.terminalId}::uuid
              AND "state" = 'active'`;
 
-        const certificatePath = JSON.stringify(serializeCertificatePath(input.binding.certificatePath));
+        const certificatePath = JSON.stringify(
+          serializeCertificatePath(input.binding.certificatePath),
+        );
         const certificateStatus = JSON.stringify(input.binding.certificateStatus);
         const notBefore = exactUtcSecond(input.binding.notBefore, 'certificate notBefore');
         const notAfter = exactUtcSecond(input.binding.notAfter, 'certificate notAfter');
@@ -173,10 +175,7 @@ async function findBySourceAttemptWithin(
   return rows[0] ?? null;
 }
 
-function assertActivationAuthority(
-  scope: TenantScope,
-  input: ActivateZatcaCsidBindingInput,
-): void {
+function assertActivationAuthority(scope: TenantScope, input: ActivateZatcaCsidBindingInput): void {
   if (input.binding.scope.tenantId !== scope.tenantId) {
     throw new ZatcaInvoiceError('ZATCA Production CSID activation refuses cross-tenant authority.');
   }
@@ -184,13 +183,19 @@ function assertActivationAuthority(
     throw new ZatcaInvoiceError('A newly activated ZATCA Production CSID must start active.');
   }
   if (input.binding.terminalId.trim() === '' || input.binding.credentialId.trim() === '') {
-    throw new ZatcaInvoiceError('ZATCA Production CSID activation requires terminal and credential ids.');
+    throw new ZatcaInvoiceError(
+      'ZATCA Production CSID activation requires terminal and credential ids.',
+    );
   }
   if (input.binding.key.exportable !== false) {
-    throw new ZatcaInvoiceError('ZATCA Production CSID activation refuses an exportable signing key.');
+    throw new ZatcaInvoiceError(
+      'ZATCA Production CSID activation refuses an exportable signing key.',
+    );
   }
   if (input.binding.certificatePath.length < 2) {
-    throw new ZatcaInvoiceError('ZATCA Production CSID activation requires a complete certificate path.');
+    throw new ZatcaInvoiceError(
+      'ZATCA Production CSID activation requires a complete certificate path.',
+    );
   }
   if (input.binding.certificateStatus.length !== input.binding.certificatePath.length - 1) {
     throw new ZatcaInvoiceError(
@@ -372,7 +377,10 @@ function exactUtcSecond(value: string, label: string): Date {
     throw new ZatcaInvoiceError(`ZATCA ${label} must be an exact UTC second.`);
   }
   const instant = Date.parse(value);
-  if (!Number.isFinite(instant) || new Date(instant).toISOString().replace('.000Z', 'Z') !== value) {
+  if (
+    !Number.isFinite(instant) ||
+    new Date(instant).toISOString().replace('.000Z', 'Z') !== value
+  ) {
     throw new ZatcaInvoiceError(`ZATCA ${label} is not a real UTC calendar instant.`);
   }
   return new Date(instant);
