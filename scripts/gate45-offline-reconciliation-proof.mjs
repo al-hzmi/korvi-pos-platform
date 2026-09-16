@@ -84,7 +84,7 @@ async function createTarget(url) {
   return response.json();
 }
 
-const target = await createTarget(`${baseUrl}/`);
+const target = await createTarget(`${baseUrl}/cashier`);
 assert.equal(typeof target.webSocketDebuggerUrl, 'string');
 const cdp = new CdpClient(target.webSocketDebuggerUrl);
 await Promise.all([
