@@ -41,6 +41,7 @@ jobs:
     timeout-minutes: 60
     env:
       CI: 'true'
+      KORVI_NATIVE_API_ORIGIN: ${{ vars.KORVI_NATIVE_API_ORIGIN }}
       KORVI_ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.KORVI_ANDROID_RELEASE_KEYSTORE_BASE64 }}
       KORVI_ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.KORVI_ANDROID_RELEASE_STORE_PASSWORD }}
       KORVI_ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.KORVI_ANDROID_RELEASE_KEY_ALIAS }}
@@ -88,12 +89,16 @@ jobs:
         run: npm run build -w @korvi/cashier-client
 
       - name: Prove Android runtime compiles without signing authority
+        env:
+          KORVI_NATIVE_API_ORIGIN: http://127.0.0.1:3001
         run: npm run tauri -w @korvi/cashier-client -- android build --apk --target aarch64 --debug
 
-      - name: Require controlled Android release signing material
+      - name: Require controlled Android release authority
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$KORVI_NATIVE_API_ORIGIN" || { echo 'Missing repository variable KORVI_NATIVE_API_ORIGIN'; exit 1; }
+          case "$KORVI_NATIVE_API_ORIGIN" in https://*) ;; *) echo 'KORVI_NATIVE_API_ORIGIN must be an HTTPS origin for release'; exit 1 ;; esac
           test -n "$KORVI_ANDROID_RELEASE_KEYSTORE_BASE64" || { echo 'Missing KORVI_ANDROID_RELEASE_KEYSTORE_BASE64'; exit 1; }
           test -n "$KORVI_ANDROID_RELEASE_STORE_PASSWORD" || { echo 'Missing KORVI_ANDROID_RELEASE_STORE_PASSWORD'; exit 1; }
           test -n "$KORVI_ANDROID_RELEASE_KEY_ALIAS" || { echo 'Missing KORVI_ANDROID_RELEASE_KEY_ALIAS'; exit 1; }
