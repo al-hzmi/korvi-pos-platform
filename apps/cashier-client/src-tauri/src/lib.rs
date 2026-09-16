@@ -13,7 +13,7 @@ use tauri::{AppHandle, Manager, Runtime, State};
 
 const API_ORIGIN: &str = env!("KORVI_NATIVE_API_ORIGIN");
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DeviceBinding {
     tenant_id: String,
@@ -58,6 +58,7 @@ impl NativeHttpState {
             offline_authority_path: dir.join("offline-authority.json"),
         })
     }
+
     fn binding(&self) -> Result<Option<DeviceBinding>, String> {
         if !self.binding_path.exists() {
             return Ok(None);
@@ -68,6 +69,7 @@ impl NativeHttpState {
             .map(Some)
             .map_err(|_| "device binding is corrupt; explicit re-binding is required".into())
     }
+
     fn write_binding(&self, binding: &DeviceBinding) -> Result<(), String> {
         let bytes = serde_json::to_vec(binding)
             .map_err(|e| format!("cannot encode device binding: {e}"))?;
@@ -76,6 +78,7 @@ impl NativeHttpState {
         fs::rename(temp, &self.binding_path)
             .map_err(|e| format!("cannot commit device binding: {e}"))
     }
+
     fn offline_authority(&self) -> Result<offline_authority::CachedOfflineAuthority, String> {
         let bytes = fs::read(&self.offline_authority_path)
             .map_err(|_| "no signed offline authority is cached for this device".to_string())?;
@@ -83,6 +86,7 @@ impl NativeHttpState {
             .map_err(|_| "offline authority cache is corrupt".to_string())?;
         offline_authority::validate_cached(cached)
     }
+
     fn write_offline_authority(
         &self,
         cached: &offline_authority::CachedOfflineAuthority,
@@ -90,16 +94,45 @@ impl NativeHttpState {
         let bytes = serde_json::to_vec(cached)
             .map_err(|e| format!("cannot encode offline authority cache: {e}"))?;
         let temp = self.offline_authority_path.with_extension("json.tmp");
+        let backup = self.offline_authority_path.with_extension("json.bak");
         fs::write(&temp, bytes).map_err(|e| format!("cannot write offline authority cache: {e}"))?;
-        fs::rename(temp, &self.offline_authority_path)
-            .map_err(|e| format!("cannot commit offline authority cache: {e}"))
+
+        if backup.exists() {
+            fs::remove_file(&backup)
+                .map_err(|e| format!("cannot clear stale offline authority backup: {e}"))?;
+        }
+        if self.offline_authority_path.exists() {
+            fs::rename(&self.offline_authority_path, &backup)
+                .map_err(|e| format!("cannot rotate offline authority cache: {e}"))?;
+        }
+        if let Err(error) = fs::rename(&temp, &self.offline_authority_path) {
+            let _ = fs::remove_file(&temp);
+            if backup.exists() {
+                let _ = fs::rename(&backup, &self.offline_authority_path);
+            }
+            return Err(format!("cannot commit offline authority cache: {error}"));
+        }
+        if backup.exists() {
+            fs::remove_file(&backup)
+                .map_err(|e| format!("cannot clear offline authority backup: {e}"))?;
+        }
+        Ok(())
     }
+
     fn clear_offline_authority(&self) -> Result<(), String> {
         match fs::remove_file(&self.offline_authority_path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(format!("cannot clear offline authority cache: {error}")),
         }
+    }
+
+    fn clear_session(&self) -> Result<(), String> {
+        *self
+            .session
+            .lock()
+            .map_err(|_| "native session state poisoned")? = None;
+        Ok(())
     }
 }
 
@@ -134,6 +167,7 @@ struct NativeHttpRequest {
     headers: BTreeMap<String, String>,
     body: Option<String>,
 }
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeHttpResponse {
@@ -141,6 +175,7 @@ struct NativeHttpResponse {
     headers: BTreeMap<String, String>,
     body: Option<String>,
 }
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeCredentials {
@@ -156,9 +191,11 @@ fn response(status: u16, body: Option<String>) -> NativeHttpResponse {
         body,
     }
 }
+
 fn json_response(status: u16, value: Value) -> NativeHttpResponse {
     response(status, Some(value.to_string()))
 }
+
 fn api_url(state: &NativeHttpState, path: &str) -> Result<Url, String> {
     let url = state
         .api_origin
@@ -169,6 +206,7 @@ fn api_url(state: &NativeHttpState, path: &str) -> Result<Url, String> {
     }
     Ok(url)
 }
+
 fn validate_cashier_path(path: &str) -> Result<(), String> {
     if path.starts_with("//")
         || path.contains("://")
@@ -190,6 +228,7 @@ fn validate_cashier_path(path: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
 fn parse_method(method: &str) -> Result<Method, String> {
     match method.to_ascii_uppercase().as_str() {
         "GET" => Ok(Method::GET),
@@ -197,6 +236,7 @@ fn parse_method(method: &str) -> Result<Method, String> {
         _ => Err("native transport refused an unsupported HTTP method".into()),
     }
 }
+
 async fn body_response(resp: reqwest::Response) -> Result<NativeHttpResponse, String> {
     let status = resp.status().as_u16();
     let mut headers = BTreeMap::new();
@@ -279,10 +319,20 @@ fn bind_device(
     if tenant_id.len() != 36 || device_enrollment_id.len() != 36 {
         return Err("device binding requires canonical UUID identifiers".into());
     }
-    state.write_binding(&DeviceBinding {
+    let requested = DeviceBinding {
         tenant_id,
         device_enrollment_id,
-    })?;
+    };
+    if let Some(existing) = state.binding()? {
+        if existing == requested {
+            return Ok(());
+        }
+        return Err(
+            "installed Cashier is already bound; enrollment replacement requires a managed reset"
+                .into(),
+        );
+    }
+    state.write_binding(&requested)?;
     state.clear_offline_authority()
 }
 
@@ -365,7 +415,22 @@ async fn native_me<R: Runtime>(
         .map_err(|_| "native session state poisoned")?
         .clone();
     let Some(token) = token else {
-        return Ok(json_response(401, json!({"error":"unauthenticated"})));
+        if state.offline_authority().is_err() {
+            return Ok(json_response(401, json!({"error":"unauthenticated"})));
+        }
+        let health = state
+            .client
+            .get(api_url(&state, "/health")?)
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await;
+        return match health {
+            Ok(_) => Ok(json_response(401, json!({"error":"unauthenticated"}))),
+            Err(_) => Ok(json_response(
+                503,
+                json!({"error":"offline-authority-available"}),
+            )),
+        };
     };
     let resp = state
         .client
@@ -378,10 +443,7 @@ async fn native_me<R: Runtime>(
     let status = resp.status().as_u16();
     let value: Value = resp.json().await.unwrap_or(Value::Null);
     if status == 401 {
-        *state
-            .session
-            .lock()
-            .map_err(|_| "native session state poisoned")? = None;
+        state.clear_session()?;
         let _ = state.clear_offline_authority();
     }
     if !(200..300).contains(&status) {
@@ -403,17 +465,25 @@ async fn native_logout(state: State<'_, NativeHttpState>) -> Result<NativeHttpRe
         .session
         .lock()
         .map_err(|_| "native session state poisoned")?
-        .take();
-    if let Some(token) = token {
-        let _ = state
-            .client
-            .post(api_url(&state, "/v1/native-auth/logout")?)
-            .header(AUTHORIZATION, format!("KorviNative {token}"))
-            .send()
-            .await;
+        .clone();
+    let Some(token) = token else {
+        state.clear_offline_authority()?;
+        return Ok(response(204, None));
+    };
+    let resp = state
+        .client
+        .post(api_url(&state, "/v1/native-auth/logout")?)
+        .header(AUTHORIZATION, format!("KorviNative {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("native logout was not confirmed: {e}"))?;
+    let status = resp.status().as_u16();
+    if (200..300).contains(&status) || status == 401 {
+        state.clear_session()?;
+        state.clear_offline_authority()?;
+        return Ok(response(204, None));
     }
-    state.clear_offline_authority()?;
-    Ok(response(204, None))
+    body_response(resp).await
 }
 
 #[tauri::command]
@@ -463,10 +533,7 @@ async fn http_request(
         .await
         .map_err(|e| format!("native network request failed: {e}"))?;
     if resp.status().as_u16() == 401 {
-        *state
-            .session
-            .lock()
-            .map_err(|_| "native session state poisoned")? = None;
+        state.clear_session()?;
         let _ = state.clear_offline_authority();
     }
     body_response(resp).await
