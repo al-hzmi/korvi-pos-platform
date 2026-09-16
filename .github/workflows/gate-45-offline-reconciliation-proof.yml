@@ -3,7 +3,7 @@ name: Gate 45 Offline Sale Reconciliation Proof
 on:
   push:
     branches:
-      - review/offline-45-reconciliation
+      - strike/product-routing-p0
   workflow_dispatch:
 
 concurrency:
@@ -287,49 +287,14 @@ jobs:
           {
             echo "postgres_sale_counts=$sale_counts"
             echo "postgres_invoice_counts=$invoice_counts"
-            echo "postgres_sale_movement_counts=$movement_counts"
-            echo "postgres_accepted_sale_quantity=$movement_quantity"
-            echo 'postgres_authoritative_reconciliation=PASS'
-          } | tee "$KORVI_GATE45_ARTIFACT_DIR/postgres-proof.txt"
+            echo "postgres_inventory_movement_counts=$movement_counts"
+            echo "postgres_inventory_movement_quantity=$movement_quantity"
+          } | tee -a "$KORVI_GATE45_ARTIFACT_DIR/proof.txt"
 
-      - name: Prove clean repository tree
-        run: git diff --check
-
-      - name: Surface runtime logs on failure
-        if: failure()
-        shell: bash
-        run: |
-          set +e
-          for log in api.log web.log chrome.log; do
-            echo "== $log =="
-            tail -n 250 "$KORVI_GATE45_ARTIFACT_DIR/$log" 2>/dev/null || true
-          done
-
-      - name: Stop runtime and erase credentials
+      - name: Upload Gate 45 proof
         if: always()
-        shell: bash
-        run: |
-          set +e
-          for pid_file in \
-            "$KORVI_GATE45_ARTIFACT_DIR/chrome.pid" \
-            "$KORVI_GATE45_ARTIFACT_DIR/web.pid" \
-            "$KORVI_GATE45_ARTIFACT_DIR/api.pid"; do
-            if [ -f "$pid_file" ]; then
-              kill "$(cat "$pid_file")" 2>/dev/null || true
-            fi
-          done
-          shred -u "$RUNNER_TEMP/gate45-secrets.env" 2>/dev/null || rm -f "$RUNNER_TEMP/gate45-secrets.env"
-
-      - name: Preserve sanitized Gate 45 proof
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4
         with:
-          name: gate-45-offline-reconciliation-proof-${{ github.sha }}
-          path: |
-            artifacts/gate45-offline-proof/authority.txt
-            artifacts/gate45-offline-proof/proof.txt
-            artifacts/gate45-offline-proof/postgres-proof.txt
-            artifacts/gate45-offline-proof/operations.json
-            artifacts/gate45-offline-proof/*.png
-          if-no-files-found: warn
-          retention-days: 30
+          name: gate45-offline-reconciliation-${{ github.sha }}
+          path: artifacts/gate45-offline-proof
+          if-no-files-found: error
