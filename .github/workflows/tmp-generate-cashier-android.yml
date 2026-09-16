@@ -36,6 +36,7 @@ jobs:
           npm ci --registry=https://registry.npmjs.org
 
       - name: Set up Rust and Android targets
+        shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal
@@ -51,11 +52,28 @@ jobs:
       - name: Generate Android project
         run: npm run tauri -w @korvi/cashier-client -- android init --ci
 
-      - name: Commit generated Android source
+      - name: Normalize and commit generated Android source
+        shell: bash
         run: |
           set -euo pipefail
           test -f apps/cashier-client/src-tauri/gen/android/app/build.gradle.kts
           test -f apps/cashier-client/src-tauri/gen/android/gradlew
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('apps/cashier-client/src-tauri/gen/android')
+          for path in root.rglob('*'):
+              if not path.is_file():
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except UnicodeDecodeError:
+                  continue
+              lines = [line.rstrip() for line in text.splitlines()]
+              while lines and not lines[-1]:
+                  lines.pop()
+              path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
           git status --short
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
