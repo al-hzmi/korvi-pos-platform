@@ -40,8 +40,7 @@ const key = {
   algorithm: 'ECDSA_SECP256K1_SHA256' as const,
   exportable: false as const,
 };
-const publicKeySpkiDer =
-  extractZatcaSigningCertificateMaterial(LEAF_DER).signingPublicKeySpkiDer;
+const publicKeySpkiDer = extractZatcaSigningCertificateMaterial(LEAF_DER).signingPublicKeySpkiDer;
 
 class MemoryProvisioningRepository implements ZatcaCsidProvisioningRepository {
   public attempt: ZatcaCsidProvisioningAttempt = prepareZatcaCsidProvisioning({
@@ -161,13 +160,7 @@ function clock() {
 }
 
 function input() {
-  return {
-    scope,
-    terminalId,
-    operationId,
-    requestHash,
-    complianceEvidenceId: evidence.evidenceId,
-  };
+  return { scope, terminalId, operationId, requestHash, complianceEvidenceId: evidence.evidenceId };
 }
 
 describe('ZATCA Production CSID provisioner', () => {
