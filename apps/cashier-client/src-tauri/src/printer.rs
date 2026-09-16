@@ -8,15 +8,13 @@ const ESC_POS_PORT: u16 = 9100;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_PRINT_JOB_BYTES: usize = 1024 * 1024;
 
-/// Send one already-rendered ESC/POS job to a LAN printer.
+/// Tauri boundary for one already-rendered ESC/POS print job.
 ///
-/// Rendering stays in `@korvi/printing`; this module owns only native delivery.
-/// The port is intentionally fixed to the standard raw-print port and resolved
-/// destinations are restricted to loopback/private/link-local networks. A
-/// compromised WebView must not turn the native bridge into an arbitrary TCP
-/// exfiltration primitive.
-pub fn send_tcp_escpos(host: &str, payload: &[u8]) -> Result<(), String> {
-    send_tcp_escpos_to(host, ESC_POS_PORT, payload, CONNECT_TIMEOUT)
+/// The WebView is allowed to choose the configured printer host and hand over
+/// opaque bytes only. Port selection and destination policy stay native.
+#[tauri::command]
+pub fn print_tcp_escpos(host: String, payload: Vec<u8>) -> Result<(), String> {
+    send_tcp_escpos_to(&host, ESC_POS_PORT, &payload, CONNECT_TIMEOUT)
 }
 
 fn send_tcp_escpos_to(
