@@ -177,26 +177,28 @@ Complete:
 
 Complete customer analytics/segmentation, explicit credit/balance authority where offered, loyalty ledger/rewards, gift/wallet value only as governed financial ledgers, and deterministic promotions with snapshot/refund explainability.
 
-### Stage 6 — Restaurant / Cafe Vertical
+### Stage 6 — Light Food / Quick-Service Vertical
 
-Sequence:
+Korvi is not currently pursuing full-service restaurant parity as an active commercial requirement. The target food-service profile is deliberately narrow and reuses the proven cashier/retail core for cafes, cafeterias, juice shops, shawarma/quick-service counters and similarly simple food merchants.
 
-1. menu/categories/modifiers;
-2. dining modes and order boundaries;
-3. tables/zones/courses/notes;
-4. recipes/ingredients/consumption/waste on one stock truth;
-5. kitchen routing/KDS;
-6. waiter/server experience;
-7. customer/order-status display;
-8. kiosk;
-9. QR table menu/order/pay;
-10. online ordering;
-11. delivery integrations;
-12. split/merge flows only after C0 transaction architecture is explicit.
+Complete only the capabilities needed to make that profile operationally credible:
+
+1. image/category-oriented product tiles while preserving search/barcode support;
+2. simple counter/takeaway order flow and deterministic order/queue number;
+3. ordinary customer receipt/invoice using the same financial/ZATCA authority as retail;
+4. separate non-fiscal preparation/kitchen ticket tied to the finalized order, not a second tax invoice;
+5. optional second-printer routing for preparation staff, with explicit failure/retry/reprint state and no duplicate-sale side effects;
+6. minimal deterministic item notes/options where commercially required without introducing a separate restaurant transaction engine;
+7. offline/restart/reconnect behavior consistent with the same Korvi Cashier guarantees;
+8. exact installed Windows/Android printer-profile proof for supported hardware.
+
+The following are intentionally outside the active Commercial V1 / quick-service commitment and must not block it: table maps/zones, waiter/server application, courses, complex split/merge bills, full KDS orchestration, customer displays, kiosks, QR table ordering/payment, full recipes/ingredients/waste management, online ordering and delivery-platform adapters.
+
+Those advanced full-service capabilities are future optional scope only. Re-entering them into active execution requires a new explicit executive decision and must not silently expand the sellable-V1 denominator.
 
 ### Stage 7 — Payments / Omnichannel / Integrations
 
-Complete electronic/split/mixed tender UX, PSP adapters, ecommerce/delivery ingestion, Salla/Zid-style mapping where selected, webhooks/events, integration identity and immutable accounting/ERP event export.
+Complete electronic/split/mixed tender UX, PSP adapters, ecommerce ingestion and selected integration identities only where commercially required. Delivery-platform ingestion is no longer assumed to be required merely because Korvi supports light food-service merchants; it requires its own explicit commercial selection, mapping, idempotency and operational-support decision.
 
 ### Stage 8 — Reporting / Profit / Command Center
 
