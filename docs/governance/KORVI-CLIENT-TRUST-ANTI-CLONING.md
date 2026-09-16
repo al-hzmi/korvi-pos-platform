@@ -198,6 +198,24 @@ Release requirements include:
 
 Signing proves release authenticity; it is not by itself anti-cloning protection.
 
+### 9.1 Private/direct distribution policy
+
+Official Korvi Cashier is a controlled business client, not a publicly discoverable consumer application.
+
+Korvi Cashier for Windows and Android must therefore be distributed through Korvi-controlled private/direct channels to authorized customers/devices rather than published publicly through consumer app stores such as Google Play or Microsoft Store.
+
+Permitted delivery patterns include:
+
+- authenticated customer-specific download links;
+- operator-assisted installation by Korvi or an authorized partner;
+- controlled private deployment channels;
+- signed package delivery tied to an approved tenant/device enrollment;
+- signed Korvi-managed update delivery after installation.
+
+Private distribution does **not** weaken release authenticity requirements. Every official package/update must still be signed, versioned, attributable to exact source/build evidence and reject untrusted/unsigned updates according to platform capability.
+
+Public obscurity is not treated as a security boundary. Possession of a direct APK/installer URL must never itself confer tenant, terminal, license or cloud authority. Permanent unauthenticated download links and shared reusable enrollment secrets are not acceptable substitutes for controlled distribution and device trust.
+
 ## 10. Reverse-engineering cost controls
 
 Korvi may use defense-in-depth measures to increase the cost of casual copying/rebranding, including:
