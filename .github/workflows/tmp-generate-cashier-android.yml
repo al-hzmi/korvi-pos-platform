@@ -16,7 +16,6 @@ jobs:
     timeout-minutes: 30
     env:
       CI: 'true'
-      NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
 
     steps:
       - name: Check out authoritative branch
@@ -38,6 +37,7 @@ jobs:
 
       - name: Set up Rust and Android targets
         run: |
+          set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal
           rustup default 1.88.0
           rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
@@ -46,6 +46,7 @@ jobs:
           echo "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME"
           test -d "$ANDROID_HOME"
           test -d "$ANDROID_NDK_LATEST_HOME"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
 
       - name: Generate Android project
         run: npm run tauri -w @korvi/cashier-client -- android init --ci
