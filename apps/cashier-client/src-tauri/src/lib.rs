@@ -1,7 +1,9 @@
 mod device_identity;
 mod local_protection;
 mod offline_authority;
+mod printer;
 
+use printer::print_tcp_escpos;
 use reqwest::{
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER},
     redirect::Policy,
@@ -579,7 +581,8 @@ pub fn run() {
             native_login,
             native_me,
             native_logout,
-            http_request
+            http_request,
+            print_tcp_escpos
         ])
         .run(tauri::generate_context!())
         .expect("Korvi Cashier runtime failed");
