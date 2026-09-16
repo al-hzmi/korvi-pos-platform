@@ -38,3 +38,4 @@ export * from './ports/offline.js';
 export * from './ports/zatca.js';
 export * from './ports/zatca-provisioning.js';
 export * from './ports/zatca-compliance-evidence.js';
+export * from './ports/zatca-csid-binding.js';
