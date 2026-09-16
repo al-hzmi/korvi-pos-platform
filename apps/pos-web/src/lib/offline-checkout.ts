@@ -26,7 +26,11 @@ export interface OfflineCheckoutSyncSnapshot {
   readonly needsReview: readonly OfflineSaleReviewCase[];
 }
 
-type OpenStore = () => Promise<KorviOfflineStore>;
+type CheckoutOfflineStore = Omit<KorviOfflineStore, 'enqueue'> & {
+  enqueue(partition: QueuePartition, operation: QueueOperationInput<unknown>): Promise<void>;
+};
+
+type OpenStore = () => Promise<CheckoutOfflineStore>;
 
 /** UUIDv7 embeds its Unix millisecond timestamp in the first 48 bits. */
 export function uuidV7EnqueuedAt(id: string): string {
