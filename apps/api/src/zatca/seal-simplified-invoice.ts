@@ -16,7 +16,7 @@ import {
   validateZatcaCsidForStamping,
   xmlDsigEcdsaSignatureToDer,
   type TenantScope,
-  type ZatcaCsidBinding,
+  type ZatcaCsidBindingRepository,
   type ZatcaSigningKeyPort,
   type ZatcaSimplifiedInvoiceHashInput,
   type ZatcaXmlCanonicalizationPort,
@@ -29,6 +29,8 @@ const ZERO_SHA256_HEX = '0'.repeat(SHA256_BYTES * 2);
 export interface ZatcaSimplifiedInvoiceSealerDependencies {
   readonly canonicalizer: ZatcaXmlCanonicalizationPort;
   readonly signingKey: ZatcaSigningKeyPort;
+  /** Durable server-side authority. A caller can name only tenant + terminal, never a CSID. */
+  readonly csidBindings: ZatcaCsidBindingRepository;
   /** Server-controlled ZATCA trust anchors only; never supplied by a request. */
   readonly trustedAnchorSha256Hex: readonly string[];
   /**
@@ -44,7 +46,6 @@ export interface SealZatcaSimplifiedInvoiceInput {
   readonly terminalId: string;
   /** Exact UTC second used by certificate validation, revocation evidence and XAdES SigningTime. */
   readonly stampingTime: string;
-  readonly csid: ZatcaCsidBinding;
   /** Immutable sale/invoice/fiscal truth; XML and QR facts are derived from this one source. */
   readonly invoice: ZatcaSimplifiedInvoiceHashInput;
 }
@@ -68,8 +69,9 @@ export interface ZatcaSimplifiedInvoiceSealer {
 /**
  * Construct the Gate 39 sealing authority from server-owned dependencies.
  *
- * Trust anchors are captured once from trusted application configuration.
- * Per-request callers can never substitute them or inject private-key material.
+ * Trust anchors and the active Production CSID are resolved from server-owned
+ * configuration/persistence. Per-request callers can never substitute either
+ * authority or inject private-key/Fatoora material.
  */
 export function createZatcaSimplifiedInvoiceSealer(
   dependencies: ZatcaSimplifiedInvoiceSealerDependencies,
@@ -83,17 +85,27 @@ export function createZatcaSimplifiedInvoiceSealer(
       const rendered = renderZatcaSimplifiedInvoiceHashPayload(input.invoice);
       assertStampingOrder(rendered.issuedAt, input.stampingTime);
 
+      const binding = await dependencies.csidBindings.findActiveForTerminal(
+        input.scope,
+        input.terminalId,
+      );
+      if (binding === null) {
+        throw new ZatcaInvoiceError(
+          'ZATCA sealing requires an active server-owned Production CSID for this terminal.',
+        );
+      }
+
       const keyDescription = await dependencies.signingKey.describePublicKey(
         input.scope,
         input.terminalId,
-        input.csid.key,
+        binding.key,
       );
       const csid = await validateZatcaCsidForStamping({
         scope: input.scope,
         terminalId: input.terminalId,
         at: input.stampingTime,
         keyDescription,
-        binding: input.csid,
+        binding,
       });
 
       const trust = verifyZatcaCertificatePath({
