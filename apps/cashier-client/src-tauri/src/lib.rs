@@ -1,4 +1,5 @@
 mod device_identity;
+mod local_protection;
 mod offline_authority;
 
 use reqwest::{
@@ -95,7 +96,8 @@ impl NativeHttpState {
             .map_err(|e| format!("cannot encode offline authority cache: {e}"))?;
         let temp = self.offline_authority_path.with_extension("json.tmp");
         let backup = self.offline_authority_path.with_extension("json.bak");
-        fs::write(&temp, bytes).map_err(|e| format!("cannot write offline authority cache: {e}"))?;
+        fs::write(&temp, bytes)
+            .map_err(|e| format!("cannot write offline authority cache: {e}"))?;
 
         if backup.exists() {
             fs::remove_file(&backup)
@@ -276,19 +278,19 @@ async fn refresh_offline_authority<R: Runtime>(
         .map_err(|e| format!("offline authority request failed: {e}"))?;
     let status = resp.status().as_u16();
     if !(200..300).contains(&status) {
-        return Err(format!("offline authority request was refused with HTTP {status}"));
+        return Err(format!(
+            "offline authority request was refused with HTTP {status}"
+        ));
     }
     let issued: offline_authority::OfflineLeaseServerResponse = resp
         .json()
         .await
         .map_err(|e| format!("offline authority response decoding failed: {e}"))?;
-    let envelope = offline_authority::device_envelope(&issued.lease, &issued.verification_key_spki)?;
+    let envelope =
+        offline_authority::device_envelope(&issued.lease, &issued.verification_key_spki)?;
     let device_signature = device_identity::sign(app, &envelope)?;
-    let cached = offline_authority::cached(
-        issued.lease,
-        issued.verification_key_spki,
-        device_signature,
-    )?;
+    let cached =
+        offline_authority::cached(issued.lease, issued.verification_key_spki, device_signature)?;
     state.write_offline_authority(&cached)
 }
 
@@ -334,6 +336,24 @@ fn bind_device(
     }
     state.write_binding(&requested)?;
     state.clear_offline_authority()
+}
+
+#[tauri::command]
+fn protect_local_store<R: Runtime>(
+    app: AppHandle<R>,
+    plaintext_base64: String,
+    aad_base64: String,
+) -> Result<String, String> {
+    local_protection::protect(&app, &plaintext_base64, &aad_base64)
+}
+
+#[tauri::command]
+fn unprotect_local_store<R: Runtime>(
+    app: AppHandle<R>,
+    protected_base64: String,
+    aad_base64: String,
+) -> Result<String, String> {
+    local_protection::unprotect(&app, &protected_base64, &aad_base64)
 }
 
 #[tauri::command]
@@ -553,6 +573,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             device_status,
             offline_authority_material,
+            protect_local_store,
+            unprotect_local_store,
             bind_device,
             native_login,
             native_me,
