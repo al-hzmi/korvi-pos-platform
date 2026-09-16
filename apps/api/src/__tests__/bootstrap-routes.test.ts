@@ -22,6 +22,11 @@ const OFFLINE_LEASE_SEED = 'A'.repeat(43);
 const OFFLINE_LEASE_KEY_ID = 'bootstrap-config-test-v1';
 const TOKEN = 'v1.cGF5bG9hZA.c2lnbmF0dXJl';
 const PASSWORD = 'a-real-password-9!';
+const SUCCESS: BootstrapResult = {
+  outcome: 'success',
+  email: 'owner@example.test',
+  tenant: { slug: 'example-shop', name: 'متجر الاختبار' },
+};
 
 let app: FastifyInstance;
 let seen: { token: string; password: string }[];
@@ -57,20 +62,30 @@ afterEach(async () => {
 });
 
 describe('the public bootstrap door', () => {
-  it('accepts a token and a password, and returns no session', async () => {
-    build({ outcome: 'success' });
+  it('accepts a token and password, exposes only login hints, and returns no session', async () => {
+    build(SUCCESS);
     const response = await post({ token: TOKEN, password: PASSWORD });
 
     expect(response.statusCode).toBe(204);
     expect(response.body).toBe('');
-    // No cookie, no principal, no token echoed back. The new Owner logs in
-    // through the normal path like everybody else.
+    // No cookie, principal or token comes back. The one-time capability has
+    // completed its job; the new Owner signs in through the ordinary path.
     expect(response.headers['set-cookie']).toBeUndefined();
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(decodeURIComponent(String(response.headers['x-korvi-tenant-slug']))).toBe(
+      SUCCESS.outcome === 'success' ? SUCCESS.tenant.slug : '',
+    );
+    expect(decodeURIComponent(String(response.headers['x-korvi-tenant-name']))).toBe(
+      SUCCESS.outcome === 'success' ? SUCCESS.tenant.name : '',
+    );
+    expect(decodeURIComponent(String(response.headers['x-korvi-owner-email']))).toBe(
+      SUCCESS.outcome === 'success' ? SUCCESS.email : '',
+    );
     expect(seen).toEqual([{ token: TOKEN, password: PASSWORD }]);
   });
 
   it('refuses a body that names authority, and says which field', async () => {
-    build({ outcome: 'success' });
+    build(SUCCESS);
     const attempts = [
       'tenantId',
       'tenantSlug',
@@ -95,7 +110,7 @@ describe('the public bootstrap door', () => {
   });
 
   it('refuses a body that is not two fields', async () => {
-    build({ outcome: 'success' });
+    build(SUCCESS);
     for (const bad of [
       {},
       { token: TOKEN },
