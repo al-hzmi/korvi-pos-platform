@@ -22,8 +22,5 @@ export interface ActivateZatcaCsidBindingInput {
  */
 export interface ZatcaCsidBindingRepository {
   findActiveForTerminal(scope: TenantScope, terminalId: string): Promise<ZatcaCsidBinding | null>;
-  activate(
-    scope: TenantScope,
-    input: ActivateZatcaCsidBindingInput,
-  ): Promise<ZatcaCsidBinding>;
+  activate(scope: TenantScope, input: ActivateZatcaCsidBindingInput): Promise<ZatcaCsidBinding>;
 }
