@@ -1,0 +1,45 @@
+name: Temporary Repair Offline Implementation Preparation
+
+on:
+  push:
+    branches: ['strike/product-routing-p0']
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: strike/product-routing-p0
+
+      - name: Add required workspace preparation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('.github/workflows/tmp-format-installed-offline.yml')
+          text = path.read_text()
+          step = """      - name: Prepare workspace dependencies\n        run: |\n          npm run build -w @korvi/domain\n          npm run build -w @korvi/ui\n\n"""
+          marker = "      - name: Device-bound offline store tests\n"
+
+          if step in text:
+              raise SystemExit(0)
+          if marker not in text or text.count(marker) != 1:
+              raise SystemExit('target test step missing or ambiguous')
+
+          path.write_text(text.replace(marker, step + marker))
+
+      - name: Commit repair if needed
+        run: |
+          if git diff --quiet -- .github/workflows/tmp-format-installed-offline.yml; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/tmp-format-installed-offline.yml
+          git commit -m "chore(ci): prepare offline workspace dependencies"
+          git push origin HEAD:strike/product-routing-p0
