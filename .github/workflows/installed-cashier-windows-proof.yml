@@ -26,6 +26,12 @@ on:
       - '.nvmrc'
       - '.github/workflows/installed-cashier-windows-proof.yml'
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Build a release-authorized installer instead of a non-release CI proof artifact'
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,7 +46,8 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 45
     env:
-      KORVI_NATIVE_API_ORIGIN: ${{ vars.KORVI_NATIVE_API_ORIGIN }}
+      KORVI_RELEASE_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'true' || 'false' }}
+      KORVI_EFFECTIVE_API_ORIGIN: ${{ github.event_name == 'workflow_dispatch' && inputs.release && vars.KORVI_NATIVE_API_ORIGIN || 'http://127.0.0.1:3001' }}
 
     steps:
       - name: Check out exact commit
@@ -84,12 +91,17 @@ jobs:
         run: npm run build -w @korvi/cashier-client
 
       - name: Require controlled Windows release origin
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
         shell: pwsh
+        env:
+          KORVI_NATIVE_API_ORIGIN: ${{ vars.KORVI_NATIVE_API_ORIGIN }}
         run: |
           if (-not $env:KORVI_NATIVE_API_ORIGIN) { throw 'Missing repository variable KORVI_NATIVE_API_ORIGIN' }
           if (-not $env:KORVI_NATIVE_API_ORIGIN.StartsWith('https://')) { throw 'KORVI_NATIVE_API_ORIGIN must be an HTTPS origin for release' }
 
       - name: Build current-lineage Windows installer
+        env:
+          KORVI_NATIVE_API_ORIGIN: ${{ env.KORVI_EFFECTIVE_API_ORIGIN }}
         run: npm run tauri -w @korvi/cashier-client -- build --bundles nsis
 
       - name: Prove installer and bind it to exact SHA
@@ -98,14 +110,30 @@ jobs:
           $installer = Get-ChildItem 'apps/cashier-client/src-tauri/target/release/bundle/nsis/*.exe' | Select-Object -First 1
           if (-not $installer) { throw 'Korvi Cashier NSIS installer was not produced' }
           $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          $mode = if ($env:KORVI_RELEASE_REQUESTED -eq 'true') { 'release' } else { 'non-release-proof' }
           @(
             "git_sha=${{ github.sha }}",
             "artifact=$($installer.Name)",
-            "sha256=$hash"
+            "sha256=$hash",
+            "artifact_mode=$mode",
+            "api_origin=$env:KORVI_EFFECTIVE_API_ORIGIN",
+            "release_authorized=$($env:KORVI_RELEASE_REQUESTED)"
           ) | Set-Content -Encoding ascii windows-artifact-sha256.txt
           Get-Content windows-artifact-sha256.txt
 
-      - name: Upload exact-lineage Windows installer evidence
+      - name: Upload non-release Windows installer proof
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.release) }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: NON-RELEASE-korvi-cashier-windows-${{ github.sha }}
+          path: |
+            apps/cashier-client/src-tauri/target/release/bundle/nsis/*.exe
+            windows-artifact-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload release-authorized Windows installer evidence
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: korvi-cashier-windows-${{ github.sha }}
