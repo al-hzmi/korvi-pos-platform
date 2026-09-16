@@ -118,14 +118,17 @@ export function registerBootstrapRoutes(
       return reply.code(403).send(INVALID_CAPABILITY);
     }
 
-    // Still no session, no cookie and no principal. The response contains only
-    // the already-established Owner's bound email and the tenant label needed
-    // by the ordinary login form. These facts are released only after the
-    // capability has succeeded and been consumed; no internal id or authority
-    // is exposed, and session minting remains exclusively the normal login path.
-    return reply.code(200).send({
-      email: result.email,
-      tenant: result.tenant,
-    });
+    // No session, no cookie and no principal. Preserve the established 204
+    // success contract while giving the browser the minimum login identity it
+    // must show the newly-established Owner. The values are URI-encoded so the
+    // headers remain ASCII-safe, are emitted only after successful consumption,
+    // and contain no internal ids, roles or permissions.
+    return reply
+      .header('cache-control', 'no-store')
+      .header('x-korvi-tenant-slug', encodeURIComponent(result.tenant.slug))
+      .header('x-korvi-tenant-name', encodeURIComponent(result.tenant.name))
+      .header('x-korvi-owner-email', encodeURIComponent(result.email))
+      .code(204)
+      .send();
   });
 }
