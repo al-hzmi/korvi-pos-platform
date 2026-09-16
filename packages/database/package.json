@@ -22,6 +22,10 @@
       "types": "./dist/src/zatca/merchant-status.d.ts",
       "default": "./dist/src/zatca/merchant-status.js"
     },
+    "./zatca-csid-binding": {
+      "types": "./dist/src/zatca/csid-binding-repository.d.ts",
+      "default": "./dist/src/zatca/csid-binding-repository.js"
+    },
     "./platform-operational-bootstrap": {
       "types": "./dist/src/control-plane/operational-bootstrap.d.ts",
       "default": "./dist/src/control-plane/operational-bootstrap.js"
