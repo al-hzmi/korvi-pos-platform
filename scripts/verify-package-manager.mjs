@@ -26,9 +26,13 @@ try {
     // npm.cmd is a batch shim. Node 24 rejects executing it directly with
     // spawnSync/execFileSync, so invoke the Windows command interpreter with a
     // fixed command string. No user-controlled value reaches cmd.exe.
-    actual = execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm.cmd --version'], {
-      encoding: 'utf8',
-    }).trim();
+    actual = execFileSync(
+      process.env.ComSpec || 'cmd.exe',
+      ['/d', '/s', '/c', 'npm.cmd --version'],
+      {
+        encoding: 'utf8',
+      },
+    ).trim();
   } else {
     actual = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
   }
