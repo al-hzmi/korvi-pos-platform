@@ -118,10 +118,14 @@ export function registerBootstrapRoutes(
       return reply.code(403).send(INVALID_CAPABILITY);
     }
 
-    // No session, no cookie, no principal. The new Owner signs in through the
-    // normal login path like everybody else; minting a session here would be a
-    // second way to become authenticated, on the one route reachable without
-    // being authenticated already.
-    return reply.code(204).send();
+    // Still no session, no cookie and no principal. The response contains only
+    // the already-established Owner's bound email and the tenant label needed
+    // by the ordinary login form. These facts are released only after the
+    // capability has succeeded and been consumed; no internal id or authority
+    // is exposed, and session minting remains exclusively the normal login path.
+    return reply.code(200).send({
+      email: result.email,
+      tenant: result.tenant,
+    });
   });
 }
