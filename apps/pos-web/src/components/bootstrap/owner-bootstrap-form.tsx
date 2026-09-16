@@ -24,28 +24,23 @@ function readCapabilityFromFragment(): string | null {
   return token === null || token === '' ? null : token;
 }
 
-function bootstrapSuccess(body: unknown): BootstrapSuccess | null {
-  if (body === null || typeof body !== 'object') return null;
-  const value = body as {
-    readonly email?: unknown;
-    readonly tenant?: { readonly slug?: unknown; readonly name?: unknown } | null;
-  };
-  if (
-    typeof value.email !== 'string' ||
-    value.email === '' ||
-    value.tenant === null ||
-    typeof value.tenant !== 'object' ||
-    typeof value.tenant.slug !== 'string' ||
-    value.tenant.slug === '' ||
-    typeof value.tenant.name !== 'string' ||
-    value.tenant.name === ''
-  ) {
+function decodedHeader(response: Response, name: string): string | null {
+  const value = response.headers.get(name);
+  if (value === null || value === '') return null;
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded === '' ? null : decoded;
+  } catch {
     return null;
   }
-  return {
-    email: value.email,
-    tenant: { slug: value.tenant.slug, name: value.tenant.name },
-  };
+}
+
+function bootstrapSuccess(response: Response): BootstrapSuccess | null {
+  const slug = decodedHeader(response, 'x-korvi-tenant-slug');
+  const name = decodedHeader(response, 'x-korvi-tenant-name');
+  const email = decodedHeader(response, 'x-korvi-owner-email');
+  if (slug === null || name === null || email === null) return null;
+  return { email, tenant: { slug, name } };
 }
 
 export function OwnerBootstrapForm(): JSX.Element {
@@ -79,11 +74,11 @@ export function OwnerBootstrapForm(): JSX.Element {
         headers: { 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({ token, password }),
       });
-      const body: unknown = await response.json().catch(() => null);
-      if (response.ok) {
-        const activated = bootstrapSuccess(body);
+      if (response.status === 204) {
+        const activated = bootstrapSuccess(response);
         if (activated === null) {
-          setError('تمت الاستجابة بصيغة غير متوقعة. تواصل مع دعم كورفي قبل إعادة التفعيل.');
+          setError('تم التفعيل لكن تعذّر قراءة بيانات الدخول. تواصل مع دعم كورفي قبل إعادة المحاولة.');
+          setToken(null);
           return;
         }
         setToken(null);
@@ -92,6 +87,7 @@ export function OwnerBootstrapForm(): JSX.Element {
         setComplete(activated);
         return;
       }
+      const body: unknown = await response.json().catch(() => null);
       const code =
         body !== null &&
         typeof body === 'object' &&
