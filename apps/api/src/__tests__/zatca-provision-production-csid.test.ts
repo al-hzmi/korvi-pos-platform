@@ -124,10 +124,7 @@ function evidenceRepository(
     async findById() {
       return value;
     },
-    async recordAccepted(
-      _scope: TenantScope,
-      _input: RecordZatcaAcceptedComplianceEvidenceInput,
-    ) {
+    async recordAccepted(_scope: TenantScope, _input: RecordZatcaAcceptedComplianceEvidenceInput) {
       throw new Error('not used');
     },
   };
