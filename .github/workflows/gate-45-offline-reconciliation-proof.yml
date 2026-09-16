@@ -30,6 +30,7 @@ jobs:
       KORVI_GATE45_BASE_URL: http://localhost:3000
       KORVI_GATE45_CHROME_PORT: '9226'
       KORVI_GATE45_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/gate45-offline-proof
+
     services:
       postgres:
         image: postgres:17
@@ -44,6 +45,7 @@ jobs:
           --health-retries 12
         ports:
           - 5432:5432
+
     steps:
       - name: Check out exact commit
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -62,7 +64,10 @@ jobs:
           set -euo pipefail
           mkdir -p "$KORVI_GATE45_ARTIFACT_DIR" "$KORVI_BROWSER_ARTIFACT_DIR"
           chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
-          if [ -z "$chrome" ]; then echo 'No Chrome/Chromium binary exists on this runner.' >&2; exit 1; fi
+          if [ -z "$chrome" ]; then
+            echo 'No Chrome/Chromium binary exists on this runner.' >&2
+            exit 1
+          fi
           echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
           {
             echo "commit=$GITHUB_SHA"
