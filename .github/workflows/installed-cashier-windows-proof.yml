@@ -6,8 +6,9 @@ on:
       - strike/product-routing-p0
     paths:
       - 'apps/cashier-client/**'
+      - 'apps/pos-web/**'
       - 'packages/domain/**'
-      - 'packages/pos-web/**'
+      - 'packages/ui/**'
       - 'scripts/verify-package-manager.mjs'
       - 'package.json'
       - 'package-lock.json'
@@ -16,8 +17,9 @@ on:
   pull_request:
     paths:
       - 'apps/cashier-client/**'
+      - 'apps/pos-web/**'
       - 'packages/domain/**'
-      - 'packages/pos-web/**'
+      - 'packages/ui/**'
       - 'scripts/verify-package-manager.mjs'
       - 'package.json'
       - 'package-lock.json'
@@ -53,6 +55,11 @@ jobs:
 
       - name: Install exact lockfile
         run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Build Cashier workspace dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
 
       - name: Install exact Rust toolchain
         shell: pwsh
