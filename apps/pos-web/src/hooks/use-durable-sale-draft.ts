@@ -35,10 +35,20 @@ export function useDurableSaleDraft(scope: OfflineSaleScope): DurableDraftHandle
       tenantId: scope.tenantId,
       branchId: scope.branchId,
       terminalId: scope.terminalId,
+      ...(scope.deviceEnrollmentId === undefined
+        ? {}
+        : { deviceEnrollmentId: scope.deviceEnrollmentId }),
       userId: scope.userId,
       shiftId: scope.shiftId,
     }),
-    [scope.branchId, scope.shiftId, scope.tenantId, scope.terminalId, scope.userId],
+    [
+      scope.branchId,
+      scope.deviceEnrollmentId,
+      scope.shiftId,
+      scope.tenantId,
+      scope.terminalId,
+      scope.userId,
+    ],
   );
   const key = useMemo(() => offlineSaleScopeKey(stableScope), [stableScope]);
   const owned = useRef<OwnedStore | null>(null);
