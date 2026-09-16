@@ -1,0 +1,97 @@
+name: Installed Cashier Windows Proof
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - 'apps/cashier-client/**'
+      - 'packages/domain/**'
+      - 'packages/pos-web/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - '.github/workflows/installed-cashier-windows-proof.yml'
+  pull_request:
+    paths:
+      - 'apps/cashier-client/**'
+      - 'packages/domain/**'
+      - 'packages/pos-web/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - '.github/workflows/installed-cashier-windows-proof.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installed-cashier:
+    name: Windows DPAPI / CNG / NSIS
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Install exact Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          rustup default 1.85.0
+          rustc --version
+          cargo --version
+
+      - name: Prove Windows OS-bound device identity and local protection
+        shell: pwsh
+        run: cargo test --manifest-path apps/cashier-client/src-tauri/Cargo.toml --locked --target-dir apps/cashier-client/src-tauri/target
+
+      - name: Typecheck installed Cashier
+        run: npm run typecheck -w @korvi/cashier-client
+
+      - name: Build installed Cashier frontend
+        run: npm run build -w @korvi/cashier-client
+
+      - name: Build current-lineage Windows installer
+        run: npm run tauri -w @korvi/cashier-client -- build --bundles nsis
+
+      - name: Prove installer and bind it to exact SHA
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'apps/cashier-client/src-tauri/target/release/bundle/nsis/*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Korvi Cashier NSIS installer was not produced' }
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          @(
+            "git_sha=${{ github.sha }}",
+            "artifact=$($installer.Name)",
+            "sha256=$hash"
+          ) | Set-Content -Encoding ascii windows-artifact-sha256.txt
+          Get-Content windows-artifact-sha256.txt
+
+      - name: Upload exact-lineage Windows installer evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: korvi-cashier-windows-${{ github.sha }}
+          path: |
+            apps/cashier-client/src-tauri/target/release/bundle/nsis/*.exe
+            windows-artifact-sha256.txt
+          if-no-files-found: error
+          retention-days: 14
