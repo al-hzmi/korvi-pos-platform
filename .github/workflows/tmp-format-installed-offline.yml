@@ -82,6 +82,11 @@ jobs:
       - name: Format changed files
         run: npx prettier apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-store.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/components/pos-app.tsx apps/cashier-client/src/main.tsx --write
 
+      - name: Prepare workspace dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
+
       - name: Device-bound offline store tests
         run: npx vitest run apps/pos-web/src/lib/__tests__/offline-store.test.ts
 
