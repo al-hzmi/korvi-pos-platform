@@ -76,15 +76,16 @@ export function createGuards(
     }
   };
 
-  const requireBrowserSession: preHandlerAsyncHookHandler = async (request, reply) => {
-    // Browser-auth endpoints are not a generic authenticated surface. A Native
-    // credential presented here is refused even if a valid browser cookie is
-    // also present; realm selection must never be implicit or fallback-based.
-    if (nativeRealmAttempted(request.headers.authorization)) {
-      await reply.code(401).send(UNAUTHENTICATED);
-      return;
-    }
-
+  /**
+   * Authenticate an ambient browser cookie without selecting a realm.
+   *
+   * This is deliberately a plain helper rather than another Fastify hook: hook
+   * handlers carry a FastifyInstance `this` context, and delegating one hook to
+   * another as a bare function both loses that context and couples realm
+   * selection to framework call semantics. The two guards below own realm
+   * selection; this helper owns cookie verification only.
+   */
+  async function authenticateBrowser(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const browserToken = readCookie(request.headers.cookie, sessionCookieName(config.isProduction));
     if (browserToken === null) {
       await reply.code(401).send(UNAUTHENTICATED);
@@ -99,6 +100,18 @@ export function createGuards(
       return;
     }
     request.auth = result.principal;
+  }
+
+  const requireBrowserSession: preHandlerAsyncHookHandler = async (request, reply) => {
+    // Browser-auth endpoints are not a generic authenticated surface. A Native
+    // credential presented here is refused even if a valid browser cookie is
+    // also present; realm selection must never be implicit or fallback-based.
+    if (nativeRealmAttempted(request.headers.authorization)) {
+      await reply.code(401).send(UNAUTHENTICATED);
+      return;
+    }
+
+    await authenticateBrowser(request, reply);
   };
 
   const requireSession: preHandlerAsyncHookHandler = async (request, reply) => {
@@ -122,7 +135,7 @@ export function createGuards(
       return;
     }
 
-    await requireBrowserSession(request, reply);
+    await authenticateBrowser(request, reply);
   };
 
   function requirePermission(permission: Permission): preHandlerAsyncHookHandler {
