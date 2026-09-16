@@ -1,0 +1,68 @@
+name: Temporary Generate Cashier Android
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - .github/workflows/tmp-generate-cashier-android.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+
+    steps:
+      - name: Check out authoritative branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: strike/product-routing-p0
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact lockfile
+        run: |
+          node scripts/verify-package-manager.mjs
+          npm ci --registry=https://registry.npmjs.org
+
+      - name: Set up Rust and Android targets
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+          java -version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME"
+          test -d "$ANDROID_HOME"
+          test -d "$ANDROID_NDK_LATEST_HOME"
+
+      - name: Generate Android project
+        run: npm run tauri -w @korvi/cashier-client -- android init --ci
+
+      - name: Commit generated Android source
+        run: |
+          set -euo pipefail
+          test -f apps/cashier-client/src-tauri/gen/android/app/build.gradle.kts
+          test -f apps/cashier-client/src-tauri/gen/android/gradlew
+          git status --short
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/cashier-client/src-tauri/gen/android
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "Android project already current."
+            exit 0
+          fi
+          git commit -m "build(cashier): initialize Android target"
+          git push origin HEAD:strike/product-routing-p0
