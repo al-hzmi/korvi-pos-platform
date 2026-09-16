@@ -81,6 +81,13 @@ function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
+/** WebCrypto requires an ArrayBuffer-backed BufferSource under modern TS DOM typings. */
+function cryptoBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 function parseDerLength(
   bytes: Uint8Array,
   offset: number,
@@ -306,7 +313,7 @@ async function verifyDeviceEnvelope(
   try {
     const key = await crypto.subtle.importKey(
       'spki',
-      decodeBase64(status.publicKeySpki),
+      cryptoBuffer(decodeBase64(status.publicKeySpki)),
       { name: 'ECDSA', namedCurve: 'P-256' },
       false,
       ['verify'],
@@ -314,8 +321,8 @@ async function verifyDeviceEnvelope(
     return await crypto.subtle.verify(
       { name: 'ECDSA', hash: 'SHA-256' },
       key,
-      ecdsaDerToP1363(decodeBase64(material.deviceSignature)),
-      new TextEncoder().encode(material.deviceEnvelope),
+      cryptoBuffer(ecdsaDerToP1363(decodeBase64(material.deviceSignature))),
+      cryptoBuffer(new TextEncoder().encode(material.deviceEnvelope)),
     );
   } catch {
     return false;
@@ -329,7 +336,7 @@ async function verifyKol1(material: NativeOfflineAuthorityMaterial): Promise<Lea
   try {
     const key = await crypto.subtle.importKey(
       'spki',
-      decodeBase64(material.verificationKeySpki),
+      cryptoBuffer(decodeBase64(material.verificationKeySpki)),
       { name: 'Ed25519' },
       false,
       ['verify'],
@@ -337,8 +344,8 @@ async function verifyKol1(material: NativeOfflineAuthorityMaterial): Promise<Lea
     const valid = await crypto.subtle.verify(
       { name: 'Ed25519' },
       key,
-      decodeBase64(parts[2]!),
-      new TextEncoder().encode(`${KOL_VERSION}.${parts[1]}`),
+      cryptoBuffer(decodeBase64(parts[2]!)),
+      cryptoBuffer(new TextEncoder().encode(`${KOL_VERSION}.${parts[1]}`)),
     );
     if (!valid) return null;
     const payload = new TextDecoder('utf-8', { fatal: true }).decode(decodeBase64(parts[1]!));
