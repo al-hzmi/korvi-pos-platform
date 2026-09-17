@@ -91,6 +91,8 @@ describe('offline workspace lease', () => {
 
     expect(readOfflineWorkspace(new Date(capturedAt.getTime() + 60_000))).toEqual({
       ...snapshot,
+      vertical: 'retail',
+      enableProductImages: false,
       capturedAt: capturedAt.toISOString(),
     });
   });
