@@ -120,11 +120,7 @@ describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
       }
     });
 
-    await fiscalization.upsertSellerProfile(
-      scope,
-      seller,
-      '2026-09-17T12:00:00Z',
-    );
+    await fiscalization.upsertSellerProfile(scope, seller, '2026-09-17T12:00:00Z');
   }, 30_000);
 
   afterAll(async () => {
@@ -136,16 +132,11 @@ describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
     }
   });
 
-  async function createInvoice(
-    terminalId: string,
-    shiftId: string,
-  ): Promise<string> {
+  async function createInvoice(terminalId: string, shiftId: string): Promise<string> {
     sequence += 1;
     const saleId = randomUUID();
     const invoiceId = randomUUID();
-    const issuedAt = new Date(
-      `2026-09-17T12:${String(sequence).padStart(2, '0')}:00Z`,
-    );
+    const issuedAt = new Date(`2026-09-17T12:${String(sequence).padStart(2, '0')}:00Z`);
 
     await withTenant(prisma, scope.tenantId, async (tx) => {
       await tx.sale.create({
@@ -228,9 +219,7 @@ describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
       invoiceId: invoice1,
       terminalId: terminalA,
       invoiceHash: hash1,
-      sealedInvoiceXml: new TextEncoder().encode(
-        '<Invoice>sealed-one</Invoice>',
-      ),
+      sealedInvoiceXml: new TextEncoder().encode('<Invoice>sealed-one</Invoice>'),
       qrCodeBase64: 'cXIx',
       signatureValueBase64: 'c2lnMQ==',
       sealedAt: SEALED_1,
@@ -253,25 +242,24 @@ describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
     });
     expect(second.state).toBe('reserved');
     expect(second.invoiceCounterValue).toBe('2');
-    expect(second.previousInvoiceHash).toBe(
-      Buffer.from(hash1).toString('base64'),
-    );
+    expect(second.previousInvoiceHash).toBe(Buffer.from(hash1).toString('base64'));
 
     const hash2 = new Uint8Array(32).fill(7);
     await fiscalization.seal(scope, {
       invoiceId: invoice2,
       terminalId: terminalA,
       invoiceHash: hash2,
-      sealedInvoiceXml: new TextEncoder().encode(
-        '<Invoice>sealed-two</Invoice>',
-      ),
+      sealedInvoiceXml: new TextEncoder().encode('<Invoice>sealed-two</Invoice>'),
       qrCodeBase64: 'cXIy',
       signatureValueBase64: 'c2lnMg==',
       sealedAt: SEALED_2,
     });
 
-    const chain = await withTenant(prisma, scope.tenantId, async (tx) =>
-      tx.$queryRaw<Array<{ nextIcv: bigint; previousInvoiceHash: string }>>`
+    const chain = await withTenant(
+      prisma,
+      scope.tenantId,
+      async (tx) =>
+        tx.$queryRaw<Array<{ nextIcv: bigint; previousInvoiceHash: string }>>`
         SELECT "nextIcv", "previousInvoiceHash"
           FROM "zatca_terminal_fiscal_chains"
          WHERE "tenantId" = ${tenant}::uuid AND "terminalId" = ${terminalA}::uuid`,
@@ -299,8 +287,11 @@ describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
     expect(left).toEqual(right);
     expect(left.invoiceCounterValue).toBe('1');
 
-    const count = await withTenant(prisma, scope.tenantId, async (tx) =>
-      tx.$queryRaw<Array<{ count: bigint }>>`
+    const count = await withTenant(
+      prisma,
+      scope.tenantId,
+      async (tx) =>
+        tx.$queryRaw<Array<{ count: bigint }>>`
         SELECT count(*)::bigint AS count
           FROM "zatca_invoice_fiscalizations"
          WHERE "tenantId" = ${tenant}::uuid AND "invoiceId" = ${invoice}::uuid`,
@@ -310,17 +301,17 @@ describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
 
   it('keeps fiscal artifacts tenant scoped', async () => {
     const foreignScope: TenantScope = { tenantId: tenantId(randomUUID()) };
-    const own = await withTenant(prisma, scope.tenantId, async (tx) =>
-      tx.$queryRaw<Array<{ invoiceId: string }>>`
+    const own = await withTenant(
+      prisma,
+      scope.tenantId,
+      async (tx) =>
+        tx.$queryRaw<Array<{ invoiceId: string }>>`
         SELECT "invoiceId" FROM "zatca_invoice_fiscalizations"
          WHERE "tenantId" = ${tenant}::uuid ORDER BY "invoiceCounterValue"`,
     );
     expect(own.length).toBeGreaterThan(0);
     expect(
-      await fiscalization.findByInvoice(
-        foreignScope,
-        own[0]?.invoiceId ?? randomUUID(),
-      ),
+      await fiscalization.findByInvoice(foreignScope, own[0]?.invoiceId ?? randomUUID()),
     ).toBeNull();
     expect(await fiscalization.readSellerProfile(foreignScope)).toBeNull();
   });
