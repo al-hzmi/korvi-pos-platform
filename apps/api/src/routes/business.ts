@@ -261,6 +261,10 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       return reply.code(200).send({
         products: sellable.map((product) => ({
           id: product.id,
+          categoryId: product.categoryId,
+          categoryNameAr: product.categoryNameAr ?? null,
+          categorySortOrder: product.categorySortOrder ?? null,
+          imageUrl: product.imageUrl ?? null,
           sku: product.sku,
           nameAr: product.nameAr,
           nameEn: product.nameEn,
@@ -357,7 +361,12 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       // 404 from the shift route a moment later.
       return reply.code(200).send({
         branchId: principal.branchId,
-        settings: { priceMode: settings.priceMode, currency: settings.currency },
+        settings: {
+          priceMode: settings.priceMode,
+          currency: settings.currency,
+          vertical: settings.vertical,
+          enableProductImages: settings.enableProductImages,
+        },
         terminals: visibleTerminals
           .filter((terminal) => terminal.isActive)
           .map((terminal) => ({
