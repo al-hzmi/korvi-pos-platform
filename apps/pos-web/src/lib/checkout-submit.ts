@@ -66,7 +66,12 @@ export function runCheckout(
     .checkout(intent)
     .then((response) => {
       flight.settle('succeeded');
-      dispatch({ type: 'succeeded', sale: response.sale, replayed: response.replayed });
+      dispatch({
+        type: 'succeeded',
+        sale: response.sale,
+        receipt: response.receipt,
+        replayed: response.replayed,
+      });
     })
     .catch(async (error: unknown) => {
       const failure = describeFailure(error);
