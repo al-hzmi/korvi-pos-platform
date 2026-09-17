@@ -26,6 +26,7 @@ import type { ApiClient } from '../lib/api';
 import type { Principal, ProductSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
 import type { OfflineSaleScope } from '../lib/offline-store';
 import type { OfflineStoreProtector } from '../lib/offline-protection';
+import type { FiscalReceiptPrinter } from '../lib/receipt-print-flight';
 
 /**
  * Where a cashier spends the whole day.
@@ -53,6 +54,8 @@ export interface CashierScreenProps {
   /** Stable OS/server enrollment identity used only to partition installed durable state. */
   readonly offlineStoreDeviceEnrollmentId?: string | undefined;
   readonly offlineStoreProtector?: OfflineStoreProtector | undefined;
+  /** Downstream host capability. It receives only an already-finalized server receipt. */
+  readonly printFiscalReceipt?: FiscalReceiptPrinter | undefined;
   readonly onSignOut: () => void;
   readonly onExpired: () => void;
   readonly onShiftChanged: () => void;
@@ -67,6 +70,7 @@ export function CashierScreen({
   controlCentreHref,
   offlineStoreDeviceEnrollmentId,
   offlineStoreProtector,
+  printFiscalReceipt,
   onSignOut,
   onExpired,
   onShiftChanged,
@@ -334,7 +338,13 @@ export function CashierScreen({
               />
             </CardSurface>
           ) : (
-            <SaleReceipt sale={completed} replayed={checkout.state.replayed} onNewSale={newSale} />
+            <SaleReceipt
+              sale={completed}
+              receipt={checkout.state.receipt}
+              replayed={checkout.state.replayed}
+              printFiscalReceipt={printFiscalReceipt}
+              onNewSale={newSale}
+            />
           )}
         </aside>
       </main>

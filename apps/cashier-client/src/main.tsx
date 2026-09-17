@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { PosApp } from '../../pos-web/src/components/pos-app';
 import { createApiClient } from '../../pos-web/src/lib/api';
+import { renderFiscalReceiptEscPos } from '../../pos-web/src/lib/fiscal-receipt-print';
+import type { FiscalReceipt, SaleSummary } from '../../pos-web/src/lib/api-types';
 import type { OfflineStoreProtector } from '../../pos-web/src/lib/offline-protection';
 import {
   verifyInstalledOfflineAuthority,
@@ -50,11 +52,18 @@ function nativeLocalStoreProtector(
   };
 }
 
+function printerStorageKey(deviceEnrollmentId: string): string {
+  return `korvi.cashier.receipt-printer.${deviceEnrollmentId}`;
+}
+
 function InstalledCashier(): React.JSX.Element {
   const [status, setStatus] = useState<InstalledDeviceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState('');
   const [enrollmentId, setEnrollmentId] = useState('');
+  const [printerHost, setPrinterHost] = useState<string | null>(null);
+  const [printerHostDraft, setPrinterHostDraft] = useState('');
+  const [editingPrinter, setEditingPrinter] = useState(false);
   const offlineStoreProtector = useMemo(
     () => (status === null ? undefined : nativeLocalStoreProtector(status)),
     [status],
@@ -62,7 +71,16 @@ function InstalledCashier(): React.JSX.Element {
 
   const load = async () => {
     try {
-      setStatus(await invoke<InstalledDeviceStatus>('device_status'));
+      const nextStatus = await invoke<InstalledDeviceStatus>('device_status');
+      setStatus(nextStatus);
+      if (nextStatus.binding !== null) {
+        const savedHost = localStorage
+          .getItem(printerStorageKey(nextStatus.binding.deviceEnrollmentId))
+          ?.trim();
+        const normalizedHost = savedHost === undefined || savedHost === '' ? null : savedHost;
+        setPrinterHost(normalizedHost);
+        setPrinterHostDraft(normalizedHost ?? '');
+      }
       setError(null);
     } catch (cause) {
       setError(String(cause));
@@ -86,6 +104,18 @@ function InstalledCashier(): React.JSX.Element {
       }
     },
     [status],
+  );
+
+  const printFiscalReceipt = useCallback(
+    async (sale: SaleSummary, receipt: FiscalReceipt): Promise<void> => {
+      if (printerHost === null) throw new Error('receipt printer is not configured');
+      const job = renderFiscalReceiptEscPos(sale, receipt);
+      await invoke<void>('print_tcp_escpos', {
+        host: printerHost,
+        payload: job.payload,
+      });
+    },
+    [printerHost],
   );
 
   if (error !== null)
@@ -156,14 +186,74 @@ function InstalledCashier(): React.JSX.Element {
       </main>
     );
   }
+
+  if (printerHost === null || editingPrinter) {
+    return (
+      <main dir="rtl" className="mx-auto min-h-screen max-w-2xl bg-background p-8 text-foreground">
+        <h1 className="text-2xl font-bold">إعداد طابعة الفواتير</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          أدخل عنوان طابعة ESC/POS المحلية على الشبكة. يستخدم كورفي TCP/9100 ويرفض الوجهات غير
+          المحلية. الطباعة لا تغيّر البيع أو الفاتورة الضريبية.
+        </p>
+        <label className="mt-6 block text-sm font-medium">
+          عنوان الطابعة (IP أو hostname محلي)
+          <input
+            className="mt-2 w-full rounded-lg border bg-background p-3 text-left"
+            dir="ltr"
+            placeholder="192.168.1.50"
+            value={printerHostDraft}
+            onChange={(event) => setPrinterHostDraft(event.target.value)}
+          />
+        </label>
+        <div className="mt-6 flex gap-3">
+          <button
+            className="rounded-lg bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-50"
+            disabled={printerHostDraft.trim() === ''}
+            onClick={() => {
+              const nextHost = printerHostDraft.trim();
+              localStorage.setItem(printerStorageKey(status.binding!.deviceEnrollmentId), nextHost);
+              setPrinterHost(nextHost);
+              setEditingPrinter(false);
+            }}
+          >
+            حفظ الطابعة
+          </button>
+          {printerHost !== null ? (
+            <button
+              className="rounded-lg border px-5 py-3 font-semibold"
+              onClick={() => {
+                setPrinterHostDraft(printerHost);
+                setEditingPrinter(false);
+              }}
+            >
+              إلغاء
+            </button>
+          ) : null}
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <PosApp
-      api={api}
-      authorizeOfflineWorkspace={authorizeOfflineWorkspace}
-      offlineWorkspaceMaxAgeMs={null}
-      offlineStoreDeviceEnrollmentId={status.binding.deviceEnrollmentId}
-      offlineStoreProtector={offlineStoreProtector}
-    />
+    <div className="relative h-screen">
+      <PosApp
+        api={api}
+        authorizeOfflineWorkspace={authorizeOfflineWorkspace}
+        offlineWorkspaceMaxAgeMs={null}
+        offlineStoreDeviceEnrollmentId={status.binding.deviceEnrollmentId}
+        offlineStoreProtector={offlineStoreProtector}
+        printFiscalReceipt={printFiscalReceipt}
+      />
+      <button
+        className="fixed bottom-2 left-2 z-50 rounded-md border bg-background/95 px-3 py-2 text-xs font-semibold shadow-sm"
+        onClick={() => {
+          setPrinterHostDraft(printerHost);
+          setEditingPrinter(true);
+        }}
+      >
+        إعداد الطابعة
+      </button>
+    </div>
   );
 }
 

@@ -1,11 +1,15 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import { BidiIsolate, Button, CardSurface, Numeric } from '@korvi/ui';
+import { StatusNote } from './status-note';
 import { formatMinor } from '../lib/money';
 import { formatScaled } from '../lib/quantity';
 import { formatTimestamp } from '../lib/datetime';
+import { createReceiptPrintFlight } from '../lib/receipt-print-flight';
 import type { JSX } from 'react';
-import type { SaleSummary } from '../lib/api-types';
+import type { FiscalReceipt, SaleSummary } from '../lib/api-types';
+import type { FiscalReceiptPrinter, ReceiptPrintFlight } from '../lib/receipt-print-flight';
 
 /**
  * The sale, as the server recorded it.
@@ -18,11 +22,45 @@ import type { SaleSummary } from '../lib/api-types';
  */
 export interface SaleReceiptProps {
   readonly sale: SaleSummary;
+  readonly receipt: FiscalReceipt | null;
   readonly replayed: boolean;
+  readonly printFiscalReceipt?: FiscalReceiptPrinter | undefined;
   readonly onNewSale: () => void;
 }
 
-export function SaleReceipt({ sale, replayed, onNewSale }: SaleReceiptProps): JSX.Element {
+type PrintState = 'idle' | 'printing' | 'printed' | 'failed';
+
+export function SaleReceipt({
+  sale,
+  receipt,
+  replayed,
+  printFiscalReceipt,
+  onNewSale,
+}: SaleReceiptProps): JSX.Element {
+  const [printState, setPrintState] = useState<PrintState>('idle');
+  const printFlight = useRef<ReceiptPrintFlight | null>(null);
+  if (printFlight.current === null) printFlight.current = createReceiptPrintFlight();
+
+  const print = async () => {
+    if (receipt === null || printFiscalReceipt === undefined) return;
+    setPrintState('printing');
+    try {
+      const outcome = await printFlight.current!.run(() => printFiscalReceipt(sale, receipt));
+      if (outcome === 'printed') setPrintState('printed');
+    } catch {
+      setPrintState('failed');
+    }
+  };
+
+  const printLabel =
+    printState === 'printing'
+      ? 'جارٍ إرسال الفاتورة للطابعة…'
+      : printState === 'failed'
+        ? 'إعادة محاولة طباعة نفس الفاتورة'
+        : printState === 'printed'
+          ? 'إعادة طباعة نفس الفاتورة'
+          : 'طباعة الفاتورة الضريبية';
+
   return (
     <CardSurface className="flex min-h-0 flex-1 flex-col gap-4 border-border/80 p-4 shadow-sm">
       <div className="rounded-lg border border-success/20 bg-success/5 p-4">
@@ -48,6 +86,26 @@ export function SaleReceipt({ sale, replayed, onNewSale }: SaleReceiptProps): JS
           </span>
         </div>
       </div>
+
+      {receipt === null ? (
+        <StatusNote tone="danger" live>
+          تم حفظ البيع، لكن الخادم لم يُرجع الفاتورة الضريبية المختومة. لا تنشئ بيعاً بديلاً ولا
+          تحاول إعادة الدفع.
+        </StatusNote>
+      ) : printFiscalReceipt === undefined ? (
+        <StatusNote tone="warning" live>
+          الفاتورة مختومة، لكن هذا المضيف لا يوفّر طابعة فواتير محلية.
+        </StatusNote>
+      ) : printState === 'failed' ? (
+        <StatusNote tone="warning" live>
+          تم البيع واعتماد الفاتورة، لكن تعذّرت الطباعة. أعد المحاولة لطباعة نفس الفاتورة دون
+          إنشاء بيع جديد.
+        </StatusNote>
+      ) : printState === 'printed' ? (
+        <StatusNote tone="success" live>
+          أُرسلت نفس الفاتورة الضريبية المختومة إلى الطابعة. يمكن إعادة طباعتها دون تغيير البيع.
+        </StatusNote>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border">
         <div className="border-b border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground">
@@ -113,6 +171,14 @@ export function SaleReceipt({ sale, replayed, onNewSale }: SaleReceiptProps): JS
         size="lg"
         className="h-touch-lg w-full text-base font-semibold shadow-sm"
         autoFocus
+        disabled={receipt === null || printFiscalReceipt === undefined || printState === 'printing'}
+        onClick={() => void print()}
+      >
+        {printLabel}
+      </Button>
+      <Button
+        size="lg"
+        className="h-touch-lg w-full text-base font-semibold shadow-sm"
         onClick={onNewSale}
       >
         عملية بيع جديدة

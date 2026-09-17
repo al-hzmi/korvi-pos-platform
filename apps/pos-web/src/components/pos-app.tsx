@@ -19,6 +19,7 @@ import type { JSX } from 'react';
 import type { ApiClient } from '../lib/api';
 import type { OfflineWorkspaceSnapshot } from '../lib/offline-workspace';
 import type { OfflineStoreProtector } from '../lib/offline-protection';
+import type { FiscalReceiptPrinter } from '../lib/receipt-print-flight';
 
 /**
  * One decision, made in one place: which screen is the cashier on.
@@ -65,6 +66,8 @@ export interface PosAppProps {
   readonly offlineStoreDeviceEnrollmentId?: string | undefined;
   /** OS-backed at-rest protection supplied only by Installed Cashier. */
   readonly offlineStoreProtector?: OfflineStoreProtector | undefined;
+  /** Optional downstream customer-printer capability supplied by the host. */
+  readonly printFiscalReceipt?: FiscalReceiptPrinter | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -87,6 +90,7 @@ export function PosApp({
   offlineWorkspaceMaxAgeMs,
   offlineStoreDeviceEnrollmentId,
   offlineStoreProtector,
+  printFiscalReceipt,
 }: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
@@ -202,6 +206,7 @@ export function PosApp({
           controlCentreHref={controlCentreHref}
           offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
           offlineStoreProtector={offlineStoreProtector}
+          printFiscalReceipt={printFiscalReceipt}
           onSignOut={() => undefined}
           onExpired={session.expire}
           onShiftChanged={() => undefined}
@@ -302,6 +307,7 @@ export function PosApp({
       controlCentreHref={controlCentreHref}
       offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
       offlineStoreProtector={offlineStoreProtector}
+      printFiscalReceipt={printFiscalReceipt}
       onSignOut={signOut}
       onExpired={session.expire}
       onShiftChanged={shift.refresh}
