@@ -108,13 +108,18 @@ function subject(overrides?: {
   readonly invoice?: InvoiceRecord | null;
   readonly fiscalization?: ZatcaSealedFiscalization | null;
 }) {
-  const findById = vi.fn(async () => (overrides?.sale === undefined ? sale : overrides.sale));
-  const invoiceForSale = vi.fn(async () =>
-    overrides?.invoice === undefined ? invoice : overrides.invoice,
-  );
-  const findByInvoice = vi.fn(async () =>
-    overrides?.fiscalization === undefined ? fiscalization : overrides.fiscalization,
-  );
+  const findById = vi.fn(async () => {
+    if (overrides?.sale === undefined) return sale;
+    return overrides.sale;
+  });
+  const invoiceForSale = vi.fn(async () => {
+    if (overrides?.invoice === undefined) return invoice;
+    return overrides.invoice;
+  });
+  const findByInvoice = vi.fn(async () => {
+    if (overrides?.fiscalization === undefined) return fiscalization;
+    return overrides.fiscalization;
+  });
   return {
     service: createFiscalReceiptReadService({
       sales: { findById, invoiceForSale },
@@ -167,7 +172,9 @@ describe('historical fiscal receipt read', () => {
   ])(
     'hides a sale outside %s ownership before reading fiscal evidence',
     async (_label, candidate) => {
-      const { service, invoiceForSale, findByInvoice } = subject({ sale: candidate as SaleRecord });
+      const { service, invoiceForSale, findByInvoice } = subject({
+        sale: candidate as SaleRecord,
+      });
 
       await expect(service.read(principal, sale.id, sale.terminalId)).resolves.toEqual({
         outcome: 'not-found',
