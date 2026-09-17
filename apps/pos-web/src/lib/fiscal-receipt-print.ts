@@ -6,10 +6,7 @@ import {
 } from '../../../../packages/printing/src/index';
 import { formatMinor } from './money';
 import { formatScaled } from './quantity';
-import type {
-  EscPosBuilder,
-  RasterRenderer,
-} from '../../../../packages/printing/src/index';
+import type { EscPosBuilder, RasterRenderer } from '../../../../packages/printing/src/index';
 import type { FiscalReceipt, SaleSummary } from './api-types';
 
 export interface ReceiptPrintJob {
