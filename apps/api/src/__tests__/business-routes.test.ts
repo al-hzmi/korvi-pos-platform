@@ -546,8 +546,20 @@ describe('GET /v1/terminals', () => {
     const cookie = await cookieFor(app);
     const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
 
-    const body = response.json<{ settings: { priceMode: string; currency: string } }>();
-    expect(body.settings).toEqual({ priceMode: 'tax-inclusive', currency: 'SAR' });
+    const body = response.json<{
+      settings: {
+        priceMode: string;
+        currency: string;
+        vertical: string;
+        enableProductImages: boolean;
+      };
+    }>();
+    expect(body.settings).toEqual({
+      priceMode: 'tax-inclusive',
+      currency: 'SAR',
+      vertical: 'retail',
+      enableProductImages: false,
+    });
   });
 
   it('reports a tenant with no settings rather than inventing a price mode', async () => {
@@ -569,12 +581,21 @@ describe('GET /v1/terminals', () => {
       url: '/v1/terminals?priceMode=tax-exclusive&currency=USD',
       headers: { cookie },
     });
-    expect(response.json<{ settings: { priceMode: string; currency: string } }>().settings).toEqual(
-      {
-        priceMode: 'tax-inclusive',
-        currency: 'SAR',
-      },
-    );
+    expect(
+      response.json<{
+        settings: {
+          priceMode: string;
+          currency: string;
+          vertical: string;
+          enableProductImages: boolean;
+        };
+      }>().settings,
+    ).toEqual({
+      priceMode: 'tax-inclusive',
+      currency: 'SAR',
+      vertical: 'retail',
+      enableProductImages: false,
+    });
   });
 
   it('refuses a caller without shift.open', async () => {
