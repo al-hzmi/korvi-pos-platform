@@ -102,11 +102,7 @@ describe('fiscal receipt ESC/POS rendering', () => {
   it('refuses to combine fiscal evidence with a different finalized sale', async () => {
     const raster = captureRasterRenderer();
     await expect(
-      renderFiscalReceiptEscPos(
-        { ...sale, invoiceNumber: 'INV-OTHER' },
-        receipt,
-        raster.renderer,
-      ),
+      renderFiscalReceiptEscPos({ ...sale, invoiceNumber: 'INV-OTHER' }, receipt, raster.renderer),
     ).rejects.toThrow(/does not match/);
   });
 
