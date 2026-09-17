@@ -138,6 +138,8 @@ describe('Quick-Service operational state', () => {
       ]),
     );
     expect(containsBytes(payload, Uint8Array.from([0x1d, 0x76, 0x30, 0x00]))).toBe(true);
+    expect(containsBytes(payload, encoder.encode('ORDER K01-00000123'))).toBe(true);
+    expect(containsBytes(payload, encoder.encode('NON-FISCAL / PREPARATION'))).toBe(true);
 
     const hasQrCommand = payload.some(
       (byte, index) => byte === 0x1d && payload[index + 1] === 0x28 && payload[index + 2] === 0x6b,
