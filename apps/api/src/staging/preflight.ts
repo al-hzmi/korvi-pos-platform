@@ -106,11 +106,7 @@ export async function readDeploymentManifest(): Promise<DeploymentManifest> {
   const merchantTables = [...schema.matchAll(/@@map\("([a-z_]+)"\)/g)].map(
     (match) => match[1] ?? '',
   );
-  const tables = [
-    ...merchantTables,
-    ...CONTROL_PLANE_TABLES,
-    ...MIGRATION_OWNED_TENANT_TABLES,
-  ];
+  const tables = [...merchantTables, ...CONTROL_PLANE_TABLES, ...MIGRATION_OWNED_TENANT_TABLES];
   return { migrations, tables };
 }
 
