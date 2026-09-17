@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --write apps/api/src/__tests__/fiscal-receipt-read.test.ts && git diff -- apps/api/src/__tests__/fiscal-receipt-read.test.ts && git diff --quiet -- apps/api/src/__tests__/fiscal-receipt-read.test.ts",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:zatca:fiscalization-live": "vitest run packages/database/src/__tests__/zatca-fiscalization-live.test.ts",
