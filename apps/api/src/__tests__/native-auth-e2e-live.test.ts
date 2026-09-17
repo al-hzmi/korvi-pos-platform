@@ -558,7 +558,13 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
         select: { actorUserId: true, metadata: true },
       }),
     );
-    expect(failureAudit.some((event) => event.metadata?.['reason'] === 'bad-password')).toBe(true);
+    expect(failureAudit).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metadata: expect.objectContaining({ reason: 'bad-password' }),
+        }),
+      ]),
+    );
 
     const goodChallenge = await issueChallenge(tenantA.id, enrollmentA.id);
     const success = await nativeLogin({

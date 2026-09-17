@@ -112,6 +112,6 @@ describe('checkout fiscalization orchestration', () => {
     expect(reserveCalls).toBe(1);
     expect(sealerCalls).toBe(1);
     expect(persistCalls).toBe(1);
-    expect(durable?.state).toBe('sealed');
+    expect(durable).toMatchObject({ state: 'sealed' });
   });
 });
