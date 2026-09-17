@@ -20,10 +20,17 @@ interface CartRowProps {
   readonly line: CartLine;
   readonly locked: boolean;
   readonly lineTotalMinor: string;
+  readonly quickService: boolean;
   readonly dispatch: (action: CartAction) => void;
 }
 
-function CartRow({ line, locked, lineTotalMinor, dispatch }: CartRowProps): JSX.Element {
+function CartRow({
+  line,
+  locked,
+  lineTotalMinor,
+  quickService,
+  dispatch,
+}: CartRowProps): JSX.Element {
   const [draft, setDraft] = useState(() => formatScaled(line.quantityScaled));
   const [invalid, setInvalid] = useState(false);
 
@@ -139,6 +146,47 @@ function CartRow({ line, locked, lineTotalMinor, dispatch }: CartRowProps): JSX.
         </Button>
       </div>
 
+      {quickService ? (
+        <div className="mt-3 grid gap-2 border-t border-border/70 pt-3 sm:grid-cols-2">
+          <label className="text-xs font-medium text-muted-foreground">
+            الخيارات
+            <input
+              value={line.preparationOptions ?? ''}
+              disabled={locked}
+              maxLength={280}
+              placeholder="مثال: بدون بصل، حار"
+              onChange={(event) => {
+                dispatch({
+                  type: 'set-preparation',
+                  productId: line.productId,
+                  options: event.target.value,
+                  note: line.preparationNote ?? '',
+                });
+              }}
+              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            />
+          </label>
+          <label className="text-xs font-medium text-muted-foreground">
+            ملاحظة التحضير
+            <input
+              value={line.preparationNote ?? ''}
+              disabled={locked}
+              maxLength={280}
+              placeholder="مثال: تغليف منفصل"
+              onChange={(event) => {
+                dispatch({
+                  type: 'set-preparation',
+                  productId: line.productId,
+                  options: line.preparationOptions ?? '',
+                  note: event.target.value,
+                });
+              }}
+              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            />
+          </label>
+        </div>
+      ) : null}
+
       {invalid ? (
         <p className="mt-2 text-xs text-destructive" role="status">
           كمية غير صالحة لهذا الصنف.
@@ -153,10 +201,17 @@ export interface CartPanelProps {
   /** Priced once by the workspace and passed down, so the figures cannot diverge. */
   readonly preview: PricedCart;
   readonly locked: boolean;
+  readonly quickService?: boolean;
   readonly dispatch: (action: CartAction) => void;
 }
 
-export function CartPanel({ lines, preview, locked, dispatch }: CartPanelProps): JSX.Element {
+export function CartPanel({
+  lines,
+  preview,
+  locked,
+  quickService = false,
+  dispatch,
+}: CartPanelProps): JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between border-b border-border pb-3">
@@ -203,6 +258,7 @@ export function CartPanel({ lines, preview, locked, dispatch }: CartPanelProps):
               line={line}
               locked={locked}
               lineTotalMinor={(preview.lines[index]?.total.minor ?? 0n).toString()}
+              quickService={quickService}
               dispatch={dispatch}
             />
           ))}
