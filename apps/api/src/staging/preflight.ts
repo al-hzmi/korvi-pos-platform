@@ -36,6 +36,18 @@ const GLOBAL_TABLES = new Set(['global_catalog_items', 'permissions', '_prisma_m
  */
 const CONTROL_PLANE_TABLES = ['platform_support_notes'] as const;
 
+/**
+ * Tenant tables whose authority intentionally lives in SQL migrations and raw
+ * transactional repositories instead of the generated Prisma model. They are
+ * still first-class deployment tables and must pass the same exact-table and
+ * FORCE-RLS admission checks as Prisma-mapped tenant tables.
+ */
+const MIGRATION_OWNED_TENANT_TABLES = [
+  'zatca_seller_fiscal_profiles',
+  'zatca_terminal_fiscal_chains',
+  'zatca_invoice_fiscalizations',
+] as const;
+
 /** Read-only deployment guard; this never repairs, migrates, grants or seeds. */
 export function assertDatabaseEvidence(
   actual: DatabaseEvidence,
@@ -94,7 +106,11 @@ export async function readDeploymentManifest(): Promise<DeploymentManifest> {
   const merchantTables = [...schema.matchAll(/@@map\("([a-z_]+)"\)/g)].map(
     (match) => match[1] ?? '',
   );
-  const tables = [...merchantTables, ...CONTROL_PLANE_TABLES];
+  const tables = [
+    ...merchantTables,
+    ...CONTROL_PLANE_TABLES,
+    ...MIGRATION_OWNED_TENANT_TABLES,
+  ];
   return { migrations, tables };
 }
 

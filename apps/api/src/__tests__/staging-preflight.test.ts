@@ -93,6 +93,9 @@ describe('staging database refusal before serving traffic', () => {
     expect(expected.tables).toContain('zatca_csid_provisioning_attempts');
     expect(expected.tables).toContain('zatca_fatoora_credentials');
     expect(expected.tables).toContain('zatca_invoice_submissions');
+    expect(expected.tables).toContain('zatca_seller_fiscal_profiles');
+    expect(expected.tables).toContain('zatca_terminal_fiscal_chains');
+    expect(expected.tables).toContain('zatca_invoice_fiscalizations');
     expect(new Set(expected.tables).size).toBe(expected.tables.length);
   });
 });
