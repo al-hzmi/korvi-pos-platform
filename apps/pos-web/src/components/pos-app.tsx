@@ -167,8 +167,8 @@ export function PosApp({
       terminal: terminal.state.terminal,
       shift: shift.state.shift,
       priceMode: terminal.state.settings.priceMode,
-      vertical: terminal.state.settings.vertical,
-      enableProductImages: terminal.state.settings.enableProductImages,
+      vertical: terminal.state.settings.vertical ?? 'retail',
+      enableProductImages: terminal.state.settings.enableProductImages ?? false,
     });
   }, [session.state, shift.state, terminal.state]);
 
