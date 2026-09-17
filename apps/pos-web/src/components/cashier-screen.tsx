@@ -17,10 +17,7 @@ import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
 import { parseSarToMinor } from '../lib/money';
 import { quickServiceOrderNumber } from '../lib/quick-service';
-import {
-  preparationTicketFromIntent,
-  preparationTicketFromSale,
-} from '../lib/preparation-ticket';
+import { preparationTicketFromIntent, preparationTicketFromSale } from '../lib/preparation-ticket';
 import { uuidV7EnqueuedAt } from '../lib/offline-checkout';
 import { useCart } from '../hooks/use-cart';
 import { useCheckout } from '../hooks/use-checkout';
@@ -263,7 +260,14 @@ export function CashierScreen({
       );
     }
     return null;
-  }, [cart.lines, checkout.state.intent, checkout.state.phase, completed, orderNumber, quickService]);
+  }, [
+    cart.lines,
+    checkout.state.intent,
+    checkout.state.phase,
+    completed,
+    orderNumber,
+    quickService,
+  ]);
   const drawerLabel = `الوردية ${shift.id.slice(0, 8)}`;
   const authorizedControlHref =
     controlCentreHref !== undefined && canOpenControlCentre(principal.permissions)
