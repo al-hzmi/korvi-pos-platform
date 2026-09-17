@@ -1,4 +1,4 @@
-import type { SaleSummary } from './api-types';
+import type { FiscalReceipt, SaleSummary } from './api-types';
 import type { CheckoutIntent } from './checkout-flight';
 import type { Failure } from './failures';
 
@@ -20,6 +20,8 @@ export interface CheckoutState {
   /** The last attempt may have committed. The basket must not change. */
   readonly attemptOutstanding: boolean;
   readonly sale: SaleSummary | null;
+  /** Server-authored evidence from the durable sealed fiscal artifact. */
+  readonly receipt: FiscalReceipt | null;
   /** True when the server answered with a sale an earlier attempt created. */
   readonly replayed: boolean;
   readonly failure: Failure | null;
@@ -30,6 +32,7 @@ export const initialCheckoutState: CheckoutState = {
   intent: null,
   attemptOutstanding: false,
   sale: null,
+  receipt: null,
   replayed: false,
   failure: null,
 };
@@ -37,7 +40,12 @@ export const initialCheckoutState: CheckoutState = {
 export type CheckoutEvent =
   | { readonly type: 'submit'; readonly intent: CheckoutIntent }
   | { readonly type: 'queued'; readonly intent: CheckoutIntent }
-  | { readonly type: 'succeeded'; readonly sale: SaleSummary; readonly replayed: boolean }
+  | {
+      readonly type: 'succeeded';
+      readonly sale: SaleSummary;
+      readonly receipt: FiscalReceipt;
+      readonly replayed: boolean;
+    }
   | { readonly type: 'failed'; readonly failure: Failure }
   | { readonly type: 'dismiss' }
   | { readonly type: 'new-sale' };
@@ -53,6 +61,7 @@ export function checkoutReducer(state: CheckoutState, event: CheckoutEvent): Che
         intent: event.intent,
         attemptOutstanding: false,
         sale: null,
+        receipt: null,
         replayed: false,
         failure: null,
       };
@@ -62,6 +71,7 @@ export function checkoutReducer(state: CheckoutState, event: CheckoutEvent): Che
         phase: 'succeeded',
         attemptOutstanding: false,
         sale: event.sale,
+        receipt: event.receipt,
         replayed: event.replayed,
         failure: null,
       };
