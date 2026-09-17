@@ -1,0 +1,78 @@
+name: Temp Wire Fiscal Checkout Env Retry
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - .github/workflows/_temp-wire-fiscal-checkout-env-retry.yml
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_pos?schema=public
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: strike/product-routing-p0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Reuse proven fiscal checkout patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/_temp-wire-fiscal-checkout.yml').read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(source) if "python3 <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(source)) if source[i].strip() == 'PY')
+          lines = source[start:end]
+          prefix = min((len(line) - len(line.lstrip(' ')) for line in lines if line.strip()), default=0)
+          script = '\n'.join(line[prefix:] for line in lines) + '\n'
+          Path('/tmp/apply-fiscal-checkout.py').write_text(script, encoding='utf-8')
+          PY
+          python3 /tmp/apply-fiscal-checkout.py
+
+      - name: Format changed source
+        run: npx prettier --write apps/api/src/zatca/fiscalize-checkout.ts apps/api/src/zatca/checkout-fiscalization-infrastructure.ts apps/api/src/checkout/service.ts apps/api/src/server.ts apps/api/src/__tests__/checkout-service.test.ts apps/api/src/__tests__/zatca-checkout-fiscalization.test.ts
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+
+      - name: Typecheck API
+        run: npm run typecheck -w @korvi/api
+
+      - name: Run targeted fiscal checkout tests
+        run: npx vitest run apps/api/src/__tests__/checkout-service.test.ts apps/api/src/__tests__/zatca-checkout-fiscalization.test.ts
+
+      - name: Commit source change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/src/zatca/fiscalize-checkout.ts \
+            apps/api/src/zatca/checkout-fiscalization-infrastructure.ts \
+            apps/api/src/checkout/service.ts \
+            apps/api/src/server.ts \
+            apps/api/src/__tests__/checkout-service.test.ts \
+            apps/api/src/__tests__/zatca-checkout-fiscalization.test.ts
+          git commit -m "feat(zatca): wire finalized checkout into durable sealing"
+          git push origin HEAD:strike/product-routing-p0
