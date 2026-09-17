@@ -98,8 +98,8 @@ export function SaleReceipt({
         </StatusNote>
       ) : printState === 'failed' ? (
         <StatusNote tone="warning" live>
-          تم البيع واعتماد الفاتورة، لكن تعذّرت الطباعة. أعد المحاولة لطباعة نفس الفاتورة دون
-          إنشاء بيع جديد.
+          تم البيع واعتماد الفاتورة، لكن تعذّرت الطباعة. أعد المحاولة لطباعة نفس الفاتورة دون إنشاء
+          بيع جديد.
         </StatusNote>
       ) : printState === 'printed' ? (
         <StatusNote tone="success" live>

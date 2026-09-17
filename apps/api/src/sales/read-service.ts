@@ -1,10 +1,7 @@
 import { createSaleRepository, listMerchantSales, readMerchantSale } from '@korvi/database';
 import { readMerchantPeriodReport } from '@korvi/database/reports';
 import { createZatcaFiscalizationRepository } from '@korvi/database/zatca-fiscalization';
-import {
-  requirePrincipalPermission,
-  tenantId as brandTenantId,
-} from '@korvi/domain';
+import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
 import { createFiscalReceiptReadService } from '../checkout/receipt-read.js';
 import type { FiscalReceiptReadResult } from '../checkout/receipt-read.js';
 import type {

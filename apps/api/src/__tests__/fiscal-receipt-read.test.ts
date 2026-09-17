@@ -108,7 +108,9 @@ function subject(overrides?: {
   readonly invoice?: InvoiceRecord | null;
   readonly fiscalization?: ZatcaSealedFiscalization | null;
 }) {
-  const findById = vi.fn(async () => overrides?.sale === undefined ? sale : overrides.sale);
+  const findById = vi.fn(async () =>
+    overrides?.sale === undefined ? sale : overrides.sale,
+  );
   const invoiceForSale = vi.fn(async () =>
     overrides?.invoice === undefined ? invoice : overrides.invoice,
   );
@@ -127,61 +129,74 @@ function subject(overrides?: {
 }
 
 describe('historical fiscal receipt read', () => {
-  it('returns the same sealed QR/hash and persisted sale facts without a write dependency', async () => {
-    const { service, findById, invoiceForSale, findByInvoice } = subject();
+  it(
+    'returns the same sealed QR/hash and persisted sale facts without a write dependency',
+    async () => {
+      const { service, findById, invoiceForSale, findByInvoice } = subject();
 
-    const result = await service.read(principal, sale.id, sale.terminalId);
+      const result = await service.read(principal, sale.id, sale.terminalId);
 
-    expect(result).toMatchObject({
-      outcome: 'success',
-      sale: {
-        saleId: sale.id,
-        invoiceNumber: 'INV-42',
-        terminalId: sale.terminalId,
-        cashierName: principal.displayName,
-        totalMinor: '2300',
-        vatMinor: '300',
-        cashReceivedMinor: '2500',
-        changeMinor: '200',
-      },
-      receipt: {
-        invoiceId: invoice.id,
-        invoiceNumber: 'INV-42',
-        invoiceHashBase64: 'AQID',
-        qrCodeBase64: 'PERSISTED_PHASE_2_QR',
-      },
-    });
-    expect(findById).toHaveBeenCalledTimes(1);
-    expect(invoiceForSale).toHaveBeenCalledTimes(1);
-    expect(findByInvoice).toHaveBeenCalledTimes(1);
-  });
+      expect(result).toMatchObject({
+        outcome: 'success',
+        sale: {
+          saleId: sale.id,
+          invoiceNumber: 'INV-42',
+          terminalId: sale.terminalId,
+          cashierName: principal.displayName,
+          totalMinor: '2300',
+          vatMinor: '300',
+          cashReceivedMinor: '2500',
+          changeMinor: '200',
+        },
+        receipt: {
+          invoiceId: invoice.id,
+          invoiceNumber: 'INV-42',
+          invoiceHashBase64: 'AQID',
+          qrCodeBase64: 'PERSISTED_PHASE_2_QR',
+        },
+      });
+      expect(findById).toHaveBeenCalledTimes(1);
+      expect(invoiceForSale).toHaveBeenCalledTimes(1);
+      expect(findByInvoice).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it.each([
     ['branch', { ...sale, branchId: 'other-branch' }],
     ['terminal', { ...sale, terminalId: 'other-terminal' }],
     ['cashier', { ...sale, userId: 'other-user' }],
     ['status', { ...sale, status: 'voided' as const }],
-  ])('hides a sale outside %s ownership before reading fiscal evidence', async (_label, candidate) => {
-    const { service, invoiceForSale, findByInvoice } = subject({ sale: candidate as SaleRecord });
+  ])(
+    'hides a sale outside %s ownership before reading fiscal evidence',
+    async (_label, candidate) => {
+      const { service, invoiceForSale, findByInvoice } = subject({
+        sale: candidate as SaleRecord,
+      });
 
-    await expect(service.read(principal, sale.id, sale.terminalId)).resolves.toEqual({
-      outcome: 'not-found',
-    });
-    expect(invoiceForSale).not.toHaveBeenCalled();
-    expect(findByInvoice).not.toHaveBeenCalled();
-  });
+      await expect(service.read(principal, sale.id, sale.terminalId)).resolves.toEqual({
+        outcome: 'not-found',
+      });
+      expect(invoiceForSale).not.toHaveBeenCalled();
+      expect(findByInvoice).not.toHaveBeenCalled();
+    },
+  );
 
-  it('requires already-sealed durable evidence and never attempts to complete fiscalization', async () => {
-    const reserved = {
-      ...fiscalization,
-      state: 'reserved' as const,
-    };
-    const { service } = subject({ fiscalization: reserved as unknown as ZatcaSealedFiscalization });
+  it(
+    'requires already-sealed durable evidence and never attempts to complete fiscalization',
+    async () => {
+      const reserved = {
+        ...fiscalization,
+        state: 'reserved' as const,
+      };
+      const { service } = subject({
+        fiscalization: reserved as unknown as ZatcaSealedFiscalization,
+      });
 
-    await expect(service.read(principal, sale.id, sale.terminalId)).resolves.toEqual({
-      outcome: 'not-sealed',
-    });
-  });
+      await expect(service.read(principal, sale.id, sale.terminalId)).resolves.toEqual({
+        outcome: 'not-sealed',
+      });
+    },
+  );
 
   it('does not expose a sale when the requested authoritative terminal differs', async () => {
     const { service, invoiceForSale } = subject();
