@@ -47,9 +47,7 @@ describe('Quick-Service operational state', () => {
       preparationNote: 'تغليف منفصل',
       preparationOptions: 'بدون بصل',
     });
-    expect(cartToRequestLines(lines)).toEqual([
-      { productId: PRODUCT.id, quantityScaled: '1000' },
-    ]);
+    expect(cartToRequestLines(lines)).toEqual([{ productId: PRODUCT.id, quantityScaled: '1000' }]);
   });
 
   it('accepts preparation metadata in the durable restart draft without changing sale intent', () => {
@@ -68,9 +66,7 @@ describe('Quick-Service operational state', () => {
         updatedAt: '2026-09-18T00:00:00.000Z',
       }),
     ).toBe(true);
-    expect(cartToRequestLines(lines)).toEqual([
-      { productId: PRODUCT.id, quantityScaled: '1000' },
-    ]);
+    expect(cartToRequestLines(lines)).toEqual([{ productId: PRODUCT.id, quantityScaled: '1000' }]);
   });
 
   it('renders a separate non-fiscal prep ticket without QR or financial fields', () => {
