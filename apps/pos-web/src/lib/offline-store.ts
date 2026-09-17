@@ -162,7 +162,9 @@ function isOptionalNullableString(value: unknown): boolean {
 }
 
 function isOptionalNullableInteger(value: unknown): boolean {
-  return value === undefined || value === null || (typeof value === 'number' && Number.isInteger(value));
+  return (
+    value === undefined || value === null || (typeof value === 'number' && Number.isInteger(value))
+  );
 }
 
 export function isProductSummary(value: unknown): value is ProductSummary {
