@@ -202,7 +202,9 @@ function isCartLine(value: unknown): value is CartLine {
     Number.isInteger(value.vatBasisPoints) &&
     value.vatBasisPoints >= 0 &&
     value.vatBasisPoints <= 10_000 &&
-    isIntegerString(value.quantityScaled, false)
+    isIntegerString(value.quantityScaled, false) &&
+    (value.preparationNote === undefined || typeof value.preparationNote === 'string') &&
+    (value.preparationOptions === undefined || typeof value.preparationOptions === 'string')
   );
 }
 
