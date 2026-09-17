@@ -157,10 +157,22 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
 }
 
+function isOptionalNullableString(value: unknown): boolean {
+  return value === undefined || isNullableString(value);
+}
+
+function isOptionalNullableInteger(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === 'number' && Number.isInteger(value));
+}
+
 export function isProductSummary(value: unknown): value is ProductSummary {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === 'string' &&
+    isOptionalNullableString(value.categoryId) &&
+    isOptionalNullableString(value.categoryNameAr) &&
+    isOptionalNullableInteger(value.categorySortOrder) &&
+    isOptionalNullableString(value.imageUrl) &&
     typeof value.sku === 'string' &&
     typeof value.nameAr === 'string' &&
     isNullableString(value.nameEn) &&
