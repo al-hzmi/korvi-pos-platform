@@ -149,8 +149,21 @@ export interface SaleSummary {
   readonly changeMinor: string;
 }
 
+/**
+ * Fiscal receipt evidence is server-authored from the durable sealed artifact.
+ * The client may render/print it, but must never manufacture or mutate it.
+ */
+export interface FiscalReceipt {
+  readonly invoiceId: string;
+  readonly invoiceNumber: string;
+  readonly issuedAt: string;
+  readonly invoiceHashBase64: string;
+  readonly qrCodeBase64: string;
+}
+
 export interface CheckoutResponse {
   readonly sale: SaleSummary;
+  readonly receipt: FiscalReceipt;
   readonly replayed: boolean;
 }
 
@@ -546,31 +559,255 @@ export interface AdminMember {
   readonly userId: string;
   readonly email: string;
   readonly displayName: string;
-  readonly userActive: boolean;
-  readonly membershipStatus: string | null;
-  readonly defaultBranchId: string | null;
-  /** Whether a credential exists; credential material is never sent. */
-  readonly hasCredential: boolean;
-  readonly roleIds: readonly string[];
-  readonly lastLoginAt: string | null;
+  readonly branchId: string | null;
+  readonly roles: readonly string[];
+  readonly createdAt: string;
 }
 
 export interface AdminRole {
   readonly id: string;
-  readonly key: string;
+  readonly code: string;
   readonly nameAr: string;
-  readonly nameEn: string | null;
   readonly isSystem: boolean;
-  readonly maxDiscountBasisPoints: number;
-  readonly permissions: readonly string[];
 }
 
-export interface AdminAccessChange {
-  readonly member: AdminMember;
-  readonly revokedSessions: number;
+export interface AdminProduct extends ProductSummary {
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  readonly trackInventory: boolean;
+  readonly isActive: boolean;
+  readonly createdAt: string;
 }
 
-export interface AdminRoleAssignmentResult {
-  readonly member: AdminMember;
-  readonly changed: boolean;
+export interface AdminCustomer {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly phone: string | null;
+  readonly email: string | null;
+  readonly vatNumber: string | null;
+  readonly isActive: boolean;
+  readonly createdAt: string;
+}
+
+export interface AdminSupplier {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly phone: string | null;
+  readonly email: string | null;
+  readonly vatNumber: string | null;
+  readonly isActive: boolean;
+  readonly createdAt: string;
+}
+
+export interface PlatformTenantSummary {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly legalName: string;
+  readonly vatNumber: string | null;
+  readonly status: 'active' | 'suspended';
+  readonly createdAt: string;
+  readonly branchCount: number;
+  readonly terminalCount: number;
+  readonly userCount: number;
+  readonly activeProductCount: number;
+  readonly openShiftCount: number;
+  readonly saleCount: number;
+  readonly lastSaleAt: string | null;
+  readonly bootstrap: PlatformTenantBootstrapReadiness;
+}
+
+export interface PlatformTenantBootstrapReadiness {
+  readonly ready: boolean;
+  readonly checks: readonly OnboardingReadinessCheck[];
+}
+
+export interface PlatformTenantDetail extends PlatformTenantSummary {
+  readonly settings: AdminTenantSettings | null;
+  readonly branches: readonly AdminBranch[];
+  readonly terminals: readonly AdminTerminal[];
+  readonly members: readonly AdminMember[];
+  readonly recentSales: readonly {
+    readonly saleId: string;
+    readonly invoiceNumber: string;
+    readonly totalMinor: string;
+    readonly issuedAt: string;
+  }[];
+  readonly supportNotes: readonly PlatformSupportNote[];
+}
+
+export interface PlatformSupportNote {
+  readonly id: string;
+  readonly authorUserId: string;
+  readonly authorDisplayName: string;
+  readonly note: string;
+  readonly createdAt: string;
+}
+
+export interface PlatformSupportNoteCreateInput {
+  readonly note: string;
+}
+
+export interface PlatformOwnerBootstrapInput {
+  readonly slug: string;
+  readonly name: string;
+  readonly legalName: string;
+  readonly vatNumber?: string | null;
+  readonly adminEmail: string;
+  readonly adminPassword: string;
+  readonly adminDisplayName: string;
+}
+
+export interface PlatformOperationalBootstrapInput {
+  readonly operationId: string;
+  readonly branchCode: string;
+  readonly branchNameAr: string;
+  readonly branchNameEn?: string | null;
+  readonly terminalCode: string;
+  readonly terminalLabel: string;
+  readonly productSku: string;
+  readonly productNameAr: string;
+  readonly productNameEn?: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitLabel: string;
+  readonly priceMinor: string;
+  readonly barcode?: string | null;
+}
+
+export interface PlatformOperationalBootstrapResult {
+  readonly replayed: boolean;
+  readonly branch: AdminBranch;
+  readonly terminal: AdminTerminal;
+  readonly product: AdminProductBootstrap;
+}
+
+export interface AdminUserCreateInput {
+  readonly email: string;
+  readonly password: string;
+  readonly displayName: string;
+  readonly branchId?: string | null;
+  readonly roleIds?: readonly string[];
+}
+
+export interface AdminUserUpdateInput {
+  readonly displayName?: string;
+  readonly branchId?: string | null;
+  readonly roleIds?: readonly string[];
+}
+
+export interface AdminUserPasswordResetInput {
+  readonly password: string;
+}
+
+export interface AdminBranchCreateInput {
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn?: string | null;
+}
+
+export interface AdminTerminalCreateInput {
+  readonly branchId: string;
+  readonly code: string;
+  readonly label: string;
+}
+
+export interface AdminTerminalUpdateInput {
+  readonly label?: string;
+  readonly isActive?: boolean;
+}
+
+export interface AdminProductUpdateInput {
+  readonly nameAr?: string;
+  readonly nameEn?: string | null;
+  readonly unitLabel?: string;
+  readonly priceMinor?: string;
+  readonly barcode?: string | null;
+  readonly isActive?: boolean;
+}
+
+export interface AdminCustomerCreateInput {
+  readonly code: string;
+  readonly name: string;
+  readonly phone?: string | null;
+  readonly email?: string | null;
+  readonly vatNumber?: string | null;
+}
+
+export interface AdminCustomerUpdateInput {
+  readonly name?: string;
+  readonly phone?: string | null;
+  readonly email?: string | null;
+  readonly vatNumber?: string | null;
+  readonly isActive?: boolean;
+}
+
+export interface AdminSupplierCreateInput {
+  readonly code: string;
+  readonly name: string;
+  readonly phone?: string | null;
+  readonly email?: string | null;
+  readonly vatNumber?: string | null;
+}
+
+export interface AdminSupplierUpdateInput {
+  readonly name?: string;
+  readonly phone?: string | null;
+  readonly email?: string | null;
+  readonly vatNumber?: string | null;
+  readonly isActive?: boolean;
+}
+
+export interface ReportSalesSummary {
+  readonly from: string;
+  readonly to: string;
+  readonly saleCount: number;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+  readonly currency: string;
+}
+
+export interface ReportTopProduct {
+  readonly productId: string | null;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly quantityScaled: string;
+  readonly totalMinor: string;
+}
+
+export interface ReportShiftVariance {
+  readonly shiftId: string;
+  readonly terminalId: string;
+  readonly userId: string;
+  readonly status: string;
+  readonly openedAt: string;
+  readonly closedAt: string | null;
+  readonly expectedCashMinor: string;
+  readonly closingCashMinor: string | null;
+  readonly varianceMinor: string | null;
+}
+
+export interface ReportSalesSummaryResponse {
+  readonly summary: ReportSalesSummary;
+}
+
+export interface ReportTopProductsResponse {
+  readonly rows: readonly ReportTopProduct[];
+}
+
+export interface ReportShiftVarianceResponse {
+  readonly rows: readonly ReportShiftVariance[];
+}
+
+export interface ZatcaOnboardingStatus {
+  readonly tenantId: string;
+  readonly status: 'not_started' | 'onboarding' | 'ready' | 'blocked';
+  readonly simulation: boolean;
+  readonly currentStage: string | null;
+  readonly lastFailureCode: string | null;
+  readonly lastFailureMessage: string | null;
+  readonly updatedAt: string | null;
 }
