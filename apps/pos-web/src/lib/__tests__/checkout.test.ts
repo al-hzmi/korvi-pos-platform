@@ -265,9 +265,7 @@ describe('a refusal the server decided', () => {
   });
 
   it('starts clean only when the cashier starts a new sale', async () => {
-    const run = harness(() =>
-      Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: false }),
-    );
+    const run = harness(() => Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: false }));
     await run.submit(BASKET);
     expect(run.flight.pending()?.operationId).toBe('op-1');
 
