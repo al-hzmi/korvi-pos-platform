@@ -31,7 +31,7 @@ const seller: ZatcaSellerFiscalProfile = {
   countryCode: 'SA',
 };
 
-describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live', () => {
+describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
   let prisma: PrismaClient;
   let tenant: string;
   let branch: string;
@@ -120,7 +120,11 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
       }
     });
 
-    await fiscalization.upsertSellerProfile(scope, seller, '2026-09-17T12:00:00Z');
+    await fiscalization.upsertSellerProfile(
+      scope,
+      seller,
+      '2026-09-17T12:00:00Z',
+    );
   }, 30_000);
 
   afterAll(async () => {
@@ -132,11 +136,16 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
     }
   });
 
-  async function createInvoice(terminalId: string, shiftId: string): Promise<string> {
+  async function createInvoice(
+    terminalId: string,
+    shiftId: string,
+  ): Promise<string> {
     sequence += 1;
     const saleId = randomUUID();
     const invoiceId = randomUUID();
-    const issuedAt = new Date(`2026-09-17T12:${String(sequence).padStart(2, '0')}:00Z`);
+    const issuedAt = new Date(
+      `2026-09-17T12:${String(sequence).padStart(2, '0')}:00Z`,
+    );
 
     await withTenant(prisma, scope.tenantId, async (tx) => {
       await tx.sale.create({
@@ -184,7 +193,7 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
     return invoiceId;
   }
 
-  it('serializes ICV/PIH, blocks overtaking, seals once and resumes with the sealed hash', async () => {
+  it('serializes ICV/PIH and seals exactly once', async () => {
     const invoice1 = await createInvoice(terminalA, shiftA);
     const invoice2 = await createInvoice(terminalA, shiftA);
 
@@ -219,7 +228,9 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
       invoiceId: invoice1,
       terminalId: terminalA,
       invoiceHash: hash1,
-      sealedInvoiceXml: new TextEncoder().encode('<Invoice>sealed-one</Invoice>'),
+      sealedInvoiceXml: new TextEncoder().encode(
+        '<Invoice>sealed-one</Invoice>',
+      ),
       qrCodeBase64: 'cXIx',
       signatureValueBase64: 'c2lnMQ==',
       sealedAt: SEALED_1,
@@ -242,14 +253,18 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
     });
     expect(second.state).toBe('reserved');
     expect(second.invoiceCounterValue).toBe('2');
-    expect(second.previousInvoiceHash).toBe(Buffer.from(hash1).toString('base64'));
+    expect(second.previousInvoiceHash).toBe(
+      Buffer.from(hash1).toString('base64'),
+    );
 
     const hash2 = new Uint8Array(32).fill(7);
     await fiscalization.seal(scope, {
       invoiceId: invoice2,
       terminalId: terminalA,
       invoiceHash: hash2,
-      sealedInvoiceXml: new TextEncoder().encode('<Invoice>sealed-two</Invoice>'),
+      sealedInvoiceXml: new TextEncoder().encode(
+        '<Invoice>sealed-two</Invoice>',
+      ),
       qrCodeBase64: 'cXIy',
       signatureValueBase64: 'c2lnMg==',
       sealedAt: SEALED_2,
@@ -262,11 +277,14 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
          WHERE "tenantId" = ${tenant}::uuid AND "terminalId" = ${terminalA}::uuid`,
     );
     expect(chain).toEqual([
-      { nextIcv: 3n, previousInvoiceHash: Buffer.from(hash2).toString('base64') },
+      {
+        nextIcv: 3n,
+        previousInvoiceHash: Buffer.from(hash2).toString('base64'),
+      },
     ]);
   });
 
-  it('converges concurrent reservation replays and never allocates twice', async () => {
+  it('converges concurrent reservation replays', async () => {
     const invoice = await createInvoice(terminalB, shiftB);
     const input = {
       invoiceId: invoice,
@@ -290,7 +308,7 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
     expect(count[0]?.count).toBe(1n);
   });
 
-  it('keeps fiscal artifacts tenant scoped under FORCE RLS', async () => {
+  it('keeps fiscal artifacts tenant scoped', async () => {
     const foreignScope: TenantScope = { tenantId: tenantId(randomUUID()) };
     const own = await withTenant(prisma, scope.tenantId, async (tx) =>
       tx.$queryRaw<Array<{ invoiceId: string }>>`
@@ -299,7 +317,10 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
     );
     expect(own.length).toBeGreaterThan(0);
     expect(
-      await fiscalization.findByInvoice(foreignScope, own[0]?.invoiceId ?? randomUUID()),
+      await fiscalization.findByInvoice(
+        foreignScope,
+        own[0]?.invoiceId ?? randomUUID(),
+      ),
     ).toBeNull();
     expect(await fiscalization.readSellerProfile(foreignScope)).toBeNull();
   });
