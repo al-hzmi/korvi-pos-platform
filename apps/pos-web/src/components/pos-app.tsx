@@ -205,8 +205,8 @@ export function PosApp({
           terminal={offlineWorkspace.terminal}
           shift={offlineWorkspace.shift}
           priceMode={offlineWorkspace.priceMode}
-          vertical={offlineWorkspace.vertical}
-          enableProductImages={offlineWorkspace.enableProductImages}
+          vertical={offlineWorkspace.vertical ?? 'retail'}
+          enableProductImages={offlineWorkspace.enableProductImages ?? false}
           controlCentreHref={controlCentreHref}
           offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
           offlineStoreProtector={offlineStoreProtector}
