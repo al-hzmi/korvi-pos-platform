@@ -56,6 +56,13 @@ const RECEIPT: FiscalReceipt = {
   invoiceId: 'invoice-1',
   invoiceNumber: SALE.invoiceNumber,
   issuedAt: SALE.issuedAt,
+  currency: SALE.currency,
+  sellerName: 'Merchant',
+  vatRegistrationNumber: '300000000000003',
+  lines: [],
+  netMinor: SALE.netMinor,
+  vatMinor: SALE.vatMinor,
+  totalMinor: SALE.totalMinor,
   invoiceHashBase64: 'invoice-hash-base64',
   qrCodeBase64: 'phase2-qr-base64',
 };
