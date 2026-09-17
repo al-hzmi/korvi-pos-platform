@@ -7,6 +7,7 @@ import { ProductPanel } from './product-panel';
 import { CartPanel } from './cart-panel';
 import { CheckoutPanel } from './checkout-panel';
 import { SaleReceipt } from './sale-receipt';
+import { PreparationTicketControl } from './preparation-ticket-control';
 import { StatusNote } from './status-note';
 import { previewCart } from '../lib/cart';
 import { canOpenControlCentre } from '../lib/control-access';
@@ -16,6 +17,11 @@ import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
 import { parseSarToMinor } from '../lib/money';
 import { quickServiceOrderNumber } from '../lib/quick-service';
+import {
+  preparationTicketFromIntent,
+  preparationTicketFromSale,
+} from '../lib/preparation-ticket';
+import { uuidV7EnqueuedAt } from '../lib/offline-checkout';
 import { useCart } from '../hooks/use-cart';
 import { useCheckout } from '../hooks/use-checkout';
 import { useOfflineSaleSync } from '../hooks/use-offline-sale-sync';
@@ -28,6 +34,7 @@ import type { Principal, ProductSummary, ShiftSummary, TerminalSummary } from '.
 import type { OfflineSaleScope } from '../lib/offline-store';
 import type { OfflineStoreProtector } from '../lib/offline-protection';
 import type { FiscalReceiptPrinter } from '../lib/receipt-print-flight';
+import type { PreparationTicketPrinter } from '../lib/preparation-ticket';
 
 /**
  * Where a cashier spends the whole day.
@@ -59,6 +66,7 @@ export interface CashierScreenProps {
   readonly offlineStoreProtector?: OfflineStoreProtector | undefined;
   /** Downstream host capability. It receives only an already-finalized server receipt. */
   readonly printFiscalReceipt?: FiscalReceiptPrinter | undefined;
+  readonly printPreparationTicket?: PreparationTicketPrinter | undefined;
   readonly onSignOut: () => void;
   readonly onExpired: () => void;
   readonly onShiftChanged: () => void;
@@ -76,6 +84,7 @@ export function CashierScreen({
   offlineStoreDeviceEnrollmentId,
   offlineStoreProtector,
   printFiscalReceipt,
+  printPreparationTicket,
   onSignOut,
   onExpired,
   onShiftChanged,
@@ -240,6 +249,21 @@ export function CashierScreen({
     quickService && orderOperationId !== null
       ? quickServiceOrderNumber(orderOperationId, terminal.code)
       : null;
+  const preparationTicket = useMemo(() => {
+    if (!quickService || orderNumber === null) return null;
+    if (completed !== null) {
+      return preparationTicketFromSale(completed, cart.lines, orderNumber);
+    }
+    if (checkout.state.phase === 'queued' && checkout.state.intent !== null) {
+      return preparationTicketFromIntent(
+        checkout.state.intent,
+        cart.lines,
+        orderNumber,
+        uuidV7EnqueuedAt(checkout.state.intent.operationId),
+      );
+    }
+    return null;
+  }, [cart.lines, checkout.state.intent, checkout.state.phase, completed, orderNumber, quickService]);
   const drawerLabel = `الوردية ${shift.id.slice(0, 8)}`;
   const authorizedControlHref =
     controlCentreHref !== undefined && canOpenControlCentre(principal.permissions)
@@ -316,6 +340,12 @@ export function CashierScreen({
                 </p>
                 <p className="mt-1 text-muted-foreground">المبلغ المستلم: {cash} ر.س</p>
               </div>
+              {preparationTicket === null ? null : (
+                <PreparationTicketControl
+                  ticket={preparationTicket}
+                  printer={printPreparationTicket}
+                />
+              )}
               <Button size="lg" className="h-touch-lg font-semibold" onClick={newSale}>
                 بدء بيع جديد
               </Button>
@@ -355,14 +385,22 @@ export function CashierScreen({
               />
             </CardSurface>
           ) : (
-            <SaleReceipt
-              sale={completed}
-              receipt={checkout.state.receipt}
-              replayed={checkout.state.replayed}
-              orderNumber={orderNumber}
-              printFiscalReceipt={printFiscalReceipt}
-              onNewSale={newSale}
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <SaleReceipt
+                sale={completed}
+                receipt={checkout.state.receipt}
+                replayed={checkout.state.replayed}
+                orderNumber={orderNumber}
+                printFiscalReceipt={printFiscalReceipt}
+                onNewSale={newSale}
+              />
+              {preparationTicket === null ? null : (
+                <PreparationTicketControl
+                  ticket={preparationTicket}
+                  printer={printPreparationTicket}
+                />
+              )}
+            </div>
           )}
         </aside>
       </main>
