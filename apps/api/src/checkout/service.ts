@@ -21,6 +21,8 @@ import {
   ShiftUnusableError,
 } from '@korvi/database';
 import { fingerprintIntent } from './fingerprint.js';
+import { buildCheckoutReceipt } from './receipt.js';
+import type { CheckoutReceipt } from './receipt.js';
 import type { CheckoutFiscalizationPort } from '../zatca/fiscalize-checkout.js';
 import type {
   AuditRepository,
@@ -41,6 +43,7 @@ import type {
   TenderLine,
   TenderRecord,
   TenderScheme,
+  ZatcaSealedFiscalization,
   ShiftRepository,
   TenantRepository,
   TenantScope,
@@ -137,6 +140,8 @@ export interface CheckoutSuccess {
   /** True when this request replayed an operation id that already completed. */
   readonly replayed: boolean;
   readonly sale: SaleSummary;
+  /** Null only when fiscalization is deliberately absent in isolated tests. */
+  readonly receipt: CheckoutReceipt | null;
 }
 
 export type CheckoutResult = CheckoutSuccess | CheckoutFailure;
@@ -378,11 +383,13 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
     }
     const invoice = await deps.sales.invoiceForSale(scope, existing.id);
     if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
-    await fiscalize(scope, existing, invoice);
+    const fiscalArtifact = await fiscalize(scope, existing, invoice);
     return {
       outcome: 'success',
       replayed: true,
       sale: summarise(existing, invoice.invoiceNumber, displayName),
+      receipt:
+        fiscalArtifact === null ? null : buildCheckoutReceipt(existing, invoice, fiscalArtifact),
     };
   }
 
@@ -390,10 +397,10 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
     scope: TenantScope,
     sale: SaleRecord,
     invoice: InvoiceRecord,
-  ): Promise<void> {
-    if (deps.fiscalization !== undefined) {
-      await deps.fiscalization.fiscalize(scope, sale, invoice);
-    }
+  ): Promise<ZatcaSealedFiscalization | null> {
+    if (deps.fiscalization === undefined) return null;
+    const artifact = await deps.fiscalization.fiscalize(scope, sale, invoice);
+    return artifact ?? null;
   }
 
   return {
@@ -433,11 +440,15 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         if (reserved.requestHash !== replayHash) return fail('idempotency-conflict');
         const invoice = await deps.sales.invoiceForSale(scope, existing.id);
         if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
-        await fiscalize(scope, existing, invoice);
+        const fiscalArtifact = await fiscalize(scope, existing, invoice);
         return {
           outcome: 'success',
           replayed: true,
           sale: summarise(existing, invoice.invoiceNumber, input.principal.displayName),
+          receipt:
+            fiscalArtifact === null
+              ? null
+              : buildCheckoutReceipt(existing, invoice, fiscalArtifact),
         };
       }
 
@@ -844,12 +855,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         onAuditError(error);
       }
 
-      await fiscalize(scope, recorded, invoice);
+      const fiscalArtifact = await fiscalize(scope, recorded, invoice);
 
       return {
         outcome: 'success',
         replayed: false,
         sale: summarise(recorded, invoice.invoiceNumber, input.principal.displayName),
+        receipt:
+          fiscalArtifact === null ? null : buildCheckoutReceipt(recorded, invoice, fiscalArtifact),
       };
     },
   };

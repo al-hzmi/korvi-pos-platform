@@ -544,7 +544,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       // 200 rather than 201 on a replay: nothing was created this time.
       return reply
         .code(result.replayed ? 200 : 201)
-        .send({ sale: result.sale, replayed: result.replayed });
+        .send({ sale: result.sale, receipt: result.receipt, replayed: result.replayed });
     },
   );
   /**

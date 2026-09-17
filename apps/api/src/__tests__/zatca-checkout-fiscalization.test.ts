@@ -106,9 +106,11 @@ describe('checkout fiscalization orchestration', () => {
       now: () => new Date('2026-09-17T12:00:01.900Z'),
     });
 
-    await fiscalization.fiscalize({ tenantId: tenant }, sale, invoice);
-    await fiscalization.fiscalize({ tenantId: tenant }, sale, invoice);
+    const first = await fiscalization.fiscalize({ tenantId: tenant }, sale, invoice);
+    const replay = await fiscalization.fiscalize({ tenantId: tenant }, sale, invoice);
 
+    expect(first).toEqual(replay);
+    expect(first).toMatchObject({ state: 'sealed', qrCodeBase64: 'cXI=' });
     expect(reserveCalls).toBe(1);
     expect(sealerCalls).toBe(1);
     expect(persistCalls).toBe(1);

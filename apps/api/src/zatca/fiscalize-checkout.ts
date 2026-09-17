@@ -4,11 +4,16 @@ import {
   type SaleRecord,
   type TenantScope,
   type ZatcaFiscalizationRepository,
+  type ZatcaSealedFiscalization,
 } from '@korvi/domain';
 import type { ZatcaSimplifiedInvoiceSealer } from './seal-simplified-invoice.js';
 
 export interface CheckoutFiscalizationPort {
-  fiscalize(scope: TenantScope, sale: SaleRecord, invoice: InvoiceRecord): Promise<void>;
+  fiscalize(
+    scope: TenantScope,
+    sale: SaleRecord,
+    invoice: InvoiceRecord,
+  ): Promise<ZatcaSealedFiscalization | void>;
 }
 
 export interface CheckoutFiscalizationDependencies {
@@ -32,7 +37,7 @@ export function createCheckoutFiscalizationPort(
             'Persisted fiscalization belongs to a different sale terminal.',
           );
         }
-        if (existing.state === 'sealed') return;
+        if (existing.state === 'sealed') return existing;
       }
 
       const reservation =
@@ -42,7 +47,7 @@ export function createCheckoutFiscalizationPort(
           terminalId: sale.terminalId,
           reservedAt: exactUtcSecond(now(), sale.issuedAt),
         }));
-      if (reservation.state === 'sealed') return;
+      if (reservation.state === 'sealed') return reservation;
 
       const sealed = await dependencies.sealer.seal({
         scope,
@@ -57,7 +62,7 @@ export function createCheckoutFiscalizationPort(
         },
       });
 
-      await dependencies.repository.seal(scope, {
+      return dependencies.repository.seal(scope, {
         invoiceId: invoice.id,
         terminalId: sale.terminalId,
         invoiceHash: sealed.invoiceHash,
