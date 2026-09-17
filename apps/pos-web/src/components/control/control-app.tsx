@@ -1,38 +1,46 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
-import { ControlNav } from './control-nav';
+import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './control-nav';
+import { CustomersPanel } from './customers-panel';
 import { DashboardPanel } from './dashboard-panel';
+import { InventoryPanel } from './inventory-panel';
 import { MembersPanel } from './members-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
+import { PurchasingPanel } from './purchasing-panel';
+import { ReportsPanel } from './reports-panel';
+import { SalesPanel } from './sales-panel';
 import { SettingsPanel } from './settings-panel';
+import { ZatcaPanel } from './zatca-panel';
 import { LoginScreen } from '../login-screen';
 import { Screen } from '../screen';
 import { StatusNote } from '../status-note';
 import { BlockedScreen } from '../terminal-picker';
 import { controlView } from '../../lib/control-view';
 import { createApiClient } from '../../lib/api';
+import { controlSectionHref } from '../../lib/control-routes';
 import { hasPermission } from '../../lib/session';
 import { useSession } from '../../hooks/use-session';
 import type { JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type { ControlView } from '../../lib/control-view';
+import type { ControlSection } from '../../lib/control-routes';
 import type { Principal } from '../../lib/api-types';
-import type { ControlSection } from './control-nav';
 
 /**
  * The owner's side of Korvi.
  *
- * The session boundary is the same one the till uses — same hook, same cookie,
- * same server, and the same refusal to call an unconfirmed logout a logout.
- * Hiding an administration entry is a courtesy; every `/v1/admin/**` route
- * checks its own permission again on the server.
+ * The route is now product authority for the visible section. Session, tenant,
+ * branch and permission authority still come exclusively from the server-backed
+ * principal. Native navigation is intentional while a command can be
+ * unresolved: beforeunload remains able to stop a destructive route change.
  */
 export interface ControlAppProps {
   readonly api?: ApiClient;
+  readonly section?: ControlSection;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -51,54 +59,121 @@ function sectionTitle(section: ControlSection): string {
   switch (section) {
     case 'home':
       return 'الرئيسية';
+    case 'sales':
+      return 'المبيعات';
     case 'products':
       return 'المنتجات';
+    case 'inventory':
+      return 'المخزون';
+    case 'purchasing':
+      return 'المشتريات';
+    case 'customers':
+      return 'العملاء';
     case 'branches':
       return 'الفروع والصناديق';
     case 'staff':
       return 'الموظفون والصلاحيات';
+    case 'reports':
+      return 'التقارير';
     case 'settings':
       return 'إعدادات المنشأة';
+    case 'zatca':
+      return 'ZATCA';
   }
+}
+
+/** Preserve an unresolved command across every browser's unload contract. */
+export function preserveCommandBeforeUnload(event: BeforeUnloadEvent): void {
+  event.preventDefault();
+  event.returnValue = true;
 }
 
 function Section({
   section,
   api,
   principal,
+  onCommandLockChange,
 }: {
   readonly section: ControlSection;
   readonly api: ApiClient;
   readonly principal: Principal;
+  readonly onCommandLockChange: (locked: boolean) => void;
 }): JSX.Element {
   switch (section) {
     case 'home':
       return <DashboardPanel api={api} />;
+    case 'sales':
+      return <SalesPanel />;
     case 'products':
       return <ProductsPanel api={api} canWrite={hasPermission(principal, 'product.write')} />;
+    case 'inventory':
+      return (
+        <InventoryPanel
+          api={api}
+          preferredBranchId={principal.branchId}
+          permissions={principal.permissions}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
+    case 'purchasing':
+      return (
+        <PurchasingPanel
+          api={api}
+          permissions={principal.permissions}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
+    case 'customers':
+      return (
+        <CustomersPanel
+          canWrite={hasPermission(principal, 'customer.write')}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
     case 'branches':
       return <BranchesPanel api={api} />;
     case 'staff':
       return (
         <MembersPanel api={api} canManageSettings={hasPermission(principal, 'settings.manage')} />
       );
+    case 'reports':
+      return <ReportsPanel />;
     case 'settings':
       return <SettingsPanel api={api} />;
+    case 'zatca':
+      return <ZatcaPanel />;
   }
 }
 
 function Workspace({
   api,
   principal,
+  requestedSection,
   onSignOut,
 }: {
   readonly api: ApiClient;
   readonly principal: Principal;
+  readonly requestedSection: ControlSection | undefined;
   readonly onSignOut: () => void;
 }): JSX.Element {
-  const [section, setSection] = useState<ControlSection>('home');
-  const permitted = hasPermission(principal, 'report.read');
+  const firstAllowedSection = firstAuthorizedSection(principal.permissions);
+  const resolvedSection = requestedSection ?? firstAllowedSection;
+  const activeSection =
+    resolvedSection !== null && canAccessControlSection(resolvedSection, principal.permissions)
+      ? resolvedSection
+      : null;
+  const [commandLocked, setCommandLocked] = useState(false);
   const canReadOnboarding = hasPermission(principal, 'settings.manage');
+
+  useEffect(() => {
+    if (!commandLocked) return undefined;
+    window.addEventListener('beforeunload', preserveCommandBeforeUnload);
+    return () => window.removeEventListener('beforeunload', preserveCommandBeforeUnload);
+  }, [commandLocked]);
+
+  const navigateToSection = useCallback((target: ControlSection) => {
+    window.location.assign(controlSectionHref(target));
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
@@ -111,30 +186,52 @@ function Workspace({
           <span className="hidden text-sm font-medium text-foreground md:inline">
             {principal.user.displayName}
           </span>
-          <a
-            href="/"
-            className="inline-flex h-touch items-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            نقطة البيع
-          </a>
-          <Button variant="ghost" size="sm" onClick={onSignOut}>
+          {commandLocked ? (
+            <span
+              aria-disabled="true"
+              className="inline-flex h-touch cursor-not-allowed items-center rounded-md border border-input px-4 text-sm text-muted-foreground"
+            >
+              نقطة البيع
+            </span>
+          ) : (
+            <a
+              href="/cashier"
+              className="inline-flex h-touch items-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              نقطة البيع
+            </a>
+          )}
+          <Button variant="ghost" disabled={commandLocked} onClick={onSignOut}>
             خروج
           </Button>
         </div>
       </header>
 
-      {!permitted ? (
+      {activeSection === null ? (
         <main className="mx-auto w-full max-w-lg p-6">
           <CardSurface className="flex flex-col gap-4 p-6">
             <StatusNote tone="warning" live>
-              لا تملك صلاحية الاطلاع على لوحة التحكم. راجع مدير المنشأة.
+              {requestedSection === undefined
+                ? 'لا تملك صلاحية الاطلاع على لوحة التحكم. راجع مدير المنشأة.'
+                : 'لا تملك صلاحية فتح هذا القسم من لوحة التحكم. الخادم لم يمنح جلستك السلطة المطلوبة.'}
             </StatusNote>
-            <a
-              href="/"
-              className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              الانتقال إلى نقطة البيع
-            </a>
+            <div className="flex flex-wrap justify-end gap-2">
+              {firstAllowedSection === null ? (
+                <a
+                  href="/cashier"
+                  className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  الانتقال إلى نقطة البيع
+                </a>
+              ) : (
+                <a
+                  href={controlSectionHref(firstAllowedSection)}
+                  className="inline-flex h-touch items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  فتح أول قسم مصرح
+                </a>
+              )}
+            </div>
           </CardSurface>
         </main>
       ) : (
@@ -142,32 +239,59 @@ function Workspace({
           <aside className="w-full shrink-0 lg:w-64" aria-label="التنقل">
             <CardSurface className="p-2">
               <ControlNav
-                active={section}
+                active={activeSection}
                 permissions={principal.permissions}
-                onSelect={setSection}
+                locked={commandLocked}
               />
             </CardSurface>
           </aside>
 
           <main className="flex min-h-0 flex-1 flex-col gap-4">
             <div>
-              <h1 className="text-2xl font-semibold text-foreground">{sectionTitle(section)}</h1>
-              {section === 'branches' || section === 'staff' || section === 'settings' ? (
+              <h1 className="text-2xl font-semibold text-foreground">
+                {sectionTitle(activeSection)}
+              </h1>
+              {activeSection === 'sales' ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  سجل الفواتير المعتمدة كما حُفظت وقت البيع، مع الضريبة والتسوية والمرتجعات
+                  المرتبطة.
+                </p>
+              ) : activeSection === 'reports' ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  حركة المبيعات والمرتجعات والضريبة من القيم التاريخية المحفوظة في المستندات
+                  المعتمدة.
+                </p>
+              ) : activeSection === 'zatca' ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  متابعة حالة الربط والامتثال وإرسال الفواتير من الأدلة الدائمة دون كشف مواد
+                  الاعتماد السرية.
+                </p>
+              ) : activeSection === 'inventory' ||
+                activeSection === 'purchasing' ||
+                activeSection === 'customers' ||
+                activeSection === 'branches' ||
+                activeSection === 'staff' ||
+                activeSection === 'settings' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
                   إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
                 </p>
               ) : null}
             </div>
 
-            {section === 'home' && canReadOnboarding ? (
+            {activeSection === 'home' && canReadOnboarding ? (
               <OnboardingPanel
                 api={api}
                 permissions={principal.permissions}
-                onNavigate={setSection}
+                onNavigate={navigateToSection}
               />
             ) : null}
 
-            <Section section={section} api={api} principal={principal} />
+            <Section
+              section={activeSection}
+              api={api}
+              principal={principal}
+              onCommandLockChange={setCommandLocked}
+            />
           </main>
         </div>
       )}
@@ -178,19 +302,16 @@ function Workspace({
 export interface ControlSurfaceProps {
   readonly view: ControlView;
   readonly api: ApiClient;
+  readonly section?: ControlSection;
   readonly onAuthenticated: (principal: Principal) => void;
   readonly onRetrySession: () => void;
   readonly onSignOut: () => void;
 }
 
-/**
- * The render half, separated from the session wiring so that every screen —
- * including the one that must never be the login form — can be rendered and
- * asserted on its own.
- */
 export function ControlSurface({
   view,
   api,
+  section,
   onAuthenticated,
   onRetrySession,
   onSignOut,
@@ -228,10 +349,17 @@ export function ControlSurface({
     return <LoginScreen api={api} onAuthenticated={onAuthenticated} notice={view.notice} />;
   }
 
-  return <Workspace api={api} principal={view.principal} onSignOut={onSignOut} />;
+  return (
+    <Workspace
+      api={api}
+      principal={view.principal}
+      requestedSection={section}
+      onSignOut={onSignOut}
+    />
+  );
 }
 
-export function ControlApp({ api: injected }: ControlAppProps = {}): JSX.Element {
+export function ControlApp({ api: injected, section = 'home' }: ControlAppProps = {}): JSX.Element {
   const api = useMemo(() => injected ?? createApiClient(), [injected]);
   const session = useSession(api);
 
@@ -243,6 +371,7 @@ export function ControlApp({ api: injected }: ControlAppProps = {}): JSX.Element
     <ControlSurface
       view={controlView(session.state)}
       api={api}
+      section={section}
       onAuthenticated={session.signedIn}
       onRetrySession={session.retry}
       onSignOut={signOut}

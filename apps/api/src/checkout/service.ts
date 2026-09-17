@@ -180,6 +180,12 @@ export interface CheckoutInput {
   readonly principal: AuthenticatedPrincipal;
   readonly operationId: string;
   readonly terminalId: string;
+  /**
+   * Optional immutable precondition used by delayed/offline replay. The client
+   * does not choose a shift: the server still derives the current open shift
+   * and merely refuses if it is no longer the one under which the intent was captured.
+   */
+  readonly expectedShiftId?: string | undefined;
   readonly lines: readonly CheckoutLineInput[];
   /**
    * The cash-only shape the production till sends today.
@@ -256,6 +262,29 @@ function toTenderLine(tender: CheckoutTenderInput, currency: Currency): TenderLi
         scheme: tender.scheme,
         reference: tender.reference,
       };
+}
+
+function fingerprintCheckoutIntent(
+  input: CheckoutInput,
+  payment: readonly CheckoutTenderInput[],
+  branchId: string,
+): string {
+  return fingerprintIntent({
+    branchId,
+    terminalId: input.terminalId,
+    lines: input.lines.map((line) => ({
+      productId: line.productId,
+      quantityScaled: line.quantityScaled,
+      discount: describeDiscount(line.discount),
+    })),
+    tenders: payment.map((tender) => ({
+      kind: tender.kind,
+      amountMinor: tender.amountMinor,
+      scheme: tender.kind === 'electronic' ? tender.scheme : '',
+      reference: tender.kind === 'electronic' ? tender.reference : '',
+    })),
+    basketDiscount: describeDiscount(input.basketDiscount),
+  });
 }
 
 const IDEMPOTENCY_SCOPE = 'checkout';
@@ -337,9 +366,11 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
     }
     const existing = await deps.sales.findByOperationId(scope, input.operationId);
     if (existing === null) {
-      // Reserved but no sale: the competitor rolled back after all, or the
-      // reservation belongs to something other than a completed checkout.
-      // Refusing is the only safe answer — retrying could double-charge.
+      // Reservation and checkout sale commit in one database transaction. A
+      // reserved operation with no sale is therefore unsafe to reinterpret.
+      return fail('idempotency-conflict');
+    }
+    if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
       return fail('idempotency-conflict');
     }
     const invoice = await deps.sales.invoiceForSale(scope, existing.id);
@@ -366,54 +397,49 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         seen.add(line.productId);
       }
 
+      const payment = normalizePayment(input);
+      if (typeof payment === 'string') return fail(payment);
+
+      /*
+       * Resolve committed idempotency before consulting today's shift. After a
+       * long outage the first request may have committed while its response was
+       * lost, and that shift can be closed by the time the exact command is
+       * replayed. A completed sale must remain discoverable rather than being
+       * turned into a false no-open-shift refusal.
+       */
+      const reserved = await deps.idempotency.find(scope, IDEMPOTENCY_SCOPE, input.operationId);
+      if (reserved !== null) {
+        const existing = await deps.sales.findByOperationId(scope, input.operationId);
+        if (existing === null) return fail('idempotency-conflict');
+        if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
+          return fail('idempotency-conflict');
+        }
+        const replayHash = fingerprintCheckoutIntent(input, payment, existing.branchId);
+        if (reserved.requestHash !== replayHash) return fail('idempotency-conflict');
+        const invoice = await deps.sales.invoiceForSale(scope, existing.id);
+        return {
+          outcome: 'success',
+          replayed: true,
+          sale: summarise(existing, invoice?.invoiceNumber ?? '', input.principal.displayName),
+        };
+      }
+
       const shift = await deps.shifts.findOpenForTerminal(scope, input.terminalId);
       if (shift === null) return fail('no-open-shift');
       // The drawer belongs to one cashier. Ringing into somebody else's shift
       // makes their variance unanswerable at close.
       if (shift.userId !== input.principal.userId) return fail('shift-invalid');
-      // A principal pinned to a branch may not transact through a till in
-      // another one.
+      // Delayed cash stays pinned to the shift that existed when the cashier
+      // accepted it. Never move old cash into a replacement shift merely
+      // because the physical terminal is the same.
+      if (input.expectedShiftId !== undefined && shift.id !== input.expectedShiftId) {
+        return fail('shift-invalid');
+      }
       if (input.principal.branchId !== null && input.principal.branchId !== shift.branchId) {
         return fail('shift-invalid');
       }
 
-      const payment = normalizePayment(input);
-      if (typeof payment === 'string') return fail(payment);
-
-      const intentHash = fingerprintIntent({
-        branchId: shift.branchId,
-        terminalId: input.terminalId,
-        lines: input.lines.map((line) => ({
-          productId: line.productId,
-          quantityScaled: line.quantityScaled,
-          discount: describeDiscount(line.discount),
-        })),
-        tenders: payment.map((tender) => ({
-          kind: tender.kind,
-          amountMinor: tender.amountMinor,
-          scheme: tender.kind === 'electronic' ? tender.scheme : '',
-          reference: tender.kind === 'electronic' ? tender.reference : '',
-        })),
-        basketDiscount: describeDiscount(input.basketDiscount),
-      });
-
-      // Replay, before anything is computed or written.
-      const reserved = await deps.idempotency.find(scope, IDEMPOTENCY_SCOPE, input.operationId);
-      if (reserved !== null) {
-        // The same key with a different basket is not a retry. Answering it
-        // with the earlier sale would quietly drop a transaction the cashier
-        // believes they rang up.
-        if (reserved.requestHash !== intentHash) return fail('idempotency-conflict');
-        const existing = await deps.sales.findByOperationId(scope, input.operationId);
-        if (existing !== null) {
-          const invoice = await deps.sales.invoiceForSale(scope, existing.id);
-          return {
-            outcome: 'success',
-            replayed: true,
-            sale: summarise(existing, invoice?.invoiceNumber ?? '', input.principal.displayName),
-          };
-        }
-      }
+      const intentHash = fingerprintCheckoutIntent(input, payment, shift.branchId);
 
       const tenant = await deps.tenants.current(scope);
       const settings = await deps.tenants.settings(scope);
