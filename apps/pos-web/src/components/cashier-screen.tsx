@@ -54,8 +54,8 @@ export interface CashierScreenProps {
   readonly shift: ShiftSummary;
   /** From tenant_settings, by way of GET /v1/terminals. Never guessed here. */
   readonly priceMode: PriceMode;
-  readonly vertical: Vertical;
-  readonly enableProductImages: boolean;
+  readonly vertical?: Vertical;
+  readonly enableProductImages?: boolean;
   /** Host-owned Control destination. Installed Cashier omits it. */
   readonly controlCentreHref?: string | undefined;
   /** Stable OS/server enrollment identity used only to partition installed durable state. */
@@ -75,8 +75,8 @@ export function CashierScreen({
   terminal,
   shift,
   priceMode,
-  vertical,
-  enableProductImages,
+  vertical = 'retail',
+  enableProductImages = false,
   controlCentreHref,
   offlineStoreDeviceEnrollmentId,
   offlineStoreProtector,
