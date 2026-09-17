@@ -5,12 +5,10 @@ on:
     branches:
       - strike/product-routing-p0
     paths:
-      - apps/pos-web/src/components/cart-panel.tsx
-      - apps/pos-web/src/components/checkout-panel.tsx
-      - apps/pos-web/src/components/pos-app.tsx
-      - apps/pos-web/src/components/product-panel.tsx
-      - apps/pos-web/src/components/sale-receipt.tsx
-      - apps/pos-web/src/components/top-bar.tsx
+      - apps/pos-web/src/lib/__tests__/fiscal-receipt-print.test.ts
+      - apps/pos-web/src/lib/browser-raster-renderer.ts
+      - apps/pos-web/src/lib/fiscal-receipt-print.ts
+      - apps/pos-web/src/lib/preparation-ticket-print.ts
       - .github/workflows/format-cashier-strike-preview.yml
   workflow_dispatch:
 
@@ -37,12 +35,10 @@ jobs:
       - name: Format cashier strike files
         run: |
           npx prettier --write \
-            apps/pos-web/src/components/cart-panel.tsx \
-            apps/pos-web/src/components/checkout-panel.tsx \
-            apps/pos-web/src/components/pos-app.tsx \
-            apps/pos-web/src/components/product-panel.tsx \
-            apps/pos-web/src/components/sale-receipt.tsx \
-            apps/pos-web/src/components/top-bar.tsx
+            apps/pos-web/src/lib/__tests__/fiscal-receipt-print.test.ts \
+            apps/pos-web/src/lib/browser-raster-renderer.ts \
+            apps/pos-web/src/lib/fiscal-receipt-print.ts \
+            apps/pos-web/src/lib/preparation-ticket-print.ts
 
       - name: Prove formatting is clean
         run: npm run format:check
@@ -52,11 +48,9 @@ jobs:
         with:
           name: cashier-formatted-${{ github.sha }}
           path: |
-            apps/pos-web/src/components/cart-panel.tsx
-            apps/pos-web/src/components/checkout-panel.tsx
-            apps/pos-web/src/components/pos-app.tsx
-            apps/pos-web/src/components/product-panel.tsx
-            apps/pos-web/src/components/sale-receipt.tsx
-            apps/pos-web/src/components/top-bar.tsx
+            apps/pos-web/src/lib/__tests__/fiscal-receipt-print.test.ts
+            apps/pos-web/src/lib/browser-raster-renderer.ts
+            apps/pos-web/src/lib/fiscal-receipt-print.ts
+            apps/pos-web/src/lib/preparation-ticket-print.ts
           if-no-files-found: error
           retention-days: 1
