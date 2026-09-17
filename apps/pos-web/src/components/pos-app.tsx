@@ -20,6 +20,7 @@ import type { ApiClient } from '../lib/api';
 import type { OfflineWorkspaceSnapshot } from '../lib/offline-workspace';
 import type { OfflineStoreProtector } from '../lib/offline-protection';
 import type { FiscalReceiptPrinter } from '../lib/receipt-print-flight';
+import type { PreparationTicketPrinter } from '../lib/preparation-ticket';
 
 /**
  * One decision, made in one place: which screen is the cashier on.
@@ -68,6 +69,8 @@ export interface PosAppProps {
   readonly offlineStoreProtector?: OfflineStoreProtector | undefined;
   /** Optional downstream customer-printer capability supplied by the host. */
   readonly printFiscalReceipt?: FiscalReceiptPrinter | undefined;
+  /** Separate operational printer capability; it has no checkout/fiscal authority. */
+  readonly printPreparationTicket?: PreparationTicketPrinter | undefined;
 }
 
 function Waiting({ label }: { readonly label: string }): JSX.Element {
@@ -91,6 +94,7 @@ export function PosApp({
   offlineStoreDeviceEnrollmentId,
   offlineStoreProtector,
   printFiscalReceipt,
+  printPreparationTicket,
 }: PosAppProps): JSX.Element {
   const session = useSession(api);
   const [offlineWorkspace, setOfflineWorkspace] = useState<OfflineWorkspaceSnapshot | null>(null);
@@ -211,6 +215,7 @@ export function PosApp({
           offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
           offlineStoreProtector={offlineStoreProtector}
           printFiscalReceipt={printFiscalReceipt}
+          printPreparationTicket={printPreparationTicket}
           onSignOut={() => undefined}
           onExpired={session.expire}
           onShiftChanged={() => undefined}
@@ -314,6 +319,7 @@ export function PosApp({
       offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
       offlineStoreProtector={offlineStoreProtector}
       printFiscalReceipt={printFiscalReceipt}
+      printPreparationTicket={printPreparationTicket}
       onSignOut={signOut}
       onExpired={session.expire}
       onShiftChanged={shift.refresh}
