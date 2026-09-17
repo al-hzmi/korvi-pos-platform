@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { PosApp } from '../../pos-web/src/components/pos-app';
 import { createApiClient } from '../../pos-web/src/lib/api';
 import { renderFiscalReceiptEscPos } from '../../pos-web/src/lib/fiscal-receipt-print';
-import { renderPreparationTicketEscPos } from '../../pos-web/src/lib/preparation-ticket';
+import { renderPreparationTicketEscPos } from '../../pos-web/src/lib/preparation-ticket-print';
 import type { FiscalReceipt, SaleSummary } from '../../pos-web/src/lib/api-types';
 import type { PreparationTicket } from '../../pos-web/src/lib/preparation-ticket';
 import type { OfflineStoreProtector } from '../../pos-web/src/lib/offline-protection';
