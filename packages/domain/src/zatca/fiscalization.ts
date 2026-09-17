@@ -56,10 +56,7 @@ export interface ZatcaFiscalizationRepository {
     updatedAt: string,
   ): Promise<ZatcaSellerFiscalProfile>;
 
-  findByInvoice(
-    scope: TenantScope,
-    invoiceId: string,
-  ): Promise<ZatcaDurableFiscalization | null>;
+  findByInvoice(scope: TenantScope, invoiceId: string): Promise<ZatcaDurableFiscalization | null>;
 
   /**
    * Reserve the next terminal-local ICV together with the exact PIH and an
@@ -79,8 +76,5 @@ export interface ZatcaFiscalizationRepository {
    * transaction. Replaying the exact evidence is safe; divergent evidence for
    * an already sealed invoice is refused.
    */
-  seal(
-    scope: TenantScope,
-    input: SealZatcaFiscalizationInput,
-  ): Promise<ZatcaSealedFiscalization>;
+  seal(scope: TenantScope, input: SealZatcaFiscalizationInput): Promise<ZatcaSealedFiscalization>;
 }

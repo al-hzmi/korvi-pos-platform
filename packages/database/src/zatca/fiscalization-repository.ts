@@ -103,7 +103,8 @@ export function createZatcaFiscalizationRepository(
             "streetName", "buildingNumber", "citySubdivisionName", "cityName", "postalZone",
             "countryCode"`;
         const row = rows[0];
-        if (row === undefined) throw new ZatcaFiscalizationError('Seller fiscal profile was not persisted.');
+        if (row === undefined)
+          throw new ZatcaFiscalizationError('Seller fiscal profile was not persisted.');
         return mapProfile(scope, row);
       }),
 
@@ -133,7 +134,9 @@ export function createZatcaFiscalizationRepository(
           throw new ZatcaFiscalizationError('ZATCA invoice authority is missing.');
         }
         if (authority.terminalId !== input.terminalId) {
-          throw new ZatcaFiscalizationError('Fiscalization terminal contradicts the immutable sale terminal.');
+          throw new ZatcaFiscalizationError(
+            'Fiscalization terminal contradicts the immutable sale terminal.',
+          );
         }
         if (
           authority.sellerName !== profile.registrationName ||
@@ -207,7 +210,8 @@ export function createZatcaFiscalizationRepository(
           )
           RETURNING *`;
         const row = rows[0];
-        if (row === undefined) throw new ZatcaFiscalizationError('Fiscalization reservation was not persisted.');
+        if (row === undefined)
+          throw new ZatcaFiscalizationError('Fiscalization reservation was not persisted.');
         return mapFiscalization(scope, row);
       }),
 
@@ -227,7 +231,8 @@ async function sealWithin(
          AND "invoiceId" = ${input.invoiceId}::uuid
        FOR UPDATE`;
     const row = rows[0];
-    if (row === undefined) throw new ZatcaFiscalizationError('Fiscalization reservation is missing.');
+    if (row === undefined)
+      throw new ZatcaFiscalizationError('Fiscalization reservation is missing.');
     const current = mapFiscalization(scope, row);
     if (current.terminalId !== input.terminalId) {
       throw new ZatcaFiscalizationError('Fiscalization seal named a different terminal.');
@@ -249,7 +254,9 @@ async function sealWithin(
       chain.nextIcv.toString() !== current.invoiceCounterValue ||
       chain.previousInvoiceHash !== current.previousInvoiceHash
     ) {
-      throw new ZatcaFiscalizationError('Terminal fiscal chain diverged from the invoice reservation.');
+      throw new ZatcaFiscalizationError(
+        'Terminal fiscal chain diverged from the invoice reservation.',
+      );
     }
 
     const sealedRows = await tx.$queryRaw<FiscalizationRow[]>`
@@ -423,7 +430,9 @@ function expectSealed(value: ZatcaDurableFiscalization): ZatcaSealedFiscalizatio
 function toUtcSecond(value: Date): string {
   const iso = value.toISOString();
   if (!iso.endsWith('.000Z')) {
-    throw new ZatcaFiscalizationError('Persisted fiscalization timestamp is not an exact UTC second.');
+    throw new ZatcaFiscalizationError(
+      'Persisted fiscalization timestamp is not an exact UTC second.',
+    );
   }
   return iso.replace('.000Z', 'Z');
 }
