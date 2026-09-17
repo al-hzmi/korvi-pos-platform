@@ -108,7 +108,7 @@ function subject(overrides?: {
   readonly invoice?: InvoiceRecord | null;
   readonly fiscalization?: ZatcaSealedFiscalization | null;
 }) {
-  const findById = vi.fn(async () => overrides?.sale === undefined ? sale : overrides.sale);
+  const findById = vi.fn(async () => (overrides?.sale === undefined ? sale : overrides.sale));
   const invoiceForSale = vi.fn(async () =>
     overrides?.invoice === undefined ? invoice : overrides.invoice,
   );
