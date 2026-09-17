@@ -13,6 +13,8 @@ permissions:
 jobs:
   repair-and-verify:
     runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgresql://korvi:korvi@localhost:5432/korvi_typecheck
     steps:
       - name: Check out exact branch
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
