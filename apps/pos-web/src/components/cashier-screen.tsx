@@ -21,7 +21,7 @@ import { useOfflineSaleSync } from '../hooks/use-offline-sale-sync';
 import { useDurableSaleDraft } from '../hooks/use-durable-sale-draft';
 import { useProductSearch } from '../hooks/use-product-search';
 import type { JSX } from 'react';
-import type { PriceMode } from '@korvi/domain';
+import type { PriceMode, Vertical } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
 import type { Principal, ProductSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
 import type { OfflineSaleScope } from '../lib/offline-store';
@@ -49,6 +49,8 @@ export interface CashierScreenProps {
   readonly shift: ShiftSummary;
   /** From tenant_settings, by way of GET /v1/terminals. Never guessed here. */
   readonly priceMode: PriceMode;
+  readonly vertical: Vertical;
+  readonly enableProductImages: boolean;
   /** Host-owned Control destination. Installed Cashier omits it. */
   readonly controlCentreHref?: string | undefined;
   /** Stable OS/server enrollment identity used only to partition installed durable state. */
@@ -67,6 +69,8 @@ export function CashierScreen({
   terminal,
   shift,
   priceMode,
+  vertical,
+  enableProductImages,
   controlCentreHref,
   offlineStoreDeviceEnrollmentId,
   offlineStoreProtector,
@@ -279,6 +283,8 @@ export function CashierScreen({
             onTermChange={search.setTerm}
             onSubmitTerm={submitTerm}
             onPick={add}
+            quickService={vertical === 'restaurant'}
+            enableImages={enableProductImages}
           />
         </CardSurface>
 
