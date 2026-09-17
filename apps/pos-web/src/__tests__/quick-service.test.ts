@@ -3,8 +3,8 @@ import { cartReducer, cartToRequestLines } from '../lib/cart';
 import { quickServiceOrderNumber } from '../lib/quick-service';
 import {
   preparationTicketFromIntent,
-  renderPreparationTicketEscPos,
 } from '../lib/preparation-ticket';
+import { renderPreparationTicketEscPos } from '../lib/preparation-ticket-print';
 import { isOfflineSaleDraft } from '../lib/offline-store';
 import type { ProductSummary } from '../lib/api-types';
 
