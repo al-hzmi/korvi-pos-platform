@@ -48,6 +48,7 @@ import { registerOperationalObservability } from './runtime/observability.js';
 import { createMerchantSalesReadService } from './sales/read-service.js';
 import { createDrawerService } from './shifts/service.js';
 import { createMerchantZatcaService } from './zatca/merchant-service.js';
+import { createProductionCheckoutFiscalization } from './zatca/checkout-fiscalization-infrastructure.js';
 import type { MerchantAdminService } from './admin/service.js';
 import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
@@ -155,6 +156,10 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const dashboard = createDashboardRepository(prisma);
     const idempotency = createIdempotencyRepository(prisma);
     const audit = createAuditRepository(prisma);
+    const sales = createSaleRepository(prisma);
+    const fiscalization = config.isProduction
+      ? createProductionCheckoutFiscalization({ prisma })
+      : undefined;
     built = {
       tenants,
       dashboard,
@@ -166,9 +171,10 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         products,
         inventory: createInventoryRepository(prisma),
         shifts,
-        sales: createSaleRepository(prisma),
+        sales,
         idempotency,
         audit,
+        ...(fiscalization === undefined ? {} : { fiscalization }),
       }),
       drawer: createDrawerService({ shifts, terminals, idempotency, audit }),
       returns: createReturnService({

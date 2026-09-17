@@ -32,6 +32,8 @@ const OPERATION = '018f1000-0000-7000-8000-0000000000f1';
 let store: MemoryBusinessStore;
 let service: CheckoutService;
 let counter: number;
+let fiscalizedInvoiceIds: string[];
+let fiscalizationFailures: number;
 
 function principal(overrides: Partial<AuthenticatedPrincipal> = {}): AuthenticatedPrincipal {
   return {
@@ -53,6 +55,8 @@ beforeEach(() => {
   store = new MemoryBusinessStore();
   seedStore(store, A);
   counter = 0;
+  fiscalizedInvoiceIds = [];
+  fiscalizationFailures = 0;
   service = createCheckoutService({
     tenants: memoryTenantRepository(store),
     products: memoryProductRepository(store),
@@ -61,6 +65,15 @@ beforeEach(() => {
     sales: memorySaleRepository(store),
     idempotency: memoryIdempotencyRepository(store),
     audit: memoryAuditRepository(store),
+    fiscalization: {
+      fiscalize: async (_scope, _sale, invoice) => {
+        fiscalizedInvoiceIds.push(invoice.id);
+        if (fiscalizationFailures > 0) {
+          fiscalizationFailures -= 1;
+          throw new Error('fiscalization unavailable');
+        }
+      },
+    },
     now: () => new Date('2026-08-12T09:00:00.000Z'),
     newId: () => {
       counter += 1;
@@ -606,5 +619,34 @@ describe('what the audit says', () => {
     ]);
     // Nothing that belongs to somebody else's system.
     expect(JSON.stringify(store.audit)).not.toContain('AUTH-');
+  });
+});
+
+describe('fiscal checkout wiring', () => {
+  it('fiscalizes the same durable invoice on fresh checkout and exact replay', async () => {
+    const first = await checkout();
+    const second = await checkout();
+    if (first.outcome !== 'success' || second.outcome !== 'success') {
+      throw new Error('expected success');
+    }
+    expect(store.invoices).toHaveLength(1);
+    expect(fiscalizedInvoiceIds).toEqual([store.invoices[0]?.id, store.invoices[0]?.id]);
+    expect(second.replayed).toBe(true);
+    expect(second.sale.saleId).toBe(first.sale.saleId);
+  });
+
+  it('keeps the sale durable when fiscalization fails and resumes it on replay', async () => {
+    fiscalizationFailures = 1;
+    await expect(checkout()).rejects.toThrow('fiscalization unavailable');
+    expect(store.sales).toHaveLength(1);
+    expect(store.invoices).toHaveLength(1);
+    expect(store.movements).toHaveLength(1);
+
+    const replay = await checkout();
+    if (replay.outcome !== 'success') throw new Error(replay.reason);
+    expect(replay.replayed).toBe(true);
+    expect(store.sales).toHaveLength(1);
+    expect(store.invoices).toHaveLength(1);
+    expect(fiscalizedInvoiceIds).toEqual([store.invoices[0]?.id, store.invoices[0]?.id]);
   });
 });

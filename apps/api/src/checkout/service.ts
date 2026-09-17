@@ -21,6 +21,7 @@ import {
   ShiftUnusableError,
 } from '@korvi/database';
 import { fingerprintIntent } from './fingerprint.js';
+import type { CheckoutFiscalizationPort } from '../zatca/fiscalize-checkout.js';
 import type {
   AuditRepository,
   AuthenticatedPrincipal,
@@ -28,6 +29,7 @@ import type {
   Discount,
   Currency,
   IdempotencyRepository,
+  InvoiceRecord,
   InventoryMovementInput,
   InventoryRepository,
   PriceMode,
@@ -207,6 +209,7 @@ export interface CheckoutDeps {
   readonly sales: SaleRepository;
   readonly idempotency: IdempotencyRepository;
   readonly audit: AuditRepository;
+  readonly fiscalization?: CheckoutFiscalizationPort;
   readonly now?: () => Date;
   readonly newId?: () => string;
   readonly onAuditError?: (error: unknown) => void;
@@ -374,11 +377,23 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       return fail('idempotency-conflict');
     }
     const invoice = await deps.sales.invoiceForSale(scope, existing.id);
+    if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
+    await fiscalize(scope, existing, invoice);
     return {
       outcome: 'success',
       replayed: true,
-      sale: summarise(existing, invoice?.invoiceNumber ?? '', displayName),
+      sale: summarise(existing, invoice.invoiceNumber, displayName),
     };
+  }
+
+  async function fiscalize(
+    scope: TenantScope,
+    sale: SaleRecord,
+    invoice: InvoiceRecord,
+  ): Promise<void> {
+    if (deps.fiscalization !== undefined) {
+      await deps.fiscalization.fiscalize(scope, sale, invoice);
+    }
   }
 
   return {
@@ -417,10 +432,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         const replayHash = fingerprintCheckoutIntent(input, payment, existing.branchId);
         if (reserved.requestHash !== replayHash) return fail('idempotency-conflict');
         const invoice = await deps.sales.invoiceForSale(scope, existing.id);
+        if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
+        await fiscalize(scope, existing, invoice);
         return {
           outcome: 'success',
           replayed: true,
-          sale: summarise(existing, invoice?.invoiceNumber ?? '', input.principal.displayName),
+          sale: summarise(existing, invoice.invoiceNumber, input.principal.displayName),
         };
       }
 
@@ -763,6 +780,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       }
 
       const invoice = await deps.sales.invoiceForSale(scope, recorded.id);
+      if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
 
       // Outside the transaction, and its failure does not undo the sale: the
       // money has moved and the receipt is printed by the time this runs.
@@ -826,10 +844,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         onAuditError(error);
       }
 
+      await fiscalize(scope, recorded, invoice);
+
       return {
         outcome: 'success',
         replayed: false,
-        sale: summarise(recorded, invoice?.invoiceNumber ?? '', input.principal.displayName),
+        sale: summarise(recorded, invoice.invoiceNumber, input.principal.displayName),
       };
     },
   };
