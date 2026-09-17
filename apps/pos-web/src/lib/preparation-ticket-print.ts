@@ -1,13 +1,6 @@
-import {
-  EPSON_TM_T20,
-  escpos,
-  rasterCommand,
-} from '../../../../packages/printing/src/index';
+import { EPSON_TM_T20, escpos, rasterCommand } from '../../../../packages/printing/src/index';
 import { formatScaled } from './quantity';
-import type {
-  EscPosBuilder,
-  RasterRenderer,
-} from '../../../../packages/printing/src/index';
+import type { EscPosBuilder, RasterRenderer } from '../../../../packages/printing/src/index';
 import type { PreparationTicket } from './preparation-ticket';
 
 export interface PreparationPrintJob {
