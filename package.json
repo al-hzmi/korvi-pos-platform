@@ -23,6 +23,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:zatca:fiscalization-live": "vitest run packages/database/src/__tests__/zatca-fiscalization-live.test.ts",
     "db:generate": "npm run db:generate -w @korvi/database",
     "invariants": "bash scripts/check-invariants.sh",
     "versions:verify": "node scripts/verify-versions.mjs",
