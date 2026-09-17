@@ -26,7 +26,9 @@ jobs:
           cache: npm
       - run: npm ci --registry=https://registry.npmjs.org
       - name: Apply source patch
-        run: python3 .github/temporary/apply-fiscal-receipt.py
+        run: |
+          python3 .github/temporary/apply-fiscal-receipt.py
+          sed -i 's/} as SaleRecord;/} as unknown as SaleRecord;/' apps/api/src/__tests__/zatca-checkout-receipt.test.ts
       - name: Format focused files
         run: |
           npx prettier --write apps/api/src/zatca/fiscalize-checkout.ts apps/api/src/checkout/service.ts apps/api/src/checkout/receipt.ts apps/api/src/routes/business.ts apps/api/src/__tests__/zatca-checkout-fiscalization.test.ts apps/api/src/__tests__/zatca-checkout-receipt.test.ts
