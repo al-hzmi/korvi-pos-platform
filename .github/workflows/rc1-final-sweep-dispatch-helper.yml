@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       TARGET_REF: rc/commercial-v1-rc1
       TARGET_SHA: 4200d554e3c954b756780ae3d163fbd380f238a4
     steps:
