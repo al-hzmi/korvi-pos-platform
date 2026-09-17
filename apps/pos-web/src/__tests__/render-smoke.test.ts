@@ -211,7 +211,7 @@ describe('the states a cashier cannot sell out of', () => {
 
 describe('the completed sale', () => {
   const markup = renderToStaticMarkup(
-    createElement(SaleReceipt, { sale: SALE, replayed: false, onNewSale: noop }),
+    createElement(SaleReceipt, { sale: SALE, receipt: null, replayed: false, onNewSale: noop }),
   );
 
   it('shows the server’s invoice number and figures, not the cart’s', () => {
@@ -232,7 +232,7 @@ describe('the completed sale', () => {
 
   it('says when a response was a replay rather than a new sale', () => {
     const replayed = renderToStaticMarkup(
-      createElement(SaleReceipt, { sale: SALE, replayed: true, onNewSale: noop }),
+      createElement(SaleReceipt, { sale: SALE, receipt: null, replayed: true, onNewSale: noop }),
     );
     expect(replayed).toContain('مسجّلة مسبقاً');
   });
