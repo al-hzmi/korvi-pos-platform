@@ -17,8 +17,8 @@ export interface ProductPanelProps {
   readonly onTermChange: (term: string) => void;
   readonly onSubmitTerm: () => void;
   readonly onPick: (product: ProductSummary) => void;
-  readonly quickService: boolean;
-  readonly enableImages: boolean;
+  readonly quickService?: boolean;
+  readonly enableImages?: boolean;
 }
 
 interface CategoryChoice {
@@ -35,8 +35,8 @@ export function ProductPanel({
   onTermChange,
   onSubmitTerm,
   onPick,
-  quickService,
-  enableImages,
+  quickService = false,
+  enableImages = false,
 }: ProductPanelProps): JSX.Element {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
