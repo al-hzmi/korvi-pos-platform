@@ -15,6 +15,7 @@ import { createDurableProductSource } from '../lib/offline-search-source';
 import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
 import { parseSarToMinor } from '../lib/money';
+import { quickServiceOrderNumber } from '../lib/quick-service';
 import { useCart } from '../hooks/use-cart';
 import { useCheckout } from '../hooks/use-checkout';
 import { useOfflineSaleSync } from '../hooks/use-offline-sale-sync';
@@ -233,6 +234,12 @@ export function CashierScreen({
   }, [checkout, terminal.id, shift.id, cart.lines, cashMinor]);
 
   const completed = checkout.state.phase === 'succeeded' ? checkout.state.sale : null;
+  const quickService = vertical === 'restaurant';
+  const orderOperationId = completed?.operationId ?? checkout.state.intent?.operationId ?? null;
+  const orderNumber =
+    quickService && orderOperationId !== null
+      ? quickServiceOrderNumber(orderOperationId, terminal.code)
+      : null;
   const drawerLabel = `الوردية ${shift.id.slice(0, 8)}`;
   const authorizedControlHref =
     controlCentreHref !== undefined && canOpenControlCentre(principal.permissions)
@@ -283,7 +290,7 @@ export function CashierScreen({
             onTermChange={search.setTerm}
             onSubmitTerm={submitTerm}
             onPick={add}
-            quickService={vertical === 'restaurant'}
+            quickService={quickService}
             enableImages={enableProductImages}
           />
         </CardSurface>
@@ -301,6 +308,9 @@ export function CashierScreen({
               </StatusNote>
               <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm">
                 <p className="font-semibold">بيع دون اتصال — محفوظ بأمان</p>
+                {orderNumber === null ? null : (
+                  <p className="mt-2 font-semibold">رقم الطلب: {orderNumber}</p>
+                )}
                 <p className="mt-2 break-all text-muted-foreground">
                   معرّف العملية: {checkout.state.intent.operationId}
                 </p>
@@ -326,6 +336,7 @@ export function CashierScreen({
                 lines={cart.lines}
                 preview={preview}
                 locked={locked}
+                quickService={quickService}
                 dispatch={cart.dispatch}
               />
               <CheckoutPanel
@@ -348,6 +359,7 @@ export function CashierScreen({
               sale={completed}
               receipt={checkout.state.receipt}
               replayed={checkout.state.replayed}
+              orderNumber={orderNumber}
               printFiscalReceipt={printFiscalReceipt}
               onNewSale={newSale}
             />
