@@ -313,8 +313,8 @@ export function PosApp({
       terminal={chosen}
       shift={shift.state.shift}
       priceMode={settings.priceMode}
-      vertical={settings.vertical}
-      enableProductImages={settings.enableProductImages}
+      vertical={settings.vertical ?? 'retail'}
+      enableProductImages={settings.enableProductImages ?? false}
       controlCentreHref={controlCentreHref}
       offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
       offlineStoreProtector={offlineStoreProtector}
