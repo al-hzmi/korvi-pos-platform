@@ -7,7 +7,7 @@
  * 1000, exactly as they cross the wire (ADR-0002).
  */
 
-import type { PriceMode } from '@korvi/domain';
+import type { PriceMode, Vertical } from '@korvi/domain';
 
 export interface Principal {
   readonly user: { readonly id: string; readonly email: string; readonly displayName: string };
@@ -34,6 +34,8 @@ export interface TerminalSummary {
 export interface TillSettings {
   readonly priceMode: PriceMode;
   readonly currency: string;
+  readonly vertical: Vertical;
+  readonly enableProductImages: boolean;
 }
 
 export interface TerminalsResponse {
@@ -44,6 +46,11 @@ export interface TerminalsResponse {
 
 export interface ProductSummary {
   readonly id: string;
+  /** Optional only so pre-upgrade durable catalogue rows remain readable. */
+  readonly categoryId?: string | null;
+  readonly categoryNameAr?: string | null;
+  readonly categorySortOrder?: number | null;
+  readonly imageUrl?: string | null;
   readonly sku: string;
   readonly nameAr: string;
   readonly nameEn: string | null;
