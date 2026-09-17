@@ -57,6 +57,11 @@ jobs:
       - name: Canonicalize touched tests
         run: npx --no-install prettier --write apps/api/src/__tests__/native-auth-e2e-live.test.ts apps/api/src/__tests__/tenant-lifecycle-live.test.ts apps/api/src/__tests__/zatca-checkout-fiscalization.test.ts
 
+      - name: Generate and build prerequisites
+        run: |
+          npm run db:generate
+          npm run build
+
       - name: Prove test typecheck
         run: npm run typecheck:tests
 
