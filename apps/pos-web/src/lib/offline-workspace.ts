@@ -10,8 +10,8 @@ export interface OfflineWorkspaceSnapshot {
   readonly terminal: TerminalSummary;
   readonly shift: ShiftSummary;
   readonly priceMode: PriceMode;
-  readonly vertical: Vertical;
-  readonly enableProductImages: boolean;
+  readonly vertical?: Vertical;
+  readonly enableProductImages?: boolean;
   readonly capturedAt: string;
 }
 
