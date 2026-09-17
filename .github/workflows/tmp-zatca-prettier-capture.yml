@@ -1,0 +1,30 @@
+name: Temporary ZATCA Prettier Capture
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Format target and emit canonical base64
+        run: |
+          npx prettier --write packages/database/src/__tests__/zatca-fiscalization-live.test.ts
+          echo 'KORVI_PRETTIER_BASE64_BEGIN'
+          base64 -w0 packages/database/src/__tests__/zatca-fiscalization-live.test.ts
+          echo
+          echo 'KORVI_PRETTIER_BASE64_END'
