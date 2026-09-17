@@ -198,7 +198,7 @@ function InstalledCashier(): React.JSX.Element {
         <label className="mt-6 block text-sm font-medium">
           عنوان الطابعة (IP أو hostname محلي)
           <input
-            className="mt-2 w-full rounded-lg border bg-background p-3 text-left"
+            className="mt-2 w-full rounded-lg border bg-background p-3 text-start"
             dir="ltr"
             placeholder="192.168.1.50"
             value={printerHostDraft}
@@ -245,7 +245,7 @@ function InstalledCashier(): React.JSX.Element {
         printFiscalReceipt={printFiscalReceipt}
       />
       <button
-        className="fixed bottom-2 left-2 z-50 rounded-md border bg-background/95 px-3 py-2 text-xs font-semibold shadow-sm"
+        className="fixed bottom-2 start-2 z-50 rounded-md border bg-background/95 px-3 py-2 text-xs font-semibold shadow-sm"
         onClick={() => {
           setPrinterHostDraft(printerHost);
           setEditingPrinter(true);
