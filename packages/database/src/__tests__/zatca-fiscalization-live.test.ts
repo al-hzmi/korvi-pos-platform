@@ -124,10 +124,9 @@ describe.skipIf(url === '')('ZATCA fiscalization PostgreSQL live', () => {
   }, 30_000);
 
   afterAll(async () => {
-    if (prisma !== undefined && scope !== undefined) {
-      await withTenant(prisma, scope.tenantId, async (tx) => {
-        await tx.tenant.deleteMany({ where: { id: tenant } });
-      });
+    if (prisma !== undefined) {
+      // Fiscalization evidence is intentionally undeletable. This live proof therefore
+      // requires a disposable test database instead of weakening historical truth for cleanup.
       await prisma.$disconnect();
     }
   });
