@@ -298,7 +298,9 @@ describe.skipIf(url === '')('ZATCA durable fiscalization chain, PostgreSQL live'
          WHERE "tenantId" = ${tenant}::uuid ORDER BY "invoiceCounterValue"`,
     );
     expect(own.length).toBeGreaterThan(0);
-    expect(await fiscalization.findByInvoice(foreignScope, own[0]?.invoiceId ?? randomUUID())).toBeNull();
+    expect(
+      await fiscalization.findByInvoice(foreignScope, own[0]?.invoiceId ?? randomUUID()),
+    ).toBeNull();
     expect(await fiscalization.readSellerProfile(foreignScope)).toBeNull();
   });
 });
