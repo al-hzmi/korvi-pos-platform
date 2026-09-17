@@ -28,12 +28,21 @@ export interface CartLine {
   readonly unitPriceMinor: string;
   readonly vatBasisPoints: number;
   readonly quantityScaled: string;
+  /** Operational Quick-Service metadata only; never sent to checkout authority. */
+  readonly preparationNote?: string;
+  readonly preparationOptions?: string;
 }
 
 export type CartAction =
   | { readonly type: 'add'; readonly product: ProductSummary }
   | { readonly type: 'set-quantity'; readonly productId: string; readonly quantityScaled: string }
   | { readonly type: 'step'; readonly productId: string; readonly direction: 1 | -1 }
+  | {
+      readonly type: 'set-preparation';
+      readonly productId: string;
+      readonly note: string;
+      readonly options: string;
+    }
   | { readonly type: 'remove'; readonly productId: string }
   | { readonly type: 'replace'; readonly lines: readonly CartLine[] }
   | { readonly type: 'clear' };
@@ -49,6 +58,8 @@ function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
     unitPriceMinor: product.priceMinor,
     vatBasisPoints: product.vatBasisPoints,
     quantityScaled,
+    preparationNote: '',
+    preparationOptions: '',
   };
 }
 
@@ -84,6 +95,16 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
         if (line.productType !== 'unit') return line;
         return { ...line, quantityScaled: stepScaled(line.quantityScaled, action.direction) };
       });
+    case 'set-preparation':
+      return lines.map((line) =>
+        line.productId === action.productId
+          ? {
+              ...line,
+              preparationNote: action.note.slice(0, 280),
+              preparationOptions: action.options.slice(0, 280),
+            }
+          : line,
+      );
     case 'remove':
       return lines.filter((line) => line.productId !== action.productId);
     case 'replace':
