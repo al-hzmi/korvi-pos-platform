@@ -34,8 +34,8 @@ export interface TerminalSummary {
 export interface TillSettings {
   readonly priceMode: PriceMode;
   readonly currency: string;
-  readonly vertical: Vertical;
-  readonly enableProductImages: boolean;
+  readonly vertical?: Vertical;
+  readonly enableProductImages?: boolean;
 }
 
 export interface TerminalsResponse {
