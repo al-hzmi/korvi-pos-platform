@@ -5,6 +5,7 @@ import {
   preparationTicketFromIntent,
   renderPreparationTicketEscPos,
 } from '../lib/preparation-ticket';
+import { isOfflineSaleDraft } from '../lib/offline-store';
 import type { ProductSummary } from '../lib/api-types';
 
 const PRODUCT: ProductSummary = {
@@ -46,6 +47,27 @@ describe('Quick-Service operational state', () => {
       preparationNote: 'تغليف منفصل',
       preparationOptions: 'بدون بصل',
     });
+    expect(cartToRequestLines(lines)).toEqual([
+      { productId: PRODUCT.id, quantityScaled: '1000' },
+    ]);
+  });
+
+  it('accepts preparation metadata in the durable restart draft without changing sale intent', () => {
+    let lines = cartReducer([], { type: 'add', product: PRODUCT });
+    lines = cartReducer(lines, {
+      type: 'set-preparation',
+      productId: PRODUCT.id,
+      note: 'بعد عشر دقائق',
+      options: 'حار',
+    });
+    expect(
+      isOfflineSaleDraft({
+        lines,
+        cash: '15',
+        priceMode: 'tax-inclusive',
+        updatedAt: '2026-09-18T00:00:00.000Z',
+      }),
+    ).toBe(true);
     expect(cartToRequestLines(lines)).toEqual([
       { productId: PRODUCT.id, quantityScaled: '1000' },
     ]);
