@@ -23,6 +23,29 @@ const PRODUCT: ProductSummary = {
   imageUrl: 'https://example.test/qs-1.jpg',
 };
 
+function containsBytes(haystack: readonly number[], needle: Uint8Array): boolean {
+  outer: for (let offset = 0; offset <= haystack.length - needle.length; offset += 1) {
+    for (let index = 0; index < needle.length; index += 1) {
+      if (haystack[offset + index] !== needle[index]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+function captureRasterRenderer() {
+  const lines: string[] = [];
+  return {
+    lines,
+    renderer: {
+      async renderLine(text: string) {
+        lines.push(text);
+        return { width: 8, height: 1, data: Uint8Array.from([0x80]) };
+      },
+    },
+  };
+}
+
 describe('Quick-Service operational state', () => {
   it('derives the same order number from the same financial operation', () => {
     const operationId = '018f1000-0000-7000-8000-000000000123';
@@ -67,7 +90,7 @@ describe('Quick-Service operational state', () => {
     expect(cartToRequestLines(lines)).toEqual([{ productId: PRODUCT.id, quantityScaled: '1000' }]);
   });
 
-  it('renders a separate non-fiscal prep ticket without QR or financial fields', () => {
+  it('rasterizes Arabic prep text, stays non-fiscal, and reprints without mutating sale truth', async () => {
     let lines = cartReducer([], { type: 'add', product: PRODUCT });
     lines = cartReducer(lines, {
       type: 'set-preparation',
@@ -99,10 +122,33 @@ describe('Quick-Service operational state', () => {
     expect('vatMinor' in ticket).toBe(false);
     expect('qrCodeBase64' in ticket).toBe(false);
 
-    const payload = renderPreparationTicketEscPos(ticket).payload;
+    const before = JSON.stringify(ticket);
+    const raster = captureRasterRenderer();
+    const first = await renderPreparationTicketEscPos(ticket, raster.renderer);
+    const second = await renderPreparationTicketEscPos(ticket, raster.renderer);
+    const payload = first.payload;
+    const encoder = new TextEncoder();
+
+    expect(raster.lines).toEqual(
+      expect.arrayContaining([
+        'تذكرة تحضير - غير ضريبية',
+        '1 x ساندويتش',
+        'خيارات: بدون بصل',
+        'ملاحظة: تغليف منفصل',
+      ]),
+    );
+    expect(containsBytes(payload, Uint8Array.from([0x1d, 0x76, 0x30, 0x00]))).toBe(true);
+
     const hasQrCommand = payload.some(
       (byte, index) => byte === 0x1d && payload[index + 1] === 0x28 && payload[index + 2] === 0x6b,
     );
     expect(hasQrCommand).toBe(false);
+    for (const forbidden of ['VAT', 'Invoice', 'ICV', 'PIH']) {
+      expect(containsBytes(payload, encoder.encode(forbidden))).toBe(false);
+    }
+
+    expect(second.payload).toEqual(first.payload);
+    expect(JSON.stringify(ticket)).toBe(before);
+    expect(ticket.sourceOperationId).toBe(intent.operationId);
   });
 });
