@@ -164,6 +164,18 @@ export interface FiscalReceipt {
   readonly invoiceId: string;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
+  readonly currency: string;
+  readonly sellerName: string;
+  readonly vatRegistrationNumber: string;
+  readonly lines: readonly {
+    readonly lineNumber: number;
+    readonly description: string;
+    readonly quantityScaled: string;
+    readonly totalMinor: string;
+  }[];
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
   readonly invoiceHashBase64: string;
   readonly qrCodeBase64: string;
 }
