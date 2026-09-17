@@ -24,6 +24,7 @@ export interface SaleReceiptProps {
   readonly sale: SaleSummary;
   readonly receipt: FiscalReceipt | null;
   readonly replayed: boolean;
+  readonly orderNumber?: string | null;
   readonly printFiscalReceipt?: FiscalReceiptPrinter | undefined;
   readonly onNewSale: () => void;
 }
@@ -34,6 +35,7 @@ export function SaleReceipt({
   sale,
   receipt,
   replayed,
+  orderNumber,
   printFiscalReceipt,
   onNewSale,
 }: SaleReceiptProps): JSX.Element {
@@ -76,6 +78,11 @@ export function SaleReceipt({
               الكاشير {sale.cashierName} ·{' '}
               <BidiIsolate>{formatTimestamp(sale.issuedAt)}</BidiIsolate>
             </p>
+            {orderNumber === undefined || orderNumber === null ? null : (
+              <p className="text-sm font-semibold text-card-foreground">
+                رقم الطلب <BidiIsolate>{orderNumber}</BidiIsolate>
+              </p>
+            )}
           </div>
           <span className="flex shrink-0 items-baseline gap-1 text-success">
             <Numeric
