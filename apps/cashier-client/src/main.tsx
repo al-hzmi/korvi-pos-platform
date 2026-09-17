@@ -5,6 +5,7 @@ import { PosApp } from '../../pos-web/src/components/pos-app';
 import { createApiClient } from '../../pos-web/src/lib/api';
 import { renderFiscalReceiptEscPos } from '../../pos-web/src/lib/fiscal-receipt-print';
 import { renderPreparationTicketEscPos } from '../../pos-web/src/lib/preparation-ticket-print';
+import { createBrowserRasterRenderer } from '../../pos-web/src/lib/browser-raster-renderer';
 import type { FiscalReceipt, SaleSummary } from '../../pos-web/src/lib/api-types';
 import type { PreparationTicket } from '../../pos-web/src/lib/preparation-ticket';
 import type { OfflineStoreProtector } from '../../pos-web/src/lib/offline-protection';
@@ -17,6 +18,7 @@ import { nativeFetch } from './native-fetch';
 import '../../pos-web/src/app/globals.css';
 
 const api = createApiClient(nativeFetch);
+const rasterRenderer = createBrowserRasterRenderer();
 
 function utf8ToBase64(value: string): string {
   const bytes = new TextEncoder().encode(value);
@@ -124,7 +126,7 @@ function InstalledCashier(): React.JSX.Element {
   const printFiscalReceipt = useCallback(
     async (sale: SaleSummary, receipt: FiscalReceipt): Promise<void> => {
       if (printerHost === null) throw new Error('receipt printer is not configured');
-      const job = renderFiscalReceiptEscPos(sale, receipt);
+      const job = await renderFiscalReceiptEscPos(sale, receipt, rasterRenderer);
       await invoke<void>('print_tcp_escpos', {
         host: printerHost,
         payload: job.payload,
@@ -136,7 +138,7 @@ function InstalledCashier(): React.JSX.Element {
   const printPreparationTicket = useCallback(
     async (ticket: PreparationTicket): Promise<void> => {
       if (prepPrinterHost === null) throw new Error('preparation printer is not configured');
-      const job = renderPreparationTicketEscPos(ticket);
+      const job = await renderPreparationTicketEscPos(ticket, rasterRenderer);
       await invoke<void>('print_tcp_escpos', {
         host: prepPrinterHost,
         payload: job.payload,
