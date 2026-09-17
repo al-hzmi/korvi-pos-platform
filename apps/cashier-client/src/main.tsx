@@ -4,7 +4,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { PosApp } from '../../pos-web/src/components/pos-app';
 import { createApiClient } from '../../pos-web/src/lib/api';
 import { renderFiscalReceiptEscPos } from '../../pos-web/src/lib/fiscal-receipt-print';
+import { renderPreparationTicketEscPos } from '../../pos-web/src/lib/preparation-ticket';
 import type { FiscalReceipt, SaleSummary } from '../../pos-web/src/lib/api-types';
+import type { PreparationTicket } from '../../pos-web/src/lib/preparation-ticket';
 import type { OfflineStoreProtector } from '../../pos-web/src/lib/offline-protection';
 import {
   verifyInstalledOfflineAuthority,
@@ -52,8 +54,12 @@ function nativeLocalStoreProtector(
   };
 }
 
-function printerStorageKey(deviceEnrollmentId: string): string {
+function receiptPrinterStorageKey(deviceEnrollmentId: string): string {
   return `korvi.cashier.receipt-printer.${deviceEnrollmentId}`;
+}
+
+function prepPrinterStorageKey(deviceEnrollmentId: string): string {
+  return `korvi.cashier.prep-printer.${deviceEnrollmentId}`;
 }
 
 function InstalledCashier(): React.JSX.Element {
@@ -63,6 +69,8 @@ function InstalledCashier(): React.JSX.Element {
   const [enrollmentId, setEnrollmentId] = useState('');
   const [printerHost, setPrinterHost] = useState<string | null>(null);
   const [printerHostDraft, setPrinterHostDraft] = useState('');
+  const [prepPrinterHost, setPrepPrinterHost] = useState<string | null>(null);
+  const [prepPrinterHostDraft, setPrepPrinterHostDraft] = useState('');
   const [editingPrinter, setEditingPrinter] = useState(false);
   const offlineStoreProtector = useMemo(
     () => (status === null ? undefined : nativeLocalStoreProtector(status)),
@@ -75,11 +83,18 @@ function InstalledCashier(): React.JSX.Element {
       setStatus(nextStatus);
       if (nextStatus.binding !== null) {
         const savedHost = localStorage
-          .getItem(printerStorageKey(nextStatus.binding.deviceEnrollmentId))
+          .getItem(receiptPrinterStorageKey(nextStatus.binding.deviceEnrollmentId))
           ?.trim();
         const normalizedHost = savedHost === undefined || savedHost === '' ? null : savedHost;
+        const savedPrepHost = localStorage
+          .getItem(prepPrinterStorageKey(nextStatus.binding.deviceEnrollmentId))
+          ?.trim();
+        const normalizedPrepHost =
+          savedPrepHost === undefined || savedPrepHost === '' ? null : savedPrepHost;
         setPrinterHost(normalizedHost);
         setPrinterHostDraft(normalizedHost ?? '');
+        setPrepPrinterHost(normalizedPrepHost);
+        setPrepPrinterHostDraft(normalizedPrepHost ?? '');
       }
       setError(null);
     } catch (cause) {
@@ -116,6 +131,18 @@ function InstalledCashier(): React.JSX.Element {
       });
     },
     [printerHost],
+  );
+
+  const printPreparationTicket = useCallback(
+    async (ticket: PreparationTicket): Promise<void> => {
+      if (prepPrinterHost === null) throw new Error('preparation printer is not configured');
+      const job = renderPreparationTicketEscPos(ticket);
+      await invoke<void>('print_tcp_escpos', {
+        host: prepPrinterHost,
+        payload: job.payload,
+      });
+    },
+    [prepPrinterHost],
   );
 
   if (error !== null)
@@ -190,7 +217,7 @@ function InstalledCashier(): React.JSX.Element {
   if (printerHost === null || editingPrinter) {
     return (
       <main dir="rtl" className="mx-auto min-h-screen max-w-2xl bg-background p-8 text-foreground">
-        <h1 className="text-2xl font-bold">إعداد طابعة الفواتير</h1>
+        <h1 className="text-2xl font-bold">إعداد الطابعات</h1>
         <p className="mt-3 text-sm text-muted-foreground">
           أدخل عنوان طابعة ESC/POS المحلية على الشبكة. يستخدم كورفي TCP/9100 ويرفض الوجهات غير
           المحلية. الطباعة لا تغيّر البيع أو الفاتورة الضريبية.
@@ -205,13 +232,40 @@ function InstalledCashier(): React.JSX.Element {
             onChange={(event) => setPrinterHostDraft(event.target.value)}
           />
         </label>
+        <label className="mt-4 block text-sm font-medium">
+          عنوان طابعة التحضير (اختياري ومستقل)
+          <input
+            className="mt-2 w-full rounded-lg border bg-background p-3 text-start"
+            dir="ltr"
+            placeholder="192.168.1.60"
+            value={prepPrinterHostDraft}
+            onChange={(event) => setPrepPrinterHostDraft(event.target.value)}
+          />
+        </label>
+        <p className="mt-2 text-xs text-muted-foreground">
+          تذكرة التحضير تشغيلية وغير ضريبية، وتستخدم مسار طابعة منفصل عن فاتورة العميل.
+        </p>
         <div className="mt-6 flex gap-3">
           <button
             className="rounded-lg bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-50"
             disabled={printerHostDraft.trim() === ''}
             onClick={() => {
               const nextHost = printerHostDraft.trim();
-              localStorage.setItem(printerStorageKey(status.binding!.deviceEnrollmentId), nextHost);
+              localStorage.setItem(
+                receiptPrinterStorageKey(status.binding!.deviceEnrollmentId),
+                nextHost,
+              );
+              const nextPrepHost = prepPrinterHostDraft.trim();
+              if (nextPrepHost === '') {
+                localStorage.removeItem(prepPrinterStorageKey(status.binding!.deviceEnrollmentId));
+                setPrepPrinterHost(null);
+              } else {
+                localStorage.setItem(
+                  prepPrinterStorageKey(status.binding!.deviceEnrollmentId),
+                  nextPrepHost,
+                );
+                setPrepPrinterHost(nextPrepHost);
+              }
               setPrinterHost(nextHost);
               setEditingPrinter(false);
             }}
@@ -223,6 +277,7 @@ function InstalledCashier(): React.JSX.Element {
               className="rounded-lg border px-5 py-3 font-semibold"
               onClick={() => {
                 setPrinterHostDraft(printerHost);
+                setPrepPrinterHostDraft(prepPrinterHost ?? '');
                 setEditingPrinter(false);
               }}
             >
@@ -243,11 +298,13 @@ function InstalledCashier(): React.JSX.Element {
         offlineStoreDeviceEnrollmentId={status.binding.deviceEnrollmentId}
         offlineStoreProtector={offlineStoreProtector}
         printFiscalReceipt={printFiscalReceipt}
+        printPreparationTicket={printPreparationTicket}
       />
       <button
         className="fixed bottom-2 start-2 z-50 rounded-md border bg-background/95 px-3 py-2 text-xs font-semibold shadow-sm"
         onClick={() => {
           setPrinterHostDraft(printerHost);
+          setPrepPrinterHostDraft(prepPrinterHost ?? '');
           setEditingPrinter(true);
         }}
       >
