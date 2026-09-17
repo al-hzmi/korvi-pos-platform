@@ -97,9 +97,7 @@ export function preparationTicketFromIntent(
  * Explicitly NON-FISCAL. No price, VAT, invoice number, hash, QR, ICV or PIH
  * exists in this model or renderer.
  */
-export function renderPreparationTicketEscPos(
-  ticket: PreparationTicket,
-): PreparationPrintJob {
+export function renderPreparationTicketEscPos(ticket: PreparationTicket): PreparationPrintJob {
   if (ticket.items.length === 0) throw new Error('preparation ticket has no items');
 
   const builder = escpos(EPSON_TM_T20)
@@ -116,7 +114,10 @@ export function renderPreparationTicketEscPos(
     .align('start');
 
   for (const item of ticket.items) {
-    builder.bold(true).line(`${formatScaled(item.quantityScaled)} x ${item.nameAr}`).bold(false);
+    builder
+      .bold(true)
+      .line(`${formatScaled(item.quantityScaled)} x ${item.nameAr}`)
+      .bold(false);
     if (item.options !== '') builder.line(`خيارات: ${item.options}`);
     if (item.note !== '') builder.line(`ملاحظة: ${item.note}`);
     builder.line();
