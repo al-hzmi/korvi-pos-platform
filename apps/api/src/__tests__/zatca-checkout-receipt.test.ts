@@ -65,7 +65,7 @@ const artifact = {
   },
   reservedAt: '2026-09-17T12:00:01Z',
   state: 'sealed',
-  invoiceHash: new Uint8Array(32),
+  invoiceHash: Uint8Array.from([1, 2, 3]),
   sealedInvoiceXml: new TextEncoder().encode('<Invoice>sealed</Invoice>'),
   qrCodeBase64: 'PERSISTED_PHASE_2_QR',
   signatureValueBase64: 'c2ln',
@@ -73,7 +73,7 @@ const artifact = {
 } satisfies ZatcaSealedFiscalization;
 
 describe('canonical checkout receipt', () => {
-  it('uses the persisted sealed fiscal artifact instead of inventing QR or seller truth', () => {
+  it('uses the persisted sealed fiscal artifact instead of inventing QR, hash, or seller truth', () => {
     expect(buildCheckoutReceipt(sale, invoice, artifact)).toEqual({
       invoiceId,
       invoiceNumber: 'INV-42',
@@ -92,6 +92,7 @@ describe('canonical checkout receipt', () => {
       netMinor: '2000',
       vatMinor: '300',
       totalMinor: '2300',
+      invoiceHashBase64: 'AQID',
       qrCodeBase64: 'PERSISTED_PHASE_2_QR',
     });
   });

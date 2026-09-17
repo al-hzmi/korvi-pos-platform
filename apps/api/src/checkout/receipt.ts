@@ -1,4 +1,4 @@
-import { ZatcaFiscalizationError } from '@korvi/domain';
+import { ZatcaFiscalizationError, bytesToBase64 } from '@korvi/domain';
 import type { InvoiceRecord, SaleRecord, ZatcaSealedFiscalization } from '@korvi/domain';
 
 export interface CheckoutReceiptLine {
@@ -10,8 +10,8 @@ export interface CheckoutReceiptLine {
 
 /**
  * Canonical customer receipt facts derived only after fiscal evidence is durable.
- * The Phase-2 QR is copied from the persisted signed artifact; it is never
- * regenerated from client or display state.
+ * The Phase-2 QR and invoice hash are copied from the persisted signed artifact;
+ * neither is ever regenerated from client or display state.
  */
 export interface CheckoutReceipt {
   readonly invoiceId: string;
@@ -24,6 +24,7 @@ export interface CheckoutReceipt {
   readonly netMinor: string;
   readonly vatMinor: string;
   readonly totalMinor: string;
+  readonly invoiceHashBase64: string;
   readonly qrCodeBase64: string;
 }
 
@@ -66,6 +67,7 @@ export function buildCheckoutReceipt(
     netMinor: invoice.netMinor,
     vatMinor: invoice.vatMinor,
     totalMinor: invoice.totalMinor,
+    invoiceHashBase64: bytesToBase64(fiscalization.invoiceHash),
     qrCodeBase64: fiscalization.qrCodeBase64,
   };
 }

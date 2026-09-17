@@ -1,25 +1,17 @@
+import { EPSON_TM_T20, escpos, qrCommand } from '../../../../packages/printing/src/index';
 import type { FiscalReceipt, SaleSummary } from './api-types';
 
 export interface ReceiptPrintJob {
   readonly payload: readonly number[];
 }
 
-const encoder = new TextEncoder();
-
-function line(value = ''): number[] {
-  return [...encoder.encode(value), 0x0a];
-}
-
-function command(...bytes: number[]): number[] {
-  return bytes;
-}
-
 /**
- * Render a conservative ESC/POS receipt from server-authored sale + fiscal receipt.
+ * Render the server-authored fiscal truth for the verified 80mm ESC/POS path.
  *
- * Fiscal values are copied verbatim. This renderer never computes tax, hashes,
- * invoice identifiers, or QR content. Reprinting the same response therefore
- * emits the same fiscal truth without issuing or sealing another invoice.
+ * This layer is deliberately downstream from checkout: it never computes VAT,
+ * seals an invoice, advances ICV/PIH, or derives QR contents. The exact persisted
+ * Phase-2 QR string returned by the server is stored in the printer's native QR
+ * buffer and printed as a scannable symbol.
  */
 export function renderFiscalReceiptEscPos(
   sale: SaleSummary,
@@ -28,20 +20,23 @@ export function renderFiscalReceiptEscPos(
   if (sale.invoiceNumber !== receipt.invoiceNumber || sale.issuedAt !== receipt.issuedAt) {
     throw new Error('fiscal receipt does not match the finalized sale');
   }
+  if (receipt.invoiceHashBase64.trim() === '' || receipt.qrCodeBase64.trim() === '') {
+    throw new Error('fiscal receipt is missing sealed evidence');
+  }
 
-  const payload = [
-    ...command(0x1b, 0x40),
-    ...command(0x1b, 0x61, 0x01),
-    ...line('KORVI'),
-    ...line(`Invoice ${receipt.invoiceNumber}`),
-    ...line(receipt.issuedAt),
-    ...line(`Total ${sale.totalMinor} ${sale.currency}`),
-    ...line(`VAT ${sale.vatMinor}`),
-    ...line(`Hash ${receipt.invoiceHashBase64}`),
-    ...line(`QR ${receipt.qrCodeBase64}`),
-    ...line(),
-    ...command(0x1d, 0x56, 0x00),
-  ];
+  const builder = escpos(EPSON_TM_T20)
+    .initialise()
+    .align('center')
+    .line('KORVI')
+    .line(`Invoice ${receipt.invoiceNumber}`)
+    .line(receipt.issuedAt)
+    .line(`Total ${sale.totalMinor} ${sale.currency}`)
+    .line(`VAT ${sale.vatMinor}`)
+    .line(`Hash ${receipt.invoiceHashBase64}`)
+    .feed(1)
+    .raw(qrCommand(EPSON_TM_T20, receipt.qrCodeBase64))
+    .feed(2)
+    .cut();
 
-  return { payload };
+  return { payload: Array.from(builder.build()) };
 }
