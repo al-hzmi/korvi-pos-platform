@@ -152,6 +152,10 @@ export interface Product {
   readonly id: string;
   readonly tenantId: TenantId;
   readonly categoryId: string | null;
+  /** Optional read-side catalogue metadata; persisted adapters populate it. */
+  readonly categoryNameAr?: string | null;
+  readonly categorySortOrder?: number | null;
+  readonly imageUrl?: string | null;
   readonly sku: string;
   readonly nameAr: string;
   readonly nameEn: string | null;
