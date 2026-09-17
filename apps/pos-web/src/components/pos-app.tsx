@@ -163,6 +163,8 @@ export function PosApp({
       terminal: terminal.state.terminal,
       shift: shift.state.shift,
       priceMode: terminal.state.settings.priceMode,
+      vertical: terminal.state.settings.vertical,
+      enableProductImages: terminal.state.settings.enableProductImages,
     });
   }, [session.state, shift.state, terminal.state]);
 
@@ -203,6 +205,8 @@ export function PosApp({
           terminal={offlineWorkspace.terminal}
           shift={offlineWorkspace.shift}
           priceMode={offlineWorkspace.priceMode}
+          vertical={offlineWorkspace.vertical}
+          enableProductImages={offlineWorkspace.enableProductImages}
           controlCentreHref={controlCentreHref}
           offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
           offlineStoreProtector={offlineStoreProtector}
@@ -304,6 +308,8 @@ export function PosApp({
       terminal={chosen}
       shift={shift.state.shift}
       priceMode={settings.priceMode}
+      vertical={settings.vertical}
+      enableProductImages={settings.enableProductImages}
       controlCentreHref={controlCentreHref}
       offlineStoreDeviceEnrollmentId={offlineStoreDeviceEnrollmentId}
       offlineStoreProtector={offlineStoreProtector}
