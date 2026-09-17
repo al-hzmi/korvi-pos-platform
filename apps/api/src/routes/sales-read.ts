@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 const MAX_SALES_PAGE = 100;
 
 const saleParams = z.object({ saleId: UUID }).strict();
+const fiscalReceiptQuery = z.object({ terminalId: UUID }).strict();
 const salesQuery = z
   .object({
     branchId: UUID.optional(),
@@ -64,6 +65,44 @@ export function registerSalesReadRoutes(
 ): void {
   const { service, guards } = options;
   const canRead = [guards.requireSession, guards.requirePermission('report.read')];
+
+  /**
+   * Read the already-sealed fiscal evidence for this cashier's historical sale.
+   * This is intentionally not an admin/report route: ordinary cashiers need to
+   * reprint, but they do not need merchant-wide report authority. The service
+   * re-checks branch, device terminal (when bound), requested terminal and
+   * original cashier ownership before exposing receipt-safe facts.
+   */
+  app.get(
+    '/v1/sales/:saleId/fiscal-receipt',
+    { preHandler: [guards.requireSession, guards.requirePermission('sale.create')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+
+      const params = saleParams.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      const query = fiscalReceiptQuery.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: 'invalid_query' });
+
+      if (service.fiscalReceipt === undefined) {
+        return reply.code(503).send({ error: 'fiscal_receipt_read_unavailable' });
+      }
+
+      const result = await service.fiscalReceipt(
+        principal,
+        params.data.saleId,
+        query.data.terminalId,
+      );
+      if (result.outcome === 'not-found') {
+        return reply.code(404).send({ error: 'sale_not_found' });
+      }
+      if (result.outcome === 'not-sealed') {
+        return reply.code(409).send({ error: 'fiscal_receipt_not_sealed' });
+      }
+      return reply.code(200).send({ sale: result.sale, receipt: result.receipt });
+    },
+  );
 
   app.get('/v1/admin/sales', { preHandler: canRead }, async (request, reply) => {
     const principal = principalOf(request);

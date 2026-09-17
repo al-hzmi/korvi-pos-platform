@@ -1,6 +1,12 @@
-import { listMerchantSales, readMerchantSale } from '@korvi/database';
+import { createSaleRepository, listMerchantSales, readMerchantSale } from '@korvi/database';
 import { readMerchantPeriodReport } from '@korvi/database/reports';
-import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
+import { createZatcaFiscalizationRepository } from '@korvi/database/zatca-fiscalization';
+import {
+  requirePrincipalPermission,
+  tenantId as brandTenantId,
+} from '@korvi/domain';
+import { createFiscalReceiptReadService } from '../checkout/receipt-read.js';
+import type { FiscalReceiptReadResult } from '../checkout/receipt-read.js';
 import type {
   MerchantSaleDetail,
   MerchantSalesPage,
@@ -17,6 +23,16 @@ export interface MerchantSalesReadService {
     principal: AuthenticatedPrincipal,
     query: MerchantReportQuery,
   ): Promise<MerchantPeriodReport>;
+  /**
+   * Cashier-safe historical receipt retrieval. Optional only so focused route
+   * tests may inject the older reporting-only surface; production always wires
+   * it in createMerchantSalesReadService below.
+   */
+  readonly fiscalReceipt?: (
+    principal: AuthenticatedPrincipal,
+    saleId: string,
+    terminalId: string,
+  ) => Promise<FiscalReceiptReadResult>;
 }
 
 function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
@@ -24,6 +40,11 @@ function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
 }
 
 export function createMerchantSalesReadService(prisma: PrismaClient): MerchantSalesReadService {
+  const fiscalReceiptRead = createFiscalReceiptReadService({
+    sales: createSaleRepository(prisma),
+    fiscalizations: createZatcaFiscalizationRepository(prisma),
+  });
+
   return {
     list(principal, query) {
       requirePrincipalPermission(principal, 'report.read');
@@ -36,6 +57,10 @@ export function createMerchantSalesReadService(prisma: PrismaClient): MerchantSa
     report(principal, query) {
       requirePrincipalPermission(principal, 'report.read');
       return readMerchantPeriodReport(prisma, scopeOf(principal), query);
+    },
+    fiscalReceipt(principal, saleId, terminalId) {
+      requirePrincipalPermission(principal, 'sale.create');
+      return fiscalReceiptRead.read(principal, saleId, terminalId);
     },
   };
 }
