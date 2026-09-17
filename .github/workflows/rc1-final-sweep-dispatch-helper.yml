@@ -1,0 +1,66 @@
+name: RC1 Final Sweep Dispatcher
+
+on:
+  push:
+    branches:
+      - ops/rc1-final-sweep-helper
+    paths:
+      - .github/workflows/rc1-final-sweep-dispatch-helper.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_REF: rc/commercial-v1-rc1
+      TARGET_SHA: 4200d554e3c954b756780ae3d163fbd380f238a4
+    steps:
+      - name: Verify immutable RC ref
+        run: |
+          actual="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${TARGET_REF}" --jq '.object.sha')"
+          test "$actual" = "$TARGET_SHA"
+          echo "RC ref verified: $actual"
+
+      - name: Dispatch exact-RC proof workflows
+        run: |
+          set -euo pipefail
+          workflows=(
+            gate-20-cashier-sale-proof.yml
+            gate-41-offline-shell-proof.yml
+            gate-42-indexeddb-proof.yml
+            gate-43-ordered-queue-proof.yml
+            gate-44-sync-engine-proof.yml
+            gate-5-full-shift-offline-proof.yml
+            operations-dr-postgres.yml
+            operations-gate-50-production-proof.yml
+            operations-incident-proof.yml
+            reports-browser-proof.yml
+            reports-postgres-proof.yml
+            stage-5d-browser-proof.yml
+            strike-5c-postgres-live.yml
+            zatca-38-official-validator-proof.yml
+            zatca-38-ubl-hash-proof.yml
+            zatca-39-azure-hsm-custody-proof.yml
+            zatca-39-c14n-native-proof.yml
+            zatca-39-csid-postgres-proof.yml
+            zatca-39-official-public-validator-probe.yml
+            zatca-39-sealing-cryptographic-proof.yml
+            zatca-40-submission-postgres-proof.yml
+          )
+          for workflow in "${workflows[@]}"; do
+            echo "Dispatching $workflow on $TARGET_REF"
+            gh workflow run "$workflow" --ref "$TARGET_REF"
+          done
+
+          gh workflow run installed-cashier-windows-proof.yml --ref "$TARGET_REF" -f release=true
+          gh workflow run installed-cashier-android-proof.yml --ref "$TARGET_REF" -f release=true
+
+      - name: Confirm dispatches target RC SHA
+        run: |
+          sleep 8
+          gh run list             --branch "$TARGET_REF"             --event workflow_dispatch             --limit 40             --json databaseId,workflowName,headSha,status,conclusion             --jq '.[] | [.databaseId,.workflowName,.headSha,.status,(.conclusion // "")] | @tsv'
