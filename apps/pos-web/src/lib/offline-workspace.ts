@@ -1,4 +1,4 @@
-import { isUuidV7, type PriceMode } from '@korvi/domain';
+import { isUuidV7, type PriceMode, type Vertical } from '@korvi/domain';
 import type { Principal, ShiftSummary, TerminalSummary } from './api-types';
 
 const STORAGE_KEY = 'korvi:offline-workspace:v1';
@@ -10,6 +10,8 @@ export interface OfflineWorkspaceSnapshot {
   readonly terminal: TerminalSummary;
   readonly shift: ShiftSummary;
   readonly priceMode: PriceMode;
+  readonly vertical: Vertical;
+  readonly enableProductImages: boolean;
   readonly capturedAt: string;
 }
 
@@ -150,6 +152,8 @@ export function readOfflineWorkspace(
   const savedTerminal = terminal(item?.['terminal']);
   const savedShift = shift(item?.['shift']);
   const savedPriceMode = item?.['priceMode'];
+  const savedVertical = item?.['vertical'];
+  const savedEnableProductImages = item?.['enableProductImages'];
   const capturedAt = item?.['capturedAt'];
   if (
     item === null ||
@@ -180,11 +184,22 @@ export function readOfflineWorkspace(
     return null;
   }
 
+  const vertical: Vertical =
+    savedVertical === 'grocery' ||
+    savedVertical === 'restaurant' ||
+    savedVertical === 'pharmacy' ||
+    savedVertical === 'retail'
+      ? savedVertical
+      : 'retail';
+
   return {
     principal: savedPrincipal,
     terminal: savedTerminal,
     shift: savedShift,
     priceMode: savedPriceMode,
+    vertical,
+    enableProductImages:
+      typeof savedEnableProductImages === 'boolean' ? savedEnableProductImages : false,
     capturedAt,
   };
 }
