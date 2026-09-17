@@ -1,7 +1,4 @@
-import type {
-  RasterBitmap,
-  RasterRenderer,
-} from '../../../../packages/printing/src/index';
+import type { RasterBitmap, RasterRenderer } from '../../../../packages/printing/src/index';
 
 const LINE_HEIGHT_DOTS = 48;
 const INLINE_PADDING_DOTS = 8;
@@ -36,8 +33,7 @@ export function createBrowserRasterRenderer(): RasterRenderer {
       const context = canvas.getContext('2d', { willReadFrequently: true });
       if (context === null) throw new Error('2D canvas raster renderer is unavailable');
 
-      context.font =
-        `600 ${String(FONT_SIZE_PX)}px "Noto Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif`;
+      context.font = `600 ${String(FONT_SIZE_PX)}px "Noto Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif`;
       context.textBaseline = 'middle';
 
       const rtl = containsRtl(text);
