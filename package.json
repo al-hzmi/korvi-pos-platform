@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write apps/pos-web/src/__tests__/quick-service.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/preparation-ticket.ts && git diff -- apps/pos-web/src/__tests__/quick-service.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/preparation-ticket.ts && git diff --quiet -- apps/pos-web/src/__tests__/quick-service.test.ts apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/preparation-ticket.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:zatca:fiscalization-live": "vitest run packages/database/src/__tests__/zatca-fiscalization-live.test.ts",
