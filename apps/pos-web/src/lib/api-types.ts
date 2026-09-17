@@ -555,20 +555,41 @@ export interface AdminTerminal {
   readonly lastSeenAt: string | null;
 }
 
+/**
+ * Merchant member DTO. This mirrors the value returned by the merchant-admin
+ * API/database authority; it is not the platform control-plane user shape.
+ */
 export interface AdminMember {
   readonly userId: string;
   readonly email: string;
   readonly displayName: string;
-  readonly branchId: string | null;
-  readonly roles: readonly string[];
-  readonly createdAt: string;
+  readonly userActive: boolean;
+  readonly membershipStatus: string | null;
+  readonly defaultBranchId: string | null;
+  /** Whether a credential exists; credential material is never sent. */
+  readonly hasCredential: boolean;
+  readonly roleIds: readonly string[];
+  readonly lastLoginAt: string | null;
 }
 
 export interface AdminRole {
   readonly id: string;
-  readonly code: string;
+  readonly key: string;
   readonly nameAr: string;
+  readonly nameEn: string | null;
   readonly isSystem: boolean;
+  readonly maxDiscountBasisPoints: number;
+  readonly permissions: readonly string[];
+}
+
+export interface AdminAccessChange {
+  readonly member: AdminMember;
+  readonly revokedSessions: number;
+}
+
+export interface AdminRoleAssignmentResult {
+  readonly member: AdminMember;
+  readonly changed: boolean;
 }
 
 export interface AdminProduct extends ProductSummary {

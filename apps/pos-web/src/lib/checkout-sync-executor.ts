@@ -1,6 +1,6 @@
 import { isUuidV7, type QueuedOperation, type SyncOperationExecutor } from '@korvi/domain';
-import { ApiError, type ApiClient } from './api';
-import type { CheckoutRequest } from './api-types';
+import { ApiError } from './api';
+import type { CheckoutRequest, CheckoutResponse } from './api-types';
 import { describeFailure } from './failures';
 
 const INTEGER = /^(0|[1-9][0-9]*)$/;
@@ -38,12 +38,16 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
   );
 }
 
+export interface CheckoutSyncApi {
+  checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
+}
+
 export interface CheckoutSyncExecutorOptions {
   readonly onUnauthenticated?: (() => void) | undefined;
 }
 
 export function createCheckoutSyncExecutor(
-  api: ApiClient,
+  api: CheckoutSyncApi,
   options: CheckoutSyncExecutorOptions = {},
 ): SyncOperationExecutor {
   return {

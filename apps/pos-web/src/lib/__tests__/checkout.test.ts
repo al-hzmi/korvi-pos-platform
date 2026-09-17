@@ -10,7 +10,7 @@ import {
   submitDisabled,
 } from '../checkout';
 import { describeFailure } from '../failures';
-import type { CheckoutResponse, SaleSummary } from '../api-types';
+import type { CheckoutResponse, FiscalReceipt, SaleSummary } from '../api-types';
 import type { CartLine } from '../cart';
 import type { CheckoutEvent, CheckoutState } from '../checkout';
 import type { CheckoutIntent } from '../checkout-flight';
@@ -32,6 +32,14 @@ const SALE: SaleSummary = {
   totalMinor: '2300',
   cashReceivedMinor: '5000',
   changeMinor: '2700',
+};
+
+const RECEIPT: FiscalReceipt = {
+  invoiceId: 'invoice-1',
+  invoiceNumber: SALE.invoiceNumber,
+  issuedAt: SALE.issuedAt,
+  invoiceHashBase64: 'invoice-hash-base64',
+  qrCodeBase64: 'phase2-qr-base64',
 };
 
 const MILK: CartLine = {
@@ -123,7 +131,7 @@ describe('two submits in one tick', () => {
     expect(run.sent).toHaveLength(1);
     expect(run.minted()).toBe(1);
 
-    pending.resolve({ sale: SALE, replayed: false });
+    pending.resolve({ sale: SALE, receipt: RECEIPT, replayed: false });
     await Promise.all([first, second]);
 
     expect(run.sent).toHaveLength(1);
@@ -142,7 +150,7 @@ describe('two submits in one tick', () => {
 
     expect(run.sent).toHaveLength(1);
     expect(run.sent[0]?.cashReceivedMinor).toBe('5000');
-    pending.resolve({ sale: SALE, replayed: false });
+    pending.resolve({ sale: SALE, receipt: RECEIPT, replayed: false });
   });
 });
 
@@ -204,7 +212,7 @@ describe('an answer that never arrived', () => {
       attempts += 1;
       return attempts === 1
         ? Promise.reject(new ApiError(0, 'network', null))
-        : Promise.resolve({ sale: SALE, replayed: true });
+        : Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: true });
     });
 
     await run.submit(BASKET);
@@ -214,6 +222,7 @@ describe('an answer that never arrived', () => {
     expect(state.phase).toBe('succeeded');
     expect(state.replayed).toBe(true);
     expect(state.attemptOutstanding).toBe(false);
+    expect(state.receipt).toEqual(RECEIPT);
   });
 });
 
@@ -230,7 +239,7 @@ describe('a refusal the server decided', () => {
     const run2 = harness((intent) =>
       intent.cashReceivedMinor === '5000'
         ? Promise.reject(new ApiError(422, 'insufficient-cash', null))
-        : Promise.resolve({ sale: SALE, replayed: false }),
+        : Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: false }),
     );
     await run2.submit(BASKET);
     await run2.submit({ ...BASKET, cashReceivedMinor: '9000' });
@@ -256,7 +265,9 @@ describe('a refusal the server decided', () => {
   });
 
   it('starts clean only when the cashier starts a new sale', async () => {
-    const run = harness(() => Promise.resolve({ sale: SALE, replayed: false }));
+    const run = harness(() =>
+      Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: false }),
+    );
     await run.submit(BASKET);
     expect(run.flight.pending()?.operationId).toBe('op-1');
 
@@ -324,9 +335,10 @@ describe('what the screen locks', () => {
   it('keeps the till locked on a completed sale until a new one is started', () => {
     const done = after([
       { type: 'submit', intent: INTENT },
-      { type: 'succeeded', sale: SALE, replayed: false },
+      { type: 'succeeded', sale: SALE, receipt: RECEIPT, replayed: false },
     ]);
     expect(intentLocked(done)).toBe(true);
+    expect(done.receipt).toEqual(RECEIPT);
     expect(checkoutReducer(done, { type: 'new-sale' })).toEqual(initialCheckoutState);
   });
 });

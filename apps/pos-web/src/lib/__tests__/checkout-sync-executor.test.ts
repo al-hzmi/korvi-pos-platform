@@ -1,7 +1,12 @@
 import type { QueuedOperation } from '@korvi/domain';
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, type ApiClient } from '../api';
-import { createCheckoutSyncExecutor, isCheckoutQueuePayload } from '../checkout-sync-executor';
+import { ApiError } from '../api';
+import {
+  createCheckoutSyncExecutor,
+  isCheckoutQueuePayload,
+  type CheckoutSyncApi,
+} from '../checkout-sync-executor';
+import type { FiscalReceipt, SaleSummary } from '../api-types';
 
 const OPERATION_ID = '018f5000-0001-7000-8000-000000000001';
 const TERMINAL_ID = '018f5000-0000-7000-8000-000000000002';
@@ -28,8 +33,35 @@ const OPERATION: QueuedOperation = {
   rejectionReason: null,
 };
 
-function apiWithCheckout(checkout: ApiClient['checkout']): ApiClient {
-  return { checkout } as unknown as ApiClient;
+const SALE: SaleSummary = {
+  saleId: 'sale-1',
+  operationId: OPERATION_ID,
+  sequence: 1,
+  invoiceNumber: '01-000001',
+  issuedAt: '2026-09-12T01:00:00.000Z',
+  currency: 'SAR',
+  branchId: 'branch-1',
+  terminalId: TERMINAL_ID,
+  shiftId: SHIFT_ID,
+  cashierName: 'سارة',
+  lines: [],
+  netMinor: '1000',
+  vatMinor: '150',
+  totalMinor: '1150',
+  cashReceivedMinor: '1150',
+  changeMinor: '0',
+};
+
+const RECEIPT: FiscalReceipt = {
+  invoiceId: 'invoice-1',
+  invoiceNumber: SALE.invoiceNumber,
+  issuedAt: SALE.issuedAt,
+  invoiceHashBase64: 'invoice-hash-base64',
+  qrCodeBase64: 'phase2-qr-base64',
+};
+
+function apiWithCheckout(checkout: CheckoutSyncApi['checkout']): CheckoutSyncApi {
+  return { checkout };
 }
 
 describe('checkout queue executor', () => {
@@ -48,8 +80,9 @@ describe('checkout queue executor', () => {
   });
 
   it('settles only after the exact immutable checkout request succeeds', async () => {
-    const checkout = vi.fn<ApiClient['checkout']>().mockResolvedValue({
-      sale: {} as never,
+    const checkout = vi.fn<CheckoutSyncApi['checkout']>().mockResolvedValue({
+      sale: SALE,
+      receipt: RECEIPT,
       replayed: true,
     });
     const executor = createCheckoutSyncExecutor(apiWithCheckout(checkout));
@@ -61,10 +94,10 @@ describe('checkout queue executor', () => {
 
   it('retries ambiguous transport and authentication outcomes without changing operation identity', async () => {
     const network = vi
-      .fn<ApiClient['checkout']>()
+      .fn<CheckoutSyncApi['checkout']>()
       .mockRejectedValue(new ApiError(0, 'network', null));
     const auth = vi
-      .fn<ApiClient['checkout']>()
+      .fn<CheckoutSyncApi['checkout']>()
       .mockRejectedValue(new ApiError(401, 'unauthenticated', null));
 
     await expect(
@@ -83,7 +116,7 @@ describe('checkout queue executor', () => {
 
   it('retains permanent business refusals for explicit reconciliation instead of retrying blindly', async () => {
     const checkout = vi
-      .fn<ApiClient['checkout']>()
+      .fn<CheckoutSyncApi['checkout']>()
       .mockRejectedValue(new ApiError(409, 'insufficient-stock', 'غير متوفر'));
     const executor = createCheckoutSyncExecutor(apiWithCheckout(checkout));
 
@@ -94,7 +127,7 @@ describe('checkout queue executor', () => {
   });
 
   it('refuses mismatched operation ids and unsupported queue kinds before any HTTP call', async () => {
-    const checkout = vi.fn<ApiClient['checkout']>();
+    const checkout = vi.fn<CheckoutSyncApi['checkout']>();
     const executor = createCheckoutSyncExecutor(apiWithCheckout(checkout));
 
     await expect(
