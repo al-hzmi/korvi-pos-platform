@@ -1,5 +1,10 @@
 import { WeakCredentialError, assertNewPasswordAcceptable } from '@korvi/domain';
-import { OwnerBootstrapRefusedError, acceptOwnerBootstrap } from '@korvi/database';
+import {
+  OwnerBootstrapRefusedError,
+  acceptOwnerBootstrap,
+  verifyOwnerBootstrapCapability,
+  withTenant,
+} from '@korvi/database';
 import { hashPassword } from '../auth/password.js';
 import type { PrismaClient } from '@korvi/database';
 import type { ScryptProfile } from '../auth/password.js';
@@ -13,15 +18,23 @@ import type { ScryptProfile } from '../auth/password.js';
  * from the invitation row, so the compiler enforces what a handler would
  * otherwise have to remember (ADR-0021).
  *
- * The result vocabulary is deliberately two values wide. `weak-password` is a
- * fact about the caller's own input and tells them nothing about the merchant;
- * `invalid-capability` covers every other refusal there is.
+ * The result vocabulary deliberately keeps every capability refusal collapsed
+ * to one reason. On success only the login identity the new Owner immediately
+ * needs is returned: bound email plus the tenant's human name and slug. No
+ * internal ids, role, permission or session authority leave this boundary.
  */
 
 export type BootstrapFailureReason = 'weak-password' | 'invalid-capability';
 
 export type BootstrapResult =
-  | { readonly outcome: 'success' }
+  | {
+      readonly outcome: 'success';
+      readonly email: string;
+      readonly tenant: {
+        readonly slug: string;
+        readonly name: string;
+      };
+    }
   | { readonly outcome: 'failure'; readonly reason: BootstrapFailureReason };
 
 export interface OwnerBootstrapService {
@@ -49,8 +62,25 @@ export function createOwnerBootstrapService(deps: OwnerBootstrapDeps): OwnerBoot
         throw error;
       }
 
+      // Read the tenant's login label before consuming the one-shot capability.
+      // This is deliberately after cryptographic verification and deliberately
+      // not returned unless acceptance succeeds. Doing the read before the
+      // mutating transaction avoids the bad failure mode where the Owner is
+      // successfully established, a second read fails, and the browser sees a
+      // retryable error for a capability that has already been consumed.
+      const claims = verifyOwnerBootstrapCapability(deps.signingKey, token, new Date());
+      if (claims === null) return { outcome: 'failure', reason: 'invalid-capability' };
+
       try {
-        await acceptOwnerBootstrap(
+        const tenant = await withTenant(deps.prisma, claims.tenantId, (tx) =>
+          tx.tenant.findFirst({
+            where: { id: claims.tenantId },
+            select: { slug: true, name: true },
+          }),
+        );
+        if (tenant === null) return { outcome: 'failure', reason: 'invalid-capability' };
+
+        const accepted = await acceptOwnerBootstrap(
           deps.prisma,
           deps.signingKey,
           token,
@@ -59,7 +89,11 @@ export function createOwnerBootstrapService(deps: OwnerBootstrapDeps): OwnerBoot
           (secret) => hashPassword(secret, deps.scrypt),
           password,
         );
-        return { outcome: 'success' };
+        return {
+          outcome: 'success',
+          email: accepted.email,
+          tenant: { slug: tenant.slug, name: tenant.name },
+        };
       } catch (error) {
         // Every deliberate refusal collapses to one answer. Anything else is
         // rethrown: an unexpected failure must not be laundered into a tidy

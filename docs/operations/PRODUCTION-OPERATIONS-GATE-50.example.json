@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "gate": "production-operations-50",
+  "environment": "production",
+  "synthetic": true,
+  "launchApproved": false,
+  "release": {
+    "sha": "TBD",
+    "verifiedAtUtc": "TBD",
+    "requiredGreenChecks": ["TBD"]
+  },
+  "database": {
+    "provider": "TBD",
+    "plan": "TBD",
+    "region": "TBD",
+    "postgresMajor": 17,
+    "highAvailability": false,
+    "failoverTopology": "TBD",
+    "backups": {
+      "mechanism": "TBD",
+      "frequencyMinutes": 0,
+      "retentionDays": 0,
+      "encryptedAtRest": false,
+      "encryptedInTransit": false,
+      "runtimeAuthoritySeparated": false,
+      "evidenceRef": "TBD"
+    }
+  },
+  "recovery": {
+    "targetRpoMinutes": 0,
+    "targetRtoMinutes": 0,
+    "measuredRpoMinutes": 0,
+    "measuredRtoMinutes": 0,
+    "rehearsedAtUtc": "TBD",
+    "backupTimestampRef": "TBD",
+    "restoreEvidenceRef": "TBD",
+    "businessOwnerAcceptanceRef": "TBD"
+  },
+  "monitoring": {
+    "provider": "TBD",
+    "alertClasses": ["availability", "readiness", "5xx", "latency"],
+    "routingRef": "TBD",
+    "onCallRole": "TBD",
+    "escalationRef": "TBD",
+    "drillAtUtc": "TBD",
+    "acknowledgementSeconds": 0,
+    "drillEvidenceRef": "TBD"
+  },
+  "secretManagement": {
+    "provider": "TBD",
+    "runtimeSecretsExternalized": false,
+    "leastPrivilege": false,
+    "rotatedClasses": ["database-runtime", "session", "metrics-auth", "bootstrap"],
+    "rotationTestAtUtc": "TBD",
+    "rotationEvidenceRef": "TBD"
+  },
+  "merchantFieldValidation": {
+    "cohortRef": "TBD",
+    "releaseSha": "TBD",
+    "workflowsVerified": [
+      "sale",
+      "return",
+      "shift",
+      "inventory",
+      "purchase-receipt",
+      "offline-sync"
+    ],
+    "rollbackCriteriaRef": "TBD",
+    "completedAtUtc": "TBD",
+    "result": "TBD",
+    "humanApprovalRef": "TBD"
+  },
+  "evidence": {
+    "exactShaCiRef": "TBD",
+    "postgresLiveRef": "TBD",
+    "drRef": "TBD",
+    "incidentRef": "TBD",
+    "externalSurfaceRef": "TBD",
+    "providerProductionRef": "TBD"
+  }
+}
