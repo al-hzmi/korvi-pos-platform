@@ -232,7 +232,8 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
         request.log.warn('platform login refused');
         return reply.code(401).send({ error: 'invalid_platform_credentials' });
       }
-      auth.setSessionCookie(reply, auth.issueSession(principal));
+      const token = await auth.issueSession(principal);
+      auth.setSessionCookie(reply, token);
       return reply.code(200).send(safeSession(principal));
     } finally {
       permit.release();
@@ -243,7 +244,8 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
     return reply.code(200).send(safeSession(subject(request)));
   });
 
-  app.post('/v1/platform/logout', async (_request, reply) => {
+  app.post('/v1/platform/logout', async (request, reply) => {
+    await auth.revokeCookieSession(request.headers.cookie);
     auth.clearSessionCookie(reply);
     return reply.code(204).send();
   });
