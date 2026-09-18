@@ -142,9 +142,7 @@ describe('restaurant order context authority', () => {
       outcome: 'failure',
       reason: 'table-required',
     });
-    await expect(
-      checkout({ orderType: 'takeaway', tableId: TABLE }),
-    ).resolves.toMatchObject({
+    await expect(checkout({ orderType: 'takeaway', tableId: TABLE })).resolves.toMatchObject({
       outcome: 'failure',
       reason: 'table-not-applicable',
     });
@@ -154,12 +152,8 @@ describe('restaurant order context authority', () => {
   it('binds the dine-in table into the idempotent checkout intent', async () => {
     store.settings[0] = { ...store.settings[0]!, vertical: 'restaurant' };
 
-    expect((await checkout({ orderType: 'dine-in', tableId: TABLE })).outcome).toBe(
-      'success',
-    );
-    await expect(
-      checkout({ orderType: 'dine-in', tableId: OTHER_TABLE }),
-    ).resolves.toMatchObject({
+    expect((await checkout({ orderType: 'dine-in', tableId: TABLE })).outcome).toBe('success');
+    await expect(checkout({ orderType: 'dine-in', tableId: OTHER_TABLE })).resolves.toMatchObject({
       outcome: 'failure',
       reason: 'idempotency-conflict',
     });
