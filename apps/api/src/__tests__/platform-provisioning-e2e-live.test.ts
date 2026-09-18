@@ -188,6 +188,58 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
     });
     expect(hiddenWithoutControlPlane).toEqual([]);
 
+    // A copied Platform cookie must remain revoked across API instances. A
+    // second independent session stays live, proving revocation is per-session
+    // rather than a global logout side effect.
+    const secondPlatformLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      headers: writeHeaders(),
+      payload: { accessKey: PLATFORM_ACCESS_KEY },
+    });
+    expect(secondPlatformLogin.statusCode).toBe(200);
+    const stolenPlatformCookie = cookieFrom(secondPlatformLogin);
+
+    const platformLogout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: writeHeaders(stolenPlatformCookie),
+    });
+    expect(platformLogout.statusCode).toBe(204);
+
+    const verifier = buildServer(
+      loadConfig({
+        NODE_ENV: 'test',
+        LOG_LEVEL: 'fatal',
+        APP_ORIGINS: ORIGIN,
+        DATABASE_URL: url,
+        BOOTSTRAP_SIGNING_KEY,
+        PLATFORM_ADMIN_ACCESS_KEY: PLATFORM_ACCESS_KEY,
+        PLATFORM_SESSION_SIGNING_KEY: PLATFORM_SIGNING_KEY,
+        PLATFORM_ADMIN_ACTOR_REF: PLATFORM_ACTOR,
+        PLATFORM_SESSION_TTL_HOURS: '1',
+        SESSION_TTL_HOURS: '1',
+      }),
+    );
+    await verifier.ready();
+    try {
+      const replayedStolenCookie = await verifier.inject({
+        method: 'GET',
+        url: '/v1/platform/session',
+        headers: { cookie: stolenPlatformCookie },
+      });
+      expect(replayedStolenCookie.statusCode).toBe(401);
+
+      const independentSession = await verifier.inject({
+        method: 'GET',
+        url: '/v1/platform/session',
+        headers: { cookie: platformCookie },
+      });
+      expect(independentSession.statusCode).toBe(200);
+    } finally {
+      await verifier.close();
+    }
+
     // 2 — Tenant/business creation through the supported platform workflow.
     const createTenant = await app.inject({
       method: 'POST',
