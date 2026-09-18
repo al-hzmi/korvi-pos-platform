@@ -4,6 +4,7 @@ import { quickServiceOrderNumber } from '../lib/quick-service';
 import { preparationTicketFromIntent } from '../lib/preparation-ticket';
 import { renderPreparationTicketEscPos } from '../lib/preparation-ticket-print';
 import { isOfflineSaleDraft } from '../lib/offline-store';
+import { checkoutQueueOperation } from '../lib/offline-checkout';
 import type { ProductSummary } from '../lib/api-types';
 
 const PRODUCT: ProductSummary = {
@@ -83,6 +84,7 @@ describe('Quick-Service operational state', () => {
       isOfflineSaleDraft({
         lines,
         cash: '15',
+        orderType: 'delivery',
         priceMode: 'tax-inclusive',
         updatedAt: '2026-09-18T00:00:00.000Z',
       }),
@@ -102,6 +104,7 @@ describe('Quick-Service operational state', () => {
       operationId: '018f1000-0000-7000-8000-000000000123',
       terminalId: '018f1000-0000-7000-8000-000000000124',
       expectedShiftId: '018f1000-0000-7000-8000-000000000125',
+      orderType: 'dine-in' as const,
       cashReceivedMinor: '1500',
       lines: [{ productId: PRODUCT.id, quantityScaled: '1000' }],
     };
@@ -116,6 +119,7 @@ describe('Quick-Service operational state', () => {
       kind: 'preparation',
       sourceOperationId: intent.operationId,
       orderNumber: 'K01-00000123',
+      orderType: 'dine-in',
       items: [{ nameAr: 'ساندويتش', options: 'بدون بصل', note: 'تغليف منفصل' }],
     });
     expect('invoiceNumber' in ticket).toBe(false);
@@ -132,6 +136,7 @@ describe('Quick-Service operational state', () => {
     expect(raster.lines).toEqual(
       expect.arrayContaining([
         'تذكرة تحضير - غير ضريبية',
+        'نوع الطلب: محلي',
         '1 x ساندويتش',
         'خيارات: بدون بصل',
         'ملاحظة: تغليف منفصل',
@@ -152,5 +157,8 @@ describe('Quick-Service operational state', () => {
     expect(second.payload).toEqual(first.payload);
     expect(JSON.stringify(ticket)).toBe(before);
     expect(ticket.sourceOperationId).toBe(intent.operationId);
+
+    const queued = checkoutQueueOperation(intent);
+    expect(queued.payload).toMatchObject({ orderType: 'dine-in' });
   });
 });

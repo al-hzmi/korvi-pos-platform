@@ -7,7 +7,7 @@
  * 1000, exactly as they cross the wire (ADR-0002).
  */
 
-import type { PriceMode, Vertical } from '@korvi/domain';
+import type { PriceMode, RestaurantOrderType, Vertical } from '@korvi/domain';
 
 export interface Principal {
   readonly user: { readonly id: string; readonly email: string; readonly displayName: string };
@@ -140,6 +140,8 @@ export interface SaleSummaryLine {
 export interface SaleSummary {
   readonly saleId: string;
   readonly operationId: string;
+  /** Optional for backward-compatible local fixtures; live responses carry null or a recorded value. */
+  readonly orderType?: RestaurantOrderType | null;
   readonly sequence: number;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
@@ -194,6 +196,7 @@ export interface CheckoutRequest {
   readonly terminalId: string;
   /** Delayed/offline replay precondition. The server derives the active shift and only compares. */
   readonly expectedShiftId?: string;
+  readonly orderType?: RestaurantOrderType;
   readonly cashReceivedMinor: string;
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
 }

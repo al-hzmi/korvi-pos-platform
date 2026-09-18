@@ -8,6 +8,7 @@ import { CartPanel } from './cart-panel';
 import { CheckoutPanel } from './checkout-panel';
 import { SaleReceipt } from './sale-receipt';
 import { PreparationTicketControl } from './preparation-ticket-control';
+import { RestaurantOrderTypeControl } from './restaurant-order-type-control';
 import { StatusNote } from './status-note';
 import { previewCart } from '../lib/cart';
 import { canOpenControlCentre } from '../lib/control-access';
@@ -25,7 +26,7 @@ import { useOfflineSaleSync } from '../hooks/use-offline-sale-sync';
 import { useDurableSaleDraft } from '../hooks/use-durable-sale-draft';
 import { useProductSearch } from '../hooks/use-product-search';
 import type { JSX } from 'react';
-import type { PriceMode, Vertical } from '@korvi/domain';
+import type { PriceMode, RestaurantOrderType, Vertical } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
 import type { Principal, ProductSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
 import type { OfflineSaleScope } from '../lib/offline-store';
@@ -106,6 +107,8 @@ export function CashierScreen({
   const checkout = useCheckout(api, onExpired, queuePartition, offlineStoreProtector);
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);
   const [cash, setCash] = useState('');
+  const quickService = vertical === 'restaurant';
+  const [orderType, setOrderType] = useState<RestaurantOrderType>('takeaway');
   const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const cashInput = useRef<HTMLInputElement>(null);
@@ -156,6 +159,7 @@ export function CashierScreen({
     if (durableState.status === 'ready' && durableState.draft !== null) {
       cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
       setCash(durableState.draft.cash);
+      if (durableState.draft.orderType !== undefined) setOrderType(durableState.draft.orderType);
     }
     setDraftHydrated(true);
   }, [cart.dispatch, draftHydrated, durableState]);
@@ -173,6 +177,7 @@ export function CashierScreen({
     persistDraft({
       lines: cart.lines,
       cash,
+      ...(quickService ? { orderType } : {}),
       priceMode,
       updatedAt: new Date().toISOString(),
     });
@@ -185,6 +190,8 @@ export function CashierScreen({
     durableState.status,
     persistDraft,
     priceMode,
+    quickService,
+    orderType,
   ]);
 
   const browse = search.browse;
@@ -225,6 +232,7 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
+    setOrderType('takeaway');
     search.browse();
     focusSearch();
   }, [checkout, cart, clearDraft, search, focusSearch]);
@@ -234,13 +242,13 @@ export function CashierScreen({
     checkout.submit({
       terminalId: terminal.id,
       expectedShiftId: shift.id,
+      ...(quickService ? { orderType } : {}),
       lines: cart.lines,
       cashReceivedMinor: cashMinor,
     });
-  }, [checkout, terminal.id, shift.id, cart.lines, cashMinor]);
+  }, [checkout, terminal.id, shift.id, quickService, orderType, cart.lines, cashMinor]);
 
   const completed = checkout.state.phase === 'succeeded' ? checkout.state.sale : null;
-  const quickService = vertical === 'restaurant';
   const orderOperationId = completed?.operationId ?? checkout.state.intent?.operationId ?? null;
   const orderNumber =
     quickService && orderOperationId !== null
@@ -365,6 +373,13 @@ export function CashierScreen({
                 <StatusNote tone="warning" className="mb-3" live>
                   العملية معلّقة ولم تُحسم. السلة والمبلغ مقفلان حتى تُعاد بنفس العملية.
                 </StatusNote>
+              ) : null}
+              {quickService ? (
+                <RestaurantOrderTypeControl
+                  value={orderType}
+                  disabled={locked}
+                  onChange={setOrderType}
+                />
               ) : null}
               <CartPanel
                 lines={cart.lines}

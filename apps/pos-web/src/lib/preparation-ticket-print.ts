@@ -1,5 +1,6 @@
 import { EPSON_TM_T20, escpos, rasterCommand } from '../../../../packages/printing/src/index';
 import { formatScaled } from './quantity';
+import { restaurantOrderTypeLabelAr } from './quick-service';
 import type { EscPosBuilder, RasterRenderer } from '../../../../packages/printing/src/index';
 import type { PreparationTicket } from './preparation-ticket';
 
@@ -54,6 +55,13 @@ export async function renderPreparationTicketEscPos(
     .bold(false);
 
   await appendOperationalLine(builder, 'تذكرة تحضير - غير ضريبية', rasterRenderer);
+  if (ticket.orderType !== null) {
+    await appendOperationalLine(
+      builder,
+      `نوع الطلب: ${restaurantOrderTypeLabelAr(ticket.orderType)}`,
+      rasterRenderer,
+    );
+  }
   builder.rule().align('start');
 
   for (const item of ticket.items) {

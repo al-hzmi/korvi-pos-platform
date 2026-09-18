@@ -395,6 +395,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             ...(request.expectedShiftId === undefined
               ? {}
               : { expectedShiftId: request.expectedShiftId }),
+            ...(request.orderType === undefined ? {} : { orderType: request.orderType }),
             cashReceivedMinor: request.cashReceivedMinor,
             lines: request.lines.map((line) => ({
               productId: line.productId,

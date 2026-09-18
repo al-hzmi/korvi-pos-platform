@@ -116,6 +116,11 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     action: 'blocking',
   },
   'tenant-misconfigured': { message: 'إعدادات المنشأة غير مكتملة.', action: 'blocking' },
+  'order-type-required': { message: 'حدّد نوع الطلب قبل إتمام البيع.', action: 'amend-cart' },
+  'order-type-not-applicable': {
+    message: 'نوع الطلب مخصص لوضع المطاعم والمقاهي فقط.',
+    action: 'blocking',
+  },
 };
 
 export function describeFailure(error: unknown): Failure {

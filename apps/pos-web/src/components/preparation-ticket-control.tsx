@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, CardSurface } from '@korvi/ui';
 import { StatusNote } from './status-note';
 import { createReceiptPrintFlight } from '../lib/receipt-print-flight';
+import { restaurantOrderTypeLabelAr } from '../lib/quick-service';
 import type { PreparationTicket, PreparationTicketPrinter } from '../lib/preparation-ticket';
 import type { ReceiptPrintFlight } from '../lib/receipt-print-flight';
 import type { JSX } from 'react';
@@ -59,6 +60,11 @@ export function PreparationTicketControl({
         <div>
           <p className="text-sm font-semibold">تذكرة التحضير — غير ضريبية</p>
           <p className="text-xs text-muted-foreground">رقم الطلب {ticket.orderNumber}</p>
+          {ticket.orderType === null ? null : (
+            <p className="text-xs text-muted-foreground">
+              نوع الطلب: {restaurantOrderTypeLabelAr(ticket.orderType)}
+            </p>
+          )}
         </div>
         <Button
           variant="outline"

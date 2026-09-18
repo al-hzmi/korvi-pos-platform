@@ -2,6 +2,7 @@ import { newId } from '@korvi/domain';
 import { outcomeFor } from './checkout-flight';
 import { describeFailure } from './failures';
 import { cartToRequestLines } from './cart';
+import type { RestaurantOrderType } from '@korvi/domain';
 import type { CheckoutResponse } from './api-types';
 import type { CartLine } from './cart';
 import type { CheckoutEvent } from './checkout';
@@ -19,6 +20,7 @@ import type { CheckoutFlight, CheckoutIntent } from './checkout-flight';
 export interface CheckoutSubmission {
   readonly terminalId: string;
   readonly expectedShiftId?: string;
+  readonly orderType?: RestaurantOrderType;
   readonly lines: readonly CartLine[];
   readonly cashReceivedMinor: string;
 }
@@ -51,6 +53,7 @@ export function runCheckout(
     operationId: mint(),
     terminalId: input.terminalId,
     ...(input.expectedShiftId === undefined ? {} : { expectedShiftId: input.expectedShiftId }),
+    ...(input.orderType === undefined ? {} : { orderType: input.orderType }),
     cashReceivedMinor: input.cashReceivedMinor,
     lines: cartToRequestLines(input.lines),
   }));

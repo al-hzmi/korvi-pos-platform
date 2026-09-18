@@ -1,6 +1,7 @@
 import {
   isUuidV7,
   type PriceMode,
+  type RestaurantOrderType,
   type QueueClaimRequest,
   type QueueClaimResult,
   type QueueOperationInput,
@@ -55,6 +56,7 @@ export interface OfflineSaleScope {
 export interface OfflineSaleDraft {
   readonly lines: readonly CartLine[];
   readonly cash: string;
+  readonly orderType?: RestaurantOrderType;
   readonly priceMode: PriceMode;
   readonly updatedAt: string;
 }
@@ -214,11 +216,16 @@ function isPriceMode(value: unknown): value is PriceMode {
   return value === 'tax-inclusive' || value === 'tax-exclusive';
 }
 
+function isOptionalRestaurantOrderType(value: unknown): value is RestaurantOrderType | undefined {
+  return value === undefined || value === 'dine-in' || value === 'takeaway' || value === 'delivery';
+}
+
 export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
   if (!isRecord(value) || !Array.isArray(value.lines)) return false;
   return (
     value.lines.every(isCartLine) &&
     typeof value.cash === 'string' &&
+    isOptionalRestaurantOrderType(value.orderType) &&
     isPriceMode(value.priceMode) &&
     typeof value.updatedAt === 'string' &&
     Number.isFinite(Date.parse(value.updatedAt))
@@ -484,6 +491,7 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
   return {
     lines: value.lines,
     cash: value.cash,
+    ...(value.orderType === undefined ? {} : { orderType: value.orderType }),
     priceMode: value.priceMode,
     updatedAt: value.updatedAt,
   };
