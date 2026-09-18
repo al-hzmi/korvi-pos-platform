@@ -318,10 +318,7 @@ function fail(reason: CheckoutFailureReason, detail?: string): CheckoutFailure {
  * the authorization gap without changing replay compatibility for the lawful
  * caller.
  */
-function replayOwnedByPrincipal(
-  sale: SaleRecord,
-  principal: AuthenticatedPrincipal,
-): boolean {
+function replayOwnedByPrincipal(sale: SaleRecord, principal: AuthenticatedPrincipal): boolean {
   if (sale.userId !== principal.userId) return false;
   if (principal.branchId !== null && sale.branchId !== principal.branchId) return false;
   return true;

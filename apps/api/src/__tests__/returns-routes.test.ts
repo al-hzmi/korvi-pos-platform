@@ -199,10 +199,7 @@ async function build(
   return server;
 }
 
-async function cookieFor(
-  server: FastifyInstance,
-  email = 'sara@korvi-a.test',
-): Promise<string> {
+async function cookieFor(server: FastifyInstance, email = 'sara@korvi-a.test'): Promise<string> {
   const response = await server.inject({
     method: 'POST',
     url: '/v1/auth/login',

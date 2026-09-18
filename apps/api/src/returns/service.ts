@@ -167,10 +167,7 @@ function fail(reason: ReturnFailureReason, detail?: string): ReturnFailure {
  * Kept outside the fingerprint so already-committed RC keys remain
  * replay-compatible for their lawful actor.
  */
-function replayOwnedByPrincipal(
-  record: ReturnRecord,
-  principal: AuthenticatedPrincipal,
-): boolean {
+function replayOwnedByPrincipal(record: ReturnRecord, principal: AuthenticatedPrincipal): boolean {
   if (record.actorUserId !== principal.userId) return false;
   if (principal.branchId !== null && record.branchId !== principal.branchId) return false;
   return true;
