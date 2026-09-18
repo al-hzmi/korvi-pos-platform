@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import { createLoginAdmissionController } from '../auth/login-admission.js';
 import { readNativeAuthorization } from '../native-auth/header.js';
 import type { NativeAuthService } from '../native-auth/service.js';
 import type { OfflineLeaseService } from '../native-auth/offline-lease.js';
+import type { LoginAdmissionController } from '../auth/login-admission.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { FastifyInstance } from 'fastify';
 
@@ -22,6 +24,23 @@ const loginBody = z.object({
 
 const UNAUTHENTICATED = { error: 'native_unauthenticated' } as const;
 const DEVICE_REFUSED = { error: 'native_device_refused' } as const;
+const TOO_MANY_REQUESTS = { error: 'too_many_requests' } as const;
+
+const NATIVE_CHALLENGE_ADMISSION_POLICY = {
+  globalLimit: 120,
+  identityLimit: 20,
+  windowMs: 60_000,
+  maxConcurrent: 8,
+  maxTrackedIdentities: 4_096,
+} as const;
+
+const NATIVE_LOGIN_ADMISSION_POLICY = {
+  globalLimit: 60,
+  identityLimit: 10,
+  windowMs: 60_000,
+  maxConcurrent: 2,
+  maxTrackedIdentities: 4_096,
+} as const;
 
 function safePrincipal(principal: AuthenticatedPrincipal): Record<string, unknown> {
   return {
@@ -42,43 +61,79 @@ function safePrincipal(principal: AuthenticatedPrincipal): Record<string, unknow
   };
 }
 
+export interface NativeAuthRouteOptions {
+  readonly service: NativeAuthService;
+  readonly offlineLease?: OfflineLeaseService;
+  readonly challengeAdmission?: LoginAdmissionController;
+  readonly loginAdmission?: LoginAdmissionController;
+}
+
 export function registerNativeAuthRoutes(
   app: FastifyInstance,
-  options: { readonly service: NativeAuthService; readonly offlineLease?: OfflineLeaseService },
+  options: NativeAuthRouteOptions,
 ): void {
+  const challengeAdmission =
+    options.challengeAdmission ?? createLoginAdmissionController(NATIVE_CHALLENGE_ADMISSION_POLICY);
+  const loginAdmission =
+    options.loginAdmission ?? createLoginAdmissionController(NATIVE_LOGIN_ADMISSION_POLICY);
+
   app.post('/v1/native-auth/challenge', async (request, reply) => {
     const parsed = challengeBody.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
-    const result = await options.service.issueChallenge(parsed.data);
-    if (result.outcome === 'failure') {
-      request.log.info({ reason: result.reason }, 'native challenge refused');
-      return reply.code(403).send(DEVICE_REFUSED);
+
+    const permit = challengeAdmission.admit(parsed.data.tenantId, parsed.data.deviceEnrollmentId);
+    if (!permit.allowed) {
+      request.log.warn({ reason: permit.reason }, 'native challenge admission refused');
+      reply.header('retry-after', String(permit.retryAfterSeconds));
+      return reply.code(429).send(TOO_MANY_REQUESTS);
     }
-    return reply.code(200).send({
-      challengeId: result.challengeId,
-      tenantId: result.tenantId,
-      deviceEnrollmentId: result.deviceEnrollmentId,
-      terminalId: result.terminalId,
-      branchId: result.branchId,
-      expiresAt: result.expiresAt,
-      signingPayload: result.signingPayload,
-    });
+
+    try {
+      const result = await options.service.issueChallenge(parsed.data);
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'native challenge refused');
+        return reply.code(403).send(DEVICE_REFUSED);
+      }
+      return reply.code(200).send({
+        challengeId: result.challengeId,
+        tenantId: result.tenantId,
+        deviceEnrollmentId: result.deviceEnrollmentId,
+        terminalId: result.terminalId,
+        branchId: result.branchId,
+        expiresAt: result.expiresAt,
+        signingPayload: result.signingPayload,
+      });
+    } finally {
+      permit.release();
+    }
   });
 
   app.post('/v1/native-auth/login', async (request, reply) => {
     const parsed = loginBody.safeParse(request.body);
     if (!parsed.success) return reply.code(401).send(UNAUTHENTICATED);
-    const result = await options.service.login(parsed.data);
-    if (result.outcome === 'failure') {
-      request.log.info({ reason: result.reason }, 'native login refused');
-      return reply.code(401).send(UNAUTHENTICATED);
+
+    const permit = loginAdmission.admit(parsed.data.tenantId, parsed.data.email);
+    if (!permit.allowed) {
+      request.log.warn({ reason: permit.reason }, 'native login admission refused');
+      reply.header('retry-after', String(permit.retryAfterSeconds));
+      return reply.code(429).send(TOO_MANY_REQUESTS);
     }
-    return reply.code(200).send({
-      token: result.token,
-      expiresAt: result.expiresAt,
-      principal: safePrincipal(result.principal),
-      binding: result.binding,
-    });
+
+    try {
+      const result = await options.service.login(parsed.data);
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'native login refused');
+        return reply.code(401).send(UNAUTHENTICATED);
+      }
+      return reply.code(200).send({
+        token: result.token,
+        expiresAt: result.expiresAt,
+        principal: safePrincipal(result.principal),
+        binding: result.binding,
+      });
+    } finally {
+      permit.release();
+    }
   });
 
   app.get('/v1/native-auth/me', async (request, reply) => {
