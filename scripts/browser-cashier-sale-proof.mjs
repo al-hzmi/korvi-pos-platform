@@ -296,6 +296,12 @@ try {
   await setInput('email', ownerEmail);
   await setInput('password', password);
   await clickButton('دخول');
+  await waitFor(
+    `fetch('/v1/auth/me', { credentials: 'same-origin' }).then((response) => response.ok).catch(() => false)`,
+    'authenticated cashier session',
+    30_000,
+  );
+  await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
 
   await waitForText('افتح وردية', 30_000);
   await setInput('opening-float', '100.00');
