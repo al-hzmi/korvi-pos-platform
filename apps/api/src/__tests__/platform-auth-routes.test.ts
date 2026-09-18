@@ -1,9 +1,11 @@
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPlatformAuth } from '../platform/auth.js';
+import { createGuards } from '../auth/guards.js';
 import { registerPlatformRoutes } from '../platform/routes.js';
 import { loadConfig } from '../config.js';
 import type { PlatformActor, PlatformService } from '../platform/service.js';
+import type { AuthService } from '../auth/service.js';
 import type { FastifyInstance } from 'fastify';
 
 const ACCESS_KEY = 'a'.repeat(40);
@@ -261,4 +263,76 @@ describe('platform routes', () => {
     expect(response.json()).toEqual({ error: 'platform_unauthenticated' });
     expect(String(response.headers['set-cookie'])).toContain('Max-Age=0');
   });
+  it('keeps the platform cookie realm behind Origin even when a request carries a KorviNative header', async () => {
+    let calls = 0;
+    const cfg = config();
+    const auth = createPlatformAuth(cfg);
+    const merchantAuth: AuthService = {
+      login: async () => ({ outcome: 'failure', reason: 'unknown-tenant' }),
+      authenticate: async () => ({ outcome: 'failure', reason: 'unknown-session' }),
+      logout: async () => false,
+      logoutAll: async () => 0,
+    };
+
+    app = Fastify({ logger: false });
+    app.addHook('onRequest', createGuards(merchantAuth, cfg).enforceOrigin);
+    registerPlatformRoutes(app, {
+      auth,
+      service: recordingService(),
+      operationalBootstrap: async (_actor, _tenantId, input) => {
+        calls += 1;
+        return {
+          branch: {
+            id: '018fb000-0000-7000-8000-0000000000b1',
+            code: input.branch.code,
+            nameAr: input.branch.nameAr,
+            nameEn: input.branch.nameEn ?? null,
+            isActive: true,
+          },
+          terminal: {
+            id: '018fb000-0000-7000-8000-0000000000c1',
+            branchId: '018fb000-0000-7000-8000-0000000000b1',
+            code: input.terminal.code,
+            label: input.terminal.label,
+            isActive: true,
+          },
+          replayed: false,
+        };
+      },
+    });
+    await app.ready();
+
+    const principal = auth.authenticateAccessKey(ACCESS_KEY);
+    if (principal === null) throw new Error('test platform credential was rejected');
+    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+    const payload = {
+      operationId: 'op-origin-boundary-1',
+      branch: { code: 'BR-01', nameAr: 'الفرع الرئيسي', nameEn: null },
+      terminal: { code: 'POS-01', label: 'الكاشير الرئيسي' },
+    };
+
+    const foreign = await app.inject({
+      method: 'POST',
+      url: `/v1/platform/tenants/${TENANT_ID}/operational-bootstrap`,
+      headers: {
+        cookie,
+        origin: 'https://evil.example',
+        authorization: 'KorviNative attacker-controlled',
+      },
+      payload,
+    });
+    expect(foreign.statusCode).toBe(403);
+    expect(foreign.json()).toEqual({ error: 'forbidden' });
+    expect(calls).toBe(0);
+
+    const legitimate = await app.inject({
+      method: 'POST',
+      url: `/v1/platform/tenants/${TENANT_ID}/operational-bootstrap`,
+      headers: { cookie, origin: 'http://localhost:3000' },
+      payload,
+    });
+    expect(legitimate.statusCode).toBe(201);
+    expect(calls).toBe(1);
+  });
+
 });
