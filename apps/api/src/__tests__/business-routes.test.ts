@@ -1409,7 +1409,9 @@ describe('restaurant order context route', () => {
       },
     });
     expect(accepted.statusCode).toBe(201);
-    expect(accepted.json<{ sale: { orderType: string } }>().sale.orderType).toBe('delivery');
+    expect(accepted.json<{ sale: { orderType: string } }>().sale.orderType).toBe(
+      'delivery',
+    );
   });
 
   it('does not allow restaurant context to leak into a retail sale', async () => {

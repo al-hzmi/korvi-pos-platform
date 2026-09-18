@@ -14,7 +14,6 @@ export function quickServiceOrderNumber(operationId: string, terminalCode: strin
   return `${terminal === '' ? 'POS' : terminal}-${suffix}`;
 }
 
-
 export function restaurantOrderTypeLabelAr(orderType: RestaurantOrderType): string {
   switch (orderType) {
     case 'dine-in':

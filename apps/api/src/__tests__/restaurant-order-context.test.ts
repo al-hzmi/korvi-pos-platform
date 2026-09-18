@@ -80,27 +80,41 @@ function checkout(overrides: Partial<Parameters<CheckoutService['checkout']>[0]>
 describe('restaurant order context authority', () => {
   it('requires an explicit service mode for restaurant tenants', async () => {
     store.settings[0] = { ...store.settings[0]!, vertical: 'restaurant' };
-    await expect(checkout()).resolves.toMatchObject({ outcome: 'failure', reason: 'order-type-required' });
+    await expect(checkout()).resolves.toMatchObject({
+      outcome: 'failure',
+      reason: 'order-type-required',
+    });
     expect(store.sales).toHaveLength(0);
   });
 
   it('persists and echoes the recorded mode without changing fiscal math', async () => {
     store.settings[0] = { ...store.settings[0]!, vertical: 'restaurant' };
     const result = await checkout({ orderType: 'dine-in' });
-    expect(result).toMatchObject({ outcome: 'success', sale: { orderType: 'dine-in', totalMinor: '1150', vatMinor: '150' } });
+    expect(result).toMatchObject({
+      outcome: 'success',
+      sale: { orderType: 'dine-in', totalMinor: '1150', vatMinor: '150' },
+    });
     expect(store.sales[0]?.orderType).toBe('dine-in');
-    expect(store.audit.find((event) => event.eventType === 'sale.completed')?.metadata).toMatchObject({ orderType: 'dine-in' });
+    expect(
+      store.audit.find((event) => event.eventType === 'sale.completed')?.metadata,
+    ).toMatchObject({ orderType: 'dine-in' });
   });
 
   it('refuses restaurant service metadata for non-restaurant tenants', async () => {
-    await expect(checkout({ orderType: 'delivery' })).resolves.toMatchObject({ outcome: 'failure', reason: 'order-type-not-applicable' });
+    await expect(checkout({ orderType: 'delivery' })).resolves.toMatchObject({
+      outcome: 'failure',
+      reason: 'order-type-not-applicable',
+    });
     expect(store.sales).toHaveLength(0);
   });
 
   it('binds order type into the idempotent checkout intent', async () => {
     store.settings[0] = { ...store.settings[0]!, vertical: 'restaurant' };
     expect((await checkout({ orderType: 'takeaway' })).outcome).toBe('success');
-    await expect(checkout({ orderType: 'dine-in' })).resolves.toMatchObject({ outcome: 'failure', reason: 'idempotency-conflict' });
+    await expect(checkout({ orderType: 'dine-in' })).resolves.toMatchObject({
+      outcome: 'failure',
+      reason: 'idempotency-conflict',
+    });
     expect(store.sales).toHaveLength(1);
     expect(store.sales[0]?.orderType).toBe('takeaway');
   });
