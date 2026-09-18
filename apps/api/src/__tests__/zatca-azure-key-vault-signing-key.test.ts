@@ -304,10 +304,11 @@ describe('Azure Key Vault ZATCA signing authority', () => {
       clientId: '018f2e20-7b7a-7c00-8000-0000000000a2',
       clientSecret: 'synthetic-client-secret',
       maxResponseBytes: 32,
-      fetchImpl: vi.fn<typeof fetch>(async () =>
-        new Response(JSON.stringify({ access_token: 'x'.repeat(128), expires_in: 3600 }), {
-          status: 200,
-        }),
+      fetchImpl: vi.fn<typeof fetch>(
+        async () =>
+          new Response(JSON.stringify({ access_token: 'x'.repeat(128), expires_in: 3600 }), {
+            status: 200,
+          }),
       ),
     });
     await expect(identity.getAccessToken()).rejects.toThrow(/response-size limit/i);
@@ -316,10 +317,11 @@ describe('Azure Key Vault ZATCA signing authority', () => {
       vaultUrl: 'https://korvi-test.vault.azure.net',
       accessTokenProvider: { getAccessToken: async () => 'token' },
       maxResponseBytes: 32,
-      fetchImpl: vi.fn<typeof fetch>(async () =>
-        new Response(JSON.stringify({ key: { kid: KEY_ID, padding: 'x'.repeat(128) } }), {
-          status: 200,
-        }),
+      fetchImpl: vi.fn<typeof fetch>(
+        async () =>
+          new Response(JSON.stringify({ key: { kid: KEY_ID, padding: 'x'.repeat(128) } }), {
+            status: 200,
+          }),
       ),
     });
     await expect(rest.getKey(KEY_ID)).rejects.toThrow(/response-size limit/i);
