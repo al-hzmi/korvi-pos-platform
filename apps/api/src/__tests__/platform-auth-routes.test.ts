@@ -263,6 +263,47 @@ describe('platform routes', () => {
     expect(response.json()).toEqual({ error: 'platform_unauthenticated' });
     expect(String(response.headers['set-cookie'])).toContain('Max-Age=0');
   });
+
+  it('revokes a platform cookie durably on logout instead of only clearing the browser copy', async () => {
+    const auth = createPlatformAuth(config());
+    app = Fastify({ logger: false });
+    registerPlatformRoutes(app, {
+      auth,
+      service: recordingService(),
+    });
+    await app.ready();
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      payload: { accessKey: ACCESS_KEY },
+    });
+    expect(login.statusCode).toBe(200);
+    const cookie = String(login.headers['set-cookie']).split(';', 1)[0];
+
+    const before = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/tenants',
+      headers: { cookie },
+    });
+    expect(before.statusCode).toBe(200);
+
+    const logout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: { cookie },
+    });
+    expect(logout.statusCode).toBe(204);
+    expect(String(logout.headers['set-cookie'])).toContain('Max-Age=0');
+
+    const replay = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/tenants',
+      headers: { cookie },
+    });
+    expect(replay.statusCode).toBe(401);
+    expect(replay.json()).toEqual({ error: 'platform_unauthenticated' });
+  });
   it('keeps the platform cookie realm behind Origin even when a request carries a KorviNative header', async () => {
     let calls = 0;
     const cfg = config();
