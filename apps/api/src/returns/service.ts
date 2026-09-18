@@ -176,6 +176,15 @@ function replayOwnedByPrincipal(
   return true;
 }
 
+function replayOwnedByPrincipal(
+  record: ReturnRecord,
+  principal: AuthenticatedPrincipal,
+): boolean {
+  if (record.actorUserId !== principal.userId) return false;
+  if (principal.branchId !== null && record.branchId !== principal.branchId) return false;
+  return true;
+}
+
 function summarise(record: ReturnRecord): ReturnSummary {
   return {
     returnId: record.id,
