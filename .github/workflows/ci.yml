@@ -54,10 +54,7 @@ jobs:
         run: npm run audit
 
       - name: Formatting
-        run: |
-          npx prettier --write apps/api/src/__tests__/business-routes.test.ts
-          git diff -- apps/api/src/__tests__/business-routes.test.ts
-          exit 1
+        run: npm run format:check
 
       - name: Lint
         run: npm run lint
