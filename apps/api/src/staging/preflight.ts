@@ -34,7 +34,7 @@ const GLOBAL_TABLES = new Set(['global_catalog_items', 'permissions', '_prisma_m
  * model. They remain part of the exact deployment contract and are still
  * required to carry FORCE RLS and at least one policy.
  */
-const CONTROL_PLANE_TABLES = ['platform_support_notes'] as const;
+const CONTROL_PLANE_TABLES = ['platform_support_notes', 'platform_admin_sessions'] as const;
 
 /**
  * Tenant tables whose authority intentionally lives in SQL migrations and raw
