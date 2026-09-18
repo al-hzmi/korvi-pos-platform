@@ -278,7 +278,11 @@ describe('Azure Key Vault ZATCA signing authority', () => {
             reject(new Error('aborted'));
             return;
           }
-          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+          signal?.addEventListener(
+            'abort',
+            () => reject(new Error('aborted')),
+            { once: true },
+          );
         }),
     );
     const provider = new AzureClientSecretAccessTokenProvider({
@@ -321,7 +325,9 @@ describe('Azure Key Vault ZATCA signing authority', () => {
     await expect(rest.getKey(KEY_ID)).rejects.toThrow(/response-size limit/i);
   });
 
-  it('bounds a hanging Azure Key Vault request instead of pinning fiscalization indefinitely', async () => {
+  it(
+    'bounds a hanging Azure Key Vault request instead of pinning fiscalization indefinitely',
+    async () => {
     const fetchImpl = vi.fn<typeof fetch>(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
@@ -330,7 +336,11 @@ describe('Azure Key Vault ZATCA signing authority', () => {
             reject(new Error('aborted'));
             return;
           }
-          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+          signal?.addEventListener(
+            'abort',
+            () => reject(new Error('aborted')),
+            { once: true },
+          );
         }),
     );
     const rest = new AzureKeyVaultRestClient({
@@ -341,8 +351,9 @@ describe('Azure Key Vault ZATCA signing authority', () => {
     });
 
     await expect(rest.getKey(KEY_ID)).rejects.toThrow(/Key Vault request failed/i);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('rejects an unversioned or foreign-vault handle before network access', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
