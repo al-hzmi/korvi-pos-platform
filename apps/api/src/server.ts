@@ -5,6 +5,7 @@ import {
   createAuthRepository,
   createIdempotencyRepository,
   createInventoryRepository,
+  createPlatformAdminSessionStore,
   createPrismaClient,
   createProductRepository,
   createSaleRepository,
@@ -501,7 +502,13 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   const service = deps.auth ?? lazyAuthService(config);
   const guards = createGuards(service, config);
   const business = deps.business ?? lazyBusinessDeps(config);
-  const platformAuth = createPlatformAuth(config);
+  const platformAuth =
+    config.DATABASE_URL === undefined
+      ? createPlatformAuth(config)
+      : createPlatformAuth(
+          config,
+          createPlatformAdminSessionStore(createPrismaClient(config.DATABASE_URL)),
+        );
 
   app.addHook('onRequest', guards.enforceOrigin);
 
