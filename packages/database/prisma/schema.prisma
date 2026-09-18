@@ -205,7 +205,7 @@ model RestaurantTable {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
-  zone RestaurantZone @relation(fields: [tenantId, branchId, zoneId], references: [tenantId, branchId, id], onDelete: Cascade)
+  zone RestaurantZone @relation(fields: [tenantId, zoneId], references: [tenantId, id], onDelete: Cascade)
   sales Sale[]
 
   @@unique([tenantId, id])

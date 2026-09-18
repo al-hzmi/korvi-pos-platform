@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ROLE_PERMISSIONS } from '@korvi/domain';
+import { ROLE_PERMISSIONS, tenantId as brandTenantId } from '@korvi/domain';
 import { createCheckoutService } from '../checkout/service.js';
 import {
   MemoryBusinessStore,
@@ -26,6 +26,8 @@ const A: Fixture = {
   rice: '018f3100-0000-7000-8000-0000000000a6',
 };
 const OPERATION = '018f3100-0000-7000-8000-0000000000f1';
+const TABLE = '018f3100-0000-7000-8000-0000000000b1';
+const OTHER_TABLE = '018f3100-0000-7000-8000-0000000000b2';
 
 let store: MemoryBusinessStore;
 let service: CheckoutService;
@@ -56,6 +58,25 @@ beforeEach(() => {
     inventory: memoryInventoryRepository(store),
     shifts: memoryShiftRepository(store),
     sales: memorySaleRepository(store),
+    restaurantFloor: {
+      findTableById: (_scope, id) =>
+        Promise.resolve(
+          id === TABLE || id === OTHER_TABLE
+            ? {
+                id,
+                tenantId: brandTenantId(A.tenant),
+                branchId: A.branch,
+                zoneId: '018f3100-0000-7000-8000-0000000000c1',
+                code: id === TABLE ? 'T1' : 'T2',
+                nameAr: id === TABLE ? 'طاولة 1' : 'طاولة 2',
+                capacity: 4,
+                isActive: true,
+              }
+            : null,
+        ),
+      listZonesForBranch: () => Promise.resolve([]),
+      listTablesForBranch: () => Promise.resolve([]),
+    },
     idempotency: memoryIdempotencyRepository(store),
     audit: memoryAuditRepository(store),
     now: () => new Date('2026-09-19T00:00:00.000Z'),
@@ -89,15 +110,21 @@ describe('restaurant order context authority', () => {
 
   it('persists and echoes the recorded mode without changing fiscal math', async () => {
     store.settings[0] = { ...store.settings[0]!, vertical: 'restaurant' };
-    const result = await checkout({ orderType: 'dine-in' });
+    const result = await checkout({ orderType: 'dine-in', tableId: TABLE });
     expect(result).toMatchObject({
       outcome: 'success',
-      sale: { orderType: 'dine-in', totalMinor: '1150', vatMinor: '150' },
+      sale: {
+        orderType: 'dine-in',
+        tableId: TABLE,
+        totalMinor: '1150',
+        vatMinor: '150',
+      },
     });
     expect(store.sales[0]?.orderType).toBe('dine-in');
+    expect(store.sales[0]?.tableId).toBe(TABLE);
     expect(
       store.audit.find((event) => event.eventType === 'sale.completed')?.metadata,
-    ).toMatchObject({ orderType: 'dine-in' });
+    ).toMatchObject({ orderType: 'dine-in', tableId: TABLE });
   });
 
   it('refuses restaurant service metadata for non-restaurant tenants', async () => {
@@ -106,6 +133,34 @@ describe('restaurant order context authority', () => {
       reason: 'order-type-not-applicable',
     });
     expect(store.sales).toHaveLength(0);
+  });
+
+  it('requires a table for dine-in and refuses table context for takeaway', async () => {
+    store.settings[0] = { ...store.settings[0]!, vertical: 'restaurant' };
+
+    await expect(checkout({ orderType: 'dine-in' })).resolves.toMatchObject({
+      outcome: 'failure',
+      reason: 'table-required',
+    });
+    await expect(checkout({ orderType: 'takeaway', tableId: TABLE })).resolves.toMatchObject({
+      outcome: 'failure',
+      reason: 'table-not-applicable',
+    });
+    expect(store.sales).toHaveLength(0);
+  });
+
+  it('binds the dine-in table into the idempotent checkout intent', async () => {
+    store.settings[0] = { ...store.settings[0]!, vertical: 'restaurant' };
+
+    expect((await checkout({ orderType: 'dine-in', tableId: TABLE })).outcome).toBe('success');
+    await expect(
+      checkout({ orderType: 'dine-in', tableId: OTHER_TABLE }),
+    ).resolves.toMatchObject({
+      outcome: 'failure',
+      reason: 'idempotency-conflict',
+    });
+    expect(store.sales).toHaveLength(1);
+    expect(store.sales[0]?.tableId).toBe(TABLE);
   });
 
   it('binds order type into the idempotent checkout intent', async () => {

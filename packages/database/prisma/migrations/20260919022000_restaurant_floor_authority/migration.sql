@@ -47,6 +47,13 @@ CREATE TABLE "restaurant_tables" (
   CONSTRAINT "restaurant_tables_tenantId_branchId_fkey"
     FOREIGN KEY ("tenantId", "branchId") REFERENCES "branches"("tenantId", "id")
     ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "restaurant_tables_tenantId_zoneId_fkey"
+    FOREIGN KEY ("tenantId", "zoneId")
+    REFERENCES "restaurant_zones"("tenantId", "id")
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  -- A zone is tenant-owned by the standard (tenantId,id) key above. This
+  -- second constraint additionally proves that a table cannot point at a zone
+  -- from another branch of the same merchant.
   CONSTRAINT "restaurant_tables_tenantId_branchId_zoneId_fkey"
     FOREIGN KEY ("tenantId", "branchId", "zoneId")
     REFERENCES "restaurant_zones"("tenantId", "branchId", "id")
@@ -78,12 +85,14 @@ CREATE INDEX "sales_tenantId_tableId_idx" ON "sales"("tenantId", "tableId");
 
 ALTER TABLE "restaurant_zones" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "restaurant_zones" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "restaurant_zones_isolation" ON "restaurant_zones";
 CREATE POLICY "restaurant_zones_isolation" ON "restaurant_zones"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "restaurant_tables" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "restaurant_tables" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "restaurant_tables_isolation" ON "restaurant_tables";
 CREATE POLICY "restaurant_tables_isolation" ON "restaurant_tables"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
