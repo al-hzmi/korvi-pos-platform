@@ -7,7 +7,8 @@ import type { FastifyReply, preHandlerAsyncHookHandler } from 'fastify';
 const PRODUCTION_COOKIE = '__Host-korvi_platform_session';
 const DEVELOPMENT_COOKIE = 'korvi_platform_session';
 const TOKEN_VERSION = 2;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const PLATFORM_PERMISSIONS = [
   'platform.tenants.read',
@@ -167,7 +168,11 @@ function configuredValues(config: ApiConfig): {
   };
 }
 
-function principal(actor: string, expiresAt: number, sessionId: string | null): PlatformPrincipal {
+function principal(
+  actor: string,
+  expiresAt: number,
+  sessionId: string | null,
+): PlatformPrincipal {
   return {
     controlPlaneActorRef: actor,
     expiresAt,
@@ -227,7 +232,9 @@ export function createPlatformAuth(
   ): Promise<string> {
     if (values === null) throw new Error('Platform administration is not configured.');
     const actor = normalizeControlPlaneActor(subject.controlPlaneActorRef);
-    if (actor !== values.actor) throw new Error('Platform principal does not match configuration.');
+    if (actor !== values.actor) {
+      throw new Error('Platform principal does not match configuration.');
+    }
 
     const sid = randomUUID();
     const exp = Math.floor(now.getTime() / 1000) + values.ttl;
