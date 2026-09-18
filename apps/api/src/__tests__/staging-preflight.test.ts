@@ -90,6 +90,8 @@ describe('staging database refusal before serving traffic', () => {
     ).toBe(true);
     expect(expected.tables).toContain('inventory_cost_balances');
     expect(expected.tables).toContain('tenant_owner_bootstrap_invitations');
+    expect(expected.tables).toContain('platform_support_notes');
+    expect(expected.tables).toContain('platform_admin_sessions');
     expect(expected.tables).toContain('zatca_csid_provisioning_attempts');
     expect(expected.tables).toContain('zatca_fatoora_credentials');
     expect(expected.tables).toContain('zatca_invoice_submissions');
