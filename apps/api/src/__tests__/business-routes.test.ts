@@ -1376,8 +1376,10 @@ describe('POST /v1/sales', () => {
 });
 
 describe('restaurant order context route', () => {
-  it('requires the mode for restaurants and returns the persisted mode when supplied', async () => {
-    app = await build('cashier');
+  it(
+    'requires the mode for restaurants and returns the persisted mode when supplied',
+    async () => {
+      app = await build('cashier');
     business.settings[0] = { ...business.settings[0]!, vertical: 'restaurant' };
     const cookie = await cookieFor(app);
 
@@ -1408,10 +1410,9 @@ describe('restaurant order context route', () => {
       },
     });
     expect(accepted.statusCode).toBe(201);
-    expect(
-      accepted.json<{ sale: { orderType: string } }>().sale.orderType,
-    ).toBe('delivery');
-  });
+      expect(accepted.json<{ sale: { orderType: string } }>().sale.orderType).toBe('delivery');
+    },
+  );
 
   it('does not allow restaurant context to leak into a retail sale', async () => {
     app = await build('cashier');
