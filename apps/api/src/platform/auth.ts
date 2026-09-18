@@ -168,11 +168,7 @@ function configuredValues(config: ApiConfig): {
   };
 }
 
-function principal(
-  actor: string,
-  expiresAt: number,
-  sessionId: string | null,
-): PlatformPrincipal {
+function principal(actor: string, expiresAt: number, sessionId: string | null): PlatformPrincipal {
   return {
     controlPlaneActorRef: actor,
     expiresAt,
