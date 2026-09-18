@@ -82,7 +82,8 @@ interface SaleRow {
   customerId: string | null;
   operationId: string;
   status: string;
-  orderType: string | null;
+  /** Optional only for legacy/mocked adapters that predate the additive column. */
+  orderType?: string | null;
   sequence: number;
   priceMode: string;
   currency: string;
@@ -187,7 +188,7 @@ function saleToDomain(scope: TenantScope, row: SaleRow): SaleRecord {
     operationId: row.operationId,
     status: oneOf(STATUSES, row.status, 'sales.status'),
     orderType:
-      row.orderType === null
+      row.orderType === null || row.orderType === undefined
         ? null
         : oneOf(RESTAURANT_ORDER_TYPES, row.orderType, 'sales.orderType'),
     sequence: row.sequence,
