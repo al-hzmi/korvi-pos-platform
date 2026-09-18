@@ -25,6 +25,10 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
       value.orderType === 'takeaway' ||
       value.orderType === 'delivery'
     ) ||
+    !(
+      value.tableId === undefined ||
+      (typeof value.tableId === 'string' && isUuidV7(value.tableId))
+    ) ||
     typeof value.cashReceivedMinor !== 'string' ||
     !INTEGER.test(value.cashReceivedMinor) ||
     !Array.isArray(value.lines) ||

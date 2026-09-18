@@ -21,6 +21,7 @@ export interface CheckoutSubmission {
   readonly terminalId: string;
   readonly expectedShiftId?: string;
   readonly orderType?: RestaurantOrderType;
+  readonly tableId?: string;
   readonly lines: readonly CartLine[];
   readonly cashReceivedMinor: string;
 }
@@ -54,6 +55,7 @@ export function runCheckout(
     terminalId: input.terminalId,
     ...(input.expectedShiftId === undefined ? {} : { expectedShiftId: input.expectedShiftId }),
     ...(input.orderType === undefined ? {} : { orderType: input.orderType }),
+    ...(input.tableId === undefined ? {} : { tableId: input.tableId }),
     cashReceivedMinor: input.cashReceivedMinor,
     lines: cartToRequestLines(input.lines),
   }));

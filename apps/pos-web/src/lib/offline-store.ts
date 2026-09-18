@@ -57,6 +57,7 @@ export interface OfflineSaleDraft {
   readonly lines: readonly CartLine[];
   readonly cash: string;
   readonly orderType?: RestaurantOrderType;
+  readonly tableId?: string;
   readonly priceMode: PriceMode;
   readonly updatedAt: string;
 }
@@ -226,6 +227,8 @@ export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
     value.lines.every(isCartLine) &&
     typeof value.cash === 'string' &&
     isOptionalRestaurantOrderType(value.orderType) &&
+    (value.tableId === undefined ||
+      (typeof value.tableId === 'string' && isUuidV7(value.tableId))) &&
     isPriceMode(value.priceMode) &&
     typeof value.updatedAt === 'string' &&
     Number.isFinite(Date.parse(value.updatedAt))
@@ -492,6 +495,7 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
     lines: value.lines,
     cash: value.cash,
     ...(value.orderType === undefined ? {} : { orderType: value.orderType }),
+    ...(value.tableId === undefined ? {} : { tableId: value.tableId }),
     priceMode: value.priceMode,
     updatedAt: value.updatedAt,
   };

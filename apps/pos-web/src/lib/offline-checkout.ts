@@ -67,6 +67,7 @@ export function checkoutQueueOperation(
     terminalId: intent.terminalId,
     expectedShiftId: intent.expectedShiftId,
     ...(intent.orderType === undefined ? {} : { orderType: intent.orderType }),
+    ...(intent.tableId === undefined ? {} : { tableId: intent.tableId }),
     cashReceivedMinor: intent.cashReceivedMinor,
     lines: intent.lines.map((line) => ({ ...line })),
   };

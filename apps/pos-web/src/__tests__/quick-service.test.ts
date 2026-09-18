@@ -84,7 +84,8 @@ describe('Quick-Service operational state', () => {
       isOfflineSaleDraft({
         lines,
         cash: '15',
-        orderType: 'delivery',
+        orderType: 'dine-in',
+        tableId: '018f1000-0000-7000-8000-000000000126',
         priceMode: 'tax-inclusive',
         updatedAt: '2026-09-18T00:00:00.000Z',
       }),
@@ -105,6 +106,7 @@ describe('Quick-Service operational state', () => {
       terminalId: '018f1000-0000-7000-8000-000000000124',
       expectedShiftId: '018f1000-0000-7000-8000-000000000125',
       orderType: 'dine-in' as const,
+      tableId: '018f1000-0000-7000-8000-000000000126',
       cashReceivedMinor: '1500',
       lines: [{ productId: PRODUCT.id, quantityScaled: '1000' }],
     };
@@ -159,6 +161,9 @@ describe('Quick-Service operational state', () => {
     expect(ticket.sourceOperationId).toBe(intent.operationId);
 
     const queued = checkoutQueueOperation(intent);
-    expect(queued.payload).toMatchObject({ orderType: 'dine-in' });
+    expect(queued.payload).toMatchObject({
+      orderType: 'dine-in',
+      tableId: '018f1000-0000-7000-8000-000000000126',
+    });
   });
 });

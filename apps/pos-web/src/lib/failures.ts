@@ -121,6 +121,15 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'نوع الطلب مخصص لوضع المطاعم والمقاهي فقط.',
     action: 'blocking',
   },
+  'table-required': { message: 'اختر الطاولة للطلب المحلي.', action: 'amend-cart' },
+  'table-unavailable': {
+    message: 'الطاولة لم تعد متاحة لهذا الفرع. اختر طاولة أخرى.',
+    action: 'amend-cart',
+  },
+  'table-not-applicable': {
+    message: 'الطاولة متاحة للطلب المحلي فقط.',
+    action: 'amend-cart',
+  },
 };
 
 export function describeFailure(error: unknown): Failure {

@@ -44,6 +44,26 @@ export interface TerminalsResponse {
   readonly terminals: readonly TerminalSummary[];
 }
 
+export interface RestaurantFloorZone {
+  readonly id: string;
+  readonly nameAr: string;
+  readonly sortOrder: number;
+}
+
+export interface RestaurantFloorTable {
+  readonly id: string;
+  readonly zoneId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly capacity: number | null;
+}
+
+export interface RestaurantFloorResponse {
+  readonly branchId: string;
+  readonly zones: readonly RestaurantFloorZone[];
+  readonly tables: readonly RestaurantFloorTable[];
+}
+
 export interface ProductSummary {
   readonly id: string;
   /** Optional only so pre-upgrade durable catalogue rows remain readable. */
@@ -142,6 +162,8 @@ export interface SaleSummary {
   readonly operationId: string;
   /** Optional for backward-compatible local fixtures; live responses carry null or a recorded value. */
   readonly orderType?: RestaurantOrderType | null;
+  /** Operational dine-in context only; never fiscal receipt content. */
+  readonly tableId?: string | null;
   readonly sequence: number;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
@@ -197,6 +219,7 @@ export interface CheckoutRequest {
   /** Delayed/offline replay precondition. The server derives the active shift and only compares. */
   readonly expectedShiftId?: string;
   readonly orderType?: RestaurantOrderType;
+  readonly tableId?: string;
   readonly cashReceivedMinor: string;
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
 }

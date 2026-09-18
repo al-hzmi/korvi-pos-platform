@@ -35,6 +35,7 @@ import type {
   PurchaseReceiptResult,
   PurchaseReceiptSummary,
   ProductSummary,
+  RestaurantFloorResponse,
   PurchasingBranch,
   PurchasingPage,
   PurchasingProduct,
@@ -119,6 +120,7 @@ export interface ApiClient {
   }): Promise<Principal>;
   logout(): Promise<void>;
   terminals(options?: RequestOptions): Promise<TerminalsResponse>;
+  restaurantFloor(options?: RequestOptions): Promise<RestaurantFloorResponse>;
   dashboardSummary(options?: RequestOptions): Promise<DashboardSummary>;
   products(
     query: { readonly q?: string; readonly limit?: number },
@@ -344,6 +346,14 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
       return (await call('/v1/terminals', { method: 'GET' }, options)) as TerminalsResponse;
     },
 
+    async restaurantFloor(options) {
+      return (await call(
+        '/v1/restaurant/floor',
+        { method: 'GET' },
+        options,
+      )) as RestaurantFloorResponse;
+    },
+
     async dashboardSummary(options) {
       return (await call('/v1/dashboard/summary', { method: 'GET' }, options)) as DashboardSummary;
     },
@@ -396,6 +406,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
               ? {}
               : { expectedShiftId: request.expectedShiftId }),
             ...(request.orderType === undefined ? {} : { orderType: request.orderType }),
+            ...(request.tableId === undefined ? {} : { tableId: request.tableId }),
             cashReceivedMinor: request.cashReceivedMinor,
             lines: request.lines.map((line) => ({
               productId: line.productId,

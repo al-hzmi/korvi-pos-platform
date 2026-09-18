@@ -9,6 +9,7 @@ import { CheckoutPanel } from './checkout-panel';
 import { SaleReceipt } from './sale-receipt';
 import { PreparationTicketControl } from './preparation-ticket-control';
 import { RestaurantOrderTypeControl } from './restaurant-order-type-control';
+import { RestaurantTableControl } from './restaurant-table-control';
 import { StatusNote } from './status-note';
 import { previewCart } from '../lib/cart';
 import { canOpenControlCentre } from '../lib/control-access';
@@ -28,7 +29,13 @@ import { useProductSearch } from '../hooks/use-product-search';
 import type { JSX } from 'react';
 import type { PriceMode, RestaurantOrderType, Vertical } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
-import type { Principal, ProductSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
+import type {
+  Principal,
+  ProductSummary,
+  RestaurantFloorResponse,
+  ShiftSummary,
+  TerminalSummary,
+} from '../lib/api-types';
 import type { OfflineSaleScope } from '../lib/offline-store';
 import type { OfflineStoreProtector } from '../lib/offline-protection';
 import type { FiscalReceiptPrinter } from '../lib/receipt-print-flight';
@@ -109,9 +116,43 @@ export function CashierScreen({
   const [cash, setCash] = useState('');
   const quickService = vertical === 'restaurant';
   const [orderType, setOrderType] = useState<RestaurantOrderType>('takeaway');
+  const [tableId, setTableId] = useState<string | null>(null);
+  const [restaurantFloor, setRestaurantFloor] = useState<RestaurantFloorResponse | null>(null);
+  const [restaurantFloorStatus, setRestaurantFloorStatus] = useState<
+    'loading' | 'ready' | 'failed'
+  >(quickService ? 'loading' : 'ready');
   const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const cashInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!quickService) {
+      setRestaurantFloor(null);
+      setRestaurantFloorStatus('ready');
+      return;
+    }
+
+    const controller = new AbortController();
+    let live = true;
+    setRestaurantFloorStatus('loading');
+    void api
+      .restaurantFloor({ signal: controller.signal })
+      .then((floor) => {
+        if (!live) return;
+        setRestaurantFloor(floor);
+        setRestaurantFloorStatus('ready');
+      })
+      .catch((error: unknown) => {
+        if (!live) return;
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setRestaurantFloorStatus('failed');
+      });
+
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [api, quickService, terminal.branchId]);
 
   const durableScope = useMemo<OfflineSaleScope>(
     () => ({
@@ -160,6 +201,7 @@ export function CashierScreen({
       cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
       setCash(durableState.draft.cash);
       if (durableState.draft.orderType !== undefined) setOrderType(durableState.draft.orderType);
+      if (durableState.draft.tableId !== undefined) setTableId(durableState.draft.tableId);
     }
     setDraftHydrated(true);
   }, [cart.dispatch, draftHydrated, durableState]);
@@ -178,6 +220,7 @@ export function CashierScreen({
       lines: cart.lines,
       cash,
       ...(quickService ? { orderType } : {}),
+      ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
       priceMode,
       updatedAt: new Date().toISOString(),
     });
@@ -192,6 +235,7 @@ export function CashierScreen({
     priceMode,
     quickService,
     orderType,
+    tableId,
   ]);
 
   const browse = search.browse;
@@ -233,6 +277,7 @@ export function CashierScreen({
     cart.dispatch({ type: 'clear' });
     setCash('');
     setOrderType('takeaway');
+    setTableId(null);
     search.browse();
     focusSearch();
   }, [checkout, cart, clearDraft, search, focusSearch]);
@@ -243,10 +288,35 @@ export function CashierScreen({
       terminalId: terminal.id,
       expectedShiftId: shift.id,
       ...(quickService ? { orderType } : {}),
+      ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
       lines: cart.lines,
       cashReceivedMinor: cashMinor,
     });
-  }, [checkout, terminal.id, shift.id, quickService, orderType, cart.lines, cashMinor]);
+  }, [
+    checkout,
+    terminal.id,
+    shift.id,
+    quickService,
+    orderType,
+    tableId,
+    cart.lines,
+    cashMinor,
+  ]);
+
+  const selectedRestaurantTable =
+    tableId === null ? null : (restaurantFloor?.tables.find((table) => table.id === tableId) ?? null);
+  const tableSubmissionBlocker =
+    !quickService || orderType !== 'dine-in'
+      ? null
+      : tableId !== null
+        ? restaurantFloorStatus === 'ready' && selectedRestaurantTable === null
+          ? 'الطاولة المحددة لم تعد فعّالة في هذا الفرع. اختر طاولة أخرى.'
+          : null
+        : restaurantFloorStatus === 'loading'
+          ? 'جاري تحميل الطاولات قبل إتمام الطلب المحلي.'
+          : restaurantFloorStatus === 'failed'
+            ? 'تعذّر تحميل الطاولات. أعد الاتصال قبل بدء طلب محلي جديد.'
+            : 'اختر الطاولة قبل إتمام الطلب المحلي.';
 
   const completed = checkout.state.phase === 'succeeded' ? checkout.state.sale : null;
   const orderOperationId = completed?.operationId ?? checkout.state.intent?.operationId ?? null;
@@ -378,7 +448,19 @@ export function CashierScreen({
                 <RestaurantOrderTypeControl
                   value={orderType}
                   disabled={locked}
-                  onChange={setOrderType}
+                  onChange={(value) => {
+                    setOrderType(value);
+                    if (value !== 'dine-in') setTableId(null);
+                  }}
+                />
+              ) : null}
+              {quickService && orderType === 'dine-in' ? (
+                <RestaurantTableControl
+                  floor={restaurantFloor}
+                  status={restaurantFloorStatus}
+                  value={tableId}
+                  disabled={locked}
+                  onChange={setTableId}
                 />
               ) : null}
               <CartPanel
@@ -396,6 +478,7 @@ export function CashierScreen({
                 cashMinor={cashMinor}
                 lineCount={cart.lines.length}
                 locked={locked}
+                submissionBlocker={tableSubmissionBlocker}
                 state={checkout.state}
                 cashRef={cashInput}
                 onCashChange={setCash}

@@ -19,6 +19,7 @@ export interface CheckoutHandle {
     readonly terminalId: string;
     readonly expectedShiftId: string;
     readonly orderType?: RestaurantOrderType;
+    readonly tableId?: string;
     readonly lines: readonly CartLine[];
     readonly cashReceivedMinor: string;
   }) => void;
