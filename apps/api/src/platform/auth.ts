@@ -226,10 +226,7 @@ export function createPlatformAuth(
     }
   }
 
-  async function issueSession(
-    subject: PlatformPrincipal,
-    now: Date = new Date(),
-  ): Promise<string> {
+  async function issueSession(subject: PlatformPrincipal, now: Date = new Date()): Promise<string> {
     if (values === null) throw new Error('Platform administration is not configured.');
     const actor = normalizeControlPlaneActor(subject.controlPlaneActorRef);
     if (actor !== values.actor) {
