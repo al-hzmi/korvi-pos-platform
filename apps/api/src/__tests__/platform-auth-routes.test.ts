@@ -155,6 +155,62 @@ describe('platform routes', () => {
     expect(authorityInjection.json()).toEqual({ error: 'invalid_body' });
   });
 
+  it('revokes a logged-out Platform session without killing a different live session', async () => {
+    const auth = createPlatformAuth(config());
+    app = Fastify({ logger: false });
+    registerPlatformRoutes(app, { auth, service: recordingService() });
+    await app.ready();
+
+    const firstLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      payload: { accessKey: ACCESS_KEY },
+    });
+    const secondLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      payload: { accessKey: ACCESS_KEY },
+    });
+    expect(firstLogin.statusCode).toBe(200);
+    expect(secondLogin.statusCode).toBe(200);
+
+    const firstCookie = String(firstLogin.headers['set-cookie']).split(';', 1)[0];
+    const stolenCookie = String(secondLogin.headers['set-cookie']).split(';', 1)[0];
+
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/platform/session',
+          headers: { cookie: stolenCookie },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    const logout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: { cookie: stolenCookie },
+    });
+    expect(logout.statusCode).toBe(204);
+    expect(String(logout.headers['set-cookie'])).toContain('Max-Age=0');
+
+    const replay = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/session',
+      headers: { cookie: stolenCookie },
+    });
+    expect(replay.statusCode).toBe(401);
+    expect(replay.json()).toEqual({ error: 'platform_unauthenticated' });
+
+    const otherSession = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/session',
+      headers: { cookie: firstCookie },
+    });
+    expect(otherSession.statusCode).toBe(200);
+  });
+
   it('keeps operational provisioning behind Platform authority and server-derived actor identity', async () => {
     let calls = 0;
     let seenActor: string | undefined;
