@@ -120,7 +120,7 @@ try {
     assert.equal(result.claimedId, '018f4400-0001-7000-8000-000000000001');
     assert.equal(result.claimedAttempts, 1);
     lines.push(
-      'v2_to_v4_queue_migration=PASS',
+      'v2_to_v5_queue_migration=PASS',
       'uuidv7_oldest_first=PASS',
       'concurrent_claim_single_winner=PASS',
       'active_lease_blocks_parallel_worker=PASS',
