@@ -106,9 +106,9 @@ async function waitForReady(timeoutMs = 30_000) {
 try {
   await waitForReady();
   const result = await evaluate(`globalThis.gate44Proof.${phase}()`);
-  assert.equal(result.version, 4);
+  assert.equal(result.version, 5);
 
-  const lines = [`phase=${phase}=PASS`, 'schema_version=4'];
+  const lines = [`phase=${phase}=PASS`, 'schema_version=5'];
   if (phase === 'seed') {
     assert.equal(result.migratedV2Rows, true);
     assert.deepEqual(result.initialOrder, [
