@@ -43,6 +43,10 @@ const CONTROL_PLANE_TABLES = ['platform_support_notes'] as const;
  * FORCE-RLS admission checks as Prisma-mapped tenant tables.
  */
 const MIGRATION_OWNED_TENANT_TABLES = [
+  'device_enrollments',
+  'native_auth_challenges',
+  'native_sessions',
+  'zatca_csid_bindings',
   'zatca_seller_fiscal_profiles',
   'zatca_terminal_fiscal_chains',
   'zatca_invoice_fiscalizations',
