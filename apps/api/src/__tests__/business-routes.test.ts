@@ -1375,7 +1375,6 @@ describe('POST /v1/sales', () => {
   });
 });
 
-
 describe('restaurant order context route', () => {
   it('requires the mode for restaurants and returns the persisted mode when supplied', async () => {
     app = await build('cashier');
