@@ -155,6 +155,16 @@ export async function createNativeAuthChallenge(
     const binding = await activeBindingWithin(tx, input.tenantId, input.deviceEnrollmentId);
     if (binding === null) return null;
 
+    // Challenges are ephemeral authentication material, not business evidence.
+    // Remove only this device's already-consumed or expired rows before issuing
+    // another one so an unauthenticated caller cannot grow the table forever.
+    // Active, unconsumed challenges remain untouched and can still complete.
+    await tx.$executeRaw`
+      DELETE FROM "native_auth_challenges"
+      WHERE "tenantId" = ${input.tenantId}::uuid
+        AND "deviceEnrollmentId" = ${input.deviceEnrollmentId}::uuid
+        AND ("consumedAt" IS NOT NULL OR "expiresAt" <= ${input.issuedAt})`;
+
     await tx.$executeRaw`
       INSERT INTO "native_auth_challenges" (
         "id", "tenantId", "deviceEnrollmentId", "terminalId", "branchId",
