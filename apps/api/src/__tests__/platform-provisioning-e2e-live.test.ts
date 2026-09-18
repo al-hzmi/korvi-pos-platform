@@ -3,8 +3,10 @@ import { newId } from '@korvi/domain';
 import {
   createPrismaClient,
   provisionPermissionCatalogue,
+  withControlPlane,
   withLoginSlug,
   withTenant,
+  withoutTenant,
 } from '@korvi/database';
 import { buildServer } from '../server.js';
 import { loadConfig } from '../config.js';
@@ -163,6 +165,28 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
     });
     expect(platformLogin.statusCode).toBe(200);
     const platformCookie = cookieFrom(platformLogin);
+
+    const platformSession = await withControlPlane(prisma, PLATFORM_ACTOR, async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string; revokedAt: Date | null }[]>`
+        SELECT "id", "revokedAt"
+          FROM "platform_admin_sessions"
+         WHERE "actorRef" = ${PLATFORM_ACTOR}
+         ORDER BY "createdAt" DESC
+         LIMIT 1
+      `;
+      return rows[0] ?? null;
+    });
+    expect(platformSession).not.toBeNull();
+    expect(platformSession?.revokedAt).toBeNull();
+
+    const hiddenWithoutControlPlane = await withoutTenant(prisma, async (tx) => {
+      return tx.$queryRaw<{ id: string }[]>`
+        SELECT "id"
+          FROM "platform_admin_sessions"
+         WHERE "id" = ${platformSession?.id}::uuid
+      `;
+    });
+    expect(hiddenWithoutControlPlane).toEqual([]);
 
     // 2 — Tenant/business creation through the supported platform workflow.
     const createTenant = await app.inject({
@@ -390,5 +414,31 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
         terminalId: operations.terminal.id,
       });
     });
+
+    const platformLogout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: writeHeaders(platformCookie),
+    });
+    expect(platformLogout.statusCode).toBe(204);
+
+    const replayedPlatformCookie = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/tenants?limit=1',
+      headers: writeHeaders(platformCookie),
+    });
+    expect(replayedPlatformCookie.statusCode).toBe(401);
+    expect(replayedPlatformCookie.json()).toEqual({ error: 'platform_unauthenticated' });
+
+    const revoked = await withControlPlane(prisma, PLATFORM_ACTOR, async (tx) => {
+      const rows = await tx.$queryRaw<{ revokedAt: Date | null }[]>`
+        SELECT "revokedAt"
+          FROM "platform_admin_sessions"
+         WHERE "id" = ${platformSession?.id}::uuid
+         LIMIT 1
+      `;
+      return rows[0]?.revokedAt ?? null;
+    });
+    expect(revoked).not.toBeNull();
   }, 120_000);
 });
