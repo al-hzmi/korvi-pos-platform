@@ -81,6 +81,8 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'duplicate-line': 'الصنف مكرر في السلة. ادمج الكمية في سطر واحد.',
   'shift-invalid': 'الوردية لم تعد صالحة لهذا الصندوق. تحقّق من الوردية.',
   'tenant-misconfigured': 'إعدادات المنشأة غير مكتملة.',
+  'order-type-required': 'حدّد نوع الطلب قبل إتمام البيع.',
+  'order-type-not-applicable': 'نوع الطلب مخصص لوضع المطاعم والمقاهي فقط.',
 };
 
 /** 409 for the two states a retry can resolve; 422 for a request that cannot. */
@@ -103,6 +105,8 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'duplicate-line': 422,
   'shift-invalid': 409,
   'tenant-misconfigured': 409,
+  'order-type-required': 422,
+  'order-type-not-applicable': 422,
 };
 
 /**
@@ -533,6 +537,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         ...(parsed.data.expectedShiftId === undefined
           ? {}
           : { expectedShiftId: parsed.data.expectedShiftId }),
+        ...(parsed.data.orderType === undefined ? {} : { orderType: parsed.data.orderType }),
         lines: parsed.data.lines,
         ...(parsed.data.cashReceivedMinor === undefined
           ? {}

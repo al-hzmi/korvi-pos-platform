@@ -239,6 +239,9 @@ export const checkoutBody = z
     // Replay precondition, not an authority assertion. The server derives the
     // active shift and refuses if it no longer matches this immutable intent.
     expectedShiftId: UUID.optional(),
+    // Operational only. Applicability is decided from tenant_settings.vertical;
+    // this value never changes VAT, invoice type or fiscalization.
+    orderType: z.enum(['dine-in', 'takeaway', 'delivery']).optional(),
     cashReceivedMinor: MINOR.optional(),
     tenders: z.array(tenderBody).min(1).max(MAX_TENDERS).optional(),
     basketDiscount: discountBody.optional(),

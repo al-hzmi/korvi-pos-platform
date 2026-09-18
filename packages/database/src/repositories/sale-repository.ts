@@ -9,6 +9,7 @@ import type {
   InvoiceType,
   PriceMode,
   ProductType,
+  RestaurantOrderType,
   RecordSaleInput,
   SaleDiscountRecord,
   SaleLineRecord,
@@ -23,6 +24,7 @@ import type {
 import type { PrismaClient } from '../client.js';
 
 const STATUSES: readonly SaleStatus[] = ['finalized', 'voided'];
+const RESTAURANT_ORDER_TYPES: readonly RestaurantOrderType[] = ['dine-in', 'takeaway', 'delivery'];
 const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
 const TENDER_KINDS: readonly TenderKind[] = ['cash', 'card', 'mada', 'transfer', 'electronic'];
 const TENDER_SCHEMES: readonly TenderScheme[] = [...ELECTRONIC_SCHEMES];
@@ -80,6 +82,7 @@ interface SaleRow {
   customerId: string | null;
   operationId: string;
   status: string;
+  orderType: string | null;
   sequence: number;
   priceMode: string;
   currency: string;
@@ -183,6 +186,10 @@ function saleToDomain(scope: TenantScope, row: SaleRow): SaleRecord {
     customerId: row.customerId,
     operationId: row.operationId,
     status: oneOf(STATUSES, row.status, 'sales.status'),
+    orderType:
+      row.orderType === null
+        ? null
+        : oneOf(RESTAURANT_ORDER_TYPES, row.orderType, 'sales.orderType'),
     sequence: row.sequence,
     priceMode: oneOf(PRICE_MODES, row.priceMode, 'sales.priceMode'),
     currency: row.currency,
@@ -423,6 +430,7 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             customerId: sale.customerId,
             operationId: sale.operationId,
             status: sale.status,
+            orderType: sale.orderType ?? null,
             sequence: receipt.sequence,
             priceMode: sale.priceMode,
             currency: sale.currency,

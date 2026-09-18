@@ -367,6 +367,9 @@ export interface CloseShiftRequest {
 
 export type SaleStatus = 'finalized' | 'voided';
 
+/** Operational service mode for restaurant sales; never a fiscal classification. */
+export type RestaurantOrderType = 'dine-in' | 'takeaway' | 'delivery';
+
 /**
  * A sale line as stored.
  *
@@ -444,6 +447,8 @@ export interface SaleRecord {
   readonly customerId: string | null;
   readonly operationId: string;
   readonly status: SaleStatus;
+  /** Null/absent means no immutable service-mode fact was recorded for this sale. */
+  readonly orderType?: RestaurantOrderType | null;
   readonly sequence: number;
   readonly priceMode: PriceMode;
   readonly currency: string;

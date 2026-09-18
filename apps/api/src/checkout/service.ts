@@ -39,6 +39,7 @@ import type {
   InventoryRepository,
   PriceMode,
   Product,
+  RestaurantOrderType,
   ProductRepository,
   SaleDiscountRecord,
   SaleRecord,
@@ -78,7 +79,9 @@ export type CheckoutFailureReason =
   | 'idempotency-conflict'
   | 'duplicate-line'
   | 'shift-invalid'
-  | 'tenant-misconfigured';
+  | 'tenant-misconfigured'
+  | 'order-type-required'
+  | 'order-type-not-applicable';
 
 export interface CheckoutFailure {
   readonly outcome: 'failure';
@@ -110,6 +113,7 @@ export interface SaleSummaryTender {
 export interface SaleSummary {
   readonly saleId: string;
   readonly operationId: string;
+  readonly orderType: RestaurantOrderType | null;
   readonly sequence: number;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
@@ -195,6 +199,8 @@ export interface CheckoutInput {
    * and merely refuses if it is no longer the one under which the intent was captured.
    */
   readonly expectedShiftId?: string | undefined;
+  /** Operational restaurant context. Required only for restaurant tenants. */
+  readonly orderType?: RestaurantOrderType | undefined;
   readonly lines: readonly CheckoutLineInput[];
   /**
    * The cash-only shape the production till sends today.
@@ -282,6 +288,7 @@ function fingerprintCheckoutIntent(
   return fingerprintIntent({
     branchId,
     terminalId: input.terminalId,
+    orderType: input.orderType ?? '',
     lines: input.lines.map((line) => ({
       productId: line.productId,
       quantityScaled: line.quantityScaled,
@@ -309,6 +316,7 @@ function summarise(sale: SaleRecord, invoiceNumber: string, cashierName: string)
   return {
     saleId: sale.id,
     operationId: sale.operationId,
+    orderType: sale.orderType ?? null,
     sequence: sale.sequence,
     invoiceNumber,
     issuedAt: sale.issuedAt,
@@ -475,6 +483,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       const settings = await deps.tenants.settings(scope);
       if (tenant === null || settings === null) {
         return fail('tenant-misconfigured', 'إعدادات المنشأة غير مكتملة.');
+      }
+      if (settings.vertical === 'restaurant' && input.orderType === undefined) {
+        return fail('order-type-required');
+      }
+      if (settings.vertical !== 'restaurant' && input.orderType !== undefined) {
+        return fail('order-type-not-applicable');
       }
 
       // Prices come from here and nowhere else.
@@ -675,6 +689,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             customerId: null,
             operationId: input.operationId,
             status: 'finalized',
+            orderType: input.orderType ?? null,
             priceMode: cart.priceMode,
             currency,
             grossMinor: priced.gross.minor.toString(),
@@ -808,6 +823,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           entityId: recorded.id,
           metadata: {
             sequence: recorded.sequence,
+            orderType: recorded.orderType ?? null,
             total: moneyToMajorString(priced.total),
             lines: recorded.lines.length,
             // Money given away and money taken by something other than cash
