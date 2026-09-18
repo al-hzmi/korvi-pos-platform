@@ -111,9 +111,10 @@ async function waitForReady(timeoutMs = 30_000) {
 try {
   await waitForReady();
   const result = await evaluate(`globalThis.gate43Proof.${phase}()`);
-  assert.equal(result.version, 4);
+  assert.equal(result.version, 5);
   assert.deepEqual([...result.stores].sort(), [
     'catalogue-v1',
+    'protected-sale-drafts-v1',
     'sale-drafts-v1',
     'transaction-queue-v1',
   ]);
