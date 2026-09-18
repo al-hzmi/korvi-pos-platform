@@ -97,6 +97,8 @@ jobs:
 
           metrics_token="$(openssl rand -hex 32)"
           bootstrap_key="$(openssl rand -hex 32)"
+          offline_lease_seed="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+          test "${#offline_lease_seed}" -eq 43
           api_log='artifacts/operations-incident-api.log'
 
           NODE_ENV=production \
@@ -104,6 +106,8 @@ jobs:
           APP_ORIGINS='https://pos.example.invalid' \
           BOOTSTRAP_SIGNING_KEY="$bootstrap_key" \
           METRICS_AUTH_TOKEN="$metrics_token" \
+          OFFLINE_LEASE_SIGNING_SEED_B64="$offline_lease_seed" \
+          OFFLINE_LEASE_KEY_ID='incident-proof-v1' \
           API_PORT="$API_PORT" \
           LOG_LEVEL=info \
           setsid node apps/api/dist/index.js >"$api_log" 2>&1 &
@@ -193,7 +197,9 @@ jobs:
           test "$recovered" = 'true'
           echo 'readiness_recovered_without_api_restart=PASS' >> "$PROOF_LOG"
 
-          if grep -Fq "$metrics_token" "$api_log" || grep -Fq "$bootstrap_key" "$api_log"; then
+          if grep -Fq "$metrics_token" "$api_log" || \
+             grep -Fq "$bootstrap_key" "$api_log" || \
+             grep -Fq "$offline_lease_seed" "$api_log"; then
             echo 'Runtime log leaked an operations credential.' >&2
             exit 1
           fi
