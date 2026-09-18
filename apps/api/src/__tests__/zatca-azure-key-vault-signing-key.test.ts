@@ -328,29 +328,29 @@ describe('Azure Key Vault ZATCA signing authority', () => {
   it(
     'bounds a hanging Azure Key Vault request instead of pinning fiscalization indefinitely',
     async () => {
-    const fetchImpl = vi.fn<typeof fetch>(
-      (_input, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          const signal = init?.signal;
-          if (signal?.aborted === true) {
-            reject(new Error('aborted'));
-            return;
-          }
-          signal?.addEventListener(
-            'abort',
-            () => reject(new Error('aborted')),
-            { once: true },
-          );
-        }),
-    );
-    const rest = new AzureKeyVaultRestClient({
-      vaultUrl: 'https://korvi-test.vault.azure.net',
-      accessTokenProvider: { getAccessToken: async () => 'token' },
-      fetchImpl,
-      timeoutMs: 5,
-    });
+      const fetchImpl = vi.fn<typeof fetch>(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            if (signal?.aborted === true) {
+              reject(new Error('aborted'));
+              return;
+            }
+            signal?.addEventListener(
+              'abort',
+              () => reject(new Error('aborted')),
+              { once: true },
+            );
+          }),
+      );
+      const rest = new AzureKeyVaultRestClient({
+        vaultUrl: 'https://korvi-test.vault.azure.net',
+        accessTokenProvider: { getAccessToken: async () => 'token' },
+        fetchImpl,
+        timeoutMs: 5,
+      });
 
-    await expect(rest.getKey(KEY_ID)).rejects.toThrow(/Key Vault request failed/i);
+      await expect(rest.getKey(KEY_ID)).rejects.toThrow(/Key Vault request failed/i);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     },
   );
