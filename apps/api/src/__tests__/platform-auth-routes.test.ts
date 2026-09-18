@@ -52,6 +52,11 @@ afterEach(async () => {
 });
 
 describe('platform auth', () => {
+  it('fails closed if production Platform administration is configured without durable revocation authority', () => {
+    const production = { ...config(), isProduction: true } as ReturnType<typeof config>;
+    expect(() => createPlatformAuth(production)).toThrow(/durable session store/i);
+  });
+
   it('uses an independent signed short-lived session and rejects tampering or expiry', async () => {
     const auth = createPlatformAuth(config());
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
