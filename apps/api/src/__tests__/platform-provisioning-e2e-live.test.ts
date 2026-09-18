@@ -200,12 +200,12 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
     expect(secondPlatformLogin.statusCode).toBe(200);
     const stolenPlatformCookie = cookieFrom(secondPlatformLogin);
 
-    const platformLogout = await app.inject({
+    const stolenPlatformLogout = await app.inject({
       method: 'POST',
       url: '/v1/platform/logout',
       headers: writeHeaders(stolenPlatformCookie),
     });
-    expect(platformLogout.statusCode).toBe(204);
+    expect(stolenPlatformLogout.statusCode).toBe(204);
 
     const verifier = buildServer(
       loadConfig({
