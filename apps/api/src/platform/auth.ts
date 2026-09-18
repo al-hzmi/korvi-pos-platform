@@ -183,9 +183,13 @@ function principal(
 
 export function createPlatformAuth(
   config: ApiConfig,
-  sessionStore: PlatformSessionStore = createMemoryPlatformSessionStore(),
+  sessionStore?: PlatformSessionStore,
 ): PlatformAuth {
   const values = configuredValues(config);
+  if (config.isProduction && values !== null && sessionStore === undefined) {
+    throw new Error('Production Platform administration requires a durable session store.');
+  }
+  const sessions = sessionStore ?? createMemoryPlatformSessionStore();
   const name = cookieName(config.isProduction);
 
   function authenticateAccessKey(accessKey: string): PlatformPrincipal | null {
@@ -239,7 +243,7 @@ export function createPlatformAuth(
     const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
     const token = `${encoded}.${signature(encoded, values.signingKey)}`;
 
-    await sessionStore.create({
+    await sessions.create({
       id: sid,
       actorRef: actor,
       createdAt: now,
@@ -256,7 +260,7 @@ export function createPlatformAuth(
     if (payload === null || values === null) return null;
     if (payload.exp <= Math.floor(now.getTime() / 1000)) return null;
 
-    const active = await sessionStore.isActive({
+    const active = await sessions.isActive({
       id: payload.sid,
       actorRef: values.actor,
       at: now,
@@ -275,7 +279,7 @@ export function createPlatformAuth(
     const payload = parseSignedSession(token);
     if (payload === null || payload.exp <= Math.floor(now.getTime() / 1000)) return false;
 
-    return sessionStore.revoke({
+    return sessions.revoke({
       id: payload.sid,
       actorRef: values.actor,
       at: now,
