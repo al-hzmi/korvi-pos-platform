@@ -112,9 +112,21 @@ const csid = {
 const invoice = buildInvoiceInput(scope.tenantId, terminalId, issuedAt);
 const rootSha256Hex = sha256Hex(rootDer);
 const canonicalizer = new Libxml2ZatcaCanonicalizer();
+const csidBindings = {
+  async findActiveForTerminal(requestedScope, requestedTerminalId) {
+    if (requestedScope.tenantId !== scope.tenantId || requestedTerminalId !== terminalId) {
+      return null;
+    }
+    return csid;
+  },
+  async activate() {
+    throw new Error('Proof adapter does not mutate CSID binding authority.');
+  },
+};
 const sealer = createZatcaSimplifiedInvoiceSealer({
   canonicalizer,
   signingKey,
+  csidBindings,
   trustedAnchorSha256Hex: [rootSha256Hex],
 });
 
@@ -122,7 +134,6 @@ const result = await sealer.seal({
   scope,
   terminalId,
   stampingTime,
-  csid,
   invoice,
 });
 
