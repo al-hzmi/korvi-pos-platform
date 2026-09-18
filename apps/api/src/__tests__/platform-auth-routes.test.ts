@@ -52,27 +52,27 @@ afterEach(async () => {
 });
 
 describe('platform auth', () => {
-  it('uses an independent signed short-lived session and rejects tampering or expiry', () => {
+  it('uses an independent signed short-lived session and rejects tampering or expiry', async () => {
     const auth = createPlatformAuth(config());
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     expect(principal).not.toBeNull();
     expect(auth.authenticateAccessKey(`${ACCESS_KEY}x`)).toBeNull();
 
     const now = new Date('2026-09-14T10:00:00.000Z');
-    const token = auth.issueSession(principal!, now);
+    const token = await auth.issueSession(principal!, now);
     expect(
-      auth.verifySession(token, new Date('2026-09-14T10:59:59.000Z'))?.controlPlaneActorRef,
+      (await auth.verifySession(token, new Date('2026-09-14T10:59:59.000Z')))?.controlPlaneActorRef,
     ).toBe(ACTOR);
-    expect(auth.verifySession(token, new Date('2026-09-14T11:00:00.000Z'))).toBeNull();
+    expect(await auth.verifySession(token, new Date('2026-09-14T11:00:00.000Z'))).toBeNull();
 
     const tampered = `${token.slice(0, -1)}${token.endsWith('a') ? 'b' : 'a'}`;
-    expect(auth.verifySession(tampered, new Date('2026-09-14T10:30:00.000Z'))).toBeNull();
-    expect(() =>
+    expect(await auth.verifySession(tampered, new Date('2026-09-14T10:30:00.000Z'))).toBeNull();
+    await expect(
       auth.issueSession({
         ...principal!,
         controlPlaneActorRef: 'platform:other-operator',
       }),
-    ).toThrow(/does not match configuration/i);
+    ).rejects.toThrow(/does not match configuration/i);
   });
 });
 
@@ -207,7 +207,7 @@ describe('platform routes', () => {
 
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     if (principal === null) throw new Error('test platform credential was rejected');
-    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+    const cookie = `korvi_platform_session=${await auth.issueSession(principal)}`;
 
     const injectedAuthority = await app.inject({
       method: 'POST',
@@ -304,7 +304,7 @@ describe('platform routes', () => {
 
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     if (principal === null) throw new Error('test platform credential was rejected');
-    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+    const cookie = `korvi_platform_session=${await auth.issueSession(principal)}`;
     const payload = {
       operationId: 'op-origin-boundary-1',
       branch: { code: 'BR-01', nameAr: 'الفرع الرئيسي', nameEn: null },
