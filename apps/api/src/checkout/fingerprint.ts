@@ -34,6 +34,8 @@ export interface CheckoutIntentTender {
 export interface CheckoutIntent {
   readonly branchId: string;
   readonly terminalId: string;
+  /** Empty string for non-restaurant checkout; otherwise the recorded operational service mode. */
+  readonly orderType: string;
   readonly lines: readonly CheckoutIntentLine[];
   readonly tenders: readonly CheckoutIntentTender[];
   /** Canonical description of the basket discount, or the empty string. */
@@ -59,8 +61,8 @@ export interface CheckoutIntent {
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
  *
- * `v2` because the payment fields joined the canonical form. A key minted
- * under v1 hashes differently and is treated as a different intent, which is
+ * `v3` because restaurant service mode joined the canonical form after payment
+ * composition. A key minted under an earlier version hashes differently and is
  * the safe direction: a conflict is visible, a false replay is not.
  */
 export function fingerprintIntent(intent: CheckoutIntent): string {
@@ -97,9 +99,10 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
   const canonical = JSON.stringify([
-    'v2',
+    'v3',
     intent.branchId,
     intent.terminalId,
+    intent.orderType,
     intent.basketDiscount,
     tenders,
     lines,
