@@ -49,6 +49,7 @@ import { createMerchantSalesReadService } from './sales/read-service.js';
 import { createDrawerService } from './shifts/service.js';
 import { createMerchantZatcaService } from './zatca/merchant-service.js';
 import { createLazyProductionCheckoutFiscalization } from './zatca/checkout-fiscalization-infrastructure.js';
+import { createStagingSimulationCheckoutFiscalization } from './zatca/staging-simulation-checkout-fiscalization.js';
 import type { MerchantAdminService } from './admin/service.js';
 import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
@@ -157,9 +158,12 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const idempotency = createIdempotencyRepository(prisma);
     const audit = createAuditRepository(prisma);
     const sales = createSaleRepository(prisma);
-    const fiscalization = config.isProduction
-      ? createLazyProductionCheckoutFiscalization({ prisma })
-      : undefined;
+    const fiscalization =
+      config.checkoutFiscalizationMode === 'simulation'
+        ? createStagingSimulationCheckoutFiscalization()
+        : config.checkoutFiscalizationMode === 'production'
+          ? createLazyProductionCheckoutFiscalization({ prisma })
+          : undefined;
     built = {
       tenants,
       dashboard,

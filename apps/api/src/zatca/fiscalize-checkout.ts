@@ -13,8 +13,27 @@ export interface CheckoutFiscalizationPort {
     scope: TenantScope,
     sale: SaleRecord,
     invoice: InvoiceRecord,
-  ): Promise<ZatcaSealedFiscalization | void>;
+  ): Promise<CheckoutFiscalizationArtifact | void>;
 }
+
+export const ZATCA_SIMULATION_DISCLAIMER = 'SIMULATION / NOT FOR TAX USE' as const;
+
+export interface CheckoutSimulationFiscalization {
+  readonly state: 'simulation';
+  readonly scope: TenantScope;
+  readonly invoiceId: string;
+  readonly terminalId: string;
+  readonly sellerName: string;
+  readonly vatRegistrationNumber: string;
+  readonly generatedAt: string;
+  readonly artifact: Uint8Array;
+  readonly artifactHash: Uint8Array;
+  readonly qrCodeBase64: string;
+  readonly disclaimer: typeof ZATCA_SIMULATION_DISCLAIMER;
+}
+
+export type CheckoutFiscalizationArtifact =
+  ZatcaSealedFiscalization | CheckoutSimulationFiscalization;
 
 export interface CheckoutFiscalizationDependencies {
   readonly repository: ZatcaFiscalizationRepository;

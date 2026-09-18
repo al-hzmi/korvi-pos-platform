@@ -343,6 +343,8 @@ export interface ApiConfig {
   readonly PLATFORM_ADMIN_ACTOR_REF: string | undefined;
   readonly PLATFORM_SESSION_TTL_SECONDS: number;
   readonly isProduction: boolean;
+  /** Selected only by the executable entrypoint; never by a public feature flag. */
+  readonly checkoutFiscalizationMode: 'disabled' | 'production' | 'simulation';
 }
 
 /** Development convenience only; production has no default and never gets one. */
@@ -381,5 +383,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     PLATFORM_ADMIN_ACTOR_REF: value.PLATFORM_ADMIN_ACTOR_REF,
     PLATFORM_SESSION_TTL_SECONDS: value.PLATFORM_SESSION_TTL_HOURS * 3600,
     isProduction: value.NODE_ENV === 'production',
+    checkoutFiscalizationMode: value.NODE_ENV === 'production' ? 'production' : 'disabled',
   };
 }

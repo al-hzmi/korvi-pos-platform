@@ -154,6 +154,8 @@ describe('historical fiscal receipt read', () => {
         invoiceNumber: 'INV-42',
         invoiceHashBase64: 'AQID',
         qrCodeBase64: 'PERSISTED_PHASE_2_QR',
+        fiscalizationMode: 'production',
+        disclaimer: null,
       },
     });
     expect(findById).toHaveBeenCalledTimes(1);

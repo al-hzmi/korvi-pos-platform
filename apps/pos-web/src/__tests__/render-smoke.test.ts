@@ -8,7 +8,13 @@ import { CashierScreen } from '../components/cashier-screen';
 import { SaleReceipt } from '../components/sale-receipt';
 import { FOREIGN_SHIFT } from '../lib/shift';
 import type { ApiClient } from '../lib/api';
-import type { Principal, SaleSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
+import type {
+  FiscalReceipt,
+  Principal,
+  SaleSummary,
+  ShiftSummary,
+  TerminalSummary,
+} from '../lib/api-types';
 
 /**
  * Every screen, rendered.
@@ -82,6 +88,23 @@ const SALE: SaleSummary = {
 };
 
 const noop = (): void => undefined;
+
+const SIMULATION_RECEIPT: FiscalReceipt = {
+  invoiceId: 'invoice-sim-1',
+  invoiceNumber: SALE.invoiceNumber,
+  issuedAt: SALE.issuedAt,
+  currency: SALE.currency,
+  sellerName: 'متجر تجريبي',
+  vatRegistrationNumber: '300000000000003',
+  lines: [],
+  netMinor: SALE.netMinor,
+  vatMinor: SALE.vatMinor,
+  totalMinor: SALE.totalMinor,
+  invoiceHashBase64: 'simulation-hash',
+  qrCodeBase64: 'simulation-artifact',
+  fiscalizationMode: 'simulation',
+  disclaimer: 'SIMULATION / NOT FOR TAX USE',
+};
 
 describe('login', () => {
   const markup = renderToStaticMarkup(
@@ -235,5 +258,19 @@ describe('the completed sale', () => {
       createElement(SaleReceipt, { sale: SALE, receipt: null, replayed: true, onNewSale: noop }),
     );
     expect(replayed).toContain('مسجّلة مسبقاً');
+  });
+
+  it('marks a staging simulation receipt as non-tax evidence', () => {
+    const simulation = renderToStaticMarkup(
+      createElement(SaleReceipt, {
+        sale: SALE,
+        receipt: SIMULATION_RECEIPT,
+        replayed: false,
+        onNewSale: noop,
+      }),
+    );
+    expect(simulation).toContain('SIMULATION / NOT FOR TAX USE');
+    expect(simulation).toContain('غير صالح للاستخدام الضريبي');
+    expect(simulation).not.toContain('الفاتورة مختومة');
   });
 });

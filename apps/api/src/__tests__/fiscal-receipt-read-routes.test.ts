@@ -100,6 +100,8 @@ function build(
           totalMinor: '2300',
           invoiceHashBase64: 'AQID',
           qrCodeBase64: 'PERSISTED_PHASE_2_QR',
+          fiscalizationMode: 'production',
+          disclaimer: null,
         },
       };
     },
@@ -146,6 +148,8 @@ describe('cashier historical fiscal receipt route', () => {
       receipt: {
         invoiceHashBase64: 'AQID',
         qrCodeBase64: 'PERSISTED_PHASE_2_QR',
+        fiscalizationMode: 'production',
+        disclaimer: null,
       },
     });
     expect(calls).toEqual([`${TENANT_ID}:${USER_ID}:${SALE_ID}:${TERMINAL_ID}`]);

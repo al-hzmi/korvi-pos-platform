@@ -23,7 +23,10 @@ import {
 import { fingerprintIntent } from './fingerprint.js';
 import { buildCheckoutReceipt } from './receipt.js';
 import type { CheckoutReceipt } from './receipt.js';
-import type { CheckoutFiscalizationPort } from '../zatca/fiscalize-checkout.js';
+import type {
+  CheckoutFiscalizationArtifact,
+  CheckoutFiscalizationPort,
+} from '../zatca/fiscalize-checkout.js';
 import type {
   AuditRepository,
   AuthenticatedPrincipal,
@@ -43,7 +46,6 @@ import type {
   TenderLine,
   TenderRecord,
   TenderScheme,
-  ZatcaSealedFiscalization,
   ShiftRepository,
   TenantRepository,
   TenantScope,
@@ -397,7 +399,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
     scope: TenantScope,
     sale: SaleRecord,
     invoice: InvoiceRecord,
-  ): Promise<ZatcaSealedFiscalization | null> {
+  ): Promise<CheckoutFiscalizationArtifact | null> {
     if (deps.fiscalization === undefined) return null;
     const artifact = await deps.fiscalization.fiscalize(scope, sale, invoice);
     return artifact ?? null;

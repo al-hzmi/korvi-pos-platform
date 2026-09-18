@@ -42,6 +42,7 @@ export function SaleReceipt({
   const [printState, setPrintState] = useState<PrintState>('idle');
   const printFlight = useRef<ReceiptPrintFlight | null>(null);
   if (printFlight.current === null) printFlight.current = createReceiptPrintFlight();
+  const isSimulation = receipt?.fiscalizationMode === 'simulation';
 
   const print = async () => {
     if (receipt === null || printFiscalReceipt === undefined) return;
@@ -56,12 +57,14 @@ export function SaleReceipt({
 
   const printLabel =
     printState === 'printing'
-      ? 'جارٍ إرسال الفاتورة للطابعة…'
+      ? `جارٍ إرسال ${isSimulation ? 'إيصال المحاكاة' : 'الفاتورة'} للطابعة…`
       : printState === 'failed'
-        ? 'إعادة محاولة طباعة نفس الفاتورة'
+        ? `إعادة محاولة طباعة نفس ${isSimulation ? 'الإيصال' : 'الفاتورة'}`
         : printState === 'printed'
-          ? 'إعادة طباعة نفس الفاتورة'
-          : 'طباعة الفاتورة الضريبية';
+          ? `إعادة طباعة نفس ${isSimulation ? 'الإيصال' : 'الفاتورة'}`
+          : isSimulation
+            ? 'طباعة إيصال المحاكاة'
+            : 'طباعة الفاتورة الضريبية';
 
   return (
     <CardSurface className="flex min-h-0 flex-1 flex-col gap-4 border-border/80 p-4 shadow-sm">
@@ -72,7 +75,8 @@ export function SaleReceipt({
               {replayed ? 'عملية مسجّلة مسبقاً' : 'تمّت العملية بنجاح'}
             </span>
             <h2 className="mt-1 truncate text-lg font-semibold text-card-foreground">
-              فاتورة <BidiIsolate>{sale.invoiceNumber}</BidiIsolate>
+              {isSimulation ? 'إيصال محاكاة' : 'فاتورة'}{' '}
+              <BidiIsolate>{sale.invoiceNumber}</BidiIsolate>
             </h2>
             <p className="text-xs text-muted-foreground">
               الكاشير {sale.cashierName} ·{' '}
@@ -94,6 +98,13 @@ export function SaleReceipt({
         </div>
       </div>
 
+      {isSimulation ? (
+        <StatusNote tone="warning" live>
+          <span dir="ltr">SIMULATION / NOT FOR TAX USE</span>
+          {' — '}محاكاة فقط، غير صالح للاستخدام الضريبي ولا يمثل امتثال ZATCA إنتاجيًا.
+        </StatusNote>
+      ) : null}
+
       {receipt === null ? (
         <StatusNote tone="danger" live>
           تم حفظ البيع، لكن الخادم لم يُرجع الفاتورة الضريبية المختومة. لا تنشئ بيعاً بديلاً ولا
@@ -101,16 +112,19 @@ export function SaleReceipt({
         </StatusNote>
       ) : printFiscalReceipt === undefined ? (
         <StatusNote tone="warning" live>
-          الفاتورة مختومة، لكن هذا المضيف لا يوفّر طابعة فواتير محلية.
+          {isSimulation
+            ? 'إيصال المحاكاة جاهز، لكن هذا المضيف لا يوفّر طابعة محلية.'
+            : 'الفاتورة مختومة، لكن هذا المضيف لا يوفّر طابعة فواتير محلية.'}
         </StatusNote>
       ) : printState === 'failed' ? (
         <StatusNote tone="warning" live>
-          تم البيع واعتماد الفاتورة، لكن تعذّرت الطباعة. أعد المحاولة لطباعة نفس الفاتورة دون إنشاء
-          بيع جديد.
+          تم البيع، لكن تعذّرت الطباعة. أعد المحاولة لطباعة نفس{' '}
+          {isSimulation ? 'إيصال المحاكاة' : 'الفاتورة'} دون إنشاء بيع جديد.
         </StatusNote>
       ) : printState === 'printed' ? (
         <StatusNote tone="success" live>
-          أُرسلت نفس الفاتورة الضريبية المختومة إلى الطابعة. يمكن إعادة طباعتها دون تغيير البيع.
+          أُرسل نفس {isSimulation ? 'إيصال المحاكاة' : 'الفاتورة الضريبية المختومة'} إلى الطابعة.
+          يمكن إعادة طباعته دون تغيير البيع.
         </StatusNote>
       ) : null}
 

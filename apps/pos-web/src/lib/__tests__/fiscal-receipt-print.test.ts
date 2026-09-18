@@ -53,6 +53,8 @@ const receipt: FiscalReceipt = {
   totalMinor: '2300',
   invoiceHashBase64: 'AQID',
   qrCodeBase64: 'PERSISTED_PHASE_2_QR_123+/=',
+  fiscalizationMode: 'production',
+  disclaimer: null,
 };
 
 function containsBytes(haystack: readonly number[], needle: Uint8Array): boolean {
@@ -106,13 +108,29 @@ describe('fiscal receipt ESC/POS rendering', () => {
     ).rejects.toThrow(/does not match/);
   });
 
-  it('refuses missing sealed QR or invoice-hash evidence instead of printing fake success', async () => {
+  it('prints a simulation receipt with an unmistakable non-tax label', async () => {
+    const raster = captureRasterRenderer();
+    const simulation = {
+      ...receipt,
+      fiscalizationMode: 'simulation' as const,
+      disclaimer: 'SIMULATION / NOT FOR TAX USE',
+    };
+    const { payload } = await renderFiscalReceiptEscPos(sale, simulation, raster.renderer);
+
+    expect(containsBytes(payload, new TextEncoder().encode('SIMULATION / NOT FOR TAX USE'))).toBe(
+      true,
+    );
+    expect(raster.lines).toContain('إيصال محاكاة — غير صالح للاستخدام الضريبي');
+    expect(raster.lines).not.toContain('فاتورة ضريبية مبسطة');
+  });
+
+  it('refuses missing QR or invoice-hash evidence instead of printing fake success', async () => {
     const raster = captureRasterRenderer();
     await expect(
       renderFiscalReceiptEscPos(sale, { ...receipt, qrCodeBase64: ' ' }, raster.renderer),
-    ).rejects.toThrow(/missing sealed evidence/);
+    ).rejects.toThrow(/missing evidence/);
     await expect(
       renderFiscalReceiptEscPos(sale, { ...receipt, invoiceHashBase64: '' }, raster.renderer),
-    ).rejects.toThrow(/missing sealed evidence/);
+    ).rejects.toThrow(/missing evidence/);
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { loadConfig } from '../config.js';
 import { loadStagingConfig } from '../staging/config.js';
 
 const environment = {
@@ -18,7 +19,13 @@ describe('isolated staging configuration', () => {
     const config = loadStagingConfig(environment);
     expect(config.API_PORT).toBe(10000);
     expect(config.isProduction).toBe(true);
+    expect(config.checkoutFiscalizationMode).toBe('simulation');
     expect(config.APP_ORIGINS).toEqual(['https://korvi-web.example']);
+  });
+
+  it('cannot enable simulation through the production entrypoint', () => {
+    const config = loadConfig(environment);
+    expect(config.checkoutFiscalizationMode).toBe('production');
   });
 
   it.each([

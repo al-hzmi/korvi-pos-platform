@@ -8,5 +8,5 @@ export function loadStagingConfig(env: NodeJS.ProcessEnv): ApiConfig {
   }
   const config = loadConfig({ ...env, API_PORT: env['PORT'] ?? env['API_PORT'] ?? '3001' });
   if (config.API_PORT > 65535) throw new Error('Staging port is out of range.');
-  return config;
+  return { ...config, checkoutFiscalizationMode: 'simulation' };
 }

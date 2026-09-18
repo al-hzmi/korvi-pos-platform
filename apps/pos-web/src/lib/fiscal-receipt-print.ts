@@ -39,9 +39,9 @@ async function appendReceiptLine(
  * Render the server-authored fiscal truth for the verified 80mm ESC/POS path.
  *
  * This layer is deliberately downstream from checkout: it never computes VAT,
- * seals an invoice, advances ICV/PIH, or derives QR contents. The exact persisted
- * Phase-2 QR string returned by the server is stored in the printer's native QR
- * buffer and printed as a scannable symbol.
+ * seals an invoice, advances ICV/PIH, or derives QR contents. It prints either
+ * the exact persisted Phase-2 QR returned by production or the explicitly
+ * non-tax simulation artifact returned by staging.
  *
  * Required Arabic merchant/item/customer-facing facts use the same offline
  * raster boundary as preparation printing. ASCII document facts remain native.
@@ -62,10 +62,12 @@ export async function renderFiscalReceiptEscPos(
     throw new Error('fiscal receipt does not match the finalized sale');
   }
   if (receipt.invoiceHashBase64.trim() === '' || receipt.qrCodeBase64.trim() === '') {
-    throw new Error('fiscal receipt is missing sealed evidence');
+    throw new Error('fiscal receipt is missing evidence');
   }
 
+  const simulation = receipt.fiscalizationMode === 'simulation';
   const builder = escpos(EPSON_TM_T20).initialise().align('center').bold(true);
+  if (simulation) builder.line('SIMULATION / NOT FOR TAX USE');
   await appendReceiptLine(builder, receipt.sellerName, rasterRenderer);
   builder.bold(false);
   await appendReceiptLine(
@@ -73,7 +75,11 @@ export async function renderFiscalReceiptEscPos(
     `الرقم الضريبي: ${receipt.vatRegistrationNumber}`,
     rasterRenderer,
   );
-  await appendReceiptLine(builder, 'فاتورة ضريبية مبسطة', rasterRenderer);
+  await appendReceiptLine(
+    builder,
+    simulation ? 'إيصال محاكاة — غير صالح للاستخدام الضريبي' : 'فاتورة ضريبية مبسطة',
+    rasterRenderer,
+  );
 
   builder.rule().align('start');
   builder.line(`Invoice ${receipt.invoiceNumber}`);
@@ -108,6 +114,7 @@ export async function renderFiscalReceiptEscPos(
   builder.line(`Hash ${receipt.invoiceHashBase64}`).feed(1);
 
   builder.align('center').raw(qrCommand(EPSON_TM_T20, receipt.qrCodeBase64)).feed(1);
+  if (simulation) builder.line('SIMULATION / NOT FOR TAX USE');
   await appendReceiptLine(builder, 'صُدرت عبر Korvi', rasterRenderer);
   builder.feed(2).cut();
 
