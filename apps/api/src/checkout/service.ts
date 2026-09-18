@@ -40,6 +40,7 @@ import type {
   PriceMode,
   Product,
   RestaurantOrderType,
+  RestaurantFloorRepository,
   ProductRepository,
   SaleDiscountRecord,
   SaleRecord,
@@ -81,7 +82,10 @@ export type CheckoutFailureReason =
   | 'shift-invalid'
   | 'tenant-misconfigured'
   | 'order-type-required'
-  | 'order-type-not-applicable';
+  | 'order-type-not-applicable'
+  | 'table-required'
+  | 'table-unavailable'
+  | 'table-not-applicable';
 
 export interface CheckoutFailure {
   readonly outcome: 'failure';
@@ -114,6 +118,7 @@ export interface SaleSummary {
   readonly saleId: string;
   readonly operationId: string;
   readonly orderType: RestaurantOrderType | null;
+  readonly tableId: string | null;
   readonly sequence: number;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
@@ -201,6 +206,7 @@ export interface CheckoutInput {
   readonly expectedShiftId?: string | undefined;
   /** Operational restaurant context. Required only for restaurant tenants. */
   readonly orderType?: RestaurantOrderType | undefined;
+  readonly tableId?: string | undefined;
   readonly lines: readonly CheckoutLineInput[];
   /**
    * The cash-only shape the production till sends today.
@@ -220,6 +226,8 @@ export interface CheckoutDeps {
   readonly inventory: InventoryRepository;
   readonly shifts: ShiftRepository;
   readonly sales: SaleRepository;
+  /** Required only for dine-in table validation. */
+  readonly restaurantFloor?: RestaurantFloorRepository;
   readonly idempotency: IdempotencyRepository;
   readonly audit: AuditRepository;
   readonly fiscalization?: CheckoutFiscalizationPort;
@@ -289,6 +297,7 @@ function fingerprintCheckoutIntent(
     branchId,
     terminalId: input.terminalId,
     orderType: input.orderType ?? '',
+    tableId: input.tableId ?? '',
     lines: input.lines.map((line) => ({
       productId: line.productId,
       quantityScaled: line.quantityScaled,
@@ -317,6 +326,7 @@ function summarise(sale: SaleRecord, invoiceNumber: string, cashierName: string)
     saleId: sale.id,
     operationId: sale.operationId,
     orderType: sale.orderType ?? null,
+    tableId: sale.tableId ?? null,
     sequence: sale.sequence,
     invoiceNumber,
     issuedAt: sale.issuedAt,
@@ -487,8 +497,21 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       if (settings.vertical === 'restaurant' && input.orderType === undefined) {
         return fail('order-type-required');
       }
-      if (settings.vertical !== 'restaurant' && input.orderType !== undefined) {
-        return fail('order-type-not-applicable');
+      if (settings.vertical !== 'restaurant') {
+        if (input.orderType !== undefined || input.tableId !== undefined) {
+          return fail('order-type-not-applicable');
+        }
+      } else if (input.orderType === 'dine-in') {
+        if (input.tableId === undefined) return fail('table-required');
+        const table =
+          deps.restaurantFloor === undefined
+            ? null
+            : await deps.restaurantFloor.findTableById(scope, input.tableId);
+        if (table === null || !table.isActive || table.branchId !== shift.branchId) {
+          return fail('table-unavailable');
+        }
+      } else if (input.tableId !== undefined) {
+        return fail('table-not-applicable');
       }
 
       // Prices come from here and nowhere else.
@@ -690,6 +713,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             operationId: input.operationId,
             status: 'finalized',
             orderType: input.orderType ?? null,
+            tableId: input.tableId ?? null,
             priceMode: cart.priceMode,
             currency,
             grossMinor: priced.gross.minor.toString(),
@@ -824,6 +848,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           metadata: {
             sequence: recorded.sequence,
             orderType: recorded.orderType ?? null,
+            tableId: recorded.tableId ?? null,
             total: moneyToMajorString(priced.total),
             lines: recorded.lines.length,
             // Money given away and money taken by something other than cash

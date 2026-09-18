@@ -36,6 +36,8 @@ export interface CheckoutIntent {
   readonly terminalId: string;
   /** Empty string for non-restaurant checkout; otherwise the recorded operational service mode. */
   readonly orderType: string;
+  /** Empty except for a dine-in sale bound to a table. */
+  readonly tableId: string;
   readonly lines: readonly CheckoutIntentLine[];
   readonly tenders: readonly CheckoutIntentTender[];
   /** Canonical description of the basket discount, or the empty string. */
@@ -61,7 +63,10 @@ export interface CheckoutIntent {
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
  *
- * `v3` because restaurant service mode joined the canonical form after payment
+ * `v4` because dine-in table identity joined the canonical form after service mode.
+ * A table transfer is therefore a different intent and cannot replay an earlier sale.
+ *
+ * `v3` introduced restaurant service mode after payment
  * composition. A key minted under an earlier version hashes differently and is
  * the safe direction: a conflict is visible, a false replay is not.
  */
@@ -99,10 +104,11 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
   const canonical = JSON.stringify([
-    'v3',
+    'v4',
     intent.branchId,
     intent.terminalId,
     intent.orderType,
+    intent.tableId,
     intent.basketDiscount,
     tenders,
     lines,

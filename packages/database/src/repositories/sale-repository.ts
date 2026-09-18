@@ -80,6 +80,7 @@ interface SaleRow {
   shiftId: string;
   userId: string;
   customerId: string | null;
+  tableId: string | null;
   operationId: string;
   status: string;
   /** Optional only for legacy/mocked adapters that predate the additive column. */
@@ -185,6 +186,7 @@ function saleToDomain(scope: TenantScope, row: SaleRow): SaleRecord {
     shiftId: row.shiftId,
     userId: row.userId,
     customerId: row.customerId,
+    tableId: row.tableId,
     operationId: row.operationId,
     status: oneOf(STATUSES, row.status, 'sales.status'),
     orderType:
@@ -429,6 +431,7 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             shiftId: sale.shiftId,
             userId: sale.userId,
             customerId: sale.customerId,
+            tableId: sale.tableId ?? null,
             operationId: sale.operationId,
             status: sale.status,
             orderType: sale.orderType ?? null,

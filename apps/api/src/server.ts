@@ -7,6 +7,7 @@ import {
   createInventoryRepository,
   createPrismaClient,
   createProductRepository,
+  createRestaurantFloorRepository,
   createSaleRepository,
   createReturnRepository,
   createShiftRepository,
@@ -155,6 +156,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const terminals = createTerminalRepository(prisma);
     const tenants = createTenantRepository(prisma);
     const dashboard = createDashboardRepository(prisma);
+    const restaurantFloor = createRestaurantFloorRepository(prisma);
     const idempotency = createIdempotencyRepository(prisma);
     const audit = createAuditRepository(prisma);
     const sales = createSaleRepository(prisma);
@@ -170,12 +172,14 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       products,
       shifts,
       terminals,
+      restaurantFloor,
       checkout: createCheckoutService({
         tenants,
         products,
         inventory: createInventoryRepository(prisma),
         shifts,
         sales,
+        restaurantFloor,
         idempotency,
         audit,
         ...(fiscalization === undefined ? {} : { fiscalization }),
@@ -213,6 +217,13 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       findMovementById: (scope, id) => resolve().shifts.findMovementById(scope, id),
       recordManualMovement: (scope, input) => resolve().shifts.recordManualMovement(scope, input),
       close: (scope, input) => resolve().shifts.close(scope, input),
+    },
+    restaurantFloor: {
+      findTableById: (scope, id) => resolve().restaurantFloor.findTableById(scope, id),
+      listZonesForBranch: (scope, branchId, activeOnly) =>
+        resolve().restaurantFloor.listZonesForBranch(scope, branchId, activeOnly),
+      listTablesForBranch: (scope, branchId, activeOnly) =>
+        resolve().restaurantFloor.listTablesForBranch(scope, branchId, activeOnly),
     },
     terminals: {
       findById: (scope, id) => resolve().terminals.findById(scope, id),

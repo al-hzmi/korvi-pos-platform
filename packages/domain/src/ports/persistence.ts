@@ -445,6 +445,8 @@ export interface SaleRecord {
   readonly shiftId: string;
   readonly userId: string;
   readonly customerId: string | null;
+  /** Operational dine-in table context. Historical and non-dine-in sales remain null. */
+  readonly tableId?: string | null;
   readonly operationId: string;
   readonly status: SaleStatus;
   /** Null/absent means no immutable service-mode fact was recorded for this sale. */
@@ -613,9 +615,43 @@ export interface DashboardRepository {
   summary(scope: TenantScope, since: string): Promise<DashboardSummary>;
 }
 
+export interface RestaurantZone {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly nameAr: string;
+  readonly sortOrder: number;
+  readonly isActive: boolean;
+}
+
+export interface RestaurantTable {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly zoneId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly capacity: number | null;
+  readonly isActive: boolean;
+}
+
 export interface BranchRepository {
   findById(scope: TenantScope, id: string): Promise<Branch | null>;
   list(scope: TenantScope): Promise<readonly Branch[]>;
+}
+
+export interface RestaurantFloorRepository {
+  findTableById(scope: TenantScope, id: string): Promise<RestaurantTable | null>;
+  listZonesForBranch(
+    scope: TenantScope,
+    branchId: string,
+    activeOnly: boolean,
+  ): Promise<readonly RestaurantZone[]>;
+  listTablesForBranch(
+    scope: TenantScope,
+    branchId: string,
+    activeOnly: boolean,
+  ): Promise<readonly RestaurantTable[]>;
 }
 
 export interface TerminalRepository {

@@ -242,6 +242,7 @@ export const checkoutBody = z
     // Operational only. Applicability is decided from tenant_settings.vertical;
     // this value never changes VAT, invoice type or fiscalization.
     orderType: z.enum(['dine-in', 'takeaway', 'delivery']).optional(),
+    tableId: UUID.optional(),
     cashReceivedMinor: MINOR.optional(),
     tenders: z.array(tenderBody).min(1).max(MAX_TENDERS).optional(),
     basketDiscount: discountBody.optional(),

@@ -23,6 +23,7 @@ import type {
   AuthenticatedPrincipal,
   DashboardRepository,
   ProductRepository,
+  RestaurantFloorRepository,
   ShiftRepository,
   TenantRepository,
   TenantScope,
@@ -46,6 +47,7 @@ export interface BusinessDeps {
   readonly products: ProductRepository;
   readonly shifts: ShiftRepository;
   readonly terminals: TerminalRepository;
+  readonly restaurantFloor: RestaurantFloorRepository;
   readonly checkout: CheckoutService;
   readonly returns: ReturnService;
   readonly drawer: DrawerService;
@@ -83,6 +85,9 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'tenant-misconfigured': 'إعدادات المنشأة غير مكتملة.',
   'order-type-required': 'حدّد نوع الطلب قبل إتمام البيع.',
   'order-type-not-applicable': 'نوع الطلب مخصص لوضع المطاعم والمقاهي فقط.',
+  'table-required': 'اختر الطاولة للطلب المحلي قبل إتمام البيع.',
+  'table-unavailable': 'الطاولة غير متاحة لهذا الفرع.',
+  'table-not-applicable': 'الطاولة متاحة للطلب المحلي فقط.',
 };
 
 /** 409 for the two states a retry can resolve; 422 for a request that cannot. */
@@ -107,6 +112,9 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'tenant-misconfigured': 409,
   'order-type-required': 422,
   'order-type-not-applicable': 422,
+  'table-required': 422,
+  'table-unavailable': 409,
+  'table-not-applicable': 422,
 };
 
 /**
@@ -327,6 +335,46 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
   );
 
   app.get(
+    '/v1/restaurant/floor',
+    { preHandler: [guards.requireSession, guards.requirePermission('sale.create')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
+      const scope = scopeOf(principal);
+      const settings = await deps.tenants.settings(scope);
+      if (settings === null || settings.vertical !== 'restaurant') {
+        return reply.code(409).send({
+          error: 'restaurant-mode-required',
+          message: 'مخطط الطاولات متاح في وضع المطاعم والمقاهي فقط.',
+        });
+      }
+
+      const [zones, tables] = await Promise.all([
+        deps.restaurantFloor.listZonesForBranch(scope, principal.branchId, true),
+        deps.restaurantFloor.listTablesForBranch(scope, principal.branchId, true),
+      ]);
+
+      return reply.code(200).send({
+        branchId: principal.branchId,
+        zones: zones.map((zone) => ({
+          id: zone.id,
+          nameAr: zone.nameAr,
+          sortOrder: zone.sortOrder,
+        })),
+        tables: tables.map((table) => ({
+          id: table.id,
+          zoneId: table.zoneId,
+          code: table.code,
+          nameAr: table.nameAr,
+          capacity: table.capacity,
+        })),
+      });
+    },
+  );
+
+  app.get(
     '/v1/terminals',
     { preHandler: [guards.requireSession, guards.requirePermission('shift.open')] },
     async (request, reply) => {
@@ -538,6 +586,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
           ? {}
           : { expectedShiftId: parsed.data.expectedShiftId }),
         ...(parsed.data.orderType === undefined ? {} : { orderType: parsed.data.orderType }),
+        ...(parsed.data.tableId === undefined ? {} : { tableId: parsed.data.tableId }),
         lines: parsed.data.lines,
         ...(parsed.data.cashReceivedMinor === undefined
           ? {}

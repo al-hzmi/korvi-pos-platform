@@ -107,6 +107,8 @@ model Tenant {
   shifts                        Shift[]
   cashMovements                 CashMovement[]
   sales                         Sale[]
+  restaurantZones               RestaurantZone[]
+  restaurantTables              RestaurantTable[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
   tenders                       Tender[]
@@ -155,6 +157,8 @@ model Branch {
   purchaseReceipts         PurchaseReceipt[]
   shifts                   Shift[]
   sales                    Sale[]
+  restaurantZones          RestaurantZone[]
+  restaurantTables         RestaurantTable[]
   returns                  Return[]
   memberships              TenantMembership[]
 
@@ -165,6 +169,49 @@ model Branch {
   @@unique([tenantId, id])
   @@index([tenantId, isActive])
   @@map("branches")
+}
+
+model RestaurantZone {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  branchId  String   @db.Uuid
+  nameAr    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  tables RestaurantTable[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, branchId, id])
+  @@index([tenantId, branchId, isActive, sortOrder])
+  @@map("restaurant_zones")
+}
+
+model RestaurantTable {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  branchId  String   @db.Uuid
+  zoneId    String   @db.Uuid
+  code      String
+  nameAr    String
+  capacity  Int?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  zone RestaurantZone @relation(fields: [tenantId, branchId, zoneId], references: [tenantId, branchId, id], onDelete: Cascade)
+  sales Sale[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, branchId, code])
+  @@index([tenantId, branchId, zoneId, isActive])
+  @@map("restaurant_tables")
 }
 
 model User {
@@ -1209,6 +1256,7 @@ model Sale {
   shiftId    String  @db.Uuid
   userId     String  @db.Uuid
   customerId String? @db.Uuid
+  tableId    String? @db.Uuid
 
   /// The client-supplied operation id. Unique per tenant, which is what makes
   /// a double-click, a network retry and an offline replay converge on one
@@ -1243,6 +1291,7 @@ model Sale {
   shift     Shift          @relation(fields: [tenantId, shiftId], references: [tenantId, id], onDelete: NoAction)
   user      User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
   customer  Customer?      @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
+  restaurantTable RestaurantTable? @relation(fields: [tenantId, tableId], references: [tenantId, id], onDelete: NoAction)
   lines     SaleLine[]
   discounts SaleDiscount[]
   tenders   Tender[]
@@ -1259,6 +1308,7 @@ model Sale {
   @@index([tenantId, shiftId])
   @@index([tenantId, status, issuedAt])
   @@index([tenantId, customerId])
+  @@index([tenantId, tableId])
   @@map("sales")
 }
 
