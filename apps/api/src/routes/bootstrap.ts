@@ -1,6 +1,9 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { MAX_OWNER_BOOTSTRAP_TOKEN } from '@korvi/domain';
+import { createLoginAdmissionController } from '../auth/login-admission.js';
 import type { OwnerBootstrapService } from '../bootstrap/service.js';
+import type { LoginAdmissionController } from '../auth/login-admission.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 /**
@@ -77,10 +80,25 @@ function namesForbiddenField(body: unknown): string | null {
  * one of those cases.
  */
 const INVALID_CAPABILITY = { error: 'invalid_capability' } as const;
+const TOO_MANY_REQUESTS = { error: 'too_many_requests' } as const;
+
+const BOOTSTRAP_ADMISSION_POLICY = {
+  globalLimit: 20,
+  identityLimit: 5,
+  windowMs: 60_000,
+  maxConcurrent: 2,
+  maxTrackedIdentities: 1_024,
+} as const;
+
+function bootstrapAdmissionIdentity(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('base64url');
+}
 
 export interface BootstrapRouteOptions {
   /** Absent when no signing key is configured; the route then answers 503. */
   readonly service: OwnerBootstrapService | null;
+  /** Test seam; production uses the bounded process-local admission controller below. */
+  readonly admission?: LoginAdmissionController;
 }
 
 export function registerBootstrapRoutes(
@@ -88,6 +106,8 @@ export function registerBootstrapRoutes(
   options: BootstrapRouteOptions,
 ): void {
   const { service } = options;
+  const admission =
+    options.admission ?? createLoginAdmissionController(BOOTSTRAP_ADMISSION_POLICY);
 
   app.post('/v1/bootstrap/owner', async (request, reply): Promise<FastifyReply> => {
     if (service === null) {
@@ -106,29 +126,48 @@ export function registerBootstrapRoutes(
     const parsed = bootstrapBody.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
-    const result = await service.accept(parsed.data.token, parsed.data.password);
-    if (result.outcome === 'failure') {
-      if (result.reason === 'weak-password') {
-        // A fact about the caller's own input. It is answered before the
-        // capability is examined, so it reveals nothing about whether the
-        // token would have been honoured.
-        return reply.code(400).send({ error: 'weak_password' });
-      }
-      request.log.info('bootstrap capability refused');
-      return reply.code(403).send(INVALID_CAPABILITY);
+    // A valid one-shot capability can otherwise be replayed concurrently: every
+    // request may pass the cheap preflight before the first request reaches the
+    // tenant/invitation locks, causing multiple 64 MiB scrypt derivations even
+    // though only one acceptance can commit. Bound the public work before the
+    // authority service while retaining only a hash-derived identity in memory.
+    const permit = admission.admit(
+      'owner-bootstrap',
+      bootstrapAdmissionIdentity(parsed.data.token),
+    );
+    if (!permit.allowed) {
+      request.log.warn({ reason: permit.reason }, 'bootstrap admission refused');
+      reply.header('retry-after', String(permit.retryAfterSeconds));
+      return reply.code(429).send(TOO_MANY_REQUESTS);
     }
 
-    // No session, no cookie and no principal. Preserve the established 204
-    // success contract while giving the browser the minimum login identity it
-    // must show the newly-established Owner. The values are URI-encoded so the
-    // headers remain ASCII-safe, are emitted only after successful consumption,
-    // and contain no internal ids, roles or permissions.
-    return reply
-      .header('cache-control', 'no-store')
-      .header('x-korvi-tenant-slug', encodeURIComponent(result.tenant.slug))
-      .header('x-korvi-tenant-name', encodeURIComponent(result.tenant.name))
-      .header('x-korvi-owner-email', encodeURIComponent(result.email))
-      .code(204)
-      .send();
+    try {
+      const result = await service.accept(parsed.data.token, parsed.data.password);
+      if (result.outcome === 'failure') {
+        if (result.reason === 'weak-password') {
+          // A fact about the caller's own input. It is answered before the
+          // capability is examined, so it reveals nothing about whether the
+          // token would have been honoured.
+          return reply.code(400).send({ error: 'weak_password' });
+        }
+        request.log.info('bootstrap capability refused');
+        return reply.code(403).send(INVALID_CAPABILITY);
+      }
+
+      // No session, no cookie and no principal. Preserve the established 204
+      // success contract while giving the browser the minimum login identity it
+      // must show the newly-established Owner. The values are URI-encoded so the
+      // headers remain ASCII-safe, are emitted only after successful consumption,
+      // and contain no internal ids, roles or permissions.
+      return reply
+        .header('cache-control', 'no-store')
+        .header('x-korvi-tenant-slug', encodeURIComponent(result.tenant.slug))
+        .header('x-korvi-tenant-name', encodeURIComponent(result.tenant.name))
+        .header('x-korvi-owner-email', encodeURIComponent(result.email))
+        .code(204)
+        .send();
+    } finally {
+      permit.release();
+    }
   });
 }
