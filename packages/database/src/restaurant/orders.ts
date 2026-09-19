@@ -298,7 +298,9 @@ async function reserveOperation(
   }
   if (row.status === 'completed') {
     if (row.resultType !== 'restaurant-order' || row.resultSnapshot === null) {
-      throw new DatabaseError('Completed restaurant order operation has no authoritative snapshot.');
+      throw new DatabaseError(
+        'Completed restaurant order operation has no authoritative snapshot.',
+      );
     }
     return row.resultSnapshot as unknown as RestaurantOrderDetail;
   }
