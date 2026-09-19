@@ -88,6 +88,11 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'table-required': 'اختر الطاولة للطلب المحلي قبل إتمام البيع.',
   'table-unavailable': 'الطاولة غير متاحة لهذا الفرع.',
   'table-not-applicable': 'الطاولة متاحة للطلب المحلي فقط.',
+  'restaurant-order-not-found': 'الطلب المفتوح غير موجود في هذا الفرع.',
+  'restaurant-order-not-open': 'هذا الطلب لم يعد مفتوحاً للتسوية.',
+  'restaurant-order-stale': 'تم تعديل حالة الطلب. أعد تحميله قبل الدفع.',
+  'restaurant-order-mismatch': 'محتوى الطلب لا يطابق النسخة المفتوحة على الخادم.',
+  'restaurant-order-incomplete': 'هذا الطلب قديم ولا يحمل حقيقة مخزون كافية للتسوية الآمنة.',
 };
 
 /** 409 for the two states a retry can resolve; 422 for a request that cannot. */
@@ -115,6 +120,11 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'table-required': 422,
   'table-unavailable': 409,
   'table-not-applicable': 422,
+  'restaurant-order-not-found': 404,
+  'restaurant-order-not-open': 409,
+  'restaurant-order-stale': 409,
+  'restaurant-order-mismatch': 409,
+  'restaurant-order-incomplete': 409,
 };
 
 /**
@@ -587,6 +597,15 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
           : { expectedShiftId: parsed.data.expectedShiftId }),
         ...(parsed.data.orderType === undefined ? {} : { orderType: parsed.data.orderType }),
         ...(parsed.data.tableId === undefined ? {} : { tableId: parsed.data.tableId }),
+        ...(parsed.data.restaurantOrderId === undefined
+          ? {}
+          : { restaurantOrderId: parsed.data.restaurantOrderId }),
+        ...(parsed.data.expectedRestaurantOrderRevision === undefined
+          ? {}
+          : {
+              expectedRestaurantOrderRevision:
+                parsed.data.expectedRestaurantOrderRevision,
+            }),
         lines: parsed.data.lines,
         ...(parsed.data.cashReceivedMinor === undefined
           ? {}
