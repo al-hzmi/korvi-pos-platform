@@ -68,6 +68,12 @@ export function checkoutQueueOperation(
     expectedShiftId: intent.expectedShiftId,
     ...(intent.orderType === undefined ? {} : { orderType: intent.orderType }),
     ...(intent.tableId === undefined ? {} : { tableId: intent.tableId }),
+    ...(intent.restaurantOrderId === undefined
+      ? {}
+      : { restaurantOrderId: intent.restaurantOrderId }),
+    ...(intent.expectedRestaurantOrderRevision === undefined
+      ? {}
+      : { expectedRestaurantOrderRevision: intent.expectedRestaurantOrderRevision }),
     cashReceivedMinor: intent.cashReceivedMinor,
     lines: intent.lines.map((line) => ({ ...line })),
   };

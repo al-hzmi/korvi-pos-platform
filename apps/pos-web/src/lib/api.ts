@@ -36,6 +36,11 @@ import type {
   PurchaseReceiptSummary,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantOrderCreateRequest,
+  RestaurantOrderDetail,
+  RestaurantOrderMutationResult,
+  RestaurantOrderReplaceLinesRequest,
+  RestaurantOrderSummary,
   PurchasingBranch,
   PurchasingPage,
   PurchasingProduct,
@@ -75,6 +80,7 @@ import type {
 export const CHECKOUT_TIMEOUT_MS = 20_000;
 export const INVENTORY_COMMAND_TIMEOUT_MS = 20_000;
 export const PURCHASING_COMMAND_TIMEOUT_MS = 20_000;
+const RESTAURANT_COMMAND_TIMEOUT_MS = 20_000;
 
 export type ApiFailureKind = 'network' | 'http';
 
@@ -121,6 +127,13 @@ export interface ApiClient {
   logout(): Promise<void>;
   terminals(options?: RequestOptions): Promise<TerminalsResponse>;
   restaurantFloor(options?: RequestOptions): Promise<RestaurantFloorResponse>;
+  restaurantOrders(options?: RequestOptions): Promise<readonly RestaurantOrderSummary[]>;
+  restaurantOrder(orderId: string, options?: RequestOptions): Promise<RestaurantOrderDetail>;
+  createRestaurantOrder(request: RestaurantOrderCreateRequest): Promise<RestaurantOrderMutationResult>;
+  replaceRestaurantOrderLines(
+    orderId: string,
+    request: RestaurantOrderReplaceLinesRequest,
+  ): Promise<RestaurantOrderMutationResult>;
   dashboardSummary(options?: RequestOptions): Promise<DashboardSummary>;
   products(
     query: { readonly q?: string; readonly limit?: number },
@@ -297,7 +310,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     return body;
   };
 
-  const json = (payload: unknown, method: 'POST' | 'PATCH' = 'POST'): RequestInit => ({
+  const json = (payload: unknown, method: 'POST' | 'PATCH' | 'PUT' = 'POST'): RequestInit => ({
     method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -307,7 +320,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     path: string,
     payload: unknown,
     timeoutMs: number,
-    method: 'POST' | 'PATCH' = 'POST',
+    method: 'POST' | 'PATCH' | 'PUT' = 'POST',
   ): Promise<T> => {
     const controller = new AbortController();
     let timedOut = false;
@@ -352,6 +365,40 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         { method: 'GET' },
         options,
       )) as RestaurantFloorResponse;
+    },
+
+    async restaurantOrders(options) {
+      const body = (await call(
+        '/v1/restaurant/orders',
+        { method: 'GET' },
+        options,
+      )) as { readonly orders: readonly RestaurantOrderSummary[] };
+      return body.orders;
+    },
+
+    async restaurantOrder(orderId, options) {
+      return (await call(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}`,
+        { method: 'GET' },
+        options,
+      )) as RestaurantOrderDetail;
+    },
+
+    async createRestaurantOrder(request) {
+      return retryableCommand<RestaurantOrderMutationResult>(
+        '/v1/restaurant/orders',
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async replaceRestaurantOrderLines(orderId, request) {
+      return retryableCommand<RestaurantOrderMutationResult>(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}/lines`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+        'PUT',
+      );
     },
 
     async dashboardSummary(options) {
@@ -407,6 +454,12 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
               : { expectedShiftId: request.expectedShiftId }),
             ...(request.orderType === undefined ? {} : { orderType: request.orderType }),
             ...(request.tableId === undefined ? {} : { tableId: request.tableId }),
+            ...(request.restaurantOrderId === undefined
+              ? {}
+              : { restaurantOrderId: request.restaurantOrderId }),
+            ...(request.expectedRestaurantOrderRevision === undefined
+              ? {}
+              : { expectedRestaurantOrderRevision: request.expectedRestaurantOrderRevision }),
             cashReceivedMinor: request.cashReceivedMinor,
             lines: request.lines.map((line) => ({
               productId: line.productId,

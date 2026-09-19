@@ -5,6 +5,10 @@ import { preparationTicketFromIntent } from '../lib/preparation-ticket';
 import { renderPreparationTicketEscPos } from '../lib/preparation-ticket-print';
 import { isOfflineSaleDraft } from '../lib/offline-store';
 import { checkoutQueueOperation } from '../lib/offline-checkout';
+import {
+  cartLinesFromRestaurantOrder,
+  restaurantOrderLinesFromCart,
+} from '../lib/restaurant-orders';
 import type { ProductSummary } from '../lib/api-types';
 
 const PRODUCT: ProductSummary = {
@@ -91,6 +95,86 @@ describe('Quick-Service operational state', () => {
       }),
     ).toBe(true);
     expect(cartToRequestLines(lines)).toEqual([{ productId: PRODUCT.id, quantityScaled: '1000' }]);
+  });
+
+  it('preserves open-order line identity and settlement revision across restart/offline intent', () => {
+    const order = {
+      id: '018f1000-0000-7000-8000-000000000131',
+      branchId: '018f1000-0000-7000-8000-000000000132',
+      terminalId: '018f1000-0000-7000-8000-000000000124',
+      userId: '018f1000-0000-7000-8000-000000000133',
+      tableId: '018f1000-0000-7000-8000-000000000126',
+      tableCode: 'T1',
+      tableNameAr: 'طاولة 1',
+      orderType: 'dine-in' as const,
+      status: 'open' as const,
+      revision: '4',
+      priceMode: 'tax-inclusive',
+      currency: 'SAR',
+      openedAt: '2026-09-19T00:00:00.000Z',
+      closedAt: null,
+      closedReason: null,
+      lineCount: 1,
+      lines: [
+        {
+          id: '018f1000-0000-7000-8000-000000000134',
+          lineNumber: 1,
+          productId: PRODUCT.id,
+          sku: PRODUCT.sku,
+          nameAr: PRODUCT.nameAr,
+          nameEn: PRODUCT.nameEn,
+          productType: PRODUCT.productType,
+          unitPriceMinor: PRODUCT.priceMinor,
+          vatBasisPoints: PRODUCT.vatBasisPoints,
+          quantityScaled: '2000',
+          preparationNote: 'بدون صوص',
+          preparationOptions: null,
+          trackInventory: true,
+        },
+      ],
+    };
+    const lines = cartLinesFromRestaurantOrder(order);
+    expect(lines[0]).toMatchObject({
+      restaurantOrderLineId: order.lines[0]?.id,
+      quantityScaled: '2000',
+      preparationNote: 'بدون صوص',
+    });
+    expect(restaurantOrderLinesFromCart(lines)).toEqual([
+      {
+        lineId: order.lines[0]?.id,
+        quantityScaled: '2000',
+        preparationNote: 'بدون صوص',
+        preparationOptions: null,
+      },
+    ]);
+    expect(
+      isOfflineSaleDraft({
+        lines,
+        cash: '30',
+        orderType: 'dine-in',
+        tableId: order.tableId,
+        restaurantOrderId: order.id,
+        restaurantOrderRevision: order.revision,
+        priceMode: 'tax-inclusive',
+        updatedAt: '2026-09-19T00:01:00.000Z',
+      }),
+    ).toBe(true);
+
+    const queued = checkoutQueueOperation({
+      operationId: '018f1000-0000-7000-8000-000000000135',
+      terminalId: order.terminalId,
+      expectedShiftId: '018f1000-0000-7000-8000-000000000125',
+      orderType: 'dine-in',
+      tableId: order.tableId,
+      restaurantOrderId: order.id,
+      expectedRestaurantOrderRevision: order.revision,
+      cashReceivedMinor: '3000',
+      lines: [{ productId: PRODUCT.id, quantityScaled: '2000' }],
+    });
+    expect(queued.payload).toMatchObject({
+      restaurantOrderId: order.id,
+      expectedRestaurantOrderRevision: '4',
+    });
   });
 
   it('rasterizes Arabic prep text, stays non-fiscal, and reprints without mutating sale truth', async () => {

@@ -58,6 +58,8 @@ export interface OfflineSaleDraft {
   readonly cash: string;
   readonly orderType?: RestaurantOrderType;
   readonly tableId?: string;
+  readonly restaurantOrderId?: string;
+  readonly restaurantOrderRevision?: string;
   readonly priceMode: PriceMode;
   readonly updatedAt: string;
 }
@@ -208,6 +210,8 @@ function isCartLine(value: unknown): value is CartLine {
     value.vatBasisPoints >= 0 &&
     value.vatBasisPoints <= 10_000 &&
     isIntegerString(value.quantityScaled, false) &&
+    (value.restaurantOrderLineId === undefined ||
+      (typeof value.restaurantOrderLineId === 'string' && isUuidV7(value.restaurantOrderLineId))) &&
     (value.preparationNote === undefined || typeof value.preparationNote === 'string') &&
     (value.preparationOptions === undefined || typeof value.preparationOptions === 'string')
   );
@@ -229,6 +233,13 @@ export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
     isOptionalRestaurantOrderType(value.orderType) &&
     (value.tableId === undefined ||
       (typeof value.tableId === 'string' && isUuidV7(value.tableId))) &&
+    !(
+      (value.restaurantOrderId === undefined && value.restaurantOrderRevision === undefined) ||
+      (typeof value.restaurantOrderId === 'string' &&
+        isUuidV7(value.restaurantOrderId) &&
+        typeof value.restaurantOrderRevision === 'string' &&
+        /^[1-9][0-9]{0,18}$/.test(value.restaurantOrderRevision))
+    ) &&
     isPriceMode(value.priceMode) &&
     typeof value.updatedAt === 'string' &&
     Number.isFinite(Date.parse(value.updatedAt))
@@ -496,6 +507,12 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
     cash: value.cash,
     ...(value.orderType === undefined ? {} : { orderType: value.orderType }),
     ...(value.tableId === undefined ? {} : { tableId: value.tableId }),
+    ...(value.restaurantOrderId === undefined
+      ? {}
+      : { restaurantOrderId: value.restaurantOrderId }),
+    ...(value.restaurantOrderRevision === undefined
+      ? {}
+      : { restaurantOrderRevision: value.restaurantOrderRevision }),
     priceMode: value.priceMode,
     updatedAt: value.updatedAt,
   };

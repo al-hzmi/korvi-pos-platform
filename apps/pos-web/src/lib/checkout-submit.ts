@@ -22,6 +22,8 @@ export interface CheckoutSubmission {
   readonly expectedShiftId?: string;
   readonly orderType?: RestaurantOrderType;
   readonly tableId?: string;
+  readonly restaurantOrderId?: string;
+  readonly expectedRestaurantOrderRevision?: string;
   readonly lines: readonly CartLine[];
   readonly cashReceivedMinor: string;
 }
@@ -56,6 +58,12 @@ export function runCheckout(
     ...(input.expectedShiftId === undefined ? {} : { expectedShiftId: input.expectedShiftId }),
     ...(input.orderType === undefined ? {} : { orderType: input.orderType }),
     ...(input.tableId === undefined ? {} : { tableId: input.tableId }),
+    ...(input.restaurantOrderId === undefined
+      ? {}
+      : { restaurantOrderId: input.restaurantOrderId }),
+    ...(input.expectedRestaurantOrderRevision === undefined
+      ? {}
+      : { expectedRestaurantOrderRevision: input.expectedRestaurantOrderRevision }),
     cashReceivedMinor: input.cashReceivedMinor,
     lines: cartToRequestLines(input.lines),
   }));

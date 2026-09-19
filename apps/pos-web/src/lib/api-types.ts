@@ -64,6 +64,83 @@ export interface RestaurantFloorResponse {
   readonly tables: readonly RestaurantFloorTable[];
 }
 
+export interface RestaurantOrderLine {
+  readonly id: string;
+  readonly lineNumber: number;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly unitPriceMinor: string;
+  readonly vatBasisPoints: number;
+  readonly quantityScaled: string;
+  readonly preparationNote: string | null;
+  readonly preparationOptions: string | null;
+  readonly trackInventory: boolean | null;
+}
+
+export interface RestaurantOrderSummary {
+  readonly id: string;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly userId: string;
+  readonly tableId: string | null;
+  readonly tableCode: string | null;
+  readonly tableNameAr: string | null;
+  readonly orderType: RestaurantOrderType;
+  readonly status: 'open' | 'cancelled' | 'settled';
+  readonly revision: string;
+  readonly priceMode: string;
+  readonly currency: string;
+  readonly openedAt: string;
+  readonly closedAt: string | null;
+  readonly closedReason: string | null;
+  readonly lineCount: number;
+}
+
+export interface RestaurantOrderDetail extends RestaurantOrderSummary {
+  readonly lines: readonly RestaurantOrderLine[];
+}
+
+export interface RestaurantOrderMutationResult {
+  readonly order: RestaurantOrderDetail;
+  readonly replayed: boolean;
+}
+
+export interface RestaurantOrderCreateRequest {
+  readonly operationId: string;
+  readonly terminalId: string;
+  readonly orderType: RestaurantOrderType;
+  readonly tableId: string | null;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly quantityScaled: string;
+    readonly preparationNote: string | null;
+    readonly preparationOptions: string | null;
+  }[];
+}
+
+export type RestaurantOrderReplaceLine =
+  | {
+      readonly lineId: string;
+      readonly quantityScaled: string;
+      readonly preparationNote: string | null;
+      readonly preparationOptions: string | null;
+    }
+  | {
+      readonly productId: string;
+      readonly quantityScaled: string;
+      readonly preparationNote: string | null;
+      readonly preparationOptions: string | null;
+    };
+
+export interface RestaurantOrderReplaceLinesRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly lines: readonly RestaurantOrderReplaceLine[];
+}
+
 export interface ProductSummary {
   readonly id: string;
   /** Optional only so pre-upgrade durable catalogue rows remain readable. */
@@ -164,6 +241,8 @@ export interface SaleSummary {
   readonly orderType?: RestaurantOrderType | null;
   /** Operational dine-in context only; never fiscal receipt content. */
   readonly tableId?: string | null;
+  /** Present when this sale atomically settled an open restaurant order. */
+  readonly restaurantOrderId?: string | null;
   readonly sequence: number;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
@@ -220,6 +299,8 @@ export interface CheckoutRequest {
   readonly expectedShiftId?: string;
   readonly orderType?: RestaurantOrderType;
   readonly tableId?: string;
+  readonly restaurantOrderId?: string;
+  readonly expectedRestaurantOrderRevision?: string;
   readonly cashReceivedMinor: string;
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
 }
