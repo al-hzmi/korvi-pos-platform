@@ -603,8 +603,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         ...(parsed.data.expectedRestaurantOrderRevision === undefined
           ? {}
           : {
-              expectedRestaurantOrderRevision:
-                parsed.data.expectedRestaurantOrderRevision,
+              expectedRestaurantOrderRevision: parsed.data.expectedRestaurantOrderRevision,
             }),
         lines: parsed.data.lines,
         ...(parsed.data.cashReceivedMinor === undefined
