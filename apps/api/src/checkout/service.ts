@@ -633,7 +633,19 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           if (product.productType === 'unit' && scaled % 1_000n !== 0n) {
             return fail('invalid-quantity');
           }
-          loaded.push({ product, scaled });
+          loaded.push({
+            product: {
+              id: product.id,
+              sku: product.sku,
+              nameAr: product.nameAr,
+              nameEn: product.nameEn,
+              productType: product.productType,
+              priceMinor: product.priceMinor,
+              vatBasisPoints: Number(product.vatBasisPoints),
+              trackInventory: product.trackInventory,
+            },
+            scaled,
+          });
         }
       }
 
