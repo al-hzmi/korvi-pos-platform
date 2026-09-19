@@ -54,7 +54,10 @@ jobs:
         run: npm run audit
 
       - name: Formatting
-        run: npm run format:check
+        run: |
+          npx prettier --write packages/database/src/repositories/sale-repository.ts packages/domain/src/ports/persistence.ts
+          git diff -- packages/database/src/repositories/sale-repository.ts packages/domain/src/ports/persistence.ts
+          exit 1
 
       - name: Lint
         run: npm run lint
