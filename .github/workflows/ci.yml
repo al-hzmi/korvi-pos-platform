@@ -54,10 +54,7 @@ jobs:
         run: npm run audit
 
       - name: Formatting
-        run: |
-          npx prettier --write apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/components/checkout-panel.tsx
-          git diff -- apps/pos-web/src/components/cashier-screen.tsx apps/pos-web/src/components/checkout-panel.tsx
-          exit 1
+        run: npm run format:check
 
       - name: Lint
         run: npm run lint

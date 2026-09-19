@@ -52,11 +52,7 @@ export function CheckoutPanel({
   const submitting = state.phase === 'submitting';
   const blocked = state.failure?.action === 'blocking';
   const canSubmit =
-    lineCount > 0 &&
-    cashMinor !== null &&
-    change !== null &&
-    !blocked &&
-    submissionBlocker == null;
+    lineCount > 0 && cashMinor !== null && change !== null && !blocked && submissionBlocker == null;
   // The cash amount is part of the fingerprint the server compares. Editing it
   // while an attempt is outstanding would turn the retry into a different
   // intent, which the server would correctly refuse as a conflict.

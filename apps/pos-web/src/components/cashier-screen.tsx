@@ -292,19 +292,12 @@ export function CashierScreen({
       lines: cart.lines,
       cashReceivedMinor: cashMinor,
     });
-  }, [
-    checkout,
-    terminal.id,
-    shift.id,
-    quickService,
-    orderType,
-    tableId,
-    cart.lines,
-    cashMinor,
-  ]);
+  }, [checkout, terminal.id, shift.id, quickService, orderType, tableId, cart.lines, cashMinor]);
 
   const selectedRestaurantTable =
-    tableId === null ? null : (restaurantFloor?.tables.find((table) => table.id === tableId) ?? null);
+    tableId === null
+      ? null
+      : (restaurantFloor?.tables.find((table) => table.id === tableId) ?? null);
   const tableSubmissionBlocker =
     !quickService || orderType !== 'dine-in'
       ? null
