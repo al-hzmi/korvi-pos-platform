@@ -319,7 +319,7 @@ model User {
   cashMovements    CashMovement[]
   sales            Sale[]
   restaurantOrders RestaurantOrder[]
-  auditEvents      AuditEvent[]   AuditEvent[]
+  auditEvents      AuditEvent[]
   saleDiscounts SaleDiscount[]
   returns       Return[]
 
