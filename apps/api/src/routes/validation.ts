@@ -243,6 +243,10 @@ export const checkoutBody = z
     // this value never changes VAT, invoice type or fiscalization.
     orderType: z.enum(['dine-in', 'takeaway', 'delivery']).optional(),
     tableId: UUID.optional(),
+    // Optional only for direct sales. Open-order settlement requires both
+    // identity and revision so a stale kitchen/table state cannot be paid.
+    restaurantOrderId: UUID.optional(),
+    expectedRestaurantOrderRevision: z.string().regex(/^[1-9][0-9]{0,18}$/).optional(),
     cashReceivedMinor: MINOR.optional(),
     tenders: z.array(tenderBody).min(1).max(MAX_TENDERS).optional(),
     basketDiscount: discountBody.optional(),
@@ -264,7 +268,15 @@ export const checkoutBody = z
   })
   .refine((body) => (body.cashReceivedMinor === undefined) !== (body.tenders === undefined), {
     message: 'send either cashReceivedMinor or tenders, not both and not neither',
-  });
+  })
+  .refine(
+    (body) =>
+      (body.restaurantOrderId === undefined) ===
+      (body.expectedRestaurantOrderRevision === undefined),
+    {
+      message: 'restaurantOrderId and expectedRestaurantOrderRevision must be sent together',
+    },
+  );
 
 /**
  * A return, as a client may state it.
