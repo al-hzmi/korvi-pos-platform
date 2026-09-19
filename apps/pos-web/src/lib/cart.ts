@@ -28,6 +28,8 @@ export interface CartLine {
   readonly unitPriceMinor: string;
   readonly vatBasisPoints: number;
   readonly quantityScaled: string;
+  /** Server-owned identity when this cart line resumes an open restaurant order. */
+  readonly restaurantOrderLineId?: string;
   /** Operational Quick-Service metadata only; never sent to checkout authority. */
   readonly preparationNote?: string;
   readonly preparationOptions?: string;

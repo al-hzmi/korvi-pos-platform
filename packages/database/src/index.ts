@@ -43,6 +43,7 @@ export { createTenantRepository } from './repositories/tenant-repository.js';
 export { createBranchRepository } from './repositories/branch-repository.js';
 export { createDashboardRepository } from './repositories/dashboard-repository.js';
 export { createTerminalRepository } from './repositories/terminal-repository.js';
+export { createRestaurantFloorRepository } from './repositories/restaurant-floor-repository.js';
 export {
   createProductRepository,
   createGlobalCatalogRepository,
@@ -201,6 +202,33 @@ export type {
   CustomerUpdateRequest,
   CustomerMutationResult,
 } from './administration/customers.js';
+
+// Restaurant open-order authority. Rows are operational and non-fiscal; line
+// price/tax facts are server-authored snapshots for later settlement.
+export {
+  RestaurantOrderRefusedError,
+  listOpenRestaurantOrders,
+  readRestaurantOrder,
+  createRestaurantOrder,
+  cancelRestaurantOrder,
+  transferRestaurantOrderTable,
+  replaceRestaurantOrderLines,
+} from './restaurant/orders.js';
+export type {
+  RestaurantOrderRefusal,
+  RestaurantOrderActor,
+  RestaurantOrderCreateLine,
+  RestaurantOrderCreateRequest,
+  RestaurantOrderCancelRequest,
+  RestaurantOrderTransferTableRequest,
+  RestaurantOrderRetainedLine,
+  RestaurantOrderNewLine,
+  RestaurantOrderReplaceLinesRequest,
+  RestaurantOrderLine,
+  RestaurantOrderSummary,
+  RestaurantOrderDetail,
+  RestaurantOrderMutationResult,
+} from './restaurant/orders.js';
 
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.

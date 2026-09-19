@@ -27,6 +27,8 @@ const REGISTRY = process.env.NPM_PUBLIC_REGISTRY ?? 'https://registry.npmjs.org'
 
 /** Pin -> the ADR explaining why it is not the newest production-stable version. */
 const ALLOWED_BEHIND = {
+  eslint:
+    'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
   prettier:
     'Commercial V1 RC freeze directive (2026-09-18): keep the verified 3.9.7 formatter baseline until post-RC to avoid unrelated repository-wide formatting churn.',
   typescript: 'ADR-0007: typescript-eslint declares `typescript <6.1.0`.',

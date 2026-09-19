@@ -1374,3 +1374,59 @@ describe('POST /v1/sales', () => {
     expect(response.statusCode).toBe(400);
   });
 });
+
+describe('restaurant order context route', () => {
+  it('requires the mode for restaurants and returns the persisted mode when supplied', async () => {
+    app = await build('cashier');
+    business.settings[0] = { ...business.settings[0]!, vertical: 'restaurant' };
+    const cookie = await cookieFor(app);
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000007a1',
+        terminalId: A.terminal,
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '1000' }],
+      },
+    });
+    expect(missing.statusCode).toBe(422);
+    expect(missing.json()).toMatchObject({ error: 'order-type-required' });
+
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000007a2',
+        terminalId: A.terminal,
+        orderType: 'delivery',
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '1000' }],
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json<{ sale: { orderType: string } }>().sale.orderType).toBe('delivery');
+  });
+
+  it('does not allow restaurant context to leak into a retail sale', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000007a3',
+        terminalId: A.terminal,
+        orderType: 'takeaway',
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '1000' }],
+      },
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: 'order-type-not-applicable' });
+  });
+});

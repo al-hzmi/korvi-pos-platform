@@ -107,6 +107,10 @@ model Tenant {
   shifts                        Shift[]
   cashMovements                 CashMovement[]
   sales                         Sale[]
+  restaurantZones               RestaurantZone[]
+  restaurantTables              RestaurantTable[]
+  restaurantOrders              RestaurantOrder[]
+  restaurantOrderLines          RestaurantOrderLine[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
   tenders                       Tender[]
@@ -155,6 +159,9 @@ model Branch {
   purchaseReceipts         PurchaseReceipt[]
   shifts                   Shift[]
   sales                    Sale[]
+  restaurantZones          RestaurantZone[]
+  restaurantTables         RestaurantTable[]
+  restaurantOrders         RestaurantOrder[]
   returns                  Return[]
   memberships              TenantMembership[]
 
@@ -165,6 +172,121 @@ model Branch {
   @@unique([tenantId, id])
   @@index([tenantId, isActive])
   @@map("branches")
+}
+
+model RestaurantZone {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  branchId  String   @db.Uuid
+  nameAr    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  tables RestaurantTable[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, branchId, id])
+  @@index([tenantId, branchId, isActive, sortOrder])
+  @@map("restaurant_zones")
+}
+
+model RestaurantTable {
+  id        String   @id @db.Uuid
+  tenantId  String   @db.Uuid
+  branchId  String   @db.Uuid
+  zoneId    String   @db.Uuid
+  code      String
+  nameAr    String
+  capacity  Int?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  zone   RestaurantZone @relation(fields: [tenantId, zoneId], references: [tenantId, id], onDelete: Cascade)
+  sales  Sale[]
+  orders RestaurantOrder[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, branchId, id])
+  @@unique([tenantId, branchId, code])
+  @@index([tenantId, branchId, zoneId, isActive])
+  @@map("restaurant_tables")
+}
+
+model RestaurantOrder {
+  id         String  @id @db.Uuid
+  tenantId   String  @db.Uuid
+  branchId   String  @db.Uuid
+  terminalId String  @db.Uuid
+  userId     String  @db.Uuid
+  tableId    String? @db.Uuid
+
+  orderType String
+  status    String @default("open")
+  revision  BigInt @default(1)
+
+  /// Server-authored catalogue context. This order is operational and non-fiscal,
+  /// but settlement must not silently substitute a later price mode or currency.
+  priceMode String
+  currency  String @default("SAR")
+
+  openedAt     DateTime
+  closedAt     DateTime?
+  closedReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch           @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  terminal Terminal         @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  user     User             @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  table    RestaurantTable? @relation(fields: [tenantId, tableId], references: [tenantId, id], onDelete: NoAction)
+  lines    RestaurantOrderLine[]
+  sale     Sale?
+
+  @@unique([tenantId, id])
+  @@index([tenantId, branchId, status, openedAt])
+  @@index([tenantId, tableId, status])
+  @@index([tenantId, terminalId, status])
+  @@map("restaurant_orders")
+}
+
+model RestaurantOrderLine {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  orderId   String @db.Uuid
+  productId String @db.Uuid
+
+  lineNumber     Int
+  sku            String
+  nameAr         String
+  nameEn         String?
+  productType    String
+  unitPriceMinor BigInt
+  vatBasisPoints Int
+  quantityScaled BigInt
+
+  preparationNote    String?
+  preparationOptions String?
+  /// Null only for rows created before settlement authority recorded this fact.
+  trackInventory     Boolean?
+  createdAt          DateTime @default(now())
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order   RestaurantOrder @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  product Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, orderId, lineNumber])
+  @@index([tenantId, orderId])
+  @@index([tenantId, productId])
+  @@map("restaurant_order_lines")
 }
 
 model User {
@@ -197,9 +319,10 @@ model User {
   sessions      Session[]
   shifts        Shift[]            @relation("ShiftOwner")
   closedShifts  Shift[]            @relation("ShiftCloser")
-  cashMovements CashMovement[]
-  sales         Sale[]
-  auditEvents   AuditEvent[]
+  cashMovements    CashMovement[]
+  sales            Sale[]
+  restaurantOrders RestaurantOrder[]
+  auditEvents      AuditEvent[]
   saleDiscounts SaleDiscount[]
   returns       Return[]
 
@@ -310,6 +433,7 @@ model Terminal {
   branch                        Branch                         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
   shifts                        Shift[]
   sales                         Sale[]
+  restaurantOrders              RestaurantOrder[]
   returns                       Return[]
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
   zatcaComplianceEvidence       ZatcaComplianceEvidence[]
@@ -524,6 +648,7 @@ model Product {
   purchaseOrderLines       PurchaseOrderLine[]
   purchaseReceiptLines     PurchaseReceiptLine[]
   saleLines                SaleLine[]
+  restaurantOrderLines     RestaurantOrderLine[]
   returnLines              ReturnLine[]
 
   @@unique([tenantId, sku])
@@ -1208,7 +1333,9 @@ model Sale {
   terminalId String  @db.Uuid
   shiftId    String  @db.Uuid
   userId     String  @db.Uuid
-  customerId String? @db.Uuid
+  customerId       String? @db.Uuid
+  tableId          String? @db.Uuid
+  restaurantOrderId String? @db.Uuid
 
   /// The client-supplied operation id. Unique per tenant, which is what makes
   /// a double-click, a network retry and an offline replay converge on one
@@ -1216,6 +1343,9 @@ model Sale {
   operationId String
 
   status   String @default("finalized")
+  // Operational restaurant context. Historical/non-restaurant rows stay NULL;
+  // a migration must never invent a service mode that was not recorded.
+  orderType String?
   sequence Int
 
   /// Every figure the receipt states, snapshotted. Recomputing from products
@@ -1240,6 +1370,8 @@ model Sale {
   shift     Shift          @relation(fields: [tenantId, shiftId], references: [tenantId, id], onDelete: NoAction)
   user      User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
   customer  Customer?      @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
+  restaurantTable RestaurantTable? @relation(fields: [tenantId, tableId], references: [tenantId, id], onDelete: NoAction)
+  restaurantOrder RestaurantOrder? @relation(fields: [tenantId, restaurantOrderId], references: [tenantId, id], onDelete: NoAction)
   lines     SaleLine[]
   discounts SaleDiscount[]
   tenders   Tender[]
@@ -1248,6 +1380,7 @@ model Sale {
 
   @@unique([tenantId, operationId])
   @@unique([tenantId, branchId, sequence])
+  @@unique([tenantId, restaurantOrderId])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
@@ -1256,6 +1389,7 @@ model Sale {
   @@index([tenantId, shiftId])
   @@index([tenantId, status, issuedAt])
   @@index([tenantId, customerId])
+  @@index([tenantId, tableId])
   @@map("sales")
 }
 

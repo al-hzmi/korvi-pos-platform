@@ -19,6 +19,24 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
     !isUuidV7(value.terminalId) ||
     typeof value.expectedShiftId !== 'string' ||
     !isUuidV7(value.expectedShiftId) ||
+    !(
+      value.orderType === undefined ||
+      value.orderType === 'dine-in' ||
+      value.orderType === 'takeaway' ||
+      value.orderType === 'delivery'
+    ) ||
+    !(
+      value.tableId === undefined ||
+      (typeof value.tableId === 'string' && isUuidV7(value.tableId))
+    ) ||
+    !(
+      (value.restaurantOrderId === undefined &&
+        value.expectedRestaurantOrderRevision === undefined) ||
+      (typeof value.restaurantOrderId === 'string' &&
+        isUuidV7(value.restaurantOrderId) &&
+        typeof value.expectedRestaurantOrderRevision === 'string' &&
+        POSITIVE_INTEGER.test(value.expectedRestaurantOrderRevision))
+    ) ||
     typeof value.cashReceivedMinor !== 'string' ||
     !INTEGER.test(value.cashReceivedMinor) ||
     !Array.isArray(value.lines) ||

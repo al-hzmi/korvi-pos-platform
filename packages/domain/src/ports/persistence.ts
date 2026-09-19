@@ -367,6 +367,9 @@ export interface CloseShiftRequest {
 
 export type SaleStatus = 'finalized' | 'voided';
 
+/** Operational service mode for restaurant sales; never a fiscal classification. */
+export type RestaurantOrderType = 'dine-in' | 'takeaway' | 'delivery';
+
 /**
  * A sale line as stored.
  *
@@ -442,8 +445,14 @@ export interface SaleRecord {
   readonly shiftId: string;
   readonly userId: string;
   readonly customerId: string | null;
+  /** Operational dine-in table context. Historical and non-dine-in sales remain null. */
+  readonly tableId?: string | null;
+  /** Open restaurant order settled by this sale; null for direct/historical sales. */
+  readonly restaurantOrderId?: string | null;
   readonly operationId: string;
   readonly status: SaleStatus;
+  /** Null/absent means no immutable service-mode fact was recorded for this sale. */
+  readonly orderType?: RestaurantOrderType | null;
   readonly sequence: number;
   readonly priceMode: PriceMode;
   readonly currency: string;
@@ -510,6 +519,17 @@ export interface RecordSaleInput {
   readonly invoice: Omit<InvoiceRecord, 'tenantId' | 'invoiceNumber'>;
   readonly inventory: readonly InventoryMovementInput[];
   readonly cashMovement: CashMovementRecord | null;
+  /**
+   * Optional open-order lifecycle precondition. Persistence locks and proves
+   * the order snapshot before writing any financial fact, then marks it
+   * settled in this same transaction.
+   */
+  readonly restaurantOrderSettlement?:
+    | {
+        readonly orderId: string;
+        readonly expectedRevision: string;
+      }
+    | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 
@@ -608,9 +628,43 @@ export interface DashboardRepository {
   summary(scope: TenantScope, since: string): Promise<DashboardSummary>;
 }
 
+export interface RestaurantZone {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly nameAr: string;
+  readonly sortOrder: number;
+  readonly isActive: boolean;
+}
+
+export interface RestaurantTable {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly zoneId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly capacity: number | null;
+  readonly isActive: boolean;
+}
+
 export interface BranchRepository {
   findById(scope: TenantScope, id: string): Promise<Branch | null>;
   list(scope: TenantScope): Promise<readonly Branch[]>;
+}
+
+export interface RestaurantFloorRepository {
+  findTableById(scope: TenantScope, id: string): Promise<RestaurantTable | null>;
+  listZonesForBranch(
+    scope: TenantScope,
+    branchId: string,
+    activeOnly: boolean,
+  ): Promise<readonly RestaurantZone[]>;
+  listTablesForBranch(
+    scope: TenantScope,
+    branchId: string,
+    activeOnly: boolean,
+  ): Promise<readonly RestaurantTable[]>;
 }
 
 export interface TerminalRepository {

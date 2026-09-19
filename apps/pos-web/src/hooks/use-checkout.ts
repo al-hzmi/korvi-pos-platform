@@ -7,7 +7,7 @@ import { runCheckout } from '../lib/checkout-submit';
 import { enqueueOfflineCheckout } from '../lib/offline-checkout';
 import { openKorviOfflineStore } from '../lib/offline-store';
 import type { OfflineStoreProtector } from '../lib/offline-protection';
-import type { QueuePartition } from '@korvi/domain';
+import type { QueuePartition, RestaurantOrderType } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
 import type { CartLine } from '../lib/cart';
 import type { CheckoutFlight } from '../lib/checkout-flight';
@@ -18,6 +18,10 @@ export interface CheckoutHandle {
   readonly submit: (input: {
     readonly terminalId: string;
     readonly expectedShiftId: string;
+    readonly orderType?: RestaurantOrderType;
+    readonly tableId?: string;
+    readonly restaurantOrderId?: string;
+    readonly expectedRestaurantOrderRevision?: string;
     readonly lines: readonly CartLine[];
     readonly cashReceivedMinor: string;
   }) => void;
@@ -48,6 +52,10 @@ export function useCheckout(
     (input: {
       readonly terminalId: string;
       readonly expectedShiftId: string;
+      readonly orderType?: RestaurantOrderType;
+      readonly tableId?: string;
+      readonly restaurantOrderId?: string;
+      readonly expectedRestaurantOrderRevision?: string;
       readonly lines: readonly CartLine[];
       readonly cashReceivedMinor: string;
     }) => {

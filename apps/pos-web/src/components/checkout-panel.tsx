@@ -25,6 +25,7 @@ export interface CheckoutPanelProps {
   readonly cashMinor: string | null;
   readonly lineCount: number;
   readonly locked: boolean;
+  readonly submissionBlocker?: string | null;
   readonly state: CheckoutState;
   readonly cashRef: Ref<HTMLInputElement>;
   readonly onCashChange: (value: string) => void;
@@ -40,6 +41,7 @@ export function CheckoutPanel({
   cashMinor,
   lineCount,
   locked,
+  submissionBlocker,
   state,
   cashRef,
   onCashChange,
@@ -49,7 +51,12 @@ export function CheckoutPanel({
   const change = cashMinor === null ? null : changeMinor(totalMinor, cashMinor);
   const submitting = state.phase === 'submitting';
   const blocked = state.failure?.action === 'blocking';
-  const canSubmit = lineCount > 0 && cashMinor !== null && change !== null && !blocked;
+  const canSubmit =
+    lineCount > 0 &&
+    cashMinor !== null &&
+    change !== null &&
+    !blocked &&
+    (submissionBlocker === null || submissionBlocker === undefined);
   // The cash amount is part of the fingerprint the server compares. Editing it
   // while an attempt is outstanding would turn the retry into a different
   // intent, which the server would correctly refuse as a conflict.
@@ -121,6 +128,10 @@ export function CheckoutPanel({
           )}
         </div>
       </div>
+
+      {submissionBlocker === null || submissionBlocker === undefined ? null : (
+        <StatusNote tone="warning">{submissionBlocker}</StatusNote>
+      )}
 
       {state.failure === null ? null : (
         <StatusNote tone={state.failure.action === 'blocking' ? 'danger' : 'warning'} live>

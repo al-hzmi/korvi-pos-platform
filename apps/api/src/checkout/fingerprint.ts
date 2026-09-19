@@ -34,6 +34,14 @@ export interface CheckoutIntentTender {
 export interface CheckoutIntent {
   readonly branchId: string;
   readonly terminalId: string;
+  /** Empty string for non-restaurant checkout; otherwise the recorded operational service mode. */
+  readonly orderType: string;
+  /** Empty except for a dine-in sale bound to a table. */
+  readonly tableId: string;
+  /** Empty for direct sales; otherwise the open operational order being settled. */
+  readonly restaurantOrderId: string;
+  /** Empty for direct sales; optimistic lifecycle precondition for an open order. */
+  readonly restaurantOrderRevision: string;
   readonly lines: readonly CheckoutIntentLine[];
   readonly tenders: readonly CheckoutIntentTender[];
   /** Canonical description of the basket discount, or the empty string. */
@@ -59,8 +67,13 @@ export interface CheckoutIntent {
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
  *
- * `v2` because the payment fields joined the canonical form. A key minted
- * under v1 hashes differently and is treated as a different intent, which is
+ * `v5` because open-order identity + revision joined the canonical form. An
+ * order settlement cannot replay as a direct sale, or against a later revision.
+ *
+ * `v4` introduced dine-in table identity after service mode.
+ *
+ * `v3` introduced restaurant service mode after payment
+ * composition. A key minted under an earlier version hashes differently and is
  * the safe direction: a conflict is visible, a false replay is not.
  */
 export function fingerprintIntent(intent: CheckoutIntent): string {
@@ -97,9 +110,13 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
   const canonical = JSON.stringify([
-    'v2',
+    'v5',
     intent.branchId,
     intent.terminalId,
+    intent.orderType,
+    intent.tableId,
+    intent.restaurantOrderId,
+    intent.restaurantOrderRevision,
     intent.basketDiscount,
     tenders,
     lines,

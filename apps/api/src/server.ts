@@ -7,11 +7,13 @@ import {
   createInventoryRepository,
   createPrismaClient,
   createProductRepository,
+  createRestaurantFloorRepository,
   createSaleRepository,
   createReturnRepository,
   createShiftRepository,
   createTenantRepository,
   createTerminalRepository,
+  readRestaurantOrder,
   readTenantOnboardingReadiness,
 } from '@korvi/database';
 import { newId } from '@korvi/domain';
@@ -31,6 +33,7 @@ import { createPlatformService } from './platform/service.js';
 import { registerPlatformSupportRoutes } from './platform/support-routes.js';
 import { createPlatformSupportService } from './platform/support-service.js';
 import { createMerchantPurchasingService } from './purchasing/service.js';
+import { createMerchantRestaurantOrderService } from './restaurant/order-service.js';
 import { createReturnService } from './returns/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -42,6 +45,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
+import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerSalesReadRoutes } from './routes/sales-read.js';
 import { registerZatcaRoutes } from './routes/zatca.js';
 import { registerOperationalObservability } from './runtime/observability.js';
@@ -60,6 +64,7 @@ import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
+import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { MerchantZatcaService } from './zatca/merchant-service.js';
@@ -100,6 +105,8 @@ export interface ServerDeps {
   readonly purchasing?: MerchantPurchasingService;
   /** Read-only onboarding readiness authority. */
   readonly onboarding?: MerchantOnboardingService;
+  /** Operational restaurant open-order authority; non-fiscal until checkout. */
+  readonly restaurantOrders?: MerchantRestaurantOrderService;
   /** Merchant customer directory and mutation authority. */
   readonly customers?: MerchantCustomerService;
   /** Read-only merchant sales history and financial reports, authorized by report.read. */
@@ -155,6 +162,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const terminals = createTerminalRepository(prisma);
     const tenants = createTenantRepository(prisma);
     const dashboard = createDashboardRepository(prisma);
+    const restaurantFloor = createRestaurantFloorRepository(prisma);
     const idempotency = createIdempotencyRepository(prisma);
     const audit = createAuditRepository(prisma);
     const sales = createSaleRepository(prisma);
@@ -170,12 +178,17 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       products,
       shifts,
       terminals,
+      restaurantFloor,
       checkout: createCheckoutService({
         tenants,
         products,
         inventory: createInventoryRepository(prisma),
         shifts,
         sales,
+        restaurantFloor,
+        restaurantOrders: {
+          read: (scope, branchId, orderId) => readRestaurantOrder(prisma, scope, branchId, orderId),
+        },
         idempotency,
         audit,
         ...(fiscalization === undefined ? {} : { fiscalization }),
@@ -213,6 +226,13 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       findMovementById: (scope, id) => resolve().shifts.findMovementById(scope, id),
       recordManualMovement: (scope, input) => resolve().shifts.recordManualMovement(scope, input),
       close: (scope, input) => resolve().shifts.close(scope, input),
+    },
+    restaurantFloor: {
+      findTableById: (scope, id) => resolve().restaurantFloor.findTableById(scope, id),
+      listZonesForBranch: (scope, branchId, activeOnly) =>
+        resolve().restaurantFloor.listZonesForBranch(scope, branchId, activeOnly),
+      listTablesForBranch: (scope, branchId, activeOnly) =>
+        resolve().restaurantFloor.listTablesForBranch(scope, branchId, activeOnly),
     },
     terminals: {
       findById: (scope, id) => resolve().terminals.findById(scope, id),
@@ -371,6 +391,29 @@ function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   return { readReadiness: (principal) => resolve().readReadiness(principal) };
 }
 
+function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderService {
+  let built: MerchantRestaurantOrderService | null = null;
+
+  const resolve = (): MerchantRestaurantOrderService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantOrderService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    listOpen: (principal) => resolve().listOpen(principal),
+    detail: (principal, orderId) => resolve().detail(principal, orderId),
+    create: (principal, request) => resolve().create(principal, request),
+    cancel: (principal, orderId, request) => resolve().cancel(principal, orderId, request),
+    transferTable: (principal, orderId, request) =>
+      resolve().transferTable(principal, orderId, request),
+    replaceLines: (principal, orderId, request) =>
+      resolve().replaceLines(principal, orderId, request),
+  };
+}
+
 function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
   let built: MerchantCustomerService | null = null;
 
@@ -520,6 +563,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerHealthRoutes(app);
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
+  registerRestaurantOrderRoutes(app, {
+    service: deps.restaurantOrders ?? lazyRestaurantOrderService(config),
+    guards,
+  });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
   registerCatalogAdminRoutes(app, {
     service: deps.catalog ?? lazyCatalogService(config),

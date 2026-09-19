@@ -1,6 +1,7 @@
 import {
   isUuidV7,
   type PriceMode,
+  type RestaurantOrderType,
   type QueueClaimRequest,
   type QueueClaimResult,
   type QueueOperationInput,
@@ -55,6 +56,10 @@ export interface OfflineSaleScope {
 export interface OfflineSaleDraft {
   readonly lines: readonly CartLine[];
   readonly cash: string;
+  readonly orderType?: RestaurantOrderType;
+  readonly tableId?: string;
+  readonly restaurantOrderId?: string;
+  readonly restaurantOrderRevision?: string;
   readonly priceMode: PriceMode;
   readonly updatedAt: string;
 }
@@ -205,6 +210,8 @@ function isCartLine(value: unknown): value is CartLine {
     value.vatBasisPoints >= 0 &&
     value.vatBasisPoints <= 10_000 &&
     isIntegerString(value.quantityScaled, false) &&
+    (value.restaurantOrderLineId === undefined ||
+      (typeof value.restaurantOrderLineId === 'string' && isUuidV7(value.restaurantOrderLineId))) &&
     (value.preparationNote === undefined || typeof value.preparationNote === 'string') &&
     (value.preparationOptions === undefined || typeof value.preparationOptions === 'string')
   );
@@ -214,11 +221,23 @@ function isPriceMode(value: unknown): value is PriceMode {
   return value === 'tax-inclusive' || value === 'tax-exclusive';
 }
 
+function isOptionalRestaurantOrderType(value: unknown): value is RestaurantOrderType | undefined {
+  return value === undefined || value === 'dine-in' || value === 'takeaway' || value === 'delivery';
+}
+
 export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
   if (!isRecord(value) || !Array.isArray(value.lines)) return false;
   return (
     value.lines.every(isCartLine) &&
     typeof value.cash === 'string' &&
+    isOptionalRestaurantOrderType(value.orderType) &&
+    (value.tableId === undefined ||
+      (typeof value.tableId === 'string' && isUuidV7(value.tableId))) &&
+    ((value.restaurantOrderId === undefined && value.restaurantOrderRevision === undefined) ||
+      (typeof value.restaurantOrderId === 'string' &&
+        isUuidV7(value.restaurantOrderId) &&
+        typeof value.restaurantOrderRevision === 'string' &&
+        /^[1-9][0-9]{0,18}$/.test(value.restaurantOrderRevision))) &&
     isPriceMode(value.priceMode) &&
     typeof value.updatedAt === 'string' &&
     Number.isFinite(Date.parse(value.updatedAt))
@@ -484,6 +503,14 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
   return {
     lines: value.lines,
     cash: value.cash,
+    ...(value.orderType === undefined ? {} : { orderType: value.orderType }),
+    ...(value.tableId === undefined ? {} : { tableId: value.tableId }),
+    ...(value.restaurantOrderId === undefined
+      ? {}
+      : { restaurantOrderId: value.restaurantOrderId }),
+    ...(value.restaurantOrderRevision === undefined
+      ? {}
+      : { restaurantOrderRevision: value.restaurantOrderRevision }),
     priceMode: value.priceMode,
     updatedAt: value.updatedAt,
   };

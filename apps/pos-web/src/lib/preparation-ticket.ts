@@ -1,3 +1,4 @@
+import type { RestaurantOrderType } from '@korvi/domain';
 import type { SaleSummary } from './api-types';
 import type { CartLine } from './cart';
 import type { CheckoutIntent } from './checkout-flight';
@@ -14,6 +15,7 @@ export interface PreparationTicket {
   readonly kind: 'preparation';
   readonly sourceOperationId: string;
   readonly orderNumber: string;
+  readonly orderType: RestaurantOrderType | null;
   readonly createdAt: string;
   readonly items: readonly PreparationTicketItem[];
 }
@@ -42,6 +44,7 @@ export function preparationTicketFromSale(
     kind: 'preparation',
     sourceOperationId: sale.operationId,
     orderNumber,
+    orderType: sale.orderType ?? null,
     createdAt: sale.issuedAt,
     items: sale.lines.map((line) => {
       const local = line.productId === null ? undefined : byProduct.get(line.productId);
@@ -82,6 +85,7 @@ export function preparationTicketFromIntent(
     kind: 'preparation',
     sourceOperationId: intent.operationId,
     orderNumber,
+    orderType: intent.orderType ?? null,
     createdAt,
     items,
   };
