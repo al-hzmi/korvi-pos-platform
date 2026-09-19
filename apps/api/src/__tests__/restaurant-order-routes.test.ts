@@ -20,6 +20,8 @@ const REPLAY_OP = '018fb500-0000-7000-8000-0000000000e2';
 const CANCEL_OP = '018fb500-0000-7000-8000-0000000000e3';
 const TRANSFER_OP = '018fb500-0000-7000-8000-0000000000e4';
 const TABLE_TWO = '018fb500-0000-7000-8000-0000000000c2';
+const REPLACE_LINES_OP = '018fb500-0000-7000-8000-0000000000e5';
+const ORDER_LINE = '018fb500-0000-7000-8000-0000000000f1';
 const ORIGIN = 'http://localhost:3000';
 const COOKIE = 'korvi_session=restaurant-test-token';
 
@@ -46,7 +48,7 @@ const order: RestaurantOrderDetail = {
   lineCount: 1,
   lines: [
     {
-      id: '018fb500-0000-7000-8000-0000000000f1',
+      id: ORDER_LINE,
       lineNumber: 1,
       productId: PRODUCT,
       sku: 'COF-1',
@@ -149,6 +151,24 @@ function restaurantService(): MerchantRestaurantOrderService {
         outcome: 'success',
         value: {
           order: { ...order, tableId: request.tableId, revision: '2' },
+          replayed: false,
+        },
+      };
+    },
+    async replaceLines(subject, orderId, request) {
+      calls.push({
+        method: 'replaceLines',
+        value: { tenantId: subject.tenantId, userId: subject.userId, orderId, request },
+      });
+      if (nextFailure !== null) return { outcome: 'failure', reason: nextFailure };
+      return {
+        outcome: 'success',
+        value: {
+          order: {
+            ...order,
+            revision: '2',
+            lineCount: request.lines.length,
+          },
           replayed: false,
         },
       };
@@ -289,6 +309,57 @@ describe('restaurant order route authority', () => {
     expect(replayed.json()).toMatchObject({ order: { id: ORDER }, replayed: true });
   });
 
+  it('replaces open-order lines under sale.create with an explicit revision precondition', async () => {
+    const server = build(principal(['sale.create']));
+    const response = await server.inject({
+      method: 'PUT',
+      url: `/v1/restaurant/orders/${ORDER}/lines`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: REPLACE_LINES_OP,
+        expectedRevision: '1',
+        lines: [
+          { lineId: ORDER_LINE, quantityScaled: '2000', preparationNote: 'بدون سكر' },
+          { productId: PRODUCT, quantityScaled: '1000' },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      order: { id: ORDER, revision: '2', lineCount: 2 },
+      replayed: false,
+    });
+    expect(calls).toEqual([
+      {
+        method: 'replaceLines',
+        value: {
+          tenantId: TENANT,
+          userId: USER,
+          orderId: ORDER,
+          request: {
+            operationId: REPLACE_LINES_OP,
+            expectedRevision: '1',
+            lines: [
+              {
+                lineId: ORDER_LINE,
+                quantityScaled: '2000',
+                preparationNote: 'بدون سكر',
+                preparationOptions: null,
+              },
+              {
+                productId: PRODUCT,
+                quantityScaled: '1000',
+                preparationNote: null,
+                preparationOptions: null,
+              },
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
   it('transfers a dine-in table under sale.create with an explicit revision precondition', async () => {
     const server = build(principal(['sale.create']));
     const response = await server.inject({
@@ -353,6 +424,8 @@ describe('restaurant order route authority', () => {
   it.each([
     ['table-occupied', 409, 'table_occupied'],
     ['table-not-applicable', 422, 'table_not_applicable'],
+    ['unknown-line', 404, 'restaurant_order_line_not_found'],
+    ['duplicate-line', 422, 'duplicate_restaurant_order_line'],
     ['stale-revision', 409, 'restaurant_order_stale'],
     ['idempotency-conflict', 409, 'idempotency_conflict'],
     ['unknown-order', 404, 'restaurant_order_not_found'],

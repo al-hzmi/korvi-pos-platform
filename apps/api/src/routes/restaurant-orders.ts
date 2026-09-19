@@ -44,6 +44,29 @@ const transferTableBody = z
     tableId: UUID,
   })
   .strict();
+const retainedLine = z
+  .object({
+    lineId: UUID,
+    quantityScaled: QUANTITY,
+    preparationNote: OPTIONAL_PREP.optional().default(null),
+    preparationOptions: OPTIONAL_PREP.optional().default(null),
+  })
+  .strict();
+const newLine = z
+  .object({
+    productId: UUID,
+    quantityScaled: QUANTITY,
+    preparationNote: OPTIONAL_PREP.optional().default(null),
+    preparationOptions: OPTIONAL_PREP.optional().default(null),
+  })
+  .strict();
+const replaceLinesBody = z
+  .object({
+    operationId: UUID,
+    expectedRevision: z.string().regex(/^[1-9][0-9]{0,18}$/),
+    lines: z.array(z.union([retainedLine, newLine])).min(1).max(200),
+  })
+  .strict();
 
 export interface RestaurantOrderRouteOptions {
   readonly service: MerchantRestaurantOrderService;
@@ -74,6 +97,10 @@ function refusal(reply: FastifyReply, reason: RestaurantOrderRefusal) {
       return reply.code(409).send({ error: 'product_unavailable' });
     case 'invalid-quantity':
       return reply.code(422).send({ error: 'invalid_quantity' });
+    case 'unknown-line':
+      return reply.code(404).send({ error: 'restaurant_order_line_not_found' });
+    case 'duplicate-line':
+      return reply.code(422).send({ error: 'duplicate_restaurant_order_line' });
     case 'unknown-order':
       return reply.code(404).send({ error: 'restaurant_order_not_found' });
     case 'order-not-open':
@@ -134,6 +161,24 @@ export function registerRestaurantOrderRoutes(
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
     return command(reply, await service.create(principal, body.data), true);
   });
+
+  app.put(
+    '/v1/restaurant/orders/:orderId/lines',
+    { preHandler: canOperate },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = orderParams.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      const body = replaceLinesBody.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return command(
+        reply,
+        await service.replaceLines(principal, params.data.orderId, body.data),
+        false,
+      );
+    },
+  );
 
   app.post(
     '/v1/restaurant/orders/:orderId/transfer-table',

@@ -6,6 +6,7 @@ import {
   listOpenRestaurantOrders,
   readRestaurantOrder,
   transferRestaurantOrderTable,
+  replaceRestaurantOrderLines,
 } from '@korvi/database';
 import type { AuthenticatedPrincipal, TenantScope } from '@korvi/domain';
 import type {
@@ -13,6 +14,7 @@ import type {
   RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
   RestaurantOrderTransferTableRequest,
+  RestaurantOrderReplaceLinesRequest,
   RestaurantOrderDetail,
   RestaurantOrderMutationResult,
   RestaurantOrderRefusal,
@@ -39,6 +41,11 @@ export interface MerchantRestaurantOrderService {
     principal: AuthenticatedPrincipal,
     orderId: string,
     request: RestaurantOrderTransferTableRequest,
+  ): Promise<RestaurantOrderCommandResult>;
+  replaceLines(
+    principal: AuthenticatedPrincipal,
+    orderId: string,
+    request: RestaurantOrderReplaceLinesRequest,
   ): Promise<RestaurantOrderCommandResult>;
 }
 
@@ -104,6 +111,19 @@ export function createMerchantRestaurantOrderService(
       requirePrincipalPermission(principal, 'sale.create');
       return attempt(() =>
         transferRestaurantOrderTable(
+          prisma,
+          scopeOf(principal),
+          actorOf(principal),
+          orderId,
+          request,
+        ),
+      );
+    },
+
+    async replaceLines(principal, orderId, request) {
+      requirePrincipalPermission(principal, 'sale.create');
+      return attempt(() =>
+        replaceRestaurantOrderLines(
           prisma,
           scopeOf(principal),
           actorOf(principal),

@@ -212,6 +212,7 @@ export {
   createRestaurantOrder,
   cancelRestaurantOrder,
   transferRestaurantOrderTable,
+  replaceRestaurantOrderLines,
 } from './restaurant/orders.js';
 export type {
   RestaurantOrderRefusal,
@@ -220,6 +221,9 @@ export type {
   RestaurantOrderCreateRequest,
   RestaurantOrderCancelRequest,
   RestaurantOrderTransferTableRequest,
+  RestaurantOrderRetainedLine,
+  RestaurantOrderNewLine,
+  RestaurantOrderReplaceLinesRequest,
   RestaurantOrderLine,
   RestaurantOrderSummary,
   RestaurantOrderDetail,

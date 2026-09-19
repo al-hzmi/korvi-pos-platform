@@ -10,6 +10,7 @@ import type { TransactionClient } from '../tenant-context.js';
 const CREATE_SCOPE = 'restaurant.order.create';
 const CANCEL_SCOPE = 'restaurant.order.cancel';
 const TRANSFER_TABLE_SCOPE = 'restaurant.order.transfer-table';
+const REPLACE_LINES_SCOPE = 'restaurant.order.replace-lines';
 const MAX_BIGINT = 9_223_372_036_854_775_807n;
 
 export type RestaurantOrderRefusal =
@@ -22,6 +23,8 @@ export type RestaurantOrderRefusal =
   | 'unknown-product'
   | 'product-unavailable'
   | 'invalid-quantity'
+  | 'unknown-line'
+  | 'duplicate-line'
   | 'unknown-order'
   | 'order-not-open'
   | 'stale-revision'
@@ -67,6 +70,26 @@ export interface RestaurantOrderTransferTableRequest {
   readonly operationId: string;
   readonly expectedRevision: string;
   readonly tableId: string;
+}
+
+export interface RestaurantOrderRetainedLine {
+  readonly lineId: string;
+  readonly quantityScaled: string;
+  readonly preparationNote: string | null;
+  readonly preparationOptions: string | null;
+}
+
+export interface RestaurantOrderNewLine {
+  readonly productId: string;
+  readonly quantityScaled: string;
+  readonly preparationNote: string | null;
+  readonly preparationOptions: string | null;
+}
+
+export interface RestaurantOrderReplaceLinesRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly lines: readonly (RestaurantOrderRetainedLine | RestaurantOrderNewLine)[];
 }
 
 export interface RestaurantOrderLine {
@@ -348,7 +371,10 @@ async function appendAudit(
   actor: RestaurantOrderActor,
   terminalId: string,
   eventType:
-    'restaurant.order.opened' | 'restaurant.order.cancelled' | 'restaurant.order.table-transferred',
+    | 'restaurant.order.opened'
+    | 'restaurant.order.cancelled'
+    | 'restaurant.order.table-transferred'
+    | 'restaurant.order.lines-replaced',
   orderId: string,
   metadata: Readonly<Record<string, string | number | boolean | null>>,
   at: Date,
@@ -814,6 +840,198 @@ export async function transferRestaurantOrderTable(
     }
 
     await completeOperation(tx, tenant, TRANSFER_TABLE_SCOPE, request.operationId, order, at);
+    return { order, replayed: false };
+  });
+}
+
+
+export async function replaceRestaurantOrderLines(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  actor: RestaurantOrderActor,
+  orderId: string,
+  request: RestaurantOrderReplaceLinesRequest,
+  clock: () => Date = () => new Date(),
+  nextId: () => string = newId,
+): Promise<RestaurantOrderMutationResult> {
+  const tenant = tenantParam(scope);
+  const normalizedLines = request.lines.map((line) => ({
+    ...line,
+    preparationNote: normalizeOptionalText(line.preparationNote),
+    preparationOptions: normalizeOptionalText(line.preparationOptions),
+  }));
+  const requestHash = fingerprint({
+    orderId,
+    expectedRevision: request.expectedRevision,
+    lines: normalizedLines,
+  });
+
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    const replay = await reserveOperation(
+      tx,
+      tenant,
+      REPLACE_LINES_SCOPE,
+      request.operationId,
+      requestHash,
+      nextId,
+    );
+    if (replay !== null) return { order: replay, replayed: true };
+
+    await requireRestaurantSettings(tx, tenant);
+    const existing = await readOrderWithin(tx, tenant, actor.branchId, orderId);
+    if (existing === null) throw new RestaurantOrderRefusedError('unknown-order');
+    if (existing.status !== 'open') throw new RestaurantOrderRefusedError('order-not-open');
+
+    let expected: bigint;
+    try {
+      expected = BigInt(request.expectedRevision);
+    } catch {
+      throw new RestaurantOrderRefusedError('stale-revision');
+    }
+    if (expected.toString() !== existing.revision) {
+      throw new RestaurantOrderRefusedError('stale-revision');
+    }
+
+    const existingById = new Map(existing.lines.map((line) => [line.id, line]));
+    const retainedIds = new Set<string>();
+    const retained = [];
+    const added = [];
+
+    for (const [index, line] of normalizedLines.entries()) {
+      if ('lineId' in line) {
+        if (retainedIds.has(line.lineId)) {
+          throw new RestaurantOrderRefusedError('duplicate-line');
+        }
+        const snapshot = existingById.get(line.lineId);
+        if (snapshot === undefined) throw new RestaurantOrderRefusedError('unknown-line');
+        retainedIds.add(line.lineId);
+        retained.push({
+          id: snapshot.id,
+          lineNumber: index + 1,
+          quantityScaled: quantity(line.quantityScaled, snapshot.productType),
+          preparationNote: line.preparationNote,
+          preparationOptions: line.preparationOptions,
+        });
+        continue;
+      }
+
+      const product = await tx.product.findFirst({
+        where: { tenantId: tenant, id: line.productId },
+        select: {
+          id: true,
+          sku: true,
+          nameAr: true,
+          nameEn: true,
+          productType: true,
+          priceMinor: true,
+          vatBasisPoints: true,
+          trackInventory: true,
+          isActive: true,
+        },
+      });
+      if (product === null) throw new RestaurantOrderRefusedError('unknown-product');
+      if (!product.isActive) throw new RestaurantOrderRefusedError('product-unavailable');
+      added.push({
+        id: nextId(),
+        tenantId: tenant,
+        orderId,
+        lineNumber: index + 1,
+        productId: product.id,
+        sku: product.sku,
+        nameAr: product.nameAr,
+        nameEn: product.nameEn,
+        productType: product.productType,
+        unitPriceMinor: product.priceMinor,
+        vatBasisPoints: product.vatBasisPoints,
+        quantityScaled: quantity(line.quantityScaled, product.productType),
+        preparationNote: line.preparationNote,
+        preparationOptions: line.preparationOptions,
+        trackInventory: product.trackInventory,
+      });
+    }
+
+    const existingRevision = BigInt(existing.revision);
+    const at = clock();
+    const changed = await tx.restaurantOrder.updateMany({
+      where: {
+        tenantId: tenant,
+        id: orderId,
+        branchId: actor.branchId,
+        status: 'open',
+        revision: existingRevision,
+      },
+      data: {
+        revision: { increment: 1n },
+        updatedAt: at,
+      },
+    });
+    if (changed.count !== 1) throw new RestaurantOrderRefusedError('stale-revision');
+
+    // Move retained rows into a collision-free positive range before assigning
+    // their new line numbers. This preserves their snapshot and createdAt while
+    // still allowing arbitrary reorder/removal under the unique line number key.
+    for (const [index, line] of retained.entries()) {
+      const moved = await tx.restaurantOrderLine.updateMany({
+        where: { tenantId: tenant, orderId, id: line.id },
+        data: { lineNumber: 1_000_000 + index },
+      });
+      if (moved.count !== 1) throw new RestaurantOrderRefusedError('stale-revision');
+    }
+
+    await tx.restaurantOrderLine.deleteMany({
+      where: {
+        tenantId: tenant,
+        orderId,
+        ...(retainedIds.size === 0 ? {} : { id: { notIn: [...retainedIds] } }),
+      },
+    });
+
+    for (const line of retained) {
+      const updated = await tx.restaurantOrderLine.updateMany({
+        where: { tenantId: tenant, orderId, id: line.id },
+        data: {
+          lineNumber: line.lineNumber,
+          quantityScaled: line.quantityScaled,
+          preparationNote: line.preparationNote,
+          preparationOptions: line.preparationOptions,
+        },
+      });
+      if (updated.count !== 1) throw new RestaurantOrderRefusedError('stale-revision');
+    }
+
+    if (added.length > 0) {
+      await tx.restaurantOrderLine.createMany({
+        data: added.map((line) => ({
+          ...line,
+          createdAt: at,
+        })),
+      });
+    }
+
+    const order = await readOrderWithin(tx, tenant, actor.branchId, orderId);
+    if (order === null) {
+      throw new DatabaseError('Restaurant order could not be read after line replacement.');
+    }
+
+    await appendAudit(
+      tx,
+      tenant,
+      actor,
+      existing.terminalId,
+      'restaurant.order.lines-replaced',
+      orderId,
+      {
+        previousLineCount: existing.lines.length,
+        lineCount: order.lines.length,
+        retainedLineCount: retained.length,
+        addedLineCount: added.length,
+        removedLineCount: existing.lines.length - retained.length,
+        revision: order.revision,
+      },
+      at,
+      nextId,
+    );
+    await completeOperation(tx, tenant, REPLACE_LINES_SCOPE, request.operationId, order, at);
     return { order, replayed: false };
   });
 }
