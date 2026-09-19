@@ -106,8 +106,7 @@ export function registerBootstrapRoutes(
   options: BootstrapRouteOptions,
 ): void {
   const { service } = options;
-  const admission =
-    options.admission ?? createLoginAdmissionController(BOOTSTRAP_ADMISSION_POLICY);
+  const admission = options.admission ?? createLoginAdmissionController(BOOTSTRAP_ADMISSION_POLICY);
 
   app.post('/v1/bootstrap/owner', async (request, reply): Promise<FastifyReply> => {
     if (service === null) {
