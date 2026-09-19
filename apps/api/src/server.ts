@@ -187,8 +187,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         sales,
         restaurantFloor,
         restaurantOrders: {
-          read: (scope, branchId, orderId) =>
-            readRestaurantOrder(prisma, scope, branchId, orderId),
+          read: (scope, branchId, orderId) => readRestaurantOrder(prisma, scope, branchId, orderId),
         },
         idempotency,
         audit,
