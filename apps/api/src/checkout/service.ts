@@ -40,7 +40,6 @@ import type {
   InventoryMovementInput,
   InventoryRepository,
   PriceMode,
-  Product,
   RestaurantOrderType,
   RestaurantFloorRepository,
   ProductRepository,
@@ -815,10 +814,11 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             shiftId: shift.id,
             userId: input.principal.userId,
             customerId: null,
+            restaurantOrderId: restaurantOrder?.id ?? null,
             operationId: input.operationId,
             status: 'finalized',
-            orderType: input.orderType ?? null,
-            tableId: input.tableId ?? null,
+            orderType: restaurantOrder?.orderType ?? input.orderType ?? null,
+            tableId: restaurantOrder?.tableId ?? input.tableId ?? null,
             priceMode: cart.priceMode,
             currency,
             grossMinor: priced.gross.minor.toString(),
@@ -913,6 +913,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                   occurredAt: issuedAt,
                 }
               : null,
+          ...(restaurantOrder === null
+            ? {}
+            : {
+                restaurantOrderSettlement: {
+                  orderId: restaurantOrder.id,
+                  expectedRevision: restaurantOrder.revision,
+                },
+              }),
           idempotency: {
             id: newId(),
             scope: IDEMPOTENCY_SCOPE,
@@ -926,6 +934,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         // transaction back; none of them reaches the client as a driver error.
         if (error instanceof InsufficientStockError) return fail('insufficient-stock');
         if (error instanceof ShiftUnusableError) return fail('shift-invalid');
+        if (error instanceof RestaurantOrderRefusedError) {
+          if (error.detail === 'unknown-order') return fail('restaurant-order-not-found');
+          if (error.detail === 'order-not-open') return fail('restaurant-order-not-open');
+          if (error.detail === 'stale-revision') return fail('restaurant-order-stale');
+          return fail('restaurant-order-mismatch');
+        }
         if (error instanceof OperationAlreadyRecordedError) {
           // A competing transaction owned this operation id and has now
           // committed — ON CONFLICT DO NOTHING waited for it. Read what it
@@ -954,6 +968,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             sequence: recorded.sequence,
             orderType: recorded.orderType ?? null,
             tableId: recorded.tableId ?? null,
+            restaurantOrderId: recorded.restaurantOrderId ?? null,
             total: moneyToMajorString(priced.total),
             lines: recorded.lines.length,
             // Money given away and money taken by something other than cash
