@@ -8,6 +8,7 @@ import { checkoutQueueOperation } from '../lib/offline-checkout';
 import {
   cartLinesFromRestaurantOrder,
   restaurantOrderLinesFromCart,
+  restaurantOrderMatchesCart,
 } from '../lib/restaurant-orders';
 import type { ProductSummary } from '../lib/api-types';
 
@@ -147,6 +148,13 @@ describe('Quick-Service operational state', () => {
         preparationOptions: null,
       },
     ]);
+    expect(restaurantOrderMatchesCart(order, lines)).toBe(true);
+    const changedLines = cartReducer(lines, {
+      type: 'step',
+      productId: PRODUCT.id,
+      direction: 1,
+    });
+    expect(restaurantOrderMatchesCart(order, changedLines)).toBe(false);
     expect(
       isOfflineSaleDraft({
         lines,
