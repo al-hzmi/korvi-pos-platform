@@ -1,0 +1,29 @@
+name: Offline Security Format Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - strike/product-routing-p0
+
+permissions:
+  contents: read
+
+jobs:
+  prettier-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Print exact Prettier diff
+        run: |
+          npx prettier --write apps/pos-web/src/lib/offline-checkout.ts apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-queue-shift-isolation.test.ts
+          echo '=== KORVI_PRETTIER_DIFF_BEGIN ==='
+          git diff -- apps/pos-web/src/lib/offline-checkout.ts apps/pos-web/src/lib/offline-store.ts apps/pos-web/src/lib/__tests__/offline-queue-shift-isolation.test.ts
+          echo '=== KORVI_PRETTIER_DIFF_END ==='
