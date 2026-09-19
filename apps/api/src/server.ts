@@ -409,6 +409,8 @@ function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderS
     cancel: (principal, orderId, request) => resolve().cancel(principal, orderId, request),
     transferTable: (principal, orderId, request) =>
       resolve().transferTable(principal, orderId, request),
+    replaceLines: (principal, orderId, request) =>
+      resolve().replaceLines(principal, orderId, request),
   };
 }
 
