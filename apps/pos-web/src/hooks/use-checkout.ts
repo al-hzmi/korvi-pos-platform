@@ -20,6 +20,8 @@ export interface CheckoutHandle {
     readonly expectedShiftId: string;
     readonly orderType?: RestaurantOrderType;
     readonly tableId?: string;
+    readonly restaurantOrderId?: string;
+    readonly expectedRestaurantOrderRevision?: string;
     readonly lines: readonly CartLine[];
     readonly cashReceivedMinor: string;
   }) => void;
@@ -51,6 +53,9 @@ export function useCheckout(
       readonly terminalId: string;
       readonly expectedShiftId: string;
       readonly orderType?: RestaurantOrderType;
+      readonly tableId?: string;
+      readonly restaurantOrderId?: string;
+      readonly expectedRestaurantOrderRevision?: string;
       readonly lines: readonly CartLine[];
       readonly cashReceivedMinor: string;
     }) => {

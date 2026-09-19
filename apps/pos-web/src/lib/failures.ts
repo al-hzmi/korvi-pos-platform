@@ -130,6 +130,50 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'الطاولة متاحة للطلب المحلي فقط.',
     action: 'amend-cart',
   },
+  'restaurant-order-not-found': {
+    message: 'الطلب المفتوح لم يعد موجوداً.',
+    action: 'blocking',
+  },
+  'restaurant-order-not-open': {
+    message: 'الطلب لم يعد مفتوحاً. حدّث قائمة الطلبات قبل المتابعة.',
+    action: 'blocking',
+  },
+  'restaurant-order-stale': {
+    message: 'تغيّر الطلب المفتوح من جهاز آخر. أعد تحميله قبل المتابعة.',
+    action: 'blocking',
+  },
+  'restaurant-order-mismatch': {
+    message: 'السلة لا تطابق النسخة المحفوظة من الطلب. احفظ التعديلات أولاً.',
+    action: 'amend-cart',
+  },
+  'restaurant-order-incomplete': {
+    message: 'هذا الطلب يحتاج مراجعة قبل التسوية.',
+    action: 'blocking',
+  },
+  restaurant_order_stale: {
+    message: 'تغيّر الطلب المفتوح من جهاز آخر. أعد تحميله قبل المتابعة.',
+    action: 'blocking',
+  },
+  restaurant_order_not_found: {
+    message: 'الطلب المفتوح لم يعد موجوداً.',
+    action: 'blocking',
+  },
+  restaurant_order_not_open: {
+    message: 'الطلب لم يعد مفتوحاً.',
+    action: 'blocking',
+  },
+  restaurant_order_line_not_found: {
+    message: 'أحد أسطر الطلب تغيّر أو لم يعد موجوداً. أعد تحميل الطلب.',
+    action: 'blocking',
+  },
+  duplicate_restaurant_order_line: {
+    message: 'لا يمكن حفظ نفس سطر الطلب مرتين.',
+    action: 'amend-cart',
+  },
+  table_occupied: {
+    message: 'الطاولة مشغولة بطلب مفتوح آخر.',
+    action: 'amend-cart',
+  },
 };
 
 export function describeFailure(error: unknown): Failure {

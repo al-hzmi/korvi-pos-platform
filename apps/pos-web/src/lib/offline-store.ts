@@ -233,13 +233,11 @@ export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
     isOptionalRestaurantOrderType(value.orderType) &&
     (value.tableId === undefined ||
       (typeof value.tableId === 'string' && isUuidV7(value.tableId))) &&
-    !(
-      (value.restaurantOrderId === undefined && value.restaurantOrderRevision === undefined) ||
+    ((value.restaurantOrderId === undefined && value.restaurantOrderRevision === undefined) ||
       (typeof value.restaurantOrderId === 'string' &&
         isUuidV7(value.restaurantOrderId) &&
         typeof value.restaurantOrderRevision === 'string' &&
-        /^[1-9][0-9]{0,18}$/.test(value.restaurantOrderRevision))
-    ) &&
+        /^[1-9][0-9]{0,18}$/.test(value.restaurantOrderRevision))) &&
     isPriceMode(value.priceMode) &&
     typeof value.updatedAt === 'string' &&
     Number.isFinite(Date.parse(value.updatedAt))
