@@ -348,9 +348,7 @@ async function appendAudit(
   actor: RestaurantOrderActor,
   terminalId: string,
   eventType:
-    | 'restaurant.order.opened'
-    | 'restaurant.order.cancelled'
-    | 'restaurant.order.table-transferred',
+    'restaurant.order.opened' | 'restaurant.order.cancelled' | 'restaurant.order.table-transferred',
   orderId: string,
   metadata: Readonly<Record<string, string | number | boolean | null>>,
   at: Date,
