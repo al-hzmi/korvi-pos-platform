@@ -526,50 +526,120 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       if (tenant === null || settings === null) {
         return fail('tenant-misconfigured', 'إعدادات المنشأة غير مكتملة.');
       }
-      if (settings.vertical === 'restaurant' && input.orderType === undefined) {
-        return fail('order-type-required');
-      }
-      if (settings.vertical !== 'restaurant') {
-        if (input.orderType !== undefined || input.tableId !== undefined) {
-          return fail('order-type-not-applicable');
-        }
-      } else if (input.orderType === 'dine-in') {
-        if (input.tableId === undefined) return fail('table-required');
-        const table =
-          deps.restaurantFloor === undefined
-            ? null
-            : await deps.restaurantFloor.findTableById(scope, input.tableId);
-        if (table === null || !table.isActive || table.branchId !== shift.branchId) {
-          return fail('table-unavailable');
-        }
-      } else if (input.tableId !== undefined) {
-        return fail('table-not-applicable');
+      const hasRestaurantOrder = input.restaurantOrderId !== undefined;
+      if (hasRestaurantOrder !== (input.expectedRestaurantOrderRevision !== undefined)) {
+        return fail('restaurant-order-mismatch');
       }
 
-      // Prices come from here and nowhere else.
-      const loaded: { product: Product; scaled: bigint }[] = [];
-      for (const line of input.lines) {
-        const product = await deps.products.findById(scope, line.productId);
-        if (product === null) return fail('unknown-product');
-        if (!product.isActive) return fail('product-unavailable');
-
-        let scaled: bigint;
-        try {
-          scaled = quantity(BigInt(line.quantityScaled));
-        } catch {
-          return fail('invalid-quantity');
+      let restaurantOrder: RestaurantOrderDetail | null = null;
+      if (hasRestaurantOrder) {
+        if (settings.vertical !== 'restaurant' || deps.restaurantOrders === undefined) {
+          return fail('restaurant-order-mismatch');
         }
-        if (scaled <= 0n) return fail('invalid-quantity');
-        // A unit product cannot be sold in thirds. The scale is 1000, so a
-        // whole unit is a multiple of it.
-        if (product.productType === 'unit' && scaled % 1_000n !== 0n) {
-          return fail('invalid-quantity');
+        restaurantOrder = await deps.restaurantOrders.read(
+          scope,
+          shift.branchId,
+          input.restaurantOrderId as string,
+        );
+        if (restaurantOrder === null) return fail('restaurant-order-not-found');
+        if (restaurantOrder.status !== 'open') return fail('restaurant-order-not-open');
+        if (restaurantOrder.revision !== input.expectedRestaurantOrderRevision) {
+          return fail('restaurant-order-stale');
         }
-        loaded.push({ product, scaled });
+        if (
+          input.orderType !== restaurantOrder.orderType ||
+          (input.tableId ?? null) !== restaurantOrder.tableId
+        ) {
+          return fail('restaurant-order-mismatch');
+        }
+        if (
+          input.basketDiscount !== undefined ||
+          input.lines.some((line) => line.discount !== undefined)
+        ) {
+          return fail('invalid-discount');
+        }
+        if (
+          input.lines.length !== restaurantOrder.lines.length ||
+          input.lines.some((line, index) => {
+            const snapshot = restaurantOrder?.lines[index];
+            return (
+              snapshot === undefined ||
+              snapshot.productId !== line.productId ||
+              snapshot.quantityScaled !== line.quantityScaled
+            );
+          })
+        ) {
+          return fail('restaurant-order-mismatch');
+        }
+        if (restaurantOrder.lines.some((line) => line.trackInventory === null)) {
+          return fail('restaurant-order-incomplete');
+        }
+      } else {
+        if (settings.vertical === 'restaurant' && input.orderType === undefined) {
+          return fail('order-type-required');
+        }
+        if (settings.vertical !== 'restaurant') {
+          if (input.orderType !== undefined || input.tableId !== undefined) {
+            return fail('order-type-not-applicable');
+          }
+        } else if (input.orderType === 'dine-in') {
+          if (input.tableId === undefined) return fail('table-required');
+          const table =
+            deps.restaurantFloor === undefined
+              ? null
+              : await deps.restaurantFloor.findTableById(scope, input.tableId);
+          if (table === null || !table.isActive || table.branchId !== shift.branchId) {
+            return fail('table-unavailable');
+          }
+        } else if (input.tableId !== undefined) {
+          return fail('table-not-applicable');
+        }
       }
 
-      // Stock, before the money is touched. Selling what is not there is a
-      // decision the merchant makes in settings, not one the till makes.
+      // Direct sales use current catalogue truth. Open-order settlement uses
+      // the server-authored snapshot captured when the order was opened.
+      const loaded: { product: CheckoutProductSnapshot; scaled: bigint }[] = [];
+      if (restaurantOrder !== null) {
+        for (const line of restaurantOrder.lines) {
+          if (line.trackInventory === null) return fail('restaurant-order-incomplete');
+          loaded.push({
+            product: {
+              id: line.productId,
+              sku: line.sku,
+              nameAr: line.nameAr,
+              nameEn: line.nameEn,
+              productType: line.productType,
+              priceMinor: line.unitPriceMinor,
+              vatBasisPoints: line.vatBasisPoints,
+              trackInventory: line.trackInventory,
+            },
+            scaled: BigInt(line.quantityScaled),
+          });
+        }
+      } else {
+        for (const line of input.lines) {
+          const product = await deps.products.findById(scope, line.productId);
+          if (product === null) return fail('unknown-product');
+          if (!product.isActive) return fail('product-unavailable');
+
+          let scaled: bigint;
+          try {
+            scaled = quantity(BigInt(line.quantityScaled));
+          } catch {
+            return fail('invalid-quantity');
+          }
+          if (scaled <= 0n) return fail('invalid-quantity');
+          // A unit product cannot be sold in thirds. The scale is 1000, so a
+          // whole unit is a multiple of it.
+          if (product.productType === 'unit' && scaled % 1_000n !== 0n) {
+            return fail('invalid-quantity');
+          }
+          loaded.push({ product, scaled });
+        }
+      }
+
+      // Stock is still checked immediately before money moves. An order can sit
+      // open while another operation consumes inventory.
       if (!settings.allowNegativeStock) {
         for (const entry of loaded) {
           if (!entry.product.trackInventory) continue;
@@ -580,8 +650,11 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       }
 
       const currency: Currency = 'SAR';
+      if (restaurantOrder !== null && restaurantOrder.currency !== currency) {
+        return fail('restaurant-order-mismatch');
+      }
       const cart = {
-        priceMode: settings.priceMode as PriceMode,
+        priceMode: (restaurantOrder?.priceMode ?? settings.priceMode) as PriceMode,
         currency,
         lines: loaded.map((entry, index): CartLineInput => {
           const requested = input.lines[index]?.discount;
