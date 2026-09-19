@@ -13,6 +13,7 @@ import {
   createShiftRepository,
   createTenantRepository,
   createTerminalRepository,
+  readRestaurantOrder,
   readTenantOnboardingReadiness,
 } from '@korvi/database';
 import { newId } from '@korvi/domain';
@@ -185,6 +186,10 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         shifts,
         sales,
         restaurantFloor,
+        restaurantOrders: {
+          read: (scope, branchId, orderId) =>
+            readRestaurantOrder(prisma, scope, branchId, orderId),
+        },
         idempotency,
         audit,
         ...(fiscalization === undefined ? {} : { fiscalization }),
