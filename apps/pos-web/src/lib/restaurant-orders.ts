@@ -36,7 +36,6 @@ export function restaurantOrderLinesFromCart(
   }));
 }
 
-
 export function restaurantOrderCreateLinesFromCart(lines: readonly CartLine[]) {
   return lines.map((line) => ({
     productId: line.productId,

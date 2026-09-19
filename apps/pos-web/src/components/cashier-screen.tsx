@@ -147,8 +147,9 @@ export function CashierScreen({
   const [restaurantOrdersStatus, setRestaurantOrdersStatus] = useState<
     'loading' | 'ready' | 'failed'
   >(quickService ? 'loading' : 'ready');
-  const [activeRestaurantOrder, setActiveRestaurantOrder] =
-    useState<RestaurantOrderDetail | null>(null);
+  const [activeRestaurantOrder, setActiveRestaurantOrder] = useState<RestaurantOrderDetail | null>(
+    null,
+  );
   const [activeRestaurantOrderIdentity, setActiveRestaurantOrderIdentity] =
     useState<ActiveRestaurantOrder | null>(null);
   const [restaurantOrderRestoreStatus, setRestaurantOrderRestoreStatus] = useState<
@@ -298,10 +299,7 @@ export function CashierScreen({
       .restaurantOrder(activeRestaurantOrderIdentity.id)
       .then((order) => {
         if (!live) return;
-        if (
-          order.status !== 'open' ||
-          order.revision !== activeRestaurantOrderIdentity.revision
-        ) {
+        if (order.status !== 'open' || order.revision !== activeRestaurantOrderIdentity.revision) {
           setRestaurantOrderRestoreStatus('failed');
           setRestaurantOrderNotice(
             'تغيّر الطلب المفتوح منذ حفظ هذه السلة محلياً. أعد تحميل الطلب قبل المتابعة.',
@@ -448,7 +446,9 @@ export function CashierScreen({
           setOrderType('takeaway');
           setTableId(null);
           resetRestaurantWorkspace();
-          setRestaurantOrderNotice('تم حفظ الطلب مفتوحاً ويمكن استئنافه من أي صندوق مخوّل في الفرع.');
+          setRestaurantOrderNotice(
+            'تم حفظ الطلب مفتوحاً ويمكن استئنافه من أي صندوق مخوّل في الفرع.',
+          );
           refreshRestaurantOrders();
           search.browse();
           focusSearch();
@@ -497,14 +497,7 @@ export function CashierScreen({
       lines: restaurantOrderCreateLinesFromCart(cart.lines),
     };
     void executeRestaurantOrderCommand({ kind: 'create', request });
-  }, [
-    cart.lines,
-    executeRestaurantOrderCommand,
-    orderType,
-    quickService,
-    tableId,
-    terminal.id,
-  ]);
+  }, [cart.lines, executeRestaurantOrderCommand, orderType, quickService, tableId, terminal.id]);
 
   const saveRestaurantOrder = useCallback(() => {
     if (
@@ -652,7 +645,7 @@ export function CashierScreen({
     activeRestaurantOrderIdentity === null
       ? null
       : activeRestaurantOrder === null
-        ? restaurantOrderNotice ?? 'جاري التحقق من النسخة المحفوظة للطلب.'
+        ? (restaurantOrderNotice ?? 'جاري التحقق من النسخة المحفوظة للطلب.')
         : restaurantOrderDirty
           ? 'احفظ تعديلات الطلب المفتوح قبل إتمام الدفع.'
           : null;

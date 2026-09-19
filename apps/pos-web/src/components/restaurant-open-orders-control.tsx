@@ -54,12 +54,17 @@ export function RestaurantOpenOrdersControl({
   const ambiguous = commandStatus === 'ambiguous';
 
   return (
-    <section className="mb-3 rounded-lg border border-border bg-muted/25 p-3" aria-label="الطلبات المفتوحة">
+    <section
+      className="mb-3 rounded-lg border border-border bg-muted/25 p-3"
+      aria-label="الطلبات المفتوحة"
+    >
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-sm font-semibold text-foreground">الطلبات المفتوحة</p>
           <p className="text-xs text-muted-foreground">
-            {active ? 'الطلب المستأنف يبقى غير مالي حتى إتمام البيع.' : `${orders.length} طلب مفتوح`}
+            {active
+              ? 'الطلب المستأنف يبقى غير مالي حتى إتمام البيع.'
+              : `${orders.length} طلب مفتوح`}
           </p>
         </div>
         <Button variant="ghost" size="sm" disabled={locked} onClick={onRefresh}>
@@ -74,7 +79,12 @@ export function RestaurantOpenOrdersControl({
       )}
 
       {ambiguous ? (
-        <Button className="mt-3 w-full" variant="outline" disabled={commandStatus === 'running'} onClick={onRetry}>
+        <Button
+          className="mt-3 w-full"
+          variant="outline"
+          disabled={commandStatus === 'running'}
+          onClick={onRetry}
+        >
           إعادة نفس عملية الحفظ
         </Button>
       ) : null}
@@ -157,7 +167,8 @@ export function RestaurantOpenOrdersControl({
                 >
                   <span>{orderLabel(order)}</span>
                   <span className="text-xs font-normal text-muted-foreground">
-                    {order.lineCount} {order.lineCount === 1 ? 'صنف' : 'أصناف'} · نسخة {order.revision}
+                    {order.lineCount} {order.lineCount === 1 ? 'صنف' : 'أصناف'} · نسخة{' '}
+                    {order.revision}
                   </span>
                 </Button>
               ))
