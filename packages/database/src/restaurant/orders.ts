@@ -45,8 +45,6 @@ export interface RestaurantOrderCreateLine {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
-  /** Null only for pre-settlement-authority historical rows. */
-  readonly trackInventory: boolean | null;
 }
 
 export interface RestaurantOrderCreateRequest {
@@ -76,6 +74,8 @@ export interface RestaurantOrderLine {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  /** Server-authored snapshot; null only for pre-settlement-authority historical rows. */
+  readonly trackInventory: boolean | null;
 }
 
 export interface RestaurantOrderSummary {
