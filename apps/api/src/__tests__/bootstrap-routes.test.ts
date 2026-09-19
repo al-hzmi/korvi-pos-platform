@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import { registerBootstrapRoutes } from '../routes/bootstrap.js';
+import { createLoginAdmissionController } from '../auth/login-admission.js';
 import { loadConfig } from '../config.js';
 import type { BootstrapResult, OwnerBootstrapService } from '../bootstrap/service.js';
 import type { FastifyInstance } from 'fastify';
@@ -150,6 +151,62 @@ describe('the public bootstrap door', () => {
     // nothing about whether the token would have been honoured.
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body)).toEqual({ error: 'weak_password' });
+  });
+
+  it('bounds concurrent capability work before the bootstrap service can reach scrypt', async () => {
+    let calls = 0;
+    let entered!: () => void;
+    let release!: () => void;
+    const firstEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const service: OwnerBootstrapService = {
+      accept: async () => {
+        calls += 1;
+        entered();
+        await blocked;
+        return { outcome: 'failure', reason: 'invalid-capability' };
+      },
+    };
+
+    app = Fastify({ logger: false });
+    registerBootstrapRoutes(app, {
+      service,
+      admission: createLoginAdmissionController({
+        globalLimit: 10,
+        identityLimit: 10,
+        windowMs: 60_000,
+        maxConcurrent: 1,
+        maxTrackedIdentities: 32,
+      }),
+    });
+    await app.ready();
+
+    const first = app.inject({
+      method: 'POST',
+      url: '/v1/bootstrap/owner',
+      headers: { origin: ORIGIN },
+      payload: { token: TOKEN, password: PASSWORD },
+    });
+    await firstEntered;
+
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/v1/bootstrap/owner',
+      headers: { origin: ORIGIN },
+      payload: { token: TOKEN, password: PASSWORD },
+    });
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json()).toEqual({ error: 'too_many_requests' });
+    expect(refused.headers['retry-after']).toBe('1');
+    expect(calls).toBe(1);
+
+    release();
+    expect((await first).statusCode).toBe(403);
   });
 
   it('answers 503 when the deployment has no signing key', async () => {
