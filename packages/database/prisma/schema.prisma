@@ -109,6 +109,8 @@ model Tenant {
   sales                         Sale[]
   restaurantZones               RestaurantZone[]
   restaurantTables              RestaurantTable[]
+  restaurantOrders              RestaurantOrder[]
+  restaurantOrderLines          RestaurantOrderLine[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
   tenders                       Tender[]
@@ -159,6 +161,7 @@ model Branch {
   sales                    Sale[]
   restaurantZones          RestaurantZone[]
   restaurantTables         RestaurantTable[]
+  restaurantOrders         RestaurantOrder[]
   returns                  Return[]
   memberships              TenantMembership[]
 
@@ -205,13 +208,82 @@ model RestaurantTable {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
-  zone RestaurantZone @relation(fields: [tenantId, zoneId], references: [tenantId, id], onDelete: Cascade)
-  sales Sale[]
+  zone   RestaurantZone @relation(fields: [tenantId, zoneId], references: [tenantId, id], onDelete: Cascade)
+  sales  Sale[]
+  orders RestaurantOrder[]
 
   @@unique([tenantId, id])
+  @@unique([tenantId, branchId, id])
   @@unique([tenantId, branchId, code])
   @@index([tenantId, branchId, zoneId, isActive])
   @@map("restaurant_tables")
+}
+
+model RestaurantOrder {
+  id         String  @id @db.Uuid
+  tenantId   String  @db.Uuid
+  branchId   String  @db.Uuid
+  terminalId String  @db.Uuid
+  userId     String  @db.Uuid
+  tableId    String? @db.Uuid
+
+  orderType String
+  status    String @default("open")
+  revision  BigInt @default(1)
+
+  /// Server-authored catalogue context. This order is operational and non-fiscal,
+  /// but settlement must not silently substitute a later price mode or currency.
+  priceMode String
+  currency  String @default("SAR")
+
+  openedAt     DateTime
+  closedAt     DateTime?
+  closedReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch           @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  terminal Terminal         @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  user     User             @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
+  table    RestaurantTable? @relation(fields: [tenantId, tableId], references: [tenantId, id], onDelete: NoAction)
+  lines    RestaurantOrderLine[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, branchId, status, openedAt])
+  @@index([tenantId, tableId, status])
+  @@index([tenantId, terminalId, status])
+  @@map("restaurant_orders")
+}
+
+model RestaurantOrderLine {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  orderId   String @db.Uuid
+  productId String @db.Uuid
+
+  lineNumber     Int
+  sku            String
+  nameAr         String
+  nameEn         String?
+  productType    String
+  unitPriceMinor BigInt
+  vatBasisPoints Int
+  quantityScaled BigInt
+
+  preparationNote    String?
+  preparationOptions String?
+  createdAt          DateTime @default(now())
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order   RestaurantOrder @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  product Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, orderId, lineNumber])
+  @@index([tenantId, orderId])
+  @@index([tenantId, productId])
+  @@map("restaurant_order_lines")
 }
 
 model User {
@@ -244,9 +316,10 @@ model User {
   sessions      Session[]
   shifts        Shift[]            @relation("ShiftOwner")
   closedShifts  Shift[]            @relation("ShiftCloser")
-  cashMovements CashMovement[]
-  sales         Sale[]
-  auditEvents   AuditEvent[]
+  cashMovements    CashMovement[]
+  sales            Sale[]
+  restaurantOrders RestaurantOrder[]
+  auditEvents      AuditEvent[]   AuditEvent[]
   saleDiscounts SaleDiscount[]
   returns       Return[]
 
@@ -357,6 +430,7 @@ model Terminal {
   branch                        Branch                         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
   shifts                        Shift[]
   sales                         Sale[]
+  restaurantOrders              RestaurantOrder[]
   returns                       Return[]
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
   zatcaComplianceEvidence       ZatcaComplianceEvidence[]
@@ -571,6 +645,7 @@ model Product {
   purchaseOrderLines       PurchaseOrderLine[]
   purchaseReceiptLines     PurchaseReceiptLine[]
   saleLines                SaleLine[]
+  restaurantOrderLines     RestaurantOrderLine[]
   returnLines              ReturnLine[]
 
   @@unique([tenantId, sku])

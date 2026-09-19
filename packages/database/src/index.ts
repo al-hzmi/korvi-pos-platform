@@ -203,6 +203,27 @@ export type {
   CustomerMutationResult,
 } from './administration/customers.js';
 
+// Restaurant open-order authority. Rows are operational and non-fiscal; line
+// price/tax facts are server-authored snapshots for later settlement.
+export {
+  RestaurantOrderRefusedError,
+  listOpenRestaurantOrders,
+  readRestaurantOrder,
+  createRestaurantOrder,
+  cancelRestaurantOrder,
+} from './restaurant/orders.js';
+export type {
+  RestaurantOrderRefusal,
+  RestaurantOrderActor,
+  RestaurantOrderCreateLine,
+  RestaurantOrderCreateRequest,
+  RestaurantOrderCancelRequest,
+  RestaurantOrderLine,
+  RestaurantOrderSummary,
+  RestaurantOrderDetail,
+  RestaurantOrderMutationResult,
+} from './restaurant/orders.js';
+
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.
 export {

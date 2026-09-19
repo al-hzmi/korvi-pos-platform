@@ -32,6 +32,7 @@ import { createPlatformService } from './platform/service.js';
 import { registerPlatformSupportRoutes } from './platform/support-routes.js';
 import { createPlatformSupportService } from './platform/support-service.js';
 import { createMerchantPurchasingService } from './purchasing/service.js';
+import { createMerchantRestaurantOrderService } from './restaurant/order-service.js';
 import { createReturnService } from './returns/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -43,6 +44,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
+import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerSalesReadRoutes } from './routes/sales-read.js';
 import { registerZatcaRoutes } from './routes/zatca.js';
 import { registerOperationalObservability } from './runtime/observability.js';
@@ -61,6 +63,7 @@ import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
+import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { MerchantZatcaService } from './zatca/merchant-service.js';
@@ -101,6 +104,8 @@ export interface ServerDeps {
   readonly purchasing?: MerchantPurchasingService;
   /** Read-only onboarding readiness authority. */
   readonly onboarding?: MerchantOnboardingService;
+  /** Operational restaurant open-order authority; non-fiscal until checkout. */
+  readonly restaurantOrders?: MerchantRestaurantOrderService;
   /** Merchant customer directory and mutation authority. */
   readonly customers?: MerchantCustomerService;
   /** Read-only merchant sales history and financial reports, authorized by report.read. */
@@ -382,6 +387,25 @@ function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   return { readReadiness: (principal) => resolve().readReadiness(principal) };
 }
 
+function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderService {
+  let built: MerchantRestaurantOrderService | null = null;
+
+  const resolve = (): MerchantRestaurantOrderService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantOrderService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    listOpen: (principal) => resolve().listOpen(principal),
+    detail: (principal, orderId) => resolve().detail(principal, orderId),
+    create: (principal, request) => resolve().create(principal, request),
+    cancel: (principal, orderId, request) => resolve().cancel(principal, orderId, request),
+  };
+}
+
 function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
   let built: MerchantCustomerService | null = null;
 
@@ -531,6 +555,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerHealthRoutes(app);
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
+  registerRestaurantOrderRoutes(app, {
+    service: deps.restaurantOrders ?? lazyRestaurantOrderService(config),
+    guards,
+  });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
   registerCatalogAdminRoutes(app, {
     service: deps.catalog ?? lazyCatalogService(config),
