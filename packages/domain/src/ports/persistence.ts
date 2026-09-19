@@ -447,6 +447,8 @@ export interface SaleRecord {
   readonly customerId: string | null;
   /** Operational dine-in table context. Historical and non-dine-in sales remain null. */
   readonly tableId?: string | null;
+  /** Open restaurant order settled by this sale; null for direct/historical sales. */
+  readonly restaurantOrderId?: string | null;
   readonly operationId: string;
   readonly status: SaleStatus;
   /** Null/absent means no immutable service-mode fact was recorded for this sale. */
@@ -517,6 +519,15 @@ export interface RecordSaleInput {
   readonly invoice: Omit<InvoiceRecord, 'tenantId' | 'invoiceNumber'>;
   readonly inventory: readonly InventoryMovementInput[];
   readonly cashMovement: CashMovementRecord | null;
+  /**
+   * Optional open-order lifecycle precondition. Persistence locks and proves
+   * the order snapshot before writing any financial fact, then marks it
+   * settled in this same transaction.
+   */
+  readonly restaurantOrderSettlement?: {
+    readonly orderId: string;
+    readonly expectedRevision: string;
+  } | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 

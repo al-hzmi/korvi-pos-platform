@@ -45,6 +45,8 @@ export interface RestaurantOrderCreateLine {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  /** Null only for pre-settlement-authority historical rows. */
+  readonly trackInventory: boolean | null;
 }
 
 export interface RestaurantOrderCreateRequest {
@@ -117,6 +119,7 @@ interface LineRow {
   quantityScaled: bigint;
   preparationNote: string | null;
   preparationOptions: string | null;
+  trackInventory: boolean | null;
 }
 
 interface OrderRow {
@@ -189,6 +192,7 @@ function asLine(row: LineRow): RestaurantOrderLine {
     quantityScaled: row.quantityScaled.toString(),
     preparationNote: row.preparationNote,
     preparationOptions: row.preparationOptions,
+    trackInventory: row.trackInventory,
   };
 }
 
@@ -491,6 +495,7 @@ export async function createRestaurantOrder(
           productType: true,
           priceMinor: true,
           vatBasisPoints: true,
+          trackInventory: true,
           isActive: true,
         },
       });
@@ -511,6 +516,7 @@ export async function createRestaurantOrder(
         quantityScaled: scaled,
         preparationNote: line.preparationNote,
         preparationOptions: line.preparationOptions,
+        trackInventory: product.trackInventory,
       });
     }
 
@@ -550,6 +556,7 @@ export async function createRestaurantOrder(
               quantityScaled: line.quantityScaled,
               preparationNote: line.preparationNote,
               preparationOptions: line.preparationOptions,
+              trackInventory: line.trackInventory,
               createdAt: at,
             })),
           },

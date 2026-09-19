@@ -248,6 +248,7 @@ model RestaurantOrder {
   user     User             @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
   table    RestaurantTable? @relation(fields: [tenantId, tableId], references: [tenantId, id], onDelete: NoAction)
   lines    RestaurantOrderLine[]
+  sale     Sale?
 
   @@unique([tenantId, id])
   @@index([tenantId, branchId, status, openedAt])
@@ -273,6 +274,8 @@ model RestaurantOrderLine {
 
   preparationNote    String?
   preparationOptions String?
+  /// Null only for rows created before settlement authority recorded this fact.
+  trackInventory     Boolean?
   createdAt          DateTime @default(now())
 
   tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1330,8 +1333,9 @@ model Sale {
   terminalId String  @db.Uuid
   shiftId    String  @db.Uuid
   userId     String  @db.Uuid
-  customerId String? @db.Uuid
-  tableId    String? @db.Uuid
+  customerId       String? @db.Uuid
+  tableId          String? @db.Uuid
+  restaurantOrderId String? @db.Uuid
 
   /// The client-supplied operation id. Unique per tenant, which is what makes
   /// a double-click, a network retry and an offline replay converge on one
@@ -1367,6 +1371,7 @@ model Sale {
   user      User           @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
   customer  Customer?      @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
   restaurantTable RestaurantTable? @relation(fields: [tenantId, tableId], references: [tenantId, id], onDelete: NoAction)
+  restaurantOrder RestaurantOrder? @relation(fields: [tenantId, restaurantOrderId], references: [tenantId, id], onDelete: NoAction)
   lines     SaleLine[]
   discounts SaleDiscount[]
   tenders   Tender[]
@@ -1375,6 +1380,7 @@ model Sale {
 
   @@unique([tenantId, operationId])
   @@unique([tenantId, branchId, sequence])
+  @@unique([tenantId, restaurantOrderId])
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
   /// reference that crosses tenants (ADR-0004).
