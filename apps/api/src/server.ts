@@ -407,6 +407,8 @@ function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderS
     detail: (principal, orderId) => resolve().detail(principal, orderId),
     create: (principal, request) => resolve().create(principal, request),
     cancel: (principal, orderId, request) => resolve().cancel(principal, orderId, request),
+    transferTable: (principal, orderId, request) =>
+      resolve().transferTable(principal, orderId, request),
   };
 }
 
