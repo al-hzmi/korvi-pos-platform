@@ -138,10 +138,7 @@ async function migrateLegacyCheckoutQueue(
   const legacyPartition = legacyQueuePartition(partition);
   const candidates = await store.all(legacyPartition, 500);
   for (const operation of candidates) {
-    if (
-      operation.kind !== 'sale.checkout' ||
-      operation.state === 'settled'
-    ) {
+    if (operation.kind !== 'sale.checkout' || operation.state === 'settled') {
       continue;
     }
 

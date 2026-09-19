@@ -140,11 +140,7 @@ export interface KorviOfflineStore extends TransactionQueuePort {
     replacementPayload: unknown,
   ): Promise<void>;
   all(partition: QueuePartition, limit?: number): Promise<readonly QueuedOperation[]>;
-  repartition(
-    source: QueuePartition,
-    target: QueuePartition,
-    id: string,
-  ): Promise<void>;
+  repartition(source: QueuePartition, target: QueuePartition, id: string): Promise<void>;
   queueCount(partition: QueuePartition): Promise<number>;
   rejected(partition: QueuePartition, limit?: number): Promise<readonly QueuedOperation[]>;
   describe(): OfflineStoreDescription;

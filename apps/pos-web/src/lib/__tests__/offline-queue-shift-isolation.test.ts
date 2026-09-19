@@ -62,11 +62,7 @@ class ShiftBoundQueueDouble {
     return this.owns(partition) ? [this.operation] : [];
   }
 
-  async repartition(
-    source: QueuePartition,
-    target: QueuePartition,
-    id: string,
-  ): Promise<void> {
+  async repartition(source: QueuePartition, target: QueuePartition, id: string): Promise<void> {
     if (!this.owns(source) || id !== this.operation.id) throw new Error('wrong source');
     this.owner = queuePartitionKey(target);
   }
@@ -133,24 +129,14 @@ describe('offline checkout shift isolation', () => {
     const api = { checkout } as unknown as ApiClient;
     const openStore = async () => store as unknown as KorviOfflineStore;
 
-    const wrongShift = await syncOfflineCheckouts(
-      api,
-      PARTITION_B,
-      undefined,
-      openStore,
-    );
+    const wrongShift = await syncOfflineCheckouts(api, PARTITION_B, undefined, openStore);
 
     expect(checkout).not.toHaveBeenCalled();
     expect(store.owner).toBe(queuePartitionKey(LEGACY));
     expect(store.operation.state).toBe('pending');
     expect(wrongShift.report.rejected).toBe(0);
 
-    const originalShift = await syncOfflineCheckouts(
-      api,
-      PARTITION_A,
-      undefined,
-      openStore,
-    );
+    const originalShift = await syncOfflineCheckouts(api, PARTITION_A, undefined, openStore);
 
     expect(checkout).toHaveBeenCalledTimes(1);
     expect(checkout).toHaveBeenCalledWith(REQUEST);
