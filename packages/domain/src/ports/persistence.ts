@@ -524,10 +524,12 @@ export interface RecordSaleInput {
    * the order snapshot before writing any financial fact, then marks it
    * settled in this same transaction.
    */
-  readonly restaurantOrderSettlement?: {
-    readonly orderId: string;
-    readonly expectedRevision: string;
-  } | undefined;
+  readonly restaurantOrderSettlement?:
+    | {
+        readonly orderId: string;
+        readonly expectedRevision: string;
+      }
+    | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 
