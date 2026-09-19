@@ -18,8 +18,10 @@ import {
 import {
   InsufficientStockError,
   OperationAlreadyRecordedError,
+  RestaurantOrderRefusedError,
   ShiftUnusableError,
 } from '@korvi/database';
+import type { RestaurantOrderDetail } from '@korvi/database';
 import { fingerprintIntent } from './fingerprint.js';
 import { buildCheckoutReceipt } from './receipt.js';
 import type { CheckoutReceipt } from './receipt.js';
@@ -85,7 +87,12 @@ export type CheckoutFailureReason =
   | 'order-type-not-applicable'
   | 'table-required'
   | 'table-unavailable'
-  | 'table-not-applicable';
+  | 'table-not-applicable'
+  | 'restaurant-order-not-found'
+  | 'restaurant-order-not-open'
+  | 'restaurant-order-stale'
+  | 'restaurant-order-mismatch'
+  | 'restaurant-order-incomplete';
 
 export interface CheckoutFailure {
   readonly outcome: 'failure';
@@ -119,6 +126,7 @@ export interface SaleSummary {
   readonly operationId: string;
   readonly orderType: RestaurantOrderType | null;
   readonly tableId: string | null;
+  readonly restaurantOrderId: string | null;
   readonly sequence: number;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
@@ -207,6 +215,8 @@ export interface CheckoutInput {
   /** Operational restaurant context. Required only for restaurant tenants. */
   readonly orderType?: RestaurantOrderType | undefined;
   readonly tableId?: string | undefined;
+  readonly restaurantOrderId?: string | undefined;
+  readonly expectedRestaurantOrderRevision?: string | undefined;
   readonly lines: readonly CheckoutLineInput[];
   /**
    * The cash-only shape the production till sends today.
@@ -228,6 +238,14 @@ export interface CheckoutDeps {
   readonly sales: SaleRepository;
   /** Required only for dine-in table validation. */
   readonly restaurantFloor?: RestaurantFloorRepository;
+  /** Pre-flight read; the sale repository re-proves the same snapshot under lock. */
+  readonly restaurantOrders?: {
+    read(
+      scope: TenantScope,
+      branchId: string,
+      orderId: string,
+    ): Promise<RestaurantOrderDetail | null>;
+  };
   readonly idempotency: IdempotencyRepository;
   readonly audit: AuditRepository;
   readonly fiscalization?: CheckoutFiscalizationPort;
@@ -298,6 +316,8 @@ function fingerprintCheckoutIntent(
     terminalId: input.terminalId,
     orderType: input.orderType ?? '',
     tableId: input.tableId ?? '',
+    restaurantOrderId: input.restaurantOrderId ?? '',
+    restaurantOrderRevision: input.expectedRestaurantOrderRevision ?? '',
     lines: input.lines.map((line) => ({
       productId: line.productId,
       quantityScaled: line.quantityScaled,
@@ -311,6 +331,17 @@ function fingerprintCheckoutIntent(
     })),
     basketDiscount: describeDiscount(input.basketDiscount),
   });
+}
+
+interface CheckoutProductSnapshot {
+  readonly id: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly priceMinor: string;
+  readonly vatBasisPoints: number;
+  readonly trackInventory: boolean;
 }
 
 const IDEMPOTENCY_SCOPE = 'checkout';
@@ -327,6 +358,7 @@ function summarise(sale: SaleRecord, invoiceNumber: string, cashierName: string)
     operationId: sale.operationId,
     orderType: sale.orderType ?? null,
     tableId: sale.tableId ?? null,
+    restaurantOrderId: sale.restaurantOrderId ?? null,
     sequence: sale.sequence,
     invoiceNumber,
     issuedAt: sale.issuedAt,
