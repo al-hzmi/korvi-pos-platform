@@ -79,12 +79,7 @@ export function RestaurantOpenOrdersControl({
       )}
 
       {ambiguous ? (
-        <Button
-          className="mt-3 w-full"
-          variant="outline"
-          disabled={commandStatus === 'running'}
-          onClick={onRetry}
-        >
+        <Button className="mt-3 w-full" variant="outline" onClick={onRetry}>
           إعادة نفس عملية الحفظ
         </Button>
       ) : null}
