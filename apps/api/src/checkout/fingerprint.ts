@@ -38,6 +38,10 @@ export interface CheckoutIntent {
   readonly orderType: string;
   /** Empty except for a dine-in sale bound to a table. */
   readonly tableId: string;
+  /** Empty for direct sales; otherwise the open operational order being settled. */
+  readonly restaurantOrderId: string;
+  /** Empty for direct sales; optimistic lifecycle precondition for an open order. */
+  readonly restaurantOrderRevision: string;
   readonly lines: readonly CheckoutIntentLine[];
   readonly tenders: readonly CheckoutIntentTender[];
   /** Canonical description of the basket discount, or the empty string. */
@@ -63,8 +67,10 @@ export interface CheckoutIntent {
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
  *
- * `v4` because dine-in table identity joined the canonical form after service mode.
- * A table transfer is therefore a different intent and cannot replay an earlier sale.
+ * `v5` because open-order identity + revision joined the canonical form. An
+ * order settlement cannot replay as a direct sale, or against a later revision.
+ *
+ * `v4` introduced dine-in table identity after service mode.
  *
  * `v3` introduced restaurant service mode after payment
  * composition. A key minted under an earlier version hashes differently and is
@@ -104,11 +110,13 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
   const canonical = JSON.stringify([
-    'v4',
+    'v5',
     intent.branchId,
     intent.terminalId,
     intent.orderType,
     intent.tableId,
+    intent.restaurantOrderId,
+    intent.restaurantOrderRevision,
     intent.basketDiscount,
     tenders,
     lines,
