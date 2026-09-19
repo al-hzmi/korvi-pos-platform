@@ -1,7 +1,4 @@
-import type {
-  RestaurantOrderDetail,
-  RestaurantOrderReplaceLine,
-} from './api-types';
+import type { RestaurantOrderDetail, RestaurantOrderReplaceLine } from './api-types';
 import type { CartLine } from './cart';
 
 export interface ActiveRestaurantOrder {

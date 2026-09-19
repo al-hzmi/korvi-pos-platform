@@ -129,7 +129,9 @@ export interface ApiClient {
   restaurantFloor(options?: RequestOptions): Promise<RestaurantFloorResponse>;
   restaurantOrders(options?: RequestOptions): Promise<readonly RestaurantOrderSummary[]>;
   restaurantOrder(orderId: string, options?: RequestOptions): Promise<RestaurantOrderDetail>;
-  createRestaurantOrder(request: RestaurantOrderCreateRequest): Promise<RestaurantOrderMutationResult>;
+  createRestaurantOrder(
+    request: RestaurantOrderCreateRequest,
+  ): Promise<RestaurantOrderMutationResult>;
   replaceRestaurantOrderLines(
     orderId: string,
     request: RestaurantOrderReplaceLinesRequest,
@@ -368,11 +370,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     },
 
     async restaurantOrders(options) {
-      const body = (await call(
-        '/v1/restaurant/orders',
-        { method: 'GET' },
-        options,
-      )) as { readonly orders: readonly RestaurantOrderSummary[] };
+      const body = (await call('/v1/restaurant/orders', { method: 'GET' }, options)) as {
+        readonly orders: readonly RestaurantOrderSummary[];
+      };
       return body.orders;
     },
 
