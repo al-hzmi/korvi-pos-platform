@@ -691,7 +691,6 @@ export async function cancelRestaurantOrder(
   });
 }
 
-
 export async function transferRestaurantOrderTable(
   prisma: PrismaClient,
   scope: TenantScope,
