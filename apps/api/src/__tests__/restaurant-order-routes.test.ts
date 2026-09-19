@@ -245,10 +245,8 @@ describe('restaurant order route authority', () => {
     expect(calls.map((call) => call.method)).toEqual(['listOpen', 'detail']);
   });
 
-  it(
-    'distinguishes create from idempotent replay without changing the response contract',
-    async () => {
-      const server = build(principal(['sale.create']));
+  it('distinguishes create from idempotent replay without changing the response contract', async () => {
+    const server = build(principal(['sale.create']));
     const payload = {
       terminalId: TERMINAL,
       orderType: 'dine-in',
@@ -271,10 +269,9 @@ describe('restaurant order route authority', () => {
 
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({ order: { id: ORDER }, replayed: false });
-      expect(replayed.statusCode).toBe(200);
-      expect(replayed.json()).toMatchObject({ order: { id: ORDER }, replayed: true });
-    },
-  );
+    expect(replayed.statusCode).toBe(200);
+    expect(replayed.json()).toMatchObject({ order: { id: ORDER }, replayed: true });
+  });
 
   it('passes cancel revision and normalized reason only under sale.void', async () => {
     const server = build(principal(['sale.void']));
