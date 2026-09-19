@@ -100,8 +100,9 @@ export function CashierScreen({
       ...(offlineStoreDeviceEnrollmentId === undefined
         ? {}
         : { deviceEnrollmentId: offlineStoreDeviceEnrollmentId }),
+      shiftId: shift.id,
     }),
-    [offlineStoreDeviceEnrollmentId, principal.tenant.id, terminal.branchId, terminal.id],
+    [offlineStoreDeviceEnrollmentId, principal.tenant.id, shift.id, terminal.branchId, terminal.id],
   );
   const checkout = useCheckout(api, onExpired, queuePartition, offlineStoreProtector);
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);

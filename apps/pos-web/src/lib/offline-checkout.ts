@@ -86,6 +86,17 @@ export async function enqueueOfflineCheckout(
   openStore: OpenStore = () => openKorviOfflineStore(),
   protector?: OfflineStoreProtector,
 ): Promise<void> {
+  if (
+    partition.shiftId === undefined ||
+    intent.expectedShiftId === undefined ||
+    partition.shiftId !== intent.expectedShiftId
+  ) {
+    throw new OfflineStoreError(
+      'corrupt',
+      'Offline checkout queue must be bound to the server-authorized shift that created it.',
+    );
+  }
+
   const store = await openStore();
   try {
     const operation = checkoutQueueOperation(intent);
@@ -97,6 +108,60 @@ export async function enqueueOfflineCheckout(
     );
   } finally {
     store.close();
+  }
+}
+
+function legacyQueuePartition(partition: QueuePartition): QueuePartition {
+  const legacy: QueuePartition = {
+    tenantId: partition.tenantId,
+    branchId: partition.branchId,
+    terminalId: partition.terminalId,
+    ...(partition.deviceEnrollmentId === undefined
+      ? {}
+      : { deviceEnrollmentId: partition.deviceEnrollmentId }),
+  };
+  return legacy;
+}
+
+async function migrateLegacyCheckoutQueue(
+  store: CheckoutOfflineStore,
+  partition: QueuePartition,
+  protector?: OfflineStoreProtector,
+): Promise<void> {
+  if (partition.shiftId === undefined) {
+    throw new OfflineStoreError(
+      'corrupt',
+      'Offline checkout sync requires an explicit server-authorized shift.',
+    );
+  }
+
+  const legacyPartition = legacyQueuePartition(partition);
+  const candidates = await store.all(legacyPartition, 500);
+  for (const operation of candidates) {
+    if (
+      operation.kind !== 'sale.checkout' ||
+      operation.state === 'settled'
+    ) {
+      continue;
+    }
+
+    let intent: CheckoutRequest | null = null;
+    if (isCheckoutQueuePayload(operation.payload)) {
+      intent = operation.payload;
+    } else if (protector !== undefined && isProtectedCheckoutPayload(operation.payload)) {
+      try {
+        intent = (await decodeProtectedCheckoutOperation(legacyPartition, operation, protector))
+          .payload;
+      } catch {
+        // A row we cannot authenticate locally must remain untouched in the
+        // legacy partition. It is safer to strand it for review than let the
+        // wrong cashier mutate its lifecycle.
+        continue;
+      }
+    }
+
+    if (intent?.expectedShiftId !== partition.shiftId) continue;
+    await store.repartition(legacyPartition, partition, operation.id);
   }
 }
 
@@ -114,6 +179,8 @@ export async function syncOfflineCheckouts(
 ): Promise<OfflineCheckoutSyncSnapshot> {
   const store = await openStore();
   try {
+    await migrateLegacyCheckoutQueue(store, partition, protector);
+
     if (protector !== undefined) {
       const legacy = [
         ...(await store.pending(partition, 500)),

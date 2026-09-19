@@ -88,6 +88,7 @@ interface StoredQueuedOperation {
   readonly branchId: string;
   readonly terminalId: string;
   readonly deviceEnrollmentId?: string | undefined;
+  readonly shiftId?: string | undefined;
   readonly id: string;
   readonly kind: string;
   readonly payloadJson: string;
@@ -137,6 +138,12 @@ export interface KorviOfflineStore extends TransactionQueuePort {
     id: string,
     expectedPayload: unknown,
     replacementPayload: unknown,
+  ): Promise<void>;
+  all(partition: QueuePartition, limit?: number): Promise<readonly QueuedOperation[]>;
+  repartition(
+    source: QueuePartition,
+    target: QueuePartition,
+    id: string,
   ): Promise<void>;
   queueCount(partition: QueuePartition): Promise<number>;
   rejected(partition: QueuePartition, limit?: number): Promise<readonly QueuedOperation[]>;
@@ -242,12 +249,21 @@ export function recordMatchesDeviceEnrollment(
     : hasDeviceEnrollmentId && value.deviceEnrollmentId === deviceEnrollmentId;
 }
 
+function recordMatchesShift(
+  value: Readonly<Record<string, unknown>>,
+  shiftId: string | undefined,
+): boolean {
+  const hasShiftId = Object.prototype.hasOwnProperty.call(value, 'shiftId');
+  return shiftId === undefined ? !hasShiftId : hasShiftId && value.shiftId === shiftId;
+}
+
 function assertQueuePartition(partition: QueuePartition): void {
   if (
     !isUuidV7(partition.tenantId) ||
     !isUuidV7(partition.branchId) ||
     !isUuidV7(partition.terminalId) ||
-    (partition.deviceEnrollmentId !== undefined && !isUuidV7(partition.deviceEnrollmentId))
+    (partition.deviceEnrollmentId !== undefined && !isUuidV7(partition.deviceEnrollmentId)) ||
+    (partition.shiftId !== undefined && !isUuidV7(partition.shiftId))
   ) {
     throw new OfflineStoreError(
       'corrupt',
@@ -260,6 +276,7 @@ export function queuePartitionKey(partition: QueuePartition): string {
   assertQueuePartition(partition);
   const identity = [partition.tenantId, partition.branchId, partition.terminalId];
   if (partition.deviceEnrollmentId !== undefined) identity.push(partition.deviceEnrollmentId);
+  if (partition.shiftId !== undefined) identity.push(partition.shiftId);
   return JSON.stringify(identity);
 }
 
@@ -270,6 +287,7 @@ export function queueRecordKey(partition: QueuePartition, id: string): string {
   }
   const identity = [partition.tenantId, partition.branchId, partition.terminalId];
   if (partition.deviceEnrollmentId !== undefined) identity.push(partition.deviceEnrollmentId);
+  if (partition.shiftId !== undefined) identity.push(partition.shiftId);
   identity.push(id);
   return JSON.stringify(identity);
 }
@@ -506,6 +524,7 @@ function toStoredQueueRow(
     ...(partition.deviceEnrollmentId === undefined
       ? {}
       : { deviceEnrollmentId: partition.deviceEnrollmentId }),
+    ...(partition.shiftId === undefined ? {} : { shiftId: partition.shiftId }),
     id: operation.id,
     kind: operation.kind,
     payloadJson: serializeQueuePayload(operation.payload),
@@ -534,6 +553,7 @@ function decodeStoredQueueRow(
     value.branchId !== partition.branchId ||
     value.terminalId !== partition.terminalId ||
     !recordMatchesDeviceEnrollment(value, partition.deviceEnrollmentId) ||
+    !recordMatchesShift(value, partition.shiftId) ||
     typeof value.kind !== 'string' ||
     !QUEUE_KIND_PATTERN.test(value.kind) ||
     typeof value.payloadJson !== 'string' ||
@@ -864,6 +884,116 @@ async function listRejectedQueuedOperations(
     return operations;
   } catch (error) {
     await done.catch(() => undefined);
+    throw classifyIndexedDbError(error);
+  }
+}
+
+async function listAllQueuedOperations(
+  database: IDBDatabase,
+  partition: QueuePartition,
+  limit: number,
+): Promise<readonly QueuedOperation[]> {
+  const partitionKey = queuePartitionKey(partition);
+  const bounded = Math.min(Math.max(Math.trunc(limit), 1), MAX_QUEUE_READ);
+  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readonly');
+  const done = transactionDone(transaction);
+  const index = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE).index(QUEUE_ORDER_INDEX);
+  const range = IDBKeyRange.bound([partitionKey, ''], [partitionKey, '\uffff']);
+  const request = index.openCursor(range, 'next');
+  const operations: QueuedOperation[] = [];
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      request.onerror = () => reject(classifyIndexedDbError(request.error));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor === null || operations.length >= bounded) {
+          resolve();
+          return;
+        }
+        try {
+          operations.push(decodeStoredQueueRow(cursor.value, partition).operation);
+          cursor.continue();
+        } catch (error) {
+          transaction.abort();
+          reject(classifyIndexedDbError(error));
+        }
+      };
+    });
+    await done;
+    return operations;
+  } catch (error) {
+    await done.catch(() => undefined);
+    throw classifyIndexedDbError(error);
+  }
+}
+
+function sameQueueDeviceScope(left: QueuePartition, right: QueuePartition): boolean {
+  return (
+    left.tenantId === right.tenantId &&
+    left.branchId === right.branchId &&
+    left.terminalId === right.terminalId &&
+    left.deviceEnrollmentId === right.deviceEnrollmentId
+  );
+}
+
+async function repartitionQueuedOperation(
+  database: IDBDatabase,
+  source: QueuePartition,
+  target: QueuePartition,
+  id: string,
+): Promise<void> {
+  assertQueuePartition(source);
+  assertQueuePartition(target);
+  if (
+    source.shiftId !== undefined ||
+    target.shiftId === undefined ||
+    !sameQueueDeviceScope(source, target)
+  ) {
+    throw new OfflineStoreError(
+      'corrupt',
+      'Legacy queue migration may only bind the same device scope to one explicit shift.',
+    );
+  }
+
+  const sourceKey = queueRecordKey(source, id);
+  const targetKey = queueRecordKey(target, id);
+  const transaction = database.transaction(OFFLINE_TRANSACTION_QUEUE_STORE, 'readwrite');
+  const done = transactionDone(transaction);
+  const store = transaction.objectStore(OFFLINE_TRANSACTION_QUEUE_STORE);
+  const request = store.get(sourceKey);
+  let failure: OfflineStoreError | null = null;
+
+  request.onerror = () => {
+    failure = classifyIndexedDbError(request.error);
+    transaction.abort();
+  };
+  request.onsuccess = () => {
+    try {
+      if (request.result === undefined) {
+        failure = new OfflineStoreError('conflict', 'Legacy queue operation no longer exists.');
+        transaction.abort();
+        return;
+      }
+      const decoded = decodeStoredQueueRow(request.result, source);
+      const rebound: StoredQueuedOperation = {
+        ...decoded.stored,
+        queueKey: targetKey,
+        partitionKey: queuePartitionKey(target),
+        shiftId: target.shiftId,
+      };
+      store.delete(sourceKey);
+      store.add(rebound);
+    } catch (error) {
+      failure = classifyIndexedDbError(error);
+      transaction.abort();
+    }
+  };
+
+  try {
+    await done;
+  } catch (error) {
+    if (failure !== null) throw failure;
     throw classifyIndexedDbError(error);
   }
 }
@@ -1371,6 +1501,14 @@ export async function openKorviOfflineStore(factory?: IDBFactory): Promise<Korvi
 
     async rejected(partition, limit = 100) {
       return listRejectedQueuedOperations(database, partition, limit);
+    },
+
+    async all(partition, limit = 500) {
+      return listAllQueuedOperations(database, partition, limit);
+    },
+
+    async repartition(source, target, id) {
+      await repartitionQueuedOperation(database, source, target, id);
     },
 
     async queueCount(partition) {
