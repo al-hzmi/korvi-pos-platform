@@ -18,6 +18,8 @@ const PRODUCT = '018fb500-0000-7000-8000-0000000000d1';
 const CREATE_OP = '018fb500-0000-7000-8000-0000000000e1';
 const REPLAY_OP = '018fb500-0000-7000-8000-0000000000e2';
 const CANCEL_OP = '018fb500-0000-7000-8000-0000000000e3';
+const TRANSFER_OP = '018fb500-0000-7000-8000-0000000000e4';
+const TABLE_TWO = '018fb500-0000-7000-8000-0000000000c2';
 const ORIGIN = 'http://localhost:3000';
 const COOKIE = 'korvi_session=restaurant-test-token';
 
@@ -133,6 +135,20 @@ function restaurantService(): MerchantRestaurantOrderService {
             closedAt: '2026-09-19T05:10:00.000Z',
             closedReason: request.reason,
           },
+          replayed: false,
+        },
+      };
+    },
+    async transferTable(subject, orderId, request) {
+      calls.push({
+        method: 'transferTable',
+        value: { tenantId: subject.tenantId, userId: subject.userId, orderId, request },
+      });
+      if (nextFailure !== null) return { outcome: 'failure', reason: nextFailure };
+      return {
+        outcome: 'success',
+        value: {
+          order: { ...order, tableId: request.tableId, revision: '2' },
           replayed: false,
         },
       };
@@ -273,6 +289,41 @@ describe('restaurant order route authority', () => {
     expect(replayed.json()).toMatchObject({ order: { id: ORDER }, replayed: true });
   });
 
+  it('transfers a dine-in table under sale.create with an explicit revision precondition', async () => {
+    const server = build(principal(['sale.create']));
+    const response = await server.inject({
+      method: 'POST',
+      url: `/v1/restaurant/orders/${ORDER}/transfer-table`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: TRANSFER_OP,
+        expectedRevision: '1',
+        tableId: TABLE_TWO,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      order: { id: ORDER, tableId: TABLE_TWO, revision: '2' },
+      replayed: false,
+    });
+    expect(calls).toEqual([
+      {
+        method: 'transferTable',
+        value: {
+          tenantId: TENANT,
+          userId: USER,
+          orderId: ORDER,
+          request: {
+            operationId: TRANSFER_OP,
+            expectedRevision: '1',
+            tableId: TABLE_TWO,
+          },
+        },
+      },
+    ]);
+  });
+
   it('passes cancel revision and normalized reason only under sale.void', async () => {
     const server = build(principal(['sale.void']));
     const response = await server.inject({
@@ -301,6 +352,7 @@ describe('restaurant order route authority', () => {
 
   it.each([
     ['table-occupied', 409, 'table_occupied'],
+    ['table-not-applicable', 422, 'table_not_applicable'],
     ['stale-revision', 409, 'restaurant_order_stale'],
     ['idempotency-conflict', 409, 'idempotency_conflict'],
     ['unknown-order', 404, 'restaurant_order_not_found'],

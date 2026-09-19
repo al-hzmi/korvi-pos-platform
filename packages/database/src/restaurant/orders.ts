@@ -9,6 +9,7 @@ import type { TransactionClient } from '../tenant-context.js';
 
 const CREATE_SCOPE = 'restaurant.order.create';
 const CANCEL_SCOPE = 'restaurant.order.cancel';
+const TRANSFER_TABLE_SCOPE = 'restaurant.order.transfer-table';
 const MAX_BIGINT = 9_223_372_036_854_775_807n;
 
 export type RestaurantOrderRefusal =
@@ -17,6 +18,7 @@ export type RestaurantOrderRefusal =
   | 'unknown-terminal'
   | 'unknown-table'
   | 'table-occupied'
+  | 'table-not-applicable'
   | 'unknown-product'
   | 'product-unavailable'
   | 'invalid-quantity'
@@ -59,6 +61,12 @@ export interface RestaurantOrderCancelRequest {
   readonly operationId: string;
   readonly expectedRevision: string;
   readonly reason: string;
+}
+
+export interface RestaurantOrderTransferTableRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly tableId: string;
 }
 
 export interface RestaurantOrderLine {
@@ -339,7 +347,10 @@ async function appendAudit(
   tenant: string,
   actor: RestaurantOrderActor,
   terminalId: string,
-  eventType: 'restaurant.order.opened' | 'restaurant.order.cancelled',
+  eventType:
+    | 'restaurant.order.opened'
+    | 'restaurant.order.cancelled'
+    | 'restaurant.order.table-transferred',
   orderId: string,
   metadata: Readonly<Record<string, string | number | boolean | null>>,
   at: Date,
@@ -676,6 +687,136 @@ export async function cancelRestaurantOrder(
       nextId,
     );
     await completeOperation(tx, tenant, CANCEL_SCOPE, request.operationId, order, at);
+    return { order, replayed: false };
+  });
+}
+
+
+export async function transferRestaurantOrderTable(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  actor: RestaurantOrderActor,
+  orderId: string,
+  request: RestaurantOrderTransferTableRequest,
+  clock: () => Date = () => new Date(),
+  nextId: () => string = newId,
+): Promise<RestaurantOrderMutationResult> {
+  const tenant = tenantParam(scope);
+  const requestHash = fingerprint({
+    orderId,
+    expectedRevision: request.expectedRevision,
+    tableId: request.tableId,
+  });
+
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    const replay = await reserveOperation(
+      tx,
+      tenant,
+      TRANSFER_TABLE_SCOPE,
+      request.operationId,
+      requestHash,
+      nextId,
+    );
+    if (replay !== null) return { order: replay, replayed: true };
+
+    await requireRestaurantSettings(tx, tenant);
+    const existing = await tx.restaurantOrder.findFirst({
+      where: { tenantId: tenant, branchId: actor.branchId, id: orderId },
+      select: {
+        id: true,
+        terminalId: true,
+        tableId: true,
+        orderType: true,
+        status: true,
+        revision: true,
+      },
+    });
+    if (existing === null) throw new RestaurantOrderRefusedError('unknown-order');
+    if (existing.status !== 'open') throw new RestaurantOrderRefusedError('order-not-open');
+    if (existing.orderType !== 'dine-in') {
+      throw new RestaurantOrderRefusedError('table-not-applicable');
+    }
+
+    let expected: bigint;
+    try {
+      expected = BigInt(request.expectedRevision);
+    } catch {
+      throw new RestaurantOrderRefusedError('stale-revision');
+    }
+    if (expected !== existing.revision) {
+      throw new RestaurantOrderRefusedError('stale-revision');
+    }
+
+    const table = await tx.restaurantTable.findFirst({
+      where: {
+        tenantId: tenant,
+        branchId: actor.branchId,
+        id: request.tableId,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    if (table === null) throw new RestaurantOrderRefusedError('unknown-table');
+
+    const occupied = await tx.restaurantOrder.findFirst({
+      where: {
+        tenantId: tenant,
+        tableId: request.tableId,
+        status: 'open',
+        id: { not: orderId },
+      },
+      select: { id: true },
+    });
+    if (occupied !== null) throw new RestaurantOrderRefusedError('table-occupied');
+
+    const at = clock();
+    if (existing.tableId !== request.tableId) {
+      try {
+        const changed = await tx.restaurantOrder.updateMany({
+          where: {
+            tenantId: tenant,
+            id: orderId,
+            branchId: actor.branchId,
+            status: 'open',
+            revision: existing.revision,
+          },
+          data: {
+            tableId: request.tableId,
+            revision: { increment: 1n },
+            updatedAt: at,
+          },
+        });
+        if (changed.count !== 1) throw new RestaurantOrderRefusedError('stale-revision');
+      } catch (error) {
+        if (!isUniqueConstraint(error)) throw error;
+        throw new RestaurantOrderRefusedError('table-occupied');
+      }
+    }
+
+    const order = await readOrderWithin(tx, tenant, actor.branchId, orderId);
+    if (order === null) {
+      throw new DatabaseError('Restaurant order could not be read after table transfer.');
+    }
+
+    if (existing.tableId !== request.tableId) {
+      await appendAudit(
+        tx,
+        tenant,
+        actor,
+        existing.terminalId,
+        'restaurant.order.table-transferred',
+        orderId,
+        {
+          fromTableId: existing.tableId,
+          toTableId: request.tableId,
+          revision: order.revision,
+        },
+        at,
+        nextId,
+      );
+    }
+
+    await completeOperation(tx, tenant, TRANSFER_TABLE_SCOPE, request.operationId, order, at);
     return { order, replayed: false };
   });
 }

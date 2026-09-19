@@ -37,6 +37,13 @@ const cancelBody = z
     reason: z.string().trim().min(1).max(200),
   })
   .strict();
+const transferTableBody = z
+  .object({
+    operationId: UUID,
+    expectedRevision: z.string().regex(/^[1-9][0-9]{0,18}$/),
+    tableId: UUID,
+  })
+  .strict();
 
 export interface RestaurantOrderRouteOptions {
   readonly service: MerchantRestaurantOrderService;
@@ -59,6 +66,8 @@ function refusal(reply: FastifyReply, reason: RestaurantOrderRefusal) {
       return reply.code(404).send({ error: 'unknown_table' });
     case 'table-occupied':
       return reply.code(409).send({ error: 'table_occupied' });
+    case 'table-not-applicable':
+      return reply.code(422).send({ error: 'table_not_applicable' });
     case 'unknown-product':
       return reply.code(422).send({ error: 'unknown_product' });
     case 'product-unavailable':
@@ -125,6 +134,24 @@ export function registerRestaurantOrderRoutes(
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
     return command(reply, await service.create(principal, body.data), true);
   });
+
+  app.post(
+    '/v1/restaurant/orders/:orderId/transfer-table',
+    { preHandler: canOperate },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = orderParams.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      const body = transferTableBody.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return command(
+        reply,
+        await service.transferTable(principal, params.data.orderId, body.data),
+        false,
+      );
+    },
+  );
 
   app.post(
     '/v1/restaurant/orders/:orderId/cancel',

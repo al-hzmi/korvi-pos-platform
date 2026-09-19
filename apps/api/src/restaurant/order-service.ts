@@ -5,12 +5,14 @@ import {
   createRestaurantOrder,
   listOpenRestaurantOrders,
   readRestaurantOrder,
+  transferRestaurantOrderTable,
 } from '@korvi/database';
 import type { AuthenticatedPrincipal, TenantScope } from '@korvi/domain';
 import type {
   PrismaClient,
   RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
+  RestaurantOrderTransferTableRequest,
   RestaurantOrderDetail,
   RestaurantOrderMutationResult,
   RestaurantOrderRefusal,
@@ -32,6 +34,11 @@ export interface MerchantRestaurantOrderService {
     principal: AuthenticatedPrincipal,
     orderId: string,
     request: RestaurantOrderCancelRequest,
+  ): Promise<RestaurantOrderCommandResult>;
+  transferTable(
+    principal: AuthenticatedPrincipal,
+    orderId: string,
+    request: RestaurantOrderTransferTableRequest,
   ): Promise<RestaurantOrderCommandResult>;
 }
 
@@ -90,6 +97,19 @@ export function createMerchantRestaurantOrderService(
       requirePrincipalPermission(principal, 'sale.void');
       return attempt(() =>
         cancelRestaurantOrder(prisma, scopeOf(principal), actorOf(principal), orderId, request),
+      );
+    },
+
+    async transferTable(principal, orderId, request) {
+      requirePrincipalPermission(principal, 'sale.create');
+      return attempt(() =>
+        transferRestaurantOrderTable(
+          prisma,
+          scopeOf(principal),
+          actorOf(principal),
+          orderId,
+          request,
+        ),
       );
     },
   };
