@@ -532,7 +532,9 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
         if (restaurantOrderSettlement !== undefined) {
           await assertRestaurantOrderSettlement(tx, tenant, sale, restaurantOrderSettlement);
         } else if (sale.restaurantOrderId !== null && sale.restaurantOrderId !== undefined) {
-          throw new DatabaseError('A restaurantOrderId requires an atomic settlement precondition.');
+          throw new DatabaseError(
+            'A restaurantOrderId requires an atomic settlement precondition.',
+          );
         }
 
         // The merchant's overselling policy, read inside the transaction that
