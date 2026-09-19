@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { newId } from '@korvi/domain';
 import { Button, CardSurface } from '@korvi/ui';
 import { TopBar } from './top-bar';
 import { ProductPanel } from './product-panel';
@@ -9,6 +10,7 @@ import { CheckoutPanel } from './checkout-panel';
 import { SaleReceipt } from './sale-receipt';
 import { PreparationTicketControl } from './preparation-ticket-control';
 import { RestaurantOrderTypeControl } from './restaurant-order-type-control';
+import { RestaurantOpenOrdersControl } from './restaurant-open-orders-control';
 import { RestaurantTableControl } from './restaurant-table-control';
 import { StatusNote } from './status-note';
 import { previewCart } from '../lib/cart';
@@ -18,6 +20,13 @@ import { createDurableProductSource } from '../lib/offline-search-source';
 import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
 import { parseSarToMinor } from '../lib/money';
+import { describeFailure } from '../lib/failures';
+import {
+  cartLinesFromRestaurantOrder,
+  restaurantOrderCreateLinesFromCart,
+  restaurantOrderLinesFromCart,
+  restaurantOrderMatchesCart,
+} from '../lib/restaurant-orders';
 import { quickServiceOrderNumber } from '../lib/quick-service';
 import { preparationTicketFromIntent, preparationTicketFromSale } from '../lib/preparation-ticket';
 import { uuidV7EnqueuedAt } from '../lib/offline-checkout';
@@ -33,6 +42,10 @@ import type {
   Principal,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantOrderCreateRequest,
+  RestaurantOrderDetail,
+  RestaurantOrderReplaceLinesRequest,
+  RestaurantOrderSummary,
   ShiftSummary,
   TerminalSummary,
 } from '../lib/api-types';
@@ -40,6 +53,15 @@ import type { OfflineSaleScope } from '../lib/offline-store';
 import type { OfflineStoreProtector } from '../lib/offline-protection';
 import type { FiscalReceiptPrinter } from '../lib/receipt-print-flight';
 import type { PreparationTicketPrinter } from '../lib/preparation-ticket';
+import type { ActiveRestaurantOrder } from '../lib/restaurant-orders';
+
+type PendingRestaurantOrderCommand =
+  | { readonly kind: 'create'; readonly request: RestaurantOrderCreateRequest }
+  | {
+      readonly kind: 'replace';
+      readonly orderId: string;
+      readonly request: RestaurantOrderReplaceLinesRequest;
+    };
 
 /**
  * Where a cashier spends the whole day.
@@ -121,6 +143,23 @@ export function CashierScreen({
   const [restaurantFloorStatus, setRestaurantFloorStatus] = useState<
     'loading' | 'ready' | 'failed'
   >(quickService ? 'loading' : 'ready');
+  const [restaurantOrders, setRestaurantOrders] = useState<readonly RestaurantOrderSummary[]>([]);
+  const [restaurantOrdersStatus, setRestaurantOrdersStatus] = useState<
+    'loading' | 'ready' | 'failed'
+  >(quickService ? 'loading' : 'ready');
+  const [activeRestaurantOrder, setActiveRestaurantOrder] =
+    useState<RestaurantOrderDetail | null>(null);
+  const [activeRestaurantOrderIdentity, setActiveRestaurantOrderIdentity] =
+    useState<ActiveRestaurantOrder | null>(null);
+  const [restaurantOrderRestoreStatus, setRestaurantOrderRestoreStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'failed'
+  >('idle');
+  const [restaurantOrderCommandStatus, setRestaurantOrderCommandStatus] = useState<
+    'idle' | 'running' | 'ambiguous'
+  >('idle');
+  const [pendingRestaurantOrderCommand, setPendingRestaurantOrderCommand] =
+    useState<PendingRestaurantOrderCommand | null>(null);
+  const [restaurantOrderNotice, setRestaurantOrderNotice] = useState<string | null>(null);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const cashInput = useRef<HTMLInputElement>(null);
@@ -154,6 +193,30 @@ export function CashierScreen({
     };
   }, [api, quickService, terminal.branchId]);
 
+  const refreshRestaurantOrders = useCallback(() => {
+    if (!quickService) {
+      setRestaurantOrders([]);
+      setRestaurantOrdersStatus('ready');
+      return;
+    }
+    setRestaurantOrdersStatus('loading');
+    void api
+      .restaurantOrders()
+      .then((orders) => {
+        setRestaurantOrders(orders);
+        setRestaurantOrdersStatus('ready');
+      })
+      .catch((error: unknown) => {
+        const failure = describeFailure(error);
+        if (failure.action === 'reauthenticate') onExpired();
+        setRestaurantOrdersStatus('failed');
+      });
+  }, [api, onExpired, quickService]);
+
+  useEffect(() => {
+    refreshRestaurantOrders();
+  }, [refreshRestaurantOrders]);
+
   const durableScope = useMemo<OfflineSaleScope>(
     () => ({
       tenantId: principal.tenant.id,
@@ -184,7 +247,13 @@ export function CashierScreen({
   const parsedCash = parseSarToMinor(cash);
   const cashMinor = parsedCash.ok ? parsedCash.value : null;
   const durabilityLoading = !draftHydrated;
-  const locked = intentLocked(checkout.state) || durabilityLoading;
+  const restaurantOrderContextBlocked =
+    activeRestaurantOrderIdentity !== null && activeRestaurantOrder === null;
+  const locked =
+    intentLocked(checkout.state) ||
+    durabilityLoading ||
+    restaurantOrderContextBlocked ||
+    restaurantOrderCommandStatus !== 'idle';
   const outstanding = checkout.state.attemptOutstanding;
 
   const focusSearch = useCallback(() => {
@@ -202,9 +271,63 @@ export function CashierScreen({
       setCash(durableState.draft.cash);
       if (durableState.draft.orderType !== undefined) setOrderType(durableState.draft.orderType);
       if (durableState.draft.tableId !== undefined) setTableId(durableState.draft.tableId);
+      if (
+        durableState.draft.restaurantOrderId !== undefined &&
+        durableState.draft.restaurantOrderRevision !== undefined
+      ) {
+        setActiveRestaurantOrderIdentity({
+          id: durableState.draft.restaurantOrderId,
+          revision: durableState.draft.restaurantOrderRevision,
+        });
+        setRestaurantOrderRestoreStatus('loading');
+      }
     }
     setDraftHydrated(true);
   }, [cart.dispatch, draftHydrated, durableState]);
+
+  useEffect(() => {
+    if (
+      activeRestaurantOrderIdentity === null ||
+      activeRestaurantOrder !== null ||
+      restaurantOrderRestoreStatus !== 'loading'
+    ) {
+      return;
+    }
+    let live = true;
+    void api
+      .restaurantOrder(activeRestaurantOrderIdentity.id)
+      .then((order) => {
+        if (!live) return;
+        if (
+          order.status !== 'open' ||
+          order.revision !== activeRestaurantOrderIdentity.revision
+        ) {
+          setRestaurantOrderRestoreStatus('failed');
+          setRestaurantOrderNotice(
+            'تغيّر الطلب المفتوح منذ حفظ هذه السلة محلياً. أعد تحميل الطلب قبل المتابعة.',
+          );
+          return;
+        }
+        setActiveRestaurantOrder(order);
+        setRestaurantOrderRestoreStatus('ready');
+      })
+      .catch((error: unknown) => {
+        if (!live) return;
+        const failure = describeFailure(error);
+        if (failure.action === 'reauthenticate') onExpired();
+        setRestaurantOrderRestoreStatus('failed');
+        setRestaurantOrderNotice(failure.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [
+    activeRestaurantOrder,
+    activeRestaurantOrderIdentity,
+    api,
+    onExpired,
+    restaurantOrderRestoreStatus,
+  ]);
 
   useEffect(() => {
     if (!draftHydrated || durableState.status !== 'ready') return;
@@ -212,7 +335,7 @@ export function CashierScreen({
       clearDraft();
       return;
     }
-    if (cart.lines.length === 0 && cash === '') {
+    if (cart.lines.length === 0 && cash === '' && activeRestaurantOrderIdentity === null) {
       clearDraft();
       return;
     }
@@ -221,6 +344,12 @@ export function CashierScreen({
       cash,
       ...(quickService ? { orderType } : {}),
       ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
+      ...(activeRestaurantOrderIdentity === null
+        ? {}
+        : {
+            restaurantOrderId: activeRestaurantOrderIdentity.id,
+            restaurantOrderRevision: activeRestaurantOrderIdentity.revision,
+          }),
       priceMode,
       updatedAt: new Date().toISOString(),
     });
@@ -236,6 +365,7 @@ export function CashierScreen({
     quickService,
     orderType,
     tableId,
+    activeRestaurantOrderIdentity,
   ]);
 
   const browse = search.browse;
@@ -271,6 +401,15 @@ export function CashierScreen({
     if (checkout.state.failure?.action === 'amend-cash') cashInput.current?.focus();
   }, [checkout.state.failure]);
 
+  const resetRestaurantWorkspace = useCallback(() => {
+    setActiveRestaurantOrder(null);
+    setActiveRestaurantOrderIdentity(null);
+    setRestaurantOrderRestoreStatus('idle');
+    setPendingRestaurantOrderCommand(null);
+    setRestaurantOrderCommandStatus('idle');
+    setRestaurantOrderNotice(null);
+  }, []);
+
   const newSale = useCallback(() => {
     clearDraft();
     checkout.newSale();
@@ -278,9 +417,192 @@ export function CashierScreen({
     setCash('');
     setOrderType('takeaway');
     setTableId(null);
+    resetRestaurantWorkspace();
     search.browse();
     focusSearch();
-  }, [checkout, cart, clearDraft, search, focusSearch]);
+  }, [checkout, cart, clearDraft, resetRestaurantWorkspace, search, focusSearch]);
+
+  const restaurantOrderDirty =
+    activeRestaurantOrder === null
+      ? activeRestaurantOrderIdentity !== null
+      : !restaurantOrderMatchesCart(activeRestaurantOrder, cart.lines);
+
+  const executeRestaurantOrderCommand = useCallback(
+    async (command: PendingRestaurantOrderCommand) => {
+      setPendingRestaurantOrderCommand(command);
+      setRestaurantOrderCommandStatus('running');
+      setRestaurantOrderNotice(null);
+      try {
+        const result =
+          command.kind === 'create'
+            ? await api.createRestaurantOrder(command.request)
+            : await api.replaceRestaurantOrderLines(command.orderId, command.request);
+
+        setPendingRestaurantOrderCommand(null);
+        setRestaurantOrderCommandStatus('idle');
+        if (command.kind === 'create') {
+          clearDraft();
+          checkout.newSale();
+          cart.dispatch({ type: 'clear' });
+          setCash('');
+          setOrderType('takeaway');
+          setTableId(null);
+          resetRestaurantWorkspace();
+          setRestaurantOrderNotice('تم حفظ الطلب مفتوحاً ويمكن استئنافه من أي صندوق مخوّل في الفرع.');
+          refreshRestaurantOrders();
+          search.browse();
+          focusSearch();
+          return;
+        }
+
+        setActiveRestaurantOrder(result.order);
+        setActiveRestaurantOrderIdentity({ id: result.order.id, revision: result.order.revision });
+        setRestaurantOrderRestoreStatus('ready');
+        cart.dispatch({ type: 'replace', lines: cartLinesFromRestaurantOrder(result.order) });
+        setRestaurantOrderNotice('تم حفظ تعديلات الطلب.');
+        refreshRestaurantOrders();
+      } catch (error: unknown) {
+        const failure = describeFailure(error);
+        if (failure.action === 'reauthenticate') onExpired();
+        if (failure.action === 'retry-same') {
+          setRestaurantOrderCommandStatus('ambiguous');
+          setRestaurantOrderNotice(failure.message);
+          return;
+        }
+        setPendingRestaurantOrderCommand(null);
+        setRestaurantOrderCommandStatus('idle');
+        setRestaurantOrderNotice(failure.message);
+      }
+    },
+    [
+      api,
+      cart,
+      checkout,
+      clearDraft,
+      focusSearch,
+      onExpired,
+      refreshRestaurantOrders,
+      resetRestaurantWorkspace,
+      search,
+    ],
+  );
+
+  const holdRestaurantOrder = useCallback(() => {
+    if (!quickService || cart.lines.length === 0) return;
+    const request: RestaurantOrderCreateRequest = {
+      operationId: newId(),
+      terminalId: terminal.id,
+      orderType,
+      tableId: orderType === 'dine-in' ? tableId : null,
+      lines: restaurantOrderCreateLinesFromCart(cart.lines),
+    };
+    void executeRestaurantOrderCommand({ kind: 'create', request });
+  }, [
+    cart.lines,
+    executeRestaurantOrderCommand,
+    orderType,
+    quickService,
+    tableId,
+    terminal.id,
+  ]);
+
+  const saveRestaurantOrder = useCallback(() => {
+    if (
+      activeRestaurantOrderIdentity === null ||
+      activeRestaurantOrder === null ||
+      cart.lines.length === 0 ||
+      !restaurantOrderDirty
+    ) {
+      return;
+    }
+    const request: RestaurantOrderReplaceLinesRequest = {
+      operationId: newId(),
+      expectedRevision: activeRestaurantOrderIdentity.revision,
+      lines: restaurantOrderLinesFromCart(cart.lines),
+    };
+    void executeRestaurantOrderCommand({
+      kind: 'replace',
+      orderId: activeRestaurantOrderIdentity.id,
+      request,
+    });
+  }, [
+    activeRestaurantOrder,
+    activeRestaurantOrderIdentity,
+    cart.lines,
+    executeRestaurantOrderCommand,
+    restaurantOrderDirty,
+  ]);
+
+  const resumeRestaurantOrder = useCallback(
+    (orderId: string) => {
+      if (locked || cart.lines.length > 0 || activeRestaurantOrderIdentity !== null) return;
+      setRestaurantOrderCommandStatus('running');
+      setRestaurantOrderNotice(null);
+      void api
+        .restaurantOrder(orderId)
+        .then((order) => {
+          if (order.status !== 'open') {
+            setRestaurantOrderNotice('الطلب لم يعد مفتوحاً.');
+            return;
+          }
+          checkout.newSale();
+          clearDraft();
+          cart.dispatch({ type: 'replace', lines: cartLinesFromRestaurantOrder(order) });
+          setCash('');
+          setOrderType(order.orderType);
+          setTableId(order.tableId);
+          setActiveRestaurantOrder(order);
+          setActiveRestaurantOrderIdentity({ id: order.id, revision: order.revision });
+          setRestaurantOrderRestoreStatus('ready');
+        })
+        .catch((error: unknown) => {
+          const failure = describeFailure(error);
+          if (failure.action === 'reauthenticate') onExpired();
+          setRestaurantOrderNotice(failure.message);
+        })
+        .finally(() => {
+          setRestaurantOrderCommandStatus('idle');
+          refreshRestaurantOrders();
+        });
+    },
+    [
+      activeRestaurantOrderIdentity,
+      api,
+      cart,
+      checkout,
+      clearDraft,
+      locked,
+      onExpired,
+      refreshRestaurantOrders,
+    ],
+  );
+
+  const releaseRestaurantOrder = useCallback(() => {
+    if (locked || restaurantOrderDirty) return;
+    clearDraft();
+    checkout.newSale();
+    cart.dispatch({ type: 'clear' });
+    setCash('');
+    setOrderType('takeaway');
+    setTableId(null);
+    resetRestaurantWorkspace();
+    search.browse();
+    focusSearch();
+  }, [
+    cart,
+    checkout,
+    clearDraft,
+    focusSearch,
+    locked,
+    resetRestaurantWorkspace,
+    restaurantOrderDirty,
+    search,
+  ]);
+
+  const retryRestaurantOrderCommand = useCallback(() => {
+    if (pendingRestaurantOrderCommand === null) return;
+    void executeRestaurantOrderCommand(pendingRestaurantOrderCommand);
+  }, [executeRestaurantOrderCommand, pendingRestaurantOrderCommand]);
 
   const submit = useCallback(() => {
     if (cashMinor === null) return;
@@ -289,10 +611,26 @@ export function CashierScreen({
       expectedShiftId: shift.id,
       ...(quickService ? { orderType } : {}),
       ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
+      ...(activeRestaurantOrderIdentity === null
+        ? {}
+        : {
+            restaurantOrderId: activeRestaurantOrderIdentity.id,
+            expectedRestaurantOrderRevision: activeRestaurantOrderIdentity.revision,
+          }),
       lines: cart.lines,
       cashReceivedMinor: cashMinor,
     });
-  }, [checkout, terminal.id, shift.id, quickService, orderType, tableId, cart.lines, cashMinor]);
+  }, [
+    checkout,
+    terminal.id,
+    shift.id,
+    quickService,
+    orderType,
+    tableId,
+    activeRestaurantOrderIdentity,
+    cart.lines,
+    cashMinor,
+  ]);
 
   const selectedRestaurantTable =
     tableId === null
@@ -310,6 +648,15 @@ export function CashierScreen({
           : restaurantFloorStatus === 'failed'
             ? 'تعذّر تحميل الطاولات. أعد الاتصال قبل بدء طلب محلي جديد.'
             : 'اختر الطاولة قبل إتمام الطلب المحلي.';
+  const restaurantOrderSubmissionBlocker =
+    activeRestaurantOrderIdentity === null
+      ? null
+      : activeRestaurantOrder === null
+        ? restaurantOrderNotice ?? 'جاري التحقق من النسخة المحفوظة للطلب.'
+        : restaurantOrderDirty
+          ? 'احفظ تعديلات الطلب المفتوح قبل إتمام الدفع.'
+          : null;
+  const submissionBlocker = restaurantOrderSubmissionBlocker ?? tableSubmissionBlocker;
 
   const completed = checkout.state.phase === 'succeeded' ? checkout.state.sale : null;
   const orderOperationId = completed?.operationId ?? checkout.state.intent?.operationId ?? null;
@@ -438,9 +785,29 @@ export function CashierScreen({
                 </StatusNote>
               ) : null}
               {quickService ? (
+                <RestaurantOpenOrdersControl
+                  orders={restaurantOrders}
+                  listStatus={restaurantOrdersStatus}
+                  activeIdentity={activeRestaurantOrderIdentity}
+                  activeOrder={activeRestaurantOrder}
+                  dirty={restaurantOrderDirty}
+                  cartHasLines={cart.lines.length > 0}
+                  locked={locked}
+                  commandStatus={restaurantOrderCommandStatus}
+                  notice={restaurantOrderNotice}
+                  holdBlocker={tableSubmissionBlocker}
+                  onRefresh={refreshRestaurantOrders}
+                  onResume={resumeRestaurantOrder}
+                  onHold={holdRestaurantOrder}
+                  onSave={saveRestaurantOrder}
+                  onRelease={releaseRestaurantOrder}
+                  onRetry={retryRestaurantOrderCommand}
+                />
+              ) : null}
+              {quickService ? (
                 <RestaurantOrderTypeControl
                   value={orderType}
-                  disabled={locked}
+                  disabled={locked || activeRestaurantOrderIdentity !== null}
                   onChange={(value) => {
                     setOrderType(value);
                     if (value !== 'dine-in') setTableId(null);
@@ -452,7 +819,7 @@ export function CashierScreen({
                   floor={restaurantFloor}
                   status={restaurantFloorStatus}
                   value={tableId}
-                  disabled={locked}
+                  disabled={locked || activeRestaurantOrderIdentity !== null}
                   onChange={setTableId}
                 />
               ) : null}
@@ -471,7 +838,7 @@ export function CashierScreen({
                 cashMinor={cashMinor}
                 lineCount={cart.lines.length}
                 locked={locked}
-                submissionBlocker={tableSubmissionBlocker}
+                submissionBlocker={submissionBlocker}
                 state={checkout.state}
                 cashRef={cashInput}
                 onCashChange={setCash}
