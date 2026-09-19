@@ -322,6 +322,34 @@ describe('idempotency', () => {
     expect(store.movements).toHaveLength(1);
   });
 
+  it('does not let another cashier replay and read a sale they did not create', async () => {
+    const first = await checkout();
+    if (first.outcome !== 'success') throw new Error(first.reason);
+
+    const attacker = principal({
+      userId: '018f1000-0000-7000-8000-0000000000b4',
+      email: 'other@korvi.test',
+      displayName: 'مستخدم آخر',
+    });
+    const replay = await checkout({ principal: attacker });
+
+    expect(replay.outcome === 'failure' && replay.reason).toBe('idempotency-conflict');
+    expect(store.sales).toHaveLength(1);
+  });
+
+  it('does not let a branch reassignment turn an old operation id into a cross-branch read', async () => {
+    const first = await checkout();
+    if (first.outcome !== 'success') throw new Error(first.reason);
+
+    const moved = principal({
+      branchId: '018f1000-0000-7000-8000-0000000000b1',
+    });
+    const replay = await checkout({ principal: moved });
+
+    expect(replay.outcome === 'failure' && replay.reason).toBe('idempotency-conflict');
+    expect(store.sales).toHaveLength(1);
+  });
+
   it.each([
     ['a changed quantity', { lines: [{ productId: A.milk, quantityScaled: '3000' }] }],
     ['a changed product', { lines: [{ productId: A.rice, quantityScaled: '2000' }] }],

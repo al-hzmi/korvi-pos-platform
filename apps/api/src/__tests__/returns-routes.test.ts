@@ -58,6 +58,7 @@ const A: Fixture = {
 /** A till in the same tenant but another branch. Never this session's. */
 const FOREIGN_TERMINAL = '018f3000-0000-7000-8000-0000000000b2';
 const FOREIGN_BRANCH = '018f3000-0000-7000-8000-0000000000b1';
+const OTHER_USER = '018f3000-0000-7000-8000-0000000000c4';
 
 let app: FastifyInstance;
 let business: MemoryBusinessStore;
@@ -119,6 +120,30 @@ async function build(
     roles: [role],
     permissions: [...ROLE_PERMISSIONS[role]],
   });
+  auth.users.push({
+    id: OTHER_USER,
+    tenantId: A.tenant,
+    email: 'omar@korvi-a.test',
+    displayName: 'عمر',
+    passwordHash: await hashPassword(PASSWORD, FAST),
+    isActive: true,
+    failedLoginCount: 0,
+    lockedUntil: null,
+    authVersion: 1,
+    lastLoginAt: null,
+  });
+  auth.memberships.push({
+    tenantId: A.tenant,
+    userId: OTHER_USER,
+    status: 'active',
+    defaultBranchId: branch,
+  });
+  auth.grants.push({
+    tenantId: A.tenant,
+    userId: OTHER_USER,
+    roles: [role],
+    permissions: [...ROLE_PERMISSIONS[role]],
+  });
 
   const returnRepository = memoryReturnRepository(business);
   const server = buildServer(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'fatal' }), {
@@ -174,12 +199,12 @@ async function build(
   return server;
 }
 
-async function cookieFor(server: FastifyInstance): Promise<string> {
+async function cookieFor(server: FastifyInstance, email = 'sara@korvi-a.test'): Promise<string> {
   const response = await server.inject({
     method: 'POST',
     url: '/v1/auth/login',
     headers: { origin: ORIGIN },
-    payload: { tenantSlug: 'korvi-a', email: 'sara@korvi-a.test', password: PASSWORD },
+    payload: { tenantSlug: 'korvi-a', email, password: PASSWORD },
   });
   expect(response.statusCode).toBe(200);
   const raw = response.headers['set-cookie'];
@@ -417,6 +442,40 @@ describe('a return the server accepts', () => {
     expect(JSON.parse(second.payload).return.returnId).toBe(
       JSON.parse(first.payload).return.returnId,
     );
+    expect(business.returns).toHaveLength(1);
+  });
+
+  it('does not let the next cashier replay and read a return created by another user', async () => {
+    await build('manager');
+    const firstCookie = await cookieFor(app);
+    const sale = await sell(firstCookie);
+    const payload = returnPayload(sale, {
+      refund: { kind: 'electronic', scheme: 'mada', reference: 'AUTH-PRIVATE-77120' },
+    });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/returns',
+      headers: { cookie: firstCookie, origin: ORIGIN },
+      payload,
+    });
+    expect(first.statusCode).toBe(201);
+
+    // Same till, same branch, later operator. This is exactly the point where
+    // an operation id must stop being usable as object-read authority.
+    business.shifts[0] = { ...business.shifts[0]!, userId: OTHER_USER };
+    const secondCookie = await cookieFor(app, 'omar@korvi-a.test');
+
+    const stolenReplay = await app.inject({
+      method: 'POST',
+      url: '/v1/returns',
+      headers: { cookie: secondCookie, origin: ORIGIN },
+      payload,
+    });
+
+    expect(stolenReplay.statusCode).toBe(409);
+    expect(JSON.parse(stolenReplay.payload).error).toBe('idempotency-conflict');
+    expect(stolenReplay.payload).not.toContain('AUTH-PRIVATE-77120');
     expect(business.returns).toHaveLength(1);
   });
 

@@ -161,6 +161,18 @@ function fail(reason: ReturnFailureReason, detail?: string): ReturnFailure {
     : { outcome: 'failure', reason, detail };
 }
 
+/**
+ * A committed idempotency key is not authority to read somebody else's return.
+ *
+ * Kept outside the fingerprint so already-committed RC keys remain
+ * replay-compatible for their lawful actor.
+ */
+function replayOwnedByPrincipal(record: ReturnRecord, principal: AuthenticatedPrincipal): boolean {
+  if (record.actorUserId !== principal.userId) return false;
+  if (principal.branchId !== null && record.branchId !== principal.branchId) return false;
+  return true;
+}
+
 function summarise(record: ReturnRecord): ReturnSummary {
   return {
     returnId: record.id,
@@ -280,6 +292,7 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
   /** Answer a request whose operation id belongs to a committed transaction. */
   async function resolveCompeting(
     scope: TenantScope,
+    principal: AuthenticatedPrincipal,
     operationId: string,
     intentHash: string,
   ): Promise<ReturnResult> {
@@ -291,6 +304,9 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
     if (existing === null) {
       // Reserved, but nothing to show for it. Retrying could refund twice, so
       // the honest answer is a conflict.
+      return fail('idempotency-conflict');
+    }
+    if (!replayOwnedByPrincipal(existing, principal)) {
       return fail('idempotency-conflict');
     }
     return { outcome: 'success', replayed: true, document: summarise(existing) };
@@ -362,6 +378,9 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
         if (reserved.requestHash !== intentHash) return fail('idempotency-conflict');
         const existing = await deps.returns.findByOperationId(scope, input.operationId);
         if (existing !== null) {
+          if (!replayOwnedByPrincipal(existing, input.principal)) {
+            return fail('idempotency-conflict');
+          }
           return { outcome: 'success', replayed: true, document: summarise(existing) };
         }
       }
@@ -474,7 +493,7 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
         }
         if (error instanceof ShiftUnusableError) return fail('shift-invalid');
         if (error instanceof OperationAlreadyRecordedError) {
-          return resolveCompeting(scope, input.operationId, intentHash);
+          return resolveCompeting(scope, input.principal, input.operationId, intentHash);
         }
         throw error;
       }

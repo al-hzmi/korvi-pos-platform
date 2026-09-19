@@ -200,6 +200,36 @@ fn json_response(status: u16, value: Value) -> NativeHttpResponse {
     response(status, Some(value.to_string()))
 }
 
+#[derive(Debug)]
+struct OfflineAuthorityRefreshError {
+    status: Option<u16>,
+    message: String,
+}
+
+impl OfflineAuthorityRefreshError {
+    fn unavailable(message: String) -> Self {
+        Self {
+            status: None,
+            message,
+        }
+    }
+
+    fn refused(status: u16) -> Self {
+        Self {
+            status: Some(status),
+            message: format!("offline authority request was refused with HTTP {status}"),
+        }
+    }
+
+    fn invalidates_cached_authority(&self) -> bool {
+        matches!(self.status, Some(401 | 403))
+    }
+
+    fn invalidates_native_session(&self) -> bool {
+        self.status == Some(401)
+    }
+}
+
 fn api_url(state: &NativeHttpState, path: &str) -> Result<Url, String> {
     let url = state
         .api_origin
@@ -269,31 +299,46 @@ async fn refresh_offline_authority<R: Runtime>(
     app: &AppHandle<R>,
     state: &NativeHttpState,
     token: &str,
-) -> Result<(), String> {
+) -> Result<(), OfflineAuthorityRefreshError> {
+    let url = api_url(state, "/v1/native-auth/offline-lease")
+        .map_err(OfflineAuthorityRefreshError::unavailable)?;
     let resp = state
         .client
-        .post(api_url(state, "/v1/native-auth/offline-lease")?)
+        .post(url)
         .header(AUTHORIZATION, format!("KorviNative {token}"))
         .header(ACCEPT, "application/json")
         .send()
         .await
-        .map_err(|e| format!("offline authority request failed: {e}"))?;
+        .map_err(|e| {
+            OfflineAuthorityRefreshError::unavailable(format!(
+                "offline authority request failed: {e}"
+            ))
+        })?;
     let status = resp.status().as_u16();
     if !(200..300).contains(&status) {
-        return Err(format!(
-            "offline authority request was refused with HTTP {status}"
-        ));
+        return Err(OfflineAuthorityRefreshError::refused(status));
     }
-    let issued: offline_authority::OfflineLeaseServerResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("offline authority response decoding failed: {e}"))?;
-    let envelope =
-        offline_authority::device_envelope(&issued.lease, &issued.verification_key_spki)?;
-    let device_signature = device_identity::sign(app, &envelope)?;
-    let cached =
-        offline_authority::cached(issued.lease, issued.verification_key_spki, device_signature)?;
-    state.write_offline_authority(&cached)
+    let issued: offline_authority::OfflineLeaseServerResponse = resp.json().await.map_err(|e| {
+        OfflineAuthorityRefreshError::unavailable(format!(
+            "offline authority response decoding failed: {e}"
+        ))
+    })?;
+    let envelope = offline_authority::device_envelope(
+        &issued.lease,
+        &issued.verification_key_spki,
+    )
+    .map_err(OfflineAuthorityRefreshError::unavailable)?;
+    let device_signature = device_identity::sign(app, &envelope)
+        .map_err(OfflineAuthorityRefreshError::unavailable)?;
+    let cached = offline_authority::cached(
+        issued.lease,
+        issued.verification_key_spki,
+        device_signature,
+    )
+    .map_err(OfflineAuthorityRefreshError::unavailable)?;
+    state
+        .write_offline_authority(&cached)
+        .map_err(OfflineAuthorityRefreshError::unavailable)
 }
 
 #[tauri::command]
@@ -416,7 +461,7 @@ async fn native_login<R: Runtime>(
         let _ = state.clear_offline_authority();
         return Ok(json_response(
             503,
-            json!({"error":"offline-authority-unavailable","message":error}),
+            json!({"error":"offline-authority-unavailable","message":error.message}),
         ));
     }
     *state
@@ -471,7 +516,19 @@ async fn native_me<R: Runtime>(
     if !(200..300).contains(&status) {
         return Ok(json_response(status, value));
     }
-    let _ = refresh_offline_authority(&app, &state, &token).await;
+    if let Err(error) = refresh_offline_authority(&app, &state, &token).await {
+        if error.invalidates_cached_authority() {
+            state.clear_offline_authority()?;
+        }
+        if error.invalidates_native_session() {
+            state.clear_session()?;
+            return Ok(json_response(401, json!({"error":"unauthenticated"})));
+        }
+        // Availability failures are intentionally different: a transient 5xx
+        // or network failure must not erase a still-valid bounded lease, or the
+        // server would create its own offline outage. Only an explicit
+        // authority refusal invalidates cached authority.
+    }
     Ok(json_response(
         status,
         value
@@ -586,4 +643,32 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Korvi Cashier runtime failed");
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::OfflineAuthorityRefreshError;
+
+    #[test]
+    fn explicit_offline_authority_refusal_invalidates_stale_cache() {
+        let commercial_refusal = OfflineAuthorityRefreshError::refused(403);
+        assert!(commercial_refusal.invalidates_cached_authority());
+        assert!(!commercial_refusal.invalidates_native_session());
+
+        let session_refusal = OfflineAuthorityRefreshError::refused(401);
+        assert!(session_refusal.invalidates_cached_authority());
+        assert!(session_refusal.invalidates_native_session());
+    }
+
+    #[test]
+    fn transient_offline_authority_failure_preserves_bounded_offline_resilience() {
+        let unavailable =
+            OfflineAuthorityRefreshError::unavailable("temporary provider failure".into());
+        assert!(!unavailable.invalidates_cached_authority());
+        assert!(!unavailable.invalidates_native_session());
+
+        let server_error = OfflineAuthorityRefreshError::refused(503);
+        assert!(!server_error.invalidates_cached_authority());
+        assert!(!server_error.invalidates_native_session());
+    }
 }

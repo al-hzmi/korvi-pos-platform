@@ -295,17 +295,33 @@ const schema = z
         message: 'must be a canonical secret without leading or trailing whitespace',
       });
     }
-    if (
-      bootstrapSigningKey !== undefined &&
-      metricsAuthToken !== undefined &&
-      bootstrapSigningKey === metricsAuthToken
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['METRICS_AUTH_TOKEN'],
-        message:
-          'must use a credential independent from BOOTSTRAP_SIGNING_KEY; security domains cannot share a production secret',
-      });
+    const productionCredentials = [
+      ['BOOTSTRAP_SIGNING_KEY', bootstrapSigningKey],
+      ['METRICS_AUTH_TOKEN', metricsAuthToken],
+      ['OFFLINE_LEASE_SIGNING_SEED_B64', offlineSeed],
+      ['PLATFORM_ADMIN_ACCESS_KEY', platformAccessKey],
+      ['PLATFORM_SESSION_SIGNING_KEY', platformSigningKey],
+    ] as const;
+    for (let left = 0; left < productionCredentials.length; left += 1) {
+      const [leftKey, leftValue] = productionCredentials[left]!;
+      if (leftValue === undefined) continue;
+      for (let right = left + 1; right < productionCredentials.length; right += 1) {
+        const [rightKey, rightValue] = productionCredentials[right]!;
+        if (rightValue === undefined || leftValue !== rightValue) continue;
+        // This pair is already rejected above in every environment. Avoid
+        // adding a duplicate production validation issue for the same mistake.
+        if (
+          leftKey === 'PLATFORM_ADMIN_ACCESS_KEY' &&
+          rightKey === 'PLATFORM_SESSION_SIGNING_KEY'
+        ) {
+          continue;
+        }
+        context.addIssue({
+          code: 'custom',
+          path: [rightKey],
+          message: `must be independent from ${leftKey}; security domains cannot share a production secret`,
+        });
+      }
     }
   });
 
@@ -343,6 +359,8 @@ export interface ApiConfig {
   readonly PLATFORM_ADMIN_ACTOR_REF: string | undefined;
   readonly PLATFORM_SESSION_TTL_SECONDS: number;
   readonly isProduction: boolean;
+  /** Selected only by the executable entrypoint; never by a public feature flag. */
+  readonly checkoutFiscalizationMode: 'disabled' | 'production' | 'simulation';
 }
 
 /** Development convenience only; production has no default and never gets one. */
@@ -381,5 +399,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     PLATFORM_ADMIN_ACTOR_REF: value.PLATFORM_ADMIN_ACTOR_REF,
     PLATFORM_SESSION_TTL_SECONDS: value.PLATFORM_SESSION_TTL_HOURS * 3600,
     isProduction: value.NODE_ENV === 'production',
+    checkoutFiscalizationMode: value.NODE_ENV === 'production' ? 'production' : 'disabled',
   };
 }

@@ -86,6 +86,13 @@ if compgen -G '.github/workflows/refresh-*-lock.yml' >/dev/null; then
   compgen -G '.github/workflows/refresh-*-lock.yml' | sort | sed 's/^/      /' >&2
 fi
 
+# Dependency install scripts are executable supply-chain code. Keep npm's
+# strict gate enabled and require every approval to be an exact package@version
+# matching a hasInstallScript entry in the immutable lockfile.
+if ! node scripts/check-install-script-policy.mjs; then
+  report "dependency install-script approval policy drift"
+fi
+
 # --- TypeScript escape hatches -------------------------------------------
 scan "'any' type used (CLAUDE.md: TypeScript)" \
      '(: *any\b|<any>|as +any\b|Array<any>)' '*.ts'

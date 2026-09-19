@@ -94,6 +94,8 @@ describe('canonical checkout receipt', () => {
       totalMinor: '2300',
       invoiceHashBase64: 'AQID',
       qrCodeBase64: 'PERSISTED_PHASE_2_QR',
+      fiscalizationMode: 'production',
+      disclaimer: null,
     });
   });
 

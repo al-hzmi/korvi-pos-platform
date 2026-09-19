@@ -47,6 +47,8 @@ const RECEIPT: FiscalReceipt = {
   totalMinor: SALE.totalMinor,
   invoiceHashBase64: 'invoice-hash-base64',
   qrCodeBase64: 'phase2-qr-base64',
+  fiscalizationMode: 'production',
+  disclaimer: null,
 };
 
 const MILK: CartLine = {

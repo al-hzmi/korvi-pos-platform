@@ -32,6 +32,28 @@ describe('production secret configuration', () => {
     ).toThrow('security domains cannot share a production secret');
   });
 
+  it.each([
+    ['PLATFORM_ADMIN_ACCESS_KEY', 'BOOTSTRAP_SIGNING_KEY'],
+    ['PLATFORM_SESSION_SIGNING_KEY', 'METRICS_AUTH_TOKEN'],
+    ['PLATFORM_ADMIN_ACCESS_KEY', 'OFFLINE_LEASE_SIGNING_SEED_B64'],
+  ] as const)('refuses production secret reuse between %s and %s', (leftKey, rightKey) => {
+    const shared =
+      rightKey === 'OFFLINE_LEASE_SIGNING_SEED_B64'
+        ? 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        : 'cross-domain-config-test-secret-0000000000000000001';
+
+    expect(() =>
+      loadConfig({
+        ...productionEnvironment,
+        PLATFORM_ADMIN_ACCESS_KEY: 'platform-access-config-test-000000000000000001',
+        PLATFORM_SESSION_SIGNING_KEY: 'platform-session-config-test-0000000000000001',
+        PLATFORM_ADMIN_ACTOR_REF: 'platform:config-test',
+        [leftKey]: shared,
+        [rightKey]: shared,
+      }),
+    ).toThrow('security domains cannot share a production secret');
+  });
+
   it.each(['BOOTSTRAP_SIGNING_KEY', 'METRICS_AUTH_TOKEN'] as const)(
     'refuses non-canonical whitespace in %s',
     (key) => {

@@ -23,7 +23,10 @@ import {
 import { fingerprintIntent } from './fingerprint.js';
 import { buildCheckoutReceipt } from './receipt.js';
 import type { CheckoutReceipt } from './receipt.js';
-import type { CheckoutFiscalizationPort } from '../zatca/fiscalize-checkout.js';
+import type {
+  CheckoutFiscalizationArtifact,
+  CheckoutFiscalizationPort,
+} from '../zatca/fiscalize-checkout.js';
 import type {
   AuditRepository,
   AuthenticatedPrincipal,
@@ -43,7 +46,6 @@ import type {
   TenderLine,
   TenderRecord,
   TenderScheme,
-  ZatcaSealedFiscalization,
   ShiftRepository,
   TenantRepository,
   TenantScope,
@@ -303,6 +305,25 @@ function fail(reason: CheckoutFailureReason, detail?: string): CheckoutFailure {
     : { outcome: 'failure', reason, detail };
 }
 
+/**
+ * Idempotency is not an object-access bypass.
+ *
+ * The operation id proves "this commercial intent already committed"; it does
+ * not prove the current principal is allowed to read that sale. A replay must
+ * still belong to the same authenticated user, and a branch-bound principal
+ * must still be bound to the branch that owns the durable sale.
+ *
+ * Kept outside the fingerprint deliberately: changing the fingerprint format
+ * would invalidate already-committed RC idempotency keys. This check closes
+ * the authorization gap without changing replay compatibility for the lawful
+ * caller.
+ */
+function replayOwnedByPrincipal(sale: SaleRecord, principal: AuthenticatedPrincipal): boolean {
+  if (sale.userId !== principal.userId) return false;
+  if (principal.branchId !== null && sale.branchId !== principal.branchId) return false;
+  return true;
+}
+
 function summarise(sale: SaleRecord, invoiceNumber: string, cashierName: string): SaleSummary {
   return {
     saleId: sale.id,
@@ -378,6 +399,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       // reserved operation with no sale is therefore unsafe to reinterpret.
       return fail('idempotency-conflict');
     }
+    if (!replayOwnedByPrincipal(existing, input.principal)) {
+      return fail('idempotency-conflict');
+    }
     if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
       return fail('idempotency-conflict');
     }
@@ -397,7 +421,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
     scope: TenantScope,
     sale: SaleRecord,
     invoice: InvoiceRecord,
-  ): Promise<ZatcaSealedFiscalization | null> {
+  ): Promise<CheckoutFiscalizationArtifact | null> {
     if (deps.fiscalization === undefined) return null;
     const artifact = await deps.fiscalization.fiscalize(scope, sale, invoice);
     return artifact ?? null;
@@ -433,6 +457,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       if (reserved !== null) {
         const existing = await deps.sales.findByOperationId(scope, input.operationId);
         if (existing === null) return fail('idempotency-conflict');
+        if (!replayOwnedByPrincipal(existing, input.principal)) {
+          return fail('idempotency-conflict');
+        }
         if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
           return fail('idempotency-conflict');
         }

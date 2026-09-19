@@ -14,6 +14,13 @@ export interface QueuePartition {
   readonly terminalId: string;
   /** Installed Cashier binds durable state to the enrolled device; browser clients omit this. */
   readonly deviceEnrollmentId?: string | undefined;
+  /**
+   * Financial queue authority is shift-bound when present.
+   *
+   * Optional only so legacy pre-binding rows remain addressable for a safe,
+   * one-way migration. New checkout queues must always provide it.
+   */
+  readonly shiftId?: string | undefined;
 }
 
 export type QueueItemState = 'pending' | 'in-flight' | 'settled' | 'rejected';

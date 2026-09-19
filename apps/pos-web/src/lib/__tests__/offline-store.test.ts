@@ -117,9 +117,19 @@ describe('offline store validation', () => {
     );
   });
 
-  it('preserves legacy browser keys while isolating installed queues by enrollment', () => {
+  it('preserves legacy keys while new financial queues are isolated by shift and enrollment', () => {
     expect(queuePartitionKey(QUEUE_PARTITION)).toBe(
       JSON.stringify([SCOPE.tenantId, SCOPE.branchId, SCOPE.terminalId]),
+    );
+    const shiftA = { ...QUEUE_PARTITION, shiftId: SCOPE.shiftId };
+    const shiftB = {
+      ...QUEUE_PARTITION,
+      shiftId: '018f2000-0000-7000-8000-000000000099',
+    };
+    expect(queuePartitionKey(shiftA)).not.toBe(queuePartitionKey(QUEUE_PARTITION));
+    expect(queuePartitionKey(shiftA)).not.toBe(queuePartitionKey(shiftB));
+    expect(queueRecordKey(shiftA, QUEUE_OPERATION.id)).not.toBe(
+      queueRecordKey(shiftB, QUEUE_OPERATION.id),
     );
     expect(queuePartitionKey(DEVICE_A_PARTITION)).not.toBe(queuePartitionKey(QUEUE_PARTITION));
     expect(queuePartitionKey(DEVICE_A_PARTITION)).not.toBe(queuePartitionKey(DEVICE_B_PARTITION));

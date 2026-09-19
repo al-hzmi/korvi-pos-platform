@@ -178,6 +178,8 @@ export interface FiscalReceipt {
   readonly totalMinor: string;
   readonly invoiceHashBase64: string;
   readonly qrCodeBase64: string;
+  readonly fiscalizationMode: 'production' | 'simulation';
+  readonly disclaimer: string | null;
 }
 
 export interface CheckoutResponse {

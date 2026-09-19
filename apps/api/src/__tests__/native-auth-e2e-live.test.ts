@@ -350,6 +350,16 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
     });
   }
 
+  async function nativeChallengeCount(tenantId: string, challengeId: string): Promise<number> {
+    return withTenant(prisma, tenantId, async (tx) => {
+      const rows = await tx.$queryRaw<{ count: bigint }[]>`
+        SELECT count(*)::bigint AS "count"
+          FROM "native_auth_challenges"
+         WHERE "id" = ${challengeId}::uuid`;
+      return Number(rows[0]?.count ?? 0n);
+    });
+  }
+
   beforeAll(async () => {
     process.env['DATABASE_URL'] = url;
     process.env['BOOTSTRAP_SIGNING_KEY'] = BOOTSTRAP_SIGNING_KEY;
@@ -502,6 +512,7 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
     expect(await nativeSessionCount(tenantA.id)).toBe(0);
 
     const wrongSignatureChallenge = await issueChallenge(tenantA.id, enrollmentA.id);
+    expect(await nativeChallengeCount(tenantA.id, expired.challengeId)).toBe(0);
     const wrongSignature = await nativeLogin({
       tenant: tenantA,
       enrollmentId: enrollmentA.id,
@@ -512,6 +523,7 @@ describe.skipIf(url === '')('Native Auth / PostgreSQL 17 release gate', () => {
     expect(await nativeSessionCount(tenantA.id)).toBe(0);
 
     const modifiedChallenge = await issueChallenge(tenantA.id, enrollmentA.id);
+    expect(await nativeChallengeCount(tenantA.id, wrongSignatureChallenge.challengeId)).toBe(0);
     const modifiedPayload = await nativeLogin({
       tenant: tenantA,
       enrollmentId: enrollmentA.id,

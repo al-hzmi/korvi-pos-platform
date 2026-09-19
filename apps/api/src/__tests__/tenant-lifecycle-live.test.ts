@@ -98,6 +98,7 @@ const CONFIG: ApiConfig = {
   PLATFORM_ADMIN_ACTOR_REF: undefined,
   PLATFORM_SESSION_TTL_SECONDS: 4 * 3600,
   isProduction: false,
+  checkoutFiscalizationMode: 'disabled',
 };
 
 interface AuditRow {

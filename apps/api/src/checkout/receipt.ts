@@ -1,5 +1,6 @@
 import { ZatcaFiscalizationError, bytesToBase64 } from '@korvi/domain';
-import type { InvoiceRecord, SaleRecord, ZatcaSealedFiscalization } from '@korvi/domain';
+import type { InvoiceRecord, SaleRecord } from '@korvi/domain';
+import type { CheckoutFiscalizationArtifact } from '../zatca/fiscalize-checkout.js';
 
 export interface CheckoutReceiptLine {
   readonly lineNumber: number;
@@ -9,9 +10,9 @@ export interface CheckoutReceiptLine {
 }
 
 /**
- * Canonical customer receipt facts derived only after fiscal evidence is durable.
- * The Phase-2 QR and invoice hash are copied from the persisted signed artifact;
- * neither is ever regenerated from client or display state.
+ * Server-authored receipt facts derived after fiscalization.
+ * Production evidence comes only from the persisted signed artifact; staging
+ * simulation evidence remains a separate, explicitly non-tax artifact.
  */
 export interface CheckoutReceipt {
   readonly invoiceId: string;
@@ -26,12 +27,14 @@ export interface CheckoutReceipt {
   readonly totalMinor: string;
   readonly invoiceHashBase64: string;
   readonly qrCodeBase64: string;
+  readonly fiscalizationMode: 'production' | 'simulation';
+  readonly disclaimer: string | null;
 }
 
 export function buildCheckoutReceipt(
   sale: SaleRecord,
   invoice: InvoiceRecord,
-  fiscalization: ZatcaSealedFiscalization,
+  fiscalization: CheckoutFiscalizationArtifact,
 ): CheckoutReceipt {
   if (
     invoice.saleId !== sale.id ||
@@ -48,16 +51,20 @@ export function buildCheckoutReceipt(
     );
   }
   if (fiscalization.qrCodeBase64.trim() === '') {
-    throw new ZatcaFiscalizationError('Canonical receipt requires the persisted Phase-2 QR.');
+    throw new ZatcaFiscalizationError('Canonical receipt requires fiscal evidence.');
   }
+
+  const simulation = fiscalization.state === 'simulation';
 
   return {
     invoiceId: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     issuedAt: invoice.issuedAt,
     currency: invoice.currency,
-    sellerName: fiscalization.seller.registrationName,
-    vatRegistrationNumber: fiscalization.seller.vatRegistrationNumber,
+    sellerName: simulation ? fiscalization.sellerName : fiscalization.seller.registrationName,
+    vatRegistrationNumber: simulation
+      ? fiscalization.vatRegistrationNumber
+      : fiscalization.seller.vatRegistrationNumber,
     lines: sale.lines.map((line) => ({
       lineNumber: line.lineNumber,
       description: line.nameAr,
@@ -67,7 +74,11 @@ export function buildCheckoutReceipt(
     netMinor: invoice.netMinor,
     vatMinor: invoice.vatMinor,
     totalMinor: invoice.totalMinor,
-    invoiceHashBase64: bytesToBase64(fiscalization.invoiceHash),
+    invoiceHashBase64: bytesToBase64(
+      simulation ? fiscalization.artifactHash : fiscalization.invoiceHash,
+    ),
     qrCodeBase64: fiscalization.qrCodeBase64,
+    fiscalizationMode: simulation ? 'simulation' : 'production',
+    disclaimer: simulation ? fiscalization.disclaimer : null,
   };
 }

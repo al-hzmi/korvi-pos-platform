@@ -19,6 +19,7 @@ import {
   type ZatcaSigningKeyHandle,
 } from '@korvi/domain';
 import {
+  AzureClientSecretAccessTokenProvider,
   AzureKeyVaultRestClient,
   AzureKeyVaultSigningKeyPort,
   certificateTemplateFor,
@@ -266,6 +267,84 @@ describe('Azure Key Vault ZATCA signing authority', () => {
       const port = new AzureKeyVaultSigningKeyPort({ client: fakeClient(keyBundle, privateKey) });
       await expect(port.describePublicKey(SCOPE, TERMINAL_ID, handle())).rejects.toThrow();
     }
+  });
+
+  it('bounds Azure identity hangs and releases the shared in-flight token request', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted === true) {
+            reject(new Error('aborted'));
+            return;
+          }
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        }),
+    );
+    const provider = new AzureClientSecretAccessTokenProvider({
+      tenantId: '018f2e20-7b7a-7c00-8000-0000000000a1',
+      clientId: '018f2e20-7b7a-7c00-8000-0000000000a2',
+      clientSecret: 'synthetic-client-secret',
+      fetchImpl,
+      timeoutMs: 5,
+    });
+
+    await expect(provider.getAccessToken()).rejects.toThrow(/token request failed/i);
+    await expect(provider.getAccessToken()).rejects.toThrow(/token request failed/i);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses oversized Azure identity and Key Vault responses before JSON parsing', async () => {
+    const identity = new AzureClientSecretAccessTokenProvider({
+      tenantId: '018f2e20-7b7a-7c00-8000-0000000000a1',
+      clientId: '018f2e20-7b7a-7c00-8000-0000000000a2',
+      clientSecret: 'synthetic-client-secret',
+      maxResponseBytes: 32,
+      fetchImpl: vi.fn<typeof fetch>(
+        async () =>
+          new Response(JSON.stringify({ access_token: 'x'.repeat(128), expires_in: 3600 }), {
+            status: 200,
+          }),
+      ),
+    });
+    await expect(identity.getAccessToken()).rejects.toThrow(/response-size limit/i);
+
+    const rest = new AzureKeyVaultRestClient({
+      vaultUrl: 'https://korvi-test.vault.azure.net',
+      accessTokenProvider: { getAccessToken: async () => 'token' },
+      maxResponseBytes: 32,
+      fetchImpl: vi.fn<typeof fetch>(
+        async () =>
+          new Response(JSON.stringify({ key: { kid: KEY_ID, padding: 'x'.repeat(128) } }), {
+            status: 200,
+          }),
+      ),
+    });
+    await expect(rest.getKey(KEY_ID)).rejects.toThrow(/response-size limit/i);
+  });
+
+  it('bounds a hanging Azure Key Vault request instead of pinning fiscalization indefinitely', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted === true) {
+            reject(new Error('aborted'));
+            return;
+          }
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        }),
+    );
+    const rest = new AzureKeyVaultRestClient({
+      vaultUrl: 'https://korvi-test.vault.azure.net',
+      accessTokenProvider: { getAccessToken: async () => 'token' },
+      fetchImpl,
+      timeoutMs: 5,
+    });
+
+    await expect(rest.getKey(KEY_ID)).rejects.toThrow(/Key Vault request failed/i);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an unversioned or foreign-vault handle before network access', async () => {

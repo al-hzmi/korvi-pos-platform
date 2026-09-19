@@ -137,6 +137,12 @@ export type {
   PlatformSupportNoteCreateResult,
 } from './control-plane/support-notes.js';
 
+export { createPlatformAdminSessionStore } from './control-plane/platform-session.js';
+export type {
+  PlatformAdminSessionRecord,
+  PlatformAdminSessionStore,
+} from './control-plane/platform-session.js';
+
 // Merchant administration (Strike 4B-1). Tenant-scoped, session-derived, and
 // deliberately separate from the control-plane functions above: nothing here
 // can provision, activate, suspend or reactivate a tenant.

@@ -12,6 +12,7 @@ import type { PrismaClient } from '../index.js';
 
 const url = process.env['KORVI_TEST_DATABASE_URL'] ?? '';
 const SLUG = 'reports-period-live';
+const FOREIGN_SLUG = 'reports-period-foreign-live';
 const OPERATOR = 'ops:reports/live-proof';
 
 const SALE_AT = new Date('2026-09-10T09:00:00.000Z');
@@ -22,17 +23,24 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
   let tenant: string;
   let branch: string;
   let product: string;
+  let foreignTenant: string;
+  let foreignBranch: string;
 
-  async function purge(): Promise<void> {
-    const id = await withLoginSlug(prisma, SLUG, async (tx) => {
+  async function purgeSlug(slug: string): Promise<void> {
+    const id = await withLoginSlug(prisma, slug, async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT "id" FROM "tenants" WHERE "slug" = ${SLUG}`;
+        SELECT "id" FROM "tenants" WHERE "slug" = ${slug}`;
       return rows[0]?.id ?? null;
     });
     if (id === null) return;
     await withTenant(prisma, id, async (tx) => {
       await tx.tenant.deleteMany({ where: { id } });
     });
+  }
+
+  async function purge(): Promise<void> {
+    await purgeSlug(SLUG);
+    await purgeSlug(FOREIGN_SLUG);
   }
 
   async function seed(): Promise<void> {
@@ -203,6 +211,118 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
     });
   }
 
+  async function seedForeign(): Promise<void> {
+    const provisioned = await provisionTenant(prisma, {
+      operationId: `reports-provision-foreign-${newId()}`,
+      slug: FOREIGN_SLUG,
+      name: 'متجر تقارير أجنبي',
+      vatNumber: '310000000000004',
+      vertical: 'retail',
+      controlPlaneActorRef: OPERATOR,
+    });
+    foreignTenant = provisioned.id;
+    foreignBranch = newId();
+    const terminal = newId();
+    const user = newId();
+    const shift = newId();
+    const foreignProduct = newId();
+    const sale = newId();
+    const saleLine = newId();
+
+    await withTenant(prisma, foreignTenant, async (tx) => {
+      await tx.branch.create({
+        data: { id: foreignBranch, tenantId: foreignTenant, code: 'RUH', nameAr: 'فرع الرياض' },
+      });
+      await tx.terminal.create({
+        data: {
+          id: terminal,
+          tenantId: foreignTenant,
+          branchId: foreignBranch,
+          code: 'POS-F',
+          label: 'صندوق أجنبي',
+        },
+      });
+      await tx.user.create({
+        data: {
+          id: user,
+          tenantId: foreignTenant,
+          email: 'foreign-reports@korvi.test',
+          displayName: 'مستخدم أجنبي',
+          passwordHash: 'test-only-credential',
+        },
+      });
+      await tx.shift.create({
+        data: {
+          id: shift,
+          tenantId: foreignTenant,
+          branchId: foreignBranch,
+          terminalId: terminal,
+          userId: user,
+          openingFloatMinor: 0n,
+          openedAt: new Date('2026-09-10T08:00:00.000Z'),
+        },
+      });
+      await tx.product.create({
+        data: {
+          id: foreignProduct,
+          tenantId: foreignTenant,
+          sku: 'FOREIGN-REPORT-001',
+          nameAr: 'منتج أجنبي',
+          priceMinor: 105_000n,
+          vatBasisPoints: 500,
+        },
+      });
+      await tx.sale.create({
+        data: {
+          id: sale,
+          tenantId: foreignTenant,
+          branchId: foreignBranch,
+          terminalId: terminal,
+          shiftId: shift,
+          userId: user,
+          operationId: `foreign-sale-${newId()}`,
+          sequence: 1,
+          priceMode: 'tax-inclusive',
+          currency: 'SAR',
+          grossMinor: 105_000n,
+          lineDiscountMinor: 0n,
+          basketDiscountMinor: 0n,
+          netMinor: 100_000n,
+          vatMinor: 5_000n,
+          totalMinor: 105_000n,
+          tenderedMinor: 105_000n,
+          changeMinor: 0n,
+          issuedAt: SALE_AT,
+        },
+      });
+      await tx.saleLine.create({
+        data: {
+          id: saleLine,
+          tenantId: foreignTenant,
+          saleId: sale,
+          productId: foreignProduct,
+          lineNumber: 1,
+          sku: 'FOREIGN-REPORT-001',
+          nameAr: 'منتج أجنبي',
+          productType: 'unit',
+          unitPriceMinor: 105_000n,
+          vatBasisPoints: 500,
+          quantityScaled: 1000n,
+          grossMinor: 105_000n,
+          lineDiscountMinor: 0n,
+          basketDiscountMinor: 0n,
+          netMinor: 100_000n,
+          vatMinor: 5_000n,
+          totalMinor: 105_000n,
+          costKnownQuantityScaled: 0n,
+          costUnknownQuantityScaled: 1000n,
+          costValueMinor: 0n,
+          costProvenance: 'unknown',
+        },
+      });
+    });
+  }
+
   beforeAll(async () => {
     prisma = createPrismaClient(url);
     await prisma.$connect();
@@ -214,6 +334,7 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
   beforeEach(async () => {
     await purge();
     await seed();
+    await seedForeign();
   });
 
   afterAll(async () => {
@@ -269,6 +390,54 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
         netAfterReturns: { totalMinor: '9200' },
       },
     ]);
+  });
+
+  it('keeps same-period foreign tenant sales out of every aggregate and branch filter', async () => {
+    const report = await readMerchantPeriodReport(
+      prisma,
+      { tenantId: brandTenantId(tenant) },
+      {
+        fromInclusive: '2026-09-01T00:00:00+03:00',
+        toExclusive: '2026-10-01T00:00:00+03:00',
+      },
+    );
+
+    expect(report.sales).toEqual({
+      documentCount: '1',
+      netMinor: '10000',
+      vatMinor: '1500',
+      totalMinor: '11500',
+    });
+    expect(report.vatBreakdown.map((bucket) => bucket.vatBasisPoints)).toEqual([1500]);
+    expect(report.availableBranches.map((item) => item.id)).toEqual([branch]);
+    expect(report.branchBreakdown.map((item) => item.id)).toEqual([branch]);
+
+    const foreignReport = await readMerchantPeriodReport(
+      prisma,
+      { tenantId: brandTenantId(foreignTenant) },
+      {
+        fromInclusive: '2026-09-01T00:00:00+03:00',
+        toExclusive: '2026-10-01T00:00:00+03:00',
+      },
+    );
+    expect(foreignReport.sales).toMatchObject({
+      documentCount: '1',
+      netMinor: '100000',
+      vatMinor: '5000',
+      totalMinor: '105000',
+    });
+
+    await expect(
+      readMerchantPeriodReport(
+        prisma,
+        { tenantId: brandTenantId(tenant) },
+        {
+          fromInclusive: '2026-09-01T00:00:00+03:00',
+          toExclusive: '2026-10-01T00:00:00+03:00',
+          branchId: foreignBranch,
+        },
+      ),
+    ).rejects.toMatchObject({ detail: 'unknown-branch' });
   });
 
   it('rejects a branch that is not part of the authenticated tenant scope', async () => {

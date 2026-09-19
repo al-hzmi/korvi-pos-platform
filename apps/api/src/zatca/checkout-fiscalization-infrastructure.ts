@@ -49,6 +49,29 @@ export function createProductionCheckoutFiscalization(
   return createCheckoutFiscalizationPort({ repository, sealer });
 }
 
+/**
+ * Delay production-provider composition until checkout actually needs to
+ * fiscalize a durable invoice. Read-only business routes must not depend on
+ * Azure/ZATCA provider availability, while checkout still fails closed at the
+ * fiscalization boundary when production credentials are absent.
+ */
+export function createLazyProductionCheckoutFiscalization(
+  options: ProductionCheckoutFiscalizationOptions,
+): CheckoutFiscalizationPort {
+  let built: CheckoutFiscalizationPort | null = null;
+
+  const resolve = (): CheckoutFiscalizationPort => {
+    built ??= createProductionCheckoutFiscalization(options);
+    return built;
+  };
+
+  return {
+    async fiscalize(scope, sale, invoice) {
+      return resolve().fiscalize(scope, sale, invoice);
+    },
+  };
+}
+
 function required(env: NodeJS.ProcessEnv, key: string): string {
   const value = env[key];
   if (value === undefined || value.trim() === '') {

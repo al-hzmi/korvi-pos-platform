@@ -27,6 +27,10 @@ const SECP256K1_ORDER = BigInt(
 );
 const LOW_S_LIMIT = SECP256K1_ORDER / 2n;
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
+const DEFAULT_AZURE_TIMEOUT_MS = 15_000;
+const MAX_AZURE_TIMEOUT_MS = 60_000;
+const DEFAULT_AZURE_RESPONSE_BYTES = 256 * 1024;
+const MAX_AZURE_RESPONSE_BYTES = 1024 * 1024;
 
 const OID = {
   commonName: '2.5.4.3',
@@ -87,6 +91,8 @@ export interface AzureClientSecretAccessTokenProviderOptions {
   readonly clientSecret: string;
   readonly fetchImpl?: typeof fetch;
   readonly now?: () => number;
+  readonly timeoutMs?: number;
+  readonly maxResponseBytes?: number;
 }
 
 export class AzureClientSecretAccessTokenProvider implements AzureAccessTokenProvider {
@@ -95,6 +101,8 @@ export class AzureClientSecretAccessTokenProvider implements AzureAccessTokenPro
   private readonly clientSecret: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
+  private readonly timeoutMs: number;
+  private readonly maxResponseBytes: number;
   private cached: { token: string; expiresAt: number } | null = null;
   private inFlight: Promise<string> | null = null;
 
@@ -110,6 +118,18 @@ export class AzureClientSecretAccessTokenProvider implements AzureAccessTokenPro
     this.clientSecret = options.clientSecret;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? Date.now;
+    this.timeoutMs = boundedInteger(
+      options.timeoutMs ?? DEFAULT_AZURE_TIMEOUT_MS,
+      1,
+      MAX_AZURE_TIMEOUT_MS,
+      'Azure identity timeout',
+    );
+    this.maxResponseBytes = boundedInteger(
+      options.maxResponseBytes ?? DEFAULT_AZURE_RESPONSE_BYTES,
+      1,
+      MAX_AZURE_RESPONSE_BYTES,
+      'Azure identity response limit',
+    );
   }
 
   public async getAccessToken(): Promise<string> {
@@ -135,23 +155,28 @@ export class AzureClientSecretAccessTokenProvider implements AzureAccessTokenPro
       grant_type: 'client_credentials',
       scope: 'https://vault.azure.net/.default',
     });
-    let response: Response;
-    try {
-      response = await this.fetchImpl(endpoint, {
+    const response = await boundedFetch(
+      this.fetchImpl,
+      endpoint,
+      {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body,
         redirect: 'error',
-      });
-    } catch {
-      throw new ZatcaInvoiceError('Azure identity token request failed.');
-    }
+      },
+      this.timeoutMs,
+      'Azure identity token request',
+    );
     if (!response.ok) {
       throw new ZatcaInvoiceError(
         `Azure identity token request failed with HTTP ${String(response.status)}.`,
       );
     }
-    const payload = await safeJson(response, 'Azure identity token response');
+    const payload = await safeJson(
+      response,
+      'Azure identity token response',
+      this.maxResponseBytes,
+    );
     const token = readRequiredString(payload, 'access_token', 'Azure identity token response');
     const expiresIn = readPositiveInteger(payload, 'expires_in', 'Azure identity token response');
     this.cached = { token, expiresAt: this.now() + expiresIn * 1000 };
@@ -163,17 +188,33 @@ export interface AzureKeyVaultRestClientOptions {
   readonly vaultUrl: string;
   readonly accessTokenProvider: AzureAccessTokenProvider;
   readonly fetchImpl?: typeof fetch;
+  readonly timeoutMs?: number;
+  readonly maxResponseBytes?: number;
 }
 
 export class AzureKeyVaultRestClient implements AzureKeyVaultClient {
   private readonly vault: URL;
   private readonly accessTokenProvider: AzureAccessTokenProvider;
   private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
+  private readonly maxResponseBytes: number;
 
   public constructor(options: AzureKeyVaultRestClientOptions) {
     this.vault = parseVaultUrl(options.vaultUrl);
     this.accessTokenProvider = options.accessTokenProvider;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.timeoutMs = boundedInteger(
+      options.timeoutMs ?? DEFAULT_AZURE_TIMEOUT_MS,
+      1,
+      MAX_AZURE_TIMEOUT_MS,
+      'Azure Key Vault timeout',
+    );
+    this.maxResponseBytes = boundedInteger(
+      options.maxResponseBytes ?? DEFAULT_AZURE_RESPONSE_BYTES,
+      1,
+      MAX_AZURE_RESPONSE_BYTES,
+      'Azure Key Vault response limit',
+    );
   }
 
   public async createSecp256k1Key(input: {
@@ -240,9 +281,10 @@ export class AzureKeyVaultRestClient implements AzureKeyVaultClient {
     if (token.trim() === '') {
       throw new ZatcaInvoiceError('Azure Key Vault access token is empty.');
     }
-    let response: Response;
-    try {
-      response = await this.fetchImpl(url, {
+    const response = await boundedFetch(
+      this.fetchImpl,
+      url,
+      {
         ...init,
         headers: {
           accept: 'application/json',
@@ -250,16 +292,16 @@ export class AzureKeyVaultRestClient implements AzureKeyVaultClient {
           ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
         },
         redirect: 'error',
-      });
-    } catch {
-      throw new ZatcaInvoiceError('Azure Key Vault request failed.');
-    }
+      },
+      this.timeoutMs,
+      'Azure Key Vault request',
+    );
     if (!response.ok) {
       throw new ZatcaInvoiceError(
         `Azure Key Vault request failed with HTTP ${String(response.status)}.`,
       );
     }
-    return safeJson(response, 'Azure Key Vault response');
+    return safeJson(response, 'Azure Key Vault response', this.maxResponseBytes);
   }
 }
 
@@ -654,10 +696,68 @@ function sha256(bytes: Uint8Array): Uint8Array {
   return Uint8Array.from(createHash('sha256').update(bytes).digest());
 }
 
-async function safeJson(response: Response, label: string): Promise<Record<string, unknown>> {
+async function boundedFetch(
+  fetchImpl: typeof fetch,
+  input: string | URL,
+  init: RequestInit,
+  timeoutMs: number,
+  label: string,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(input, { ...init, signal: controller.signal });
+  } catch {
+    throw new ZatcaInvoiceError(`${label} failed.`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function safeJson(
+  response: Response,
+  label: string,
+  maxBytes: number,
+): Promise<Record<string, unknown>> {
+  const declared = response.headers.get('content-length');
+  if (declared !== null) {
+    const length = Number(declared);
+    if (!Number.isSafeInteger(length) || length < 0 || length > maxBytes) {
+      throw new ZatcaInvoiceError(`${label} exceeded the response-size limit.`);
+    }
+  }
+  if (response.body === null) {
+    throw new ZatcaInvoiceError(`${label} is missing a response body.`);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new ZatcaInvoiceError(`${label} exceeded the response-size limit.`);
+      }
+      chunks.push(Uint8Array.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
   let value: unknown;
   try {
-    value = await response.json();
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown;
   } catch {
     throw new ZatcaInvoiceError(`${label} is not valid JSON.`);
   }
@@ -665,6 +765,13 @@ async function safeJson(response: Response, label: string): Promise<Record<strin
     throw new ZatcaInvoiceError(`${label} must be a JSON object.`);
   }
   return value as Record<string, unknown>;
+}
+
+function boundedInteger(value: number, min: number, max: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw new ZatcaInvoiceError(`${label} must be an integer between ${min} and ${max}.`);
+  }
+  return value;
 }
 
 function readRequiredString(value: Record<string, unknown>, key: string, label: string): string {

@@ -3,8 +3,10 @@ import { newId } from '@korvi/domain';
 import {
   createPrismaClient,
   provisionPermissionCatalogue,
+  withControlPlane,
   withLoginSlug,
   withTenant,
+  withoutTenant,
 } from '@korvi/database';
 import { buildServer } from '../server.js';
 import { loadConfig } from '../config.js';
@@ -163,6 +165,80 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
     });
     expect(platformLogin.statusCode).toBe(200);
     const platformCookie = cookieFrom(platformLogin);
+
+    const platformSession = await withControlPlane(prisma, PLATFORM_ACTOR, async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string; revokedAt: Date | null }[]>`
+        SELECT "id", "revokedAt"
+          FROM "platform_admin_sessions"
+         WHERE "actorRef" = ${PLATFORM_ACTOR}
+         ORDER BY "createdAt" DESC
+         LIMIT 1
+      `;
+      return rows[0] ?? null;
+    });
+    expect(platformSession).not.toBeNull();
+    expect(platformSession?.revokedAt).toBeNull();
+
+    const hiddenWithoutControlPlane = await withoutTenant(prisma, async (tx) => {
+      return tx.$queryRaw<{ id: string }[]>`
+        SELECT "id"
+          FROM "platform_admin_sessions"
+         WHERE "id" = ${platformSession?.id}::uuid
+      `;
+    });
+    expect(hiddenWithoutControlPlane).toEqual([]);
+
+    // A copied Platform cookie must remain revoked across API instances. A
+    // second independent session stays live, proving revocation is per-session
+    // rather than a global logout side effect.
+    const secondPlatformLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      headers: writeHeaders(),
+      payload: { accessKey: PLATFORM_ACCESS_KEY },
+    });
+    expect(secondPlatformLogin.statusCode).toBe(200);
+    const stolenPlatformCookie = cookieFrom(secondPlatformLogin);
+
+    const stolenPlatformLogout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: writeHeaders(stolenPlatformCookie),
+    });
+    expect(stolenPlatformLogout.statusCode).toBe(204);
+
+    const verifier = buildServer(
+      loadConfig({
+        NODE_ENV: 'test',
+        LOG_LEVEL: 'fatal',
+        APP_ORIGINS: ORIGIN,
+        DATABASE_URL: url,
+        BOOTSTRAP_SIGNING_KEY,
+        PLATFORM_ADMIN_ACCESS_KEY: PLATFORM_ACCESS_KEY,
+        PLATFORM_SESSION_SIGNING_KEY: PLATFORM_SIGNING_KEY,
+        PLATFORM_ADMIN_ACTOR_REF: PLATFORM_ACTOR,
+        PLATFORM_SESSION_TTL_HOURS: '1',
+        SESSION_TTL_HOURS: '1',
+      }),
+    );
+    await verifier.ready();
+    try {
+      const replayedStolenCookie = await verifier.inject({
+        method: 'GET',
+        url: '/v1/platform/session',
+        headers: { cookie: stolenPlatformCookie },
+      });
+      expect(replayedStolenCookie.statusCode).toBe(401);
+
+      const independentSession = await verifier.inject({
+        method: 'GET',
+        url: '/v1/platform/session',
+        headers: { cookie: platformCookie },
+      });
+      expect(independentSession.statusCode).toBe(200);
+    } finally {
+      await verifier.close();
+    }
 
     // 2 — Tenant/business creation through the supported platform workflow.
     const createTenant = await app.inject({
@@ -390,5 +466,31 @@ describe.skipIf(url === '')('Gate 12 platform provisioning to first sale, live',
         terminalId: operations.terminal.id,
       });
     });
+
+    const platformLogout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: writeHeaders(platformCookie),
+    });
+    expect(platformLogout.statusCode).toBe(204);
+
+    const replayedPlatformCookie = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/tenants?limit=1',
+      headers: writeHeaders(platformCookie),
+    });
+    expect(replayedPlatformCookie.statusCode).toBe(401);
+    expect(replayedPlatformCookie.json()).toEqual({ error: 'platform_unauthenticated' });
+
+    const revoked = await withControlPlane(prisma, PLATFORM_ACTOR, async (tx) => {
+      const rows = await tx.$queryRaw<{ revokedAt: Date | null }[]>`
+        SELECT "revokedAt"
+          FROM "platform_admin_sessions"
+         WHERE "id" = ${platformSession?.id}::uuid
+         LIMIT 1
+      `;
+      return rows[0]?.revokedAt ?? null;
+    });
+    expect(revoked).not.toBeNull();
   }, 120_000);
 });
