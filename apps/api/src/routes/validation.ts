@@ -246,7 +246,10 @@ export const checkoutBody = z
     // Optional only for direct sales. Open-order settlement requires both
     // identity and revision so a stale kitchen/table state cannot be paid.
     restaurantOrderId: UUID.optional(),
-    expectedRestaurantOrderRevision: z.string().regex(/^[1-9][0-9]{0,18}$/).optional(),
+    expectedRestaurantOrderRevision: z
+      .string()
+      .regex(/^[1-9][0-9]{0,18}$/)
+      .optional(),
     cashReceivedMinor: MINOR.optional(),
     tenders: z.array(tenderBody).min(1).max(MAX_TENDERS).optional(),
     basketDiscount: discountBody.optional(),
