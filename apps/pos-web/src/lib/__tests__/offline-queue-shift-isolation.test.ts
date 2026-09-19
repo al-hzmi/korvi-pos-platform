@@ -2,7 +2,6 @@ import type {
   QueueClaimRequest,
   QueueClaimResult,
   QueuedOperation,
-  QueueOperationInput,
   QueuePartition,
 } from '@korvi/domain';
 import { describe, expect, it, vi } from 'vitest';
