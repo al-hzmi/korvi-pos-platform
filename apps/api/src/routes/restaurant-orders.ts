@@ -64,7 +64,10 @@ const replaceLinesBody = z
   .object({
     operationId: UUID,
     expectedRevision: z.string().regex(/^[1-9][0-9]{0,18}$/),
-    lines: z.array(z.union([retainedLine, newLine])).min(1).max(200),
+    lines: z
+      .array(z.union([retainedLine, newLine]))
+      .min(1)
+      .max(200),
   })
   .strict();
 

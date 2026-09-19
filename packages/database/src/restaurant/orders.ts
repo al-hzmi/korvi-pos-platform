@@ -844,7 +844,6 @@ export async function transferRestaurantOrderTable(
   });
 }
 
-
 export async function replaceRestaurantOrderLines(
   prisma: PrismaClient,
   scope: TenantScope,
