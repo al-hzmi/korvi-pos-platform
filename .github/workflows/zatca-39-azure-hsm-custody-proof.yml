@@ -1,10 +1,10 @@
 name: ZATCA 39 Azure HSM Custody Proof
 
+# Live Azure OIDC/custody proof is intentionally operator-triggered only.
+# It carries id-token:write and Azure credentials, so ordinary repository pushes
+# must never be enough authority to start a cloud-authenticated proof.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - strike/5c-costing-authority
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
