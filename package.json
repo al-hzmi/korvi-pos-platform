@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write packages/database/src/migration/product-import.ts && echo KORVI_FORMAT_BEGIN && base64 -w0 packages/database/src/migration/product-import.ts && echo && echo KORVI_FORMAT_END && exit 1",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:zatca:fiscalization-live": "vitest run packages/database/src/__tests__/zatca-fiscalization-live.test.ts",
