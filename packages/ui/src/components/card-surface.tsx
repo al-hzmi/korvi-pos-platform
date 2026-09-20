@@ -15,10 +15,7 @@ export function CardSurface({
   return (
     <div
       {...rest}
-      className={cn(
-        'rounded-lg border border-border bg-card text-card-foreground',
-        className,
-      )}
+      className={cn('rounded-lg border border-border bg-card text-card-foreground', className)}
     >
       {children}
     </div>
