@@ -35,6 +35,7 @@ describe('migration canonical model', () => {
 
   it('does not guess grouped or mixed monetary punctuation', () => {
     expect(parseExactSarToMinor('١٢,٥')).toBe('1250');
+    expect(parseExactSarToMinor('١٢٫٥٠')).toBe('1250');
     expect(parseExactSarToMinor('12.50')).toBe('1250');
     expect(() => parseExactSarToMinor('1,000.00')).toThrow(ImportNormalizationError);
     expect(() => parseExactSarToMinor('1.2.3')).toThrow(ImportNormalizationError);
@@ -79,7 +80,7 @@ describe('migration canonical model', () => {
 
   it('blocks formula-like product authority and missing required mappings', () => {
     const sheet = parseCsvDocument(
-      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n=HYPERLINK("x"),قهوة,unit,each,10',
+      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n=1+1,قهوة,unit,each,10',
     ).sheets[0]!;
     const mappings = suggestProductMappings(sheet.rows[0]!).map((suggestion) => ({
       sourceColumn: suggestion.sourceColumn,
@@ -97,6 +98,29 @@ describe('migration canonical model', () => {
           code: 'required-field-unmapped',
           classification: 'BLOCKED',
           targetField: 'sellingPrice',
+        }),
+      ]),
+    );
+  });
+
+  it('rejects one source column mapped to multiple Korvi fields', () => {
+    const sheet = parseCsvDocument(
+      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\nA1,قهوة,unit,each,10',
+    ).sheets[0]!;
+    const mappings = suggestProductMappings(sheet.rows[0]!).map((suggestion) => ({
+      sourceColumn: suggestion.sourceColumn,
+      targetField: suggestion.targetField,
+    }));
+    const duplicatedSource = [
+      ...mappings,
+      { sourceColumn: 0, targetField: 'barcode' as const },
+    ];
+    expect(reviewProductSheet(sheet, duplicatedSource)[0]?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'duplicate-source-mapping',
+          classification: 'BLOCKED',
+          sourceColumn: 0,
         }),
       ]),
     );
