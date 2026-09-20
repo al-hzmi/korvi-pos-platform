@@ -408,6 +408,8 @@ function lazyProductMigrationService(config: ApiConfig): MerchantProductMigratio
   return {
     inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
     createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
     readJob: (principal, jobId) => resolve().readJob(principal, jobId),
     dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
     commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
