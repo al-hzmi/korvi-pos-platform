@@ -28,7 +28,27 @@ const SOURCE = z
     delimiter: DELIMITER.optional().default(','),
   })
   .strict();
+const XLSX_SOURCE = z
+  .object({
+    xlsxBase64: z.string().min(4).max(7_000_000),
+    fileName: z.string().trim().min(1).max(255).nullable().optional().default(null),
+    sourceSystem: z.string().trim().min(1).max(120).nullable().optional().default(null),
+  })
+  .strict();
 const CREATE_JOB = SOURCE.extend({
+  operationId: UUID,
+  mapping: z
+    .array(
+      z
+        .object({
+          sourceColumn: z.number().int().min(0).max(199),
+          targetField: TARGET_FIELD.nullable(),
+        })
+        .strict(),
+    )
+    .max(200),
+}).strict();
+const CREATE_XLSX_JOB = XLSX_SOURCE.extend({
   operationId: UUID,
   mapping: z
     .array(
@@ -47,6 +67,7 @@ const COMMIT = z.object({ operationId: UUID }).strict();
 const STATUS: Readonly<Record<ProductMigrationFailureReason, number>> = {
   'file-too-large': 413,
   'invalid-csv': 422,
+  'invalid-xlsx': 422,
   'empty-file': 422,
   'unknown-job': 404,
   'invalid-source-hash': 422,
@@ -88,6 +109,30 @@ export function registerProductMigrationRoutes(
       const body = SOURCE.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
       return respond(reply, await service.inspectCsv(principal, body.data));
+    },
+  );
+
+  app.post(
+    '/v1/admin/migrations/products/inspect-xlsx',
+    { preHandler: manage, bodyLimit: 8 * 1024 * 1024 },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const body = XLSX_SOURCE.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.inspectXlsx(principal, body.data));
+    },
+  );
+
+  app.post(
+    '/v1/admin/migrations/products/jobs/xlsx',
+    { preHandler: manage, bodyLimit: 8 * 1024 * 1024 },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const body = CREATE_XLSX_JOB.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.createXlsxJob(principal, body.data), 201);
     },
   );
 
