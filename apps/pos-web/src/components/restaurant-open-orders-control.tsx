@@ -3,7 +3,10 @@
 import { Button } from '@korvi/ui';
 import { StatusNote } from './status-note';
 import type { ActiveRestaurantOrder } from '../lib/restaurant-orders';
-import type { RestaurantOrderDetail, RestaurantOrderSummary } from '../lib/api-types';
+import type {
+  RestaurantOrderDetail,
+  RestaurantOrderSummary,
+} from '../lib/api-types';
 import type { JSX } from 'react';
 
 export interface RestaurantOpenOrdersControlProps {
@@ -104,7 +107,9 @@ export function RestaurantOpenOrdersControl({
           <div className="mt-3 grid grid-cols-2 gap-2">
             <Button
               variant="secondary"
-              disabled={locked || activeOrder === null || !dirty || !cartHasLines}
+              disabled={
+                locked || activeOrder === null || !dirty || !cartHasLines
+              }
               onClick={onSave}
             >
               حفظ التعديلات
