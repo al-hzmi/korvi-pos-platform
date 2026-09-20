@@ -248,7 +248,7 @@ export function reviewProductSheet(
   const seenBarcode = new Map<string, number>();
 
   for (const [rowIndex, row] of sheet.rows.slice(1).entries()) {
-    const sourceRow = rowIndex + 2;
+    const sourceRow = sheet.sourceRowNumbers?.[rowIndex + 1] ?? rowIndex + 2;
     const issues: ImportIssue[] = [];
     const values = new Map<ProductImportField, ReturnType<typeof mappedValue>>();
     for (const field of Object.keys(ALIASES) as ProductImportField[]) {
