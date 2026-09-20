@@ -31,8 +31,12 @@ export interface ImportSourceDescriptor {
 
 export interface ImportSheet {
   readonly name: string;
-  /** 1-based source row numbers are reconstructed as index + 1. */
   readonly rows: readonly (readonly ImportCell[])[];
+  /**
+   * Optional 1-based source row numbers aligned 1:1 with rows.
+   * Adapters that collapse blank rows must populate this to preserve provenance.
+   */
+  readonly sourceRowNumbers?: readonly number[];
 }
 
 export interface ImportDocument {
