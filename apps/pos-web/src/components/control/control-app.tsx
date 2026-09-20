@@ -155,8 +155,10 @@ function Workspace({
           <main className="min-w-0 flex-1">
             <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-5 p-4 md:p-6 lg:p-8">
               <div className="border-b border-border pb-4">
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">{sectionTitle(section)}</h1>
-              {section === 'branches' || section === 'staff' || section === 'settings' ? (
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                  {sectionTitle(section)}
+                </h1>
+                {section === 'branches' || section === 'staff' || section === 'settings' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
                   إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
                 </p>
