@@ -26,6 +26,7 @@ import { createCheckoutService } from './checkout/service.js';
 import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
+import { createMerchantProductMigrationService } from './migration/product-import-service.js';
 import { createPlatformAuth } from './platform/auth.js';
 import { registerPlatformDeviceRoutes } from './platform/device-routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
@@ -44,6 +45,7 @@ import { registerCustomerRoutes } from './routes/customers.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
+import { registerProductMigrationRoutes } from './routes/product-migration.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerSalesReadRoutes } from './routes/sales-read.js';
@@ -61,6 +63,7 @@ import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantCustomerService } from './customers/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
+import type { MerchantProductMigrationService } from './migration/product-import-service.js';
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
@@ -105,6 +108,8 @@ export interface ServerDeps {
   readonly purchasing?: MerchantPurchasingService;
   /** Read-only onboarding readiness authority. */
   readonly onboarding?: MerchantOnboardingService;
+  /** P0 customer-migration orchestration; tenant identity is session-derived. */
+  readonly productMigration?: MerchantProductMigrationService;
   /** Operational restaurant open-order authority; non-fiscal until checkout. */
   readonly restaurantOrders?: MerchantRestaurantOrderService;
   /** Merchant customer directory and mutation authority. */
@@ -391,6 +396,24 @@ function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   return { readReadiness: (principal) => resolve().readReadiness(principal) };
 }
 
+function lazyProductMigrationService(config: ApiConfig): MerchantProductMigrationService {
+  let built: MerchantProductMigrationService | null = null;
+  const resolve = (): MerchantProductMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantProductMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
 function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderService {
   let built: MerchantRestaurantOrderService | null = null;
 
@@ -585,6 +608,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerOnboardingRoutes(app, {
     service: deps.onboarding ?? lazyOnboardingService(config),
+    guards,
+  });
+  registerProductMigrationRoutes(app, {
+    service: deps.productMigration ?? lazyProductMigrationService(config),
     guards,
   });
   registerCustomerRoutes(app, {
