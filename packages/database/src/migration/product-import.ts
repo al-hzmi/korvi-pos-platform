@@ -202,8 +202,7 @@ function canonicalFromUnknown(value: unknown): CanonicalProductImportRow {
     productType,
     unitLabel: row.unitLabel,
     priceMinor: row.priceMinor,
-    vatBasisPoints:
-      row.vatBasisPoints === undefined ? undefined : (row.vatBasisPoints as number),
+    vatBasisPoints: row.vatBasisPoints === undefined ? undefined : (row.vatBasisPoints as number),
   };
 }
 
