@@ -356,7 +356,7 @@ function CustomerDetailCard({
             لا توجد مبيعات مرتبطة بهذا العميل حتى الآن.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border">
+          <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full min-w-[580px] text-sm">
               <thead className="bg-muted/60 text-xs text-muted-foreground">
                 <tr>
