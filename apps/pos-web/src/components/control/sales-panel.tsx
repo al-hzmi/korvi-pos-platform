@@ -189,7 +189,7 @@ function SaleDetail({
               <h3 className="font-semibold">بنود الفاتورة</h3>
               <span className="text-xs text-muted-foreground">{state.sale.lines.length} بند</span>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-border">
+            <div className="overflow-x-auto rounded-md border border-border">
               <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-muted/60 text-xs text-muted-foreground">
                   <tr>
@@ -230,7 +230,7 @@ function SaleDetail({
           <section className="grid gap-4 xl:grid-cols-2">
             <div>
               <h3 className="mb-2 font-semibold">التسوية</h3>
-              <div className="divide-y divide-border rounded-lg border border-border">
+              <div className="divide-y divide-border rounded-md border border-border">
                 {state.sale.tenders.map((tender) => (
                   <div
                     key={tender.id}
@@ -255,7 +255,7 @@ function SaleDetail({
               {state.sale.invoice === null ? (
                 <StatusNote tone="warning">لا يوجد مستند ضريبي مرتبط بهذه العملية.</StatusNote>
               ) : (
-                <div className="rounded-lg border border-border p-3 text-sm">
+                <div className="rounded-md border border-border p-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">رقم الفاتورة</span>
                     <strong className="font-mono" dir="ltr">
@@ -280,7 +280,7 @@ function SaleDetail({
           {state.sale.returns.length === 0 ? null : (
             <section>
               <h3 className="mb-2 font-semibold">المرتجعات المرتبطة</h3>
-              <div className="divide-y divide-border rounded-lg border border-border">
+              <div className="divide-y divide-border rounded-md border border-border">
                 {state.sale.returns.map((item) => (
                   <div
                     key={item.id}
