@@ -230,6 +230,28 @@ export type {
   RestaurantOrderMutationResult,
 } from './restaurant/orders.js';
 
+// Restaurant preparation station/routing authority. Operational and non-fiscal.
+export {
+  RestaurantPreparationRefusedError,
+  listPreparationStations,
+  createPreparationStation,
+  listPreparationRoutes,
+  setProductPreparationRoutes,
+  routeRestaurantOrderForPreparation,
+} from './restaurant/preparation.js';
+export type {
+  RestaurantPreparationRefusal,
+  RestaurantPreparationActor,
+  PreparationStation,
+  PreparationRoute,
+  CreatePreparationStationRequest,
+  SetProductPreparationRoutesRequest,
+  PreparationMutationResult,
+  PreparationRoutingLine,
+  PreparationRoutingGroup,
+  PreparationRoutingPlan,
+} from './restaurant/preparation.js';
+
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.
 export {
