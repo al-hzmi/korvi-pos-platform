@@ -159,10 +159,10 @@ function Workspace({
                   {sectionTitle(section)}
                 </h1>
                 {section === 'branches' || section === 'staff' || section === 'settings' ? (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
-                </p>
-              ) : null}
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
+                  </p>
+                ) : null}
               </div>
 
               {section === 'home' && canReadOnboarding ? (
