@@ -179,7 +179,7 @@ function Workspace({
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4">
         <div className="flex items-center gap-4">
-          <KorviMark size="sm" suffix="CONTROL" />
+          <KorviMark size="sm" suffix="CONTROL" className="lg:hidden" />
           <span className="hidden text-sm text-muted-foreground sm:inline">لوحة التحكم</span>
         </div>
         <div className="flex items-center gap-3">
@@ -240,6 +240,9 @@ function Workspace({
             className="w-full shrink-0 border-b border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] p-2 lg:w-60 lg:border-b-0 lg:border-l lg:p-3 xl:w-64"
             aria-label="التنقل"
           >
+            <div className="hidden px-2 pb-4 pt-2 lg:flex">
+              <KorviMark size="sm" />
+            </div>
             <div className="lg:sticky lg:top-3">
               <ControlNav
                 active={activeSection}
