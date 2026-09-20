@@ -322,7 +322,7 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
       )}
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <CardSurface className="p-5">
+        <CardSurface className="p-4 md:p-5">
           <h2 className="text-base font-semibold text-foreground">إضافة فرع</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             رمز الفرع ثابت بعد الإنشاء؛ يمكن تعديل الاسم لاحقاً.
@@ -365,7 +365,7 @@ export function BranchesPanel({ api }: { readonly api: ApiClient }): JSX.Element
           </div>
         </CardSurface>
 
-        <CardSurface className="p-5">
+        <CardSurface className="p-4 md:p-5">
           <h2 className="text-base font-semibold text-foreground">إضافة صندوق</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             لا يمكن إنشاء صندوق جديد تحت فرع معطّل.
