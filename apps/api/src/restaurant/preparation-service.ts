@@ -36,6 +36,9 @@ export interface MerchantPreparationService {
     branchId: string,
     activeOnly: boolean,
   ): Promise<PreparationServiceResult<readonly PreparationStation[]>>;
+  operationalStations(
+    principal: AuthenticatedPrincipal,
+  ): Promise<PreparationServiceResult<readonly PreparationStation[]>>;
   createStation(
     principal: AuthenticatedPrincipal,
     request: CreatePreparationStationRequest,
@@ -91,6 +94,12 @@ export function createMerchantPreparationService(prisma: PrismaClient): Merchant
       return attempt(() =>
         listPreparationStations(prisma, scopeOf(principal), branchId, activeOnly),
       );
+    },
+    async operationalStations(principal) {
+      requirePrincipalPermission(principal, 'sale.create');
+      const branchId = principal.branchId;
+      if (branchId === null) return { outcome: 'failure', reason: 'unknown-branch' };
+      return attempt(() => listPreparationStations(prisma, scopeOf(principal), branchId, true));
     },
     async createStation(principal, request) {
       requirePrincipalPermission(principal, 'settings.manage');
