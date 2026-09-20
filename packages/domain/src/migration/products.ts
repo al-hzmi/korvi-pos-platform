@@ -125,6 +125,7 @@ export function validateProductMappings(
 ): readonly ImportIssue[] {
   const issues: ImportIssue[] = [];
   const targets = new Map<ProductImportField, number>();
+  const sources = new Set<number>();
 
   for (const mapping of mappings) {
     if (
@@ -144,6 +145,20 @@ export function validateProductMappings(
       );
       continue;
     }
+    if (sources.has(mapping.sourceColumn)) {
+      issues.push(
+        issue(
+          'BLOCKED',
+          'duplicate-source-mapping',
+          'A source column may map to at most one Korvi field.',
+          null,
+          mapping.sourceColumn,
+          mapping.targetField,
+        ),
+      );
+      continue;
+    }
+    sources.add(mapping.sourceColumn);
     if (mapping.targetField === null) continue;
     const existing = targets.get(mapping.targetField);
     if (existing !== undefined) {
