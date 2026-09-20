@@ -69,6 +69,10 @@ function service(): MerchantPreparationService {
       calls.push('listStations');
       return { outcome: 'success', value: [station] };
     },
+    async operationalStations() {
+      calls.push('operationalStations');
+      return { outcome: 'success', value: [station] };
+    },
     async createStation(_principal, request) {
       calls.push('createStation');
       return {
@@ -287,6 +291,20 @@ describe('restaurant preparation route authority', () => {
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
+  });
+
+  it('lists active preparation stations for a KDS operator under sale.create', async () => {
+    const server = build(principal(['sale.create']));
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/restaurant/preparation-stations',
+      headers: { cookie: COOKIE },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      expect.objectContaining({ id: STATION, branchId: BRANCH, code: 'BAR', isActive: true }),
+    ]);
+    expect(calls).toEqual(['operationalStations']);
   });
 
   it('fires an exact order revision into non-fiscal KDS tasks', async () => {
