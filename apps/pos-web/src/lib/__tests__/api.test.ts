@@ -283,6 +283,65 @@ describe('the API client', () => {
     });
   });
 
+  it('uses non-fiscal KDS endpoints with exact task revision commands', async () => {
+    const stationId = '018f3000-0000-7000-8000-000000000201';
+    const taskId = '018f3000-0000-7000-8000-000000000202';
+    const station = {
+      id: stationId,
+      branchId: '018f3000-0000-7000-8000-000000000203',
+      code: 'BAR',
+      nameAr: 'البار',
+      sortOrder: 1,
+      isActive: true,
+    };
+    const task = {
+      id: taskId,
+      branchId: station.branchId,
+      stationId,
+      orderId: '018f3000-0000-7000-8000-000000000204',
+      orderLineId: '018f3000-0000-7000-8000-000000000205',
+      productId: '018f3000-0000-7000-8000-000000000206',
+      orderRevision: '3',
+      lineNumber: 1,
+      sku: 'COF-1',
+      nameAr: 'قهوة',
+      quantityScaled: '1000',
+      preparationNote: null,
+      preparationOptions: null,
+      status: 'queued',
+      revision: '1',
+      queuedAt: '2026-09-20T11:00:00.000Z',
+      startedAt: null,
+      readyAt: null,
+      servedAt: null,
+    };
+    const transport = stub([
+      ok([station]),
+      ok([task]),
+      ok({ value: { ...task, status: 'preparing', revision: '2' }, replayed: false }),
+    ]);
+    const api = createApiClient(transport.fetch);
+
+    await api.restaurantPreparationStations();
+    await api.restaurantPreparationTasks(stationId);
+    await api.updateRestaurantPreparationTask(taskId, {
+      operationId: '018f3000-0000-7000-8000-000000000207',
+      expectedRevision: '1',
+      status: 'preparing',
+    });
+
+    expect(transport.calls.map((call) => call.url)).toEqual([
+      '/v1/restaurant/preparation-stations',
+      `/v1/restaurant/preparation-stations/${stationId}/tasks`,
+      `/v1/restaurant/preparation-tasks/${taskId}/status`,
+    ]);
+    expect(bodyOf(transport.calls[2]!.init)).toEqual({
+      operationId: '018f3000-0000-7000-8000-000000000207',
+      expectedRevision: '1',
+      status: 'preparing',
+    });
+  });
+
   it('reads a null shift as no open shift', async () => {
     const transport = stub([ok({ shift: null })]);
     const shift = await createApiClient(transport.fetch).currentShift(

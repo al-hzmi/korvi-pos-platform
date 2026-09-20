@@ -174,6 +174,22 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'الطاولة مشغولة بطلب مفتوح آخر.',
     action: 'amend-cart',
   },
+  unknown_station: {
+    message: 'محطة التحضير لم تعد متاحة لهذا الفرع. حدّث شاشة المطبخ.',
+    action: 'notice',
+  },
+  unknown_task: {
+    message: 'مهمة التحضير لم تعد موجودة. سيتم تحديث قائمة المحطة.',
+    action: 'notice',
+  },
+  stale_task: {
+    message: 'تغيّرت مهمة التحضير من جهاز آخر. سيتم تحديث قائمة المحطة قبل أي إجراء جديد.',
+    action: 'notice',
+  },
+  invalid_transition: {
+    message: 'حالة مهمة التحضير تغيّرت ولا يمكن تنفيذ هذه النقلة. حدّث القائمة.',
+    action: 'notice',
+  },
 };
 
 export function describeFailure(error: unknown): Failure {
