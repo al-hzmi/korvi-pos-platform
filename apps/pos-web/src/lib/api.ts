@@ -36,11 +36,13 @@ import type {
   PurchaseReceiptSummary,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
   RestaurantOrderDetail,
   RestaurantOrderMutationResult,
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
+  RestaurantOrderTransferTableRequest,
   PurchasingBranch,
   PurchasingPage,
   PurchasingProduct,
@@ -135,6 +137,14 @@ export interface ApiClient {
   replaceRestaurantOrderLines(
     orderId: string,
     request: RestaurantOrderReplaceLinesRequest,
+  ): Promise<RestaurantOrderMutationResult>;
+  transferRestaurantOrderTable(
+    orderId: string,
+    request: RestaurantOrderTransferTableRequest,
+  ): Promise<RestaurantOrderMutationResult>;
+  cancelRestaurantOrder(
+    orderId: string,
+    request: RestaurantOrderCancelRequest,
   ): Promise<RestaurantOrderMutationResult>;
   dashboardSummary(options?: RequestOptions): Promise<DashboardSummary>;
   products(
@@ -398,6 +408,22 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         request,
         RESTAURANT_COMMAND_TIMEOUT_MS,
         'PUT',
+      );
+    },
+
+    async transferRestaurantOrderTable(orderId, request) {
+      return retryableCommand<RestaurantOrderMutationResult>(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}/transfer-table`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async cancelRestaurantOrder(orderId, request) {
+      return retryableCommand<RestaurantOrderMutationResult>(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}/cancel`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
       );
     },
 

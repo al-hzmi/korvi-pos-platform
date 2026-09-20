@@ -248,6 +248,43 @@ describe('the API client', () => {
     }
   });
 
+  it('sends restaurant transfer and cancellation as bounded retryable commands', async () => {
+    const order = {
+      id: '018f2000-0000-7000-8000-000000000201',
+      status: 'open',
+      revision: '8',
+      lines: [],
+    };
+    const transport = stub([ok({ order, replayed: false }), ok({ order, replayed: false })]);
+    const api = createApiClient(transport.fetch);
+
+    await api.transferRestaurantOrderTable(order.id, {
+      operationId: '018f2000-0000-7000-8000-000000000202',
+      expectedRevision: '7',
+      tableId: '018f2000-0000-7000-8000-000000000203',
+    });
+    await api.cancelRestaurantOrder(order.id, {
+      operationId: '018f2000-0000-7000-8000-000000000204',
+      expectedRevision: '8',
+      reason: 'طلب العميل الإلغاء',
+    });
+
+    expect(transport.calls[0]!.url).toBe(
+      `/v1/restaurant/orders/${order.id}/transfer-table`,
+    );
+    expect(bodyOf(transport.calls[0]!.init)).toEqual({
+      operationId: '018f2000-0000-7000-8000-000000000202',
+      expectedRevision: '7',
+      tableId: '018f2000-0000-7000-8000-000000000203',
+    });
+    expect(transport.calls[1]!.url).toBe(`/v1/restaurant/orders/${order.id}/cancel`);
+    expect(bodyOf(transport.calls[1]!.init)).toEqual({
+      operationId: '018f2000-0000-7000-8000-000000000204',
+      expectedRevision: '8',
+      reason: 'طلب العميل الإلغاء',
+    });
+  });
+
   it('reads a null shift as no open shift', async () => {
     const transport = stub([ok({ shift: null })]);
     const shift = await createApiClient(transport.fetch).currentShift(

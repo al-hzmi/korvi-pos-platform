@@ -42,10 +42,12 @@ import type {
   Principal,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
   RestaurantOrderDetail,
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
+  RestaurantOrderTransferTableRequest,
   ShiftSummary,
   TerminalSummary,
 } from '../lib/api-types';
@@ -61,6 +63,16 @@ type PendingRestaurantOrderCommand =
       readonly kind: 'replace';
       readonly orderId: string;
       readonly request: RestaurantOrderReplaceLinesRequest;
+    }
+  | {
+      readonly kind: 'transfer-table';
+      readonly orderId: string;
+      readonly request: RestaurantOrderTransferTableRequest;
+    }
+  | {
+      readonly kind: 'cancel';
+      readonly orderId: string;
+      readonly request: RestaurantOrderCancelRequest;
     };
 
 /**
@@ -434,7 +446,11 @@ export function CashierScreen({
         const result =
           command.kind === 'create'
             ? await api.createRestaurantOrder(command.request)
-            : await api.replaceRestaurantOrderLines(command.orderId, command.request);
+            : command.kind === 'replace'
+              ? await api.replaceRestaurantOrderLines(command.orderId, command.request)
+              : command.kind === 'transfer-table'
+                ? await api.transferRestaurantOrderTable(command.orderId, command.request)
+                : await api.cancelRestaurantOrder(command.orderId, command.request);
 
         setPendingRestaurantOrderCommand(null);
         setRestaurantOrderCommandStatus('idle');
@@ -455,11 +471,31 @@ export function CashierScreen({
           return;
         }
 
+        if (command.kind === 'cancel') {
+          clearDraft();
+          checkout.newSale();
+          cart.dispatch({ type: 'clear' });
+          setCash('');
+          setOrderType('takeaway');
+          setTableId(null);
+          resetRestaurantWorkspace();
+          setRestaurantOrderNotice('تم إلغاء الطلب وتسجيل السبب في سجل التدقيق.');
+          refreshRestaurantOrders();
+          search.browse();
+          focusSearch();
+          return;
+        }
+
         setActiveRestaurantOrder(result.order);
         setActiveRestaurantOrderIdentity({ id: result.order.id, revision: result.order.revision });
         setRestaurantOrderRestoreStatus('ready');
-        cart.dispatch({ type: 'replace', lines: cartLinesFromRestaurantOrder(result.order) });
-        setRestaurantOrderNotice('تم حفظ تعديلات الطلب.');
+        if (command.kind === 'replace') {
+          cart.dispatch({ type: 'replace', lines: cartLinesFromRestaurantOrder(result.order) });
+          setRestaurantOrderNotice('تم حفظ تعديلات الطلب.');
+        } else {
+          setTableId(result.order.tableId);
+          setRestaurantOrderNotice('تم نقل الطلب إلى الطاولة الجديدة.');
+        }
         refreshRestaurantOrders();
       } catch (error: unknown) {
         const failure = describeFailure(error);
@@ -525,6 +561,68 @@ export function CashierScreen({
     executeRestaurantOrderCommand,
     restaurantOrderDirty,
   ]);
+
+  const transferRestaurantOrderTable = useCallback(
+    (targetTableId: string) => {
+      if (
+        activeRestaurantOrderIdentity === null ||
+        activeRestaurantOrder === null ||
+        activeRestaurantOrder.orderType !== 'dine-in' ||
+        restaurantOrderDirty ||
+        targetTableId === '' ||
+        targetTableId === activeRestaurantOrder.tableId
+      ) {
+        return;
+      }
+      const request: RestaurantOrderTransferTableRequest = {
+        operationId: newId(),
+        expectedRevision: activeRestaurantOrderIdentity.revision,
+        tableId: targetTableId,
+      };
+      void executeRestaurantOrderCommand({
+        kind: 'transfer-table',
+        orderId: activeRestaurantOrderIdentity.id,
+        request,
+      });
+    },
+    [
+      activeRestaurantOrder,
+      activeRestaurantOrderIdentity,
+      executeRestaurantOrderCommand,
+      restaurantOrderDirty,
+    ],
+  );
+
+  const cancelRestaurantOrder = useCallback(
+    (reason: string) => {
+      if (
+        !principal.permissions.includes('sale.void') ||
+        activeRestaurantOrderIdentity === null ||
+        activeRestaurantOrder === null ||
+        restaurantOrderDirty ||
+        reason.trim() === ''
+      ) {
+        return;
+      }
+      const request: RestaurantOrderCancelRequest = {
+        operationId: newId(),
+        expectedRevision: activeRestaurantOrderIdentity.revision,
+        reason: reason.trim(),
+      };
+      void executeRestaurantOrderCommand({
+        kind: 'cancel',
+        orderId: activeRestaurantOrderIdentity.id,
+        request,
+      });
+    },
+    [
+      activeRestaurantOrder,
+      activeRestaurantOrderIdentity,
+      executeRestaurantOrderCommand,
+      principal.permissions,
+      restaurantOrderDirty,
+    ],
+  );
 
   const resumeRestaurantOrder = useCallback(
     (orderId: string) => {
@@ -789,11 +887,15 @@ export function CashierScreen({
                   commandStatus={restaurantOrderCommandStatus}
                   notice={restaurantOrderNotice}
                   holdBlocker={tableSubmissionBlocker}
+                  tables={restaurantFloor?.tables ?? []}
+                  canCancel={principal.permissions.includes('sale.void')}
                   onRefresh={refreshRestaurantOrders}
                   onResume={resumeRestaurantOrder}
                   onHold={holdRestaurantOrder}
                   onSave={saveRestaurantOrder}
                   onRelease={releaseRestaurantOrder}
+                  onTransferTable={transferRestaurantOrderTable}
+                  onCancel={cancelRestaurantOrder}
                   onRetry={retryRestaurantOrderCommand}
                 />
               ) : null}

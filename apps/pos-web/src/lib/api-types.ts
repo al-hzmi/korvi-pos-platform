@@ -141,6 +141,18 @@ export interface RestaurantOrderReplaceLinesRequest {
   readonly lines: readonly RestaurantOrderReplaceLine[];
 }
 
+export interface RestaurantOrderTransferTableRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly tableId: string;
+}
+
+export interface RestaurantOrderCancelRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly reason: string;
+}
+
 export interface ProductSummary {
   readonly id: string;
   /** Optional only so pre-upgrade durable catalogue rows remain readable. */
