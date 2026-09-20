@@ -9,24 +9,30 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 const UUID = z.string().uuid();
 const OPERATION = UUID;
-const branchQuery = z.object({
-  branchId: UUID,
-  activeOnly: z.enum(['true', 'false']).optional(),
-}).strict();
-const createStationBody = z.object({
-  operationId: OPERATION,
-  branchId: UUID,
-  code: z.string().min(1).max(40),
-  nameAr: z.string().min(1).max(80),
-  sortOrder: z.number().int().min(0).max(100000),
-}).strict();
+const branchQuery = z
+  .object({
+    branchId: UUID,
+    activeOnly: z.enum(['true', 'false']).optional(),
+  })
+  .strict();
+const createStationBody = z
+  .object({
+    operationId: OPERATION,
+    branchId: UUID,
+    code: z.string().min(1).max(40),
+    nameAr: z.string().min(1).max(80),
+    sortOrder: z.number().int().min(0).max(100000),
+  })
+  .strict();
 const productParams = z.object({ productId: UUID }).strict();
 const orderParams = z.object({ orderId: UUID }).strict();
-const routesBody = z.object({
-  operationId: OPERATION,
-  branchId: UUID,
-  stationIds: z.array(UUID).max(32),
-}).strict();
+const routesBody = z
+  .object({
+    operationId: OPERATION,
+    branchId: UUID,
+    stationIds: z.array(UUID).max(32),
+  })
+  .strict();
 
 const STATUS: Record<string, number> = {
   'restaurant-mode-required': 422,
@@ -45,7 +51,11 @@ function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefine
   return request.auth;
 }
 
-function respond<T>(reply: FastifyReply, result: PreparationServiceResult<T>, code = 200): FastifyReply {
+function respond<T>(
+  reply: FastifyReply,
+  result: PreparationServiceResult<T>,
+  code = 200,
+): FastifyReply {
   if (result.outcome === 'failure') {
     return reply.code(STATUS[result.reason] ?? 422).send({
       error: result.reason.replace(/-/g, '_'),
@@ -62,57 +72,83 @@ export function registerRestaurantPreparationRoutes(
   const manage = [guards.requireSession, guards.requirePermission('settings.manage')];
   const operate = [guards.requireSession, guards.requirePermission('sale.create')];
 
-  app.get('/v1/admin/restaurant/preparation-stations', { preHandler: manage }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const parsed = branchQuery.safeParse(request.query);
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
-    return respond(reply, await service.listStations(
-      principal,
-      parsed.data.branchId,
-      parsed.data.activeOnly !== 'false',
-    ));
-  });
+  app.get(
+    '/v1/admin/restaurant/preparation-stations',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const parsed = branchQuery.safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
+      return respond(
+        reply,
+        await service.listStations(
+          principal,
+          parsed.data.branchId,
+          parsed.data.activeOnly !== 'false',
+        ),
+      );
+    },
+  );
 
-  app.post('/v1/admin/restaurant/preparation-stations', { preHandler: manage }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const parsed = createStationBody.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
-    return respond(reply, await service.createStation(principal, parsed.data), 201);
-  });
+  app.post(
+    '/v1/admin/restaurant/preparation-stations',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const parsed = createStationBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.createStation(principal, parsed.data), 201);
+    },
+  );
 
-  app.get('/v1/admin/restaurant/preparation-routes', { preHandler: manage }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const parsed = branchQuery.omit({ activeOnly: true }).safeParse(request.query);
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
-    return respond(reply, await service.listRoutes(principal, parsed.data.branchId));
-  });
+  app.get(
+    '/v1/admin/restaurant/preparation-routes',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const parsed = branchQuery.omit({ activeOnly: true }).safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' });
+      return respond(reply, await service.listRoutes(principal, parsed.data.branchId));
+    },
+  );
 
-  app.put('/v1/admin/restaurant/preparation-routes/:productId', { preHandler: manage }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const params = productParams.safeParse(request.params);
-    const body = routesBody.safeParse(request.body);
-    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
-    return respond(reply, await service.setProductRoutes(principal, {
-      operationId: body.data.operationId,
-      branchId: body.data.branchId,
-      productId: params.data.productId,
-      stationIds: body.data.stationIds,
-    }));
-  });
+  app.put(
+    '/v1/admin/restaurant/preparation-routes/:productId',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = productParams.safeParse(request.params);
+      const body = routesBody.safeParse(request.body);
+      if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(
+        reply,
+        await service.setProductRoutes(principal, {
+          operationId: body.data.operationId,
+          branchId: body.data.branchId,
+          productId: params.data.productId,
+          stationIds: body.data.stationIds,
+        }),
+      );
+    },
+  );
 
-  app.get('/v1/restaurant/orders/:orderId/preparation-routing', { preHandler: operate }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const params = orderParams.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
-    const result = await service.routing(principal, params.data.orderId);
-    if (result.outcome === 'success' && result.value === null) {
-      return reply.code(404).send({ error: 'restaurant_order_not_found' });
-    }
-    return respond(reply, result);
-  });
+  app.get(
+    '/v1/restaurant/orders/:orderId/preparation-routing',
+    { preHandler: operate },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = orderParams.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      const result = await service.routing(principal, params.data.orderId);
+      if (result.outcome === 'success' && result.value === null) {
+        return reply.code(404).send({ error: 'restaurant_order_not_found' });
+      }
+      return respond(reply, result);
+    },
+  );
 }

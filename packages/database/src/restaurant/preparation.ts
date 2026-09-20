@@ -95,8 +95,12 @@ export interface PreparationRoutingPlan {
 }
 
 function uniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error &&
-    (error as { code?: unknown }).code === 'P2002';
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 function fingerprint(value: unknown): string {
@@ -129,7 +133,11 @@ async function requireRestaurantMode(tx: TransactionClient, tenant: string): Pro
   }
 }
 
-async function requireBranch(tx: TransactionClient, tenant: string, branchId: string): Promise<void> {
+async function requireBranch(
+  tx: TransactionClient,
+  tenant: string,
+  branchId: string,
+): Promise<void> {
   const branch = await tx.branch.findFirst({
     where: { tenantId: tenant, id: branchId },
     select: { id: true },
@@ -165,7 +173,8 @@ async function reserve<T>(
     where: { tenantId: tenant, scope, operationId },
     select: { status: true, requestHash: true, resultType: true, resultSnapshot: true },
   });
-  if (existing === null) throw new DatabaseError('Preparation idempotency collision is unreadable.');
+  if (existing === null)
+    throw new DatabaseError('Preparation idempotency collision is unreadable.');
   if (existing.requestHash !== requestHash) {
     throw new RestaurantPreparationRefusedError('idempotency-conflict');
   }
@@ -252,7 +261,14 @@ export async function listPreparationStations(
     await requireBranch(tx, tenant, branchId);
     const rows = await tx.restaurantPreparationStation.findMany({
       where: { tenantId: tenant, branchId, ...(activeOnly ? { isActive: true } : {}) },
-      select: { id: true, branchId: true, code: true, nameAr: true, sortOrder: true, isActive: true },
+      select: {
+        id: true,
+        branchId: true,
+        code: true,
+        nameAr: true,
+        sortOrder: true,
+        isActive: true,
+      },
       orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }, { id: 'asc' }],
     });
     return rows.map(asStation);
@@ -273,12 +289,22 @@ export async function createPreparationStation(
   const code = normalizeCode(request.code);
   const nameAr = normalizeName(request.nameAr);
   const tenant = tenantParam(scope);
-  const requestHash = fingerprint({ branchId: request.branchId, code, nameAr, sortOrder: request.sortOrder });
+  const requestHash = fingerprint({
+    branchId: request.branchId,
+    code,
+    nameAr,
+    sortOrder: request.sortOrder,
+  });
 
   return withTenant(prisma, scope.tenantId, async (tx) => {
     const replay = await reserve<PreparationStation>(
-      tx, tenant, CREATE_STATION_SCOPE, request.operationId, requestHash,
-      'restaurant-preparation-station', nextId,
+      tx,
+      tenant,
+      CREATE_STATION_SCOPE,
+      request.operationId,
+      requestHash,
+      'restaurant-preparation-station',
+      nextId,
     );
     if (replay !== null) return { value: replay, replayed: true };
     await requireRestaurantMode(tx, tenant);
@@ -288,8 +314,15 @@ export async function createPreparationStation(
     try {
       await tx.restaurantPreparationStation.create({
         data: {
-          id, tenantId: tenant, branchId: request.branchId, code, nameAr,
-          sortOrder: request.sortOrder, isActive: true, createdAt: at, updatedAt: at,
+          id,
+          tenantId: tenant,
+          branchId: request.branchId,
+          code,
+          nameAr,
+          sortOrder: request.sortOrder,
+          isActive: true,
+          createdAt: at,
+          updatedAt: at,
         },
       });
     } catch (error) {
@@ -297,12 +330,35 @@ export async function createPreparationStation(
       throw error;
     }
     const station: PreparationStation = {
-      id, branchId: request.branchId, code, nameAr, sortOrder: request.sortOrder, isActive: true,
+      id,
+      branchId: request.branchId,
+      code,
+      nameAr,
+      sortOrder: request.sortOrder,
+      isActive: true,
     };
-    await audit(tx, tenant, actor, request.branchId, 'restaurant.preparation-station.created',
-      'restaurant-preparation-station', id, { code }, at, nextId);
-    await complete(tx, tenant, CREATE_STATION_SCOPE, request.operationId,
-      'restaurant-preparation-station', id, station, at);
+    await audit(
+      tx,
+      tenant,
+      actor,
+      request.branchId,
+      'restaurant.preparation-station.created',
+      'restaurant-preparation-station',
+      id,
+      { code },
+      at,
+      nextId,
+    );
+    await complete(
+      tx,
+      tenant,
+      CREATE_STATION_SCOPE,
+      request.operationId,
+      'restaurant-preparation-station',
+      id,
+      station,
+      at,
+    );
     return { value: station, replayed: false };
   });
 }
@@ -339,13 +395,20 @@ export async function setProductPreparationRoutes(
   stationIds.sort();
   const tenant = tenantParam(scope);
   const requestHash = fingerprint({
-    branchId: request.branchId, productId: request.productId, stationIds,
+    branchId: request.branchId,
+    productId: request.productId,
+    stationIds,
   });
 
   return withTenant(prisma, scope.tenantId, async (tx) => {
     const replay = await reserve<readonly PreparationRoute[]>(
-      tx, tenant, SET_ROUTES_SCOPE, request.operationId, requestHash,
-      'restaurant-preparation-routes', nextId,
+      tx,
+      tenant,
+      SET_ROUTES_SCOPE,
+      request.operationId,
+      requestHash,
+      'restaurant-preparation-routes',
+      nextId,
     );
     if (replay !== null) return { value: replay, replayed: true };
 
@@ -359,7 +422,12 @@ export async function setProductPreparationRoutes(
 
     if (stationIds.length > 0) {
       const stations = await tx.restaurantPreparationStation.findMany({
-        where: { tenantId: tenant, branchId: request.branchId, id: { in: stationIds }, isActive: true },
+        where: {
+          tenantId: tenant,
+          branchId: request.branchId,
+          id: { in: stationIds },
+          isActive: true,
+        },
         select: { id: true },
       });
       if (stations.length !== stationIds.length) {
@@ -389,10 +457,28 @@ export async function setProductPreparationRoutes(
         })),
       });
     }
-    await audit(tx, tenant, actor, request.branchId, 'restaurant.preparation-route.set',
-      'product', request.productId, { stationCount: routes.length }, at, nextId);
-    await complete(tx, tenant, SET_ROUTES_SCOPE, request.operationId,
-      'restaurant-preparation-routes', request.productId, routes, at);
+    await audit(
+      tx,
+      tenant,
+      actor,
+      request.branchId,
+      'restaurant.preparation-route.set',
+      'product',
+      request.productId,
+      { stationCount: routes.length },
+      at,
+      nextId,
+    );
+    await complete(
+      tx,
+      tenant,
+      SET_ROUTES_SCOPE,
+      request.operationId,
+      'restaurant-preparation-routes',
+      request.productId,
+      routes,
+      at,
+    );
     return { value: routes, replayed: false };
   });
 }
@@ -409,11 +495,21 @@ export async function routeRestaurantOrderForPreparation(
     const order = await tx.restaurantOrder.findFirst({
       where: { tenantId: tenant, branchId, id: orderId },
       select: {
-        id: true, revision: true, orderType: true, tableId: true, status: true,
+        id: true,
+        revision: true,
+        orderType: true,
+        tableId: true,
+        status: true,
         lines: {
           select: {
-            id: true, lineNumber: true, productId: true, sku: true, nameAr: true,
-            quantityScaled: true, preparationNote: true, preparationOptions: true,
+            id: true,
+            lineNumber: true,
+            productId: true,
+            sku: true,
+            nameAr: true,
+            quantityScaled: true,
+            preparationNote: true,
+            preparationOptions: true,
           },
           orderBy: { lineNumber: 'asc' },
         },
@@ -421,7 +517,11 @@ export async function routeRestaurantOrderForPreparation(
     });
     if (order === null) return null;
     if (order.status !== 'open') throw new RestaurantPreparationRefusedError('order-not-open');
-    if (order.orderType !== 'dine-in' && order.orderType !== 'takeaway' && order.orderType !== 'delivery') {
+    if (
+      order.orderType !== 'dine-in' &&
+      order.orderType !== 'takeaway' &&
+      order.orderType !== 'delivery'
+    ) {
       throw new DatabaseError('Restaurant order has unknown order type.');
     }
 
@@ -435,7 +535,16 @@ export async function routeRestaurantOrderForPreparation(
       },
       select: {
         productId: true,
-        station: { select: { id: true, branchId: true, code: true, nameAr: true, sortOrder: true, isActive: true } },
+        station: {
+          select: {
+            id: true,
+            branchId: true,
+            code: true,
+            nameAr: true,
+            sortOrder: true,
+            isActive: true,
+          },
+        },
       },
       orderBy: [{ station: { sortOrder: 'asc' } }, { stationId: 'asc' }],
     });

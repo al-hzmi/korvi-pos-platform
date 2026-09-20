@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --write apps/api/src/__tests__/restaurant-preparation-routes.test.ts apps/api/src/restaurant/preparation-service.ts apps/api/src/routes/restaurant-preparation.ts packages/database/src/restaurant/preparation.ts && for f in apps/api/src/__tests__/restaurant-preparation-routes.test.ts apps/api/src/restaurant/preparation-service.ts apps/api/src/routes/restaurant-preparation.ts packages/database/src/restaurant/preparation.ts; do echo \"KORVI_FORMAT_BEGIN:$f\"; base64 -w0 \"$f\"; echo; echo \"KORVI_FORMAT_END:$f\"; done && exit 1",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:zatca:fiscalization-live": "vitest run packages/database/src/__tests__/zatca-fiscalization-live.test.ts",

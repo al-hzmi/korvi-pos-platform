@@ -37,32 +37,60 @@ function principal(permissions: AuthenticatedPrincipal['permissions']): Authenti
 
 function auth(subject: AuthenticatedPrincipal): AuthService {
   return {
-    async login() { return { outcome: 'failure', reason: 'bad-password' }; },
+    async login() {
+      return { outcome: 'failure', reason: 'bad-password' };
+    },
     async authenticate(token) {
       return token === 'prep-test-token'
         ? { outcome: 'success', principal: subject }
         : { outcome: 'failure', reason: 'malformed-token' };
     },
-    async logout() { return true; },
-    async logoutAll() { return 1; },
+    async logout() {
+      return true;
+    },
+    async logoutAll() {
+      return 1;
+    },
   };
 }
 
 function service(): MerchantPreparationService {
-  const station = { id: STATION, branchId: BRANCH, code: 'BAR', nameAr: 'البار', sortOrder: 1, isActive: true };
+  const station = {
+    id: STATION,
+    branchId: BRANCH,
+    code: 'BAR',
+    nameAr: 'البار',
+    sortOrder: 1,
+    isActive: true,
+  };
   return {
-    async listStations() { calls.push('listStations'); return { outcome: 'success', value: [station] }; },
+    async listStations() {
+      calls.push('listStations');
+      return { outcome: 'success', value: [station] };
+    },
     async createStation(_principal, request) {
       calls.push('createStation');
-      return { outcome: 'success', value: { value: { ...station, code: request.code }, replayed: false } };
+      return {
+        outcome: 'success',
+        value: { value: { ...station, code: request.code }, replayed: false },
+      };
     },
     async listRoutes() {
       calls.push('listRoutes');
-      return { outcome: 'success', value: [{ id: OP, branchId: BRANCH, productId: PRODUCT, stationId: STATION }] };
+      return {
+        outcome: 'success',
+        value: [{ id: OP, branchId: BRANCH, productId: PRODUCT, stationId: STATION }],
+      };
     },
     async setProductRoutes() {
       calls.push('setProductRoutes');
-      return { outcome: 'success', value: { value: [{ id: OP, branchId: BRANCH, productId: PRODUCT, stationId: STATION }], replayed: false } };
+      return {
+        outcome: 'success',
+        value: {
+          value: [{ id: OP, branchId: BRANCH, productId: PRODUCT, stationId: STATION }],
+          replayed: false,
+        },
+      };
     },
     async routing() {
       calls.push('routing');
@@ -73,19 +101,23 @@ function service(): MerchantPreparationService {
           revision: '3',
           orderType: 'dine-in',
           tableId: null,
-          groups: [{
-            station,
-            lines: [{
-              lineId: LINE,
-              lineNumber: 1,
-              productId: PRODUCT,
-              sku: 'COF-1',
-              nameAr: 'قهوة',
-              quantityScaled: '1000',
-              preparationNote: 'بدون سكر',
-              preparationOptions: null,
-            }],
-          }],
+          groups: [
+            {
+              station,
+              lines: [
+                {
+                  lineId: LINE,
+                  lineNumber: 1,
+                  productId: PRODUCT,
+                  sku: 'COF-1',
+                  nameAr: 'قهوة',
+                  quantityScaled: '1000',
+                  preparationNote: 'بدون سكر',
+                  preparationOptions: null,
+                },
+              ],
+            },
+          ],
           unroutedLines: [],
         },
       };

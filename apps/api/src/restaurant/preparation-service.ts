@@ -66,7 +66,9 @@ export function createMerchantPreparationService(prisma: PrismaClient): Merchant
   return {
     async listStations(principal, branchId, activeOnly) {
       requirePermission(principal, 'settings.manage');
-      return attempt(() => listPreparationStations(prisma, scopeOf(principal), branchId, activeOnly));
+      return attempt(() =>
+        listPreparationStations(prisma, scopeOf(principal), branchId, activeOnly),
+      );
     },
     async createStation(principal, request) {
       requirePermission(principal, 'settings.manage');
@@ -95,7 +97,12 @@ export function createMerchantPreparationService(prisma: PrismaClient): Merchant
         return { outcome: 'failure', reason: 'unknown-branch' };
       }
       return attempt(() =>
-        routeRestaurantOrderForPreparation(prisma, scopeOf(principal), principal.branchId!, orderId),
+        routeRestaurantOrderForPreparation(
+          prisma,
+          scopeOf(principal),
+          principal.branchId!,
+          orderId,
+        ),
       );
     },
   };
