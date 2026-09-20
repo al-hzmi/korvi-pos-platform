@@ -198,14 +198,11 @@ export function registerRestaurantPreparationRoutes(
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
       const params = stationParams.safeParse(request.params);
       const query = taskQuery.safeParse(request.query);
-      if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_query' });
+      if (!params.success || !query.success)
+        return reply.code(400).send({ error: 'invalid_query' });
       return respond(
         reply,
-        await service.tasks(
-          principal,
-          params.data.stationId,
-          query.data.includeServed === 'true',
-        ),
+        await service.tasks(principal, params.data.stationId, query.data.includeServed === 'true'),
       );
     },
   );
@@ -222,5 +219,4 @@ export function registerRestaurantPreparationRoutes(
       return respond(reply, await service.updateTask(principal, params.data.taskId, body.data));
     },
   );
-
 }

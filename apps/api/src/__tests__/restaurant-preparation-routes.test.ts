@@ -132,27 +132,29 @@ function service(): MerchantPreparationService {
             orderId: ORDER,
             orderRevision: request.expectedOrderRevision,
             alreadyFired: false,
-            tasks: [{
-              id: TASK,
-              branchId: BRANCH,
-              stationId: STATION,
-              orderId: ORDER,
-              orderLineId: LINE,
-              productId: PRODUCT,
-              orderRevision: request.expectedOrderRevision,
-              lineNumber: 1,
-              sku: 'COF-1',
-              nameAr: 'قهوة',
-              quantityScaled: '1000',
-              preparationNote: 'بدون سكر',
-              preparationOptions: null,
-              status: 'queued',
-              revision: '1',
-              queuedAt: '2026-09-20T11:00:00.000Z',
-              startedAt: null,
-              readyAt: null,
-              servedAt: null,
-            }],
+            tasks: [
+              {
+                id: TASK,
+                branchId: BRANCH,
+                stationId: STATION,
+                orderId: ORDER,
+                orderLineId: LINE,
+                productId: PRODUCT,
+                orderRevision: request.expectedOrderRevision,
+                lineNumber: 1,
+                sku: 'COF-1',
+                nameAr: 'قهوة',
+                quantityScaled: '1000',
+                preparationNote: 'بدون سكر',
+                preparationOptions: null,
+                status: 'queued',
+                revision: '1',
+                queuedAt: '2026-09-20T11:00:00.000Z',
+                startedAt: null,
+                readyAt: null,
+                servedAt: null,
+              },
+            ],
           },
           replayed: false,
         },
@@ -162,27 +164,29 @@ function service(): MerchantPreparationService {
       calls.push('tasks');
       return {
         outcome: 'success',
-        value: [{
-          id: TASK,
-          branchId: BRANCH,
-          stationId: STATION,
-          orderId: ORDER,
-          orderLineId: LINE,
-          productId: PRODUCT,
-          orderRevision: '3',
-          lineNumber: 1,
-          sku: 'COF-1',
-          nameAr: 'قهوة',
-          quantityScaled: '1000',
-          preparationNote: 'بدون سكر',
-          preparationOptions: null,
-          status: 'queued',
-          revision: '1',
-          queuedAt: '2026-09-20T11:00:00.000Z',
-          startedAt: null,
-          readyAt: null,
-          servedAt: null,
-        }],
+        value: [
+          {
+            id: TASK,
+            branchId: BRANCH,
+            stationId: STATION,
+            orderId: ORDER,
+            orderLineId: LINE,
+            productId: PRODUCT,
+            orderRevision: '3',
+            lineNumber: 1,
+            sku: 'COF-1',
+            nameAr: 'قهوة',
+            quantityScaled: '1000',
+            preparationNote: 'بدون سكر',
+            preparationOptions: null,
+            status: 'queued',
+            revision: '1',
+            queuedAt: '2026-09-20T11:00:00.000Z',
+            startedAt: null,
+            readyAt: null,
+            servedAt: null,
+          },
+        ],
       };
     },
     async updateTask(_principal, _taskId, request) {
@@ -285,7 +289,6 @@ describe('restaurant preparation route authority', () => {
     }
   });
 
-
   it('fires an exact order revision into non-fiscal KDS tasks', async () => {
     const server = build(principal(['sale.create']));
     const response = await server.inject({
@@ -304,7 +307,14 @@ describe('restaurant preparation route authority', () => {
       orderRevision: '3',
     });
     const serialized = JSON.stringify(body);
-    for (const forbidden of ['priceMinor', 'vatBasisPoints', 'invoiceNumber', 'qrCodeBase64', 'ICV', 'PIH']) {
+    for (const forbidden of [
+      'priceMinor',
+      'vatBasisPoints',
+      'invoiceNumber',
+      'qrCodeBase64',
+      'ICV',
+      'PIH',
+    ]) {
       expect(serialized).not.toContain(forbidden);
     }
   });

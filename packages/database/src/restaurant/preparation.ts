@@ -538,110 +538,109 @@ async function routingWithin(
   branchId: string,
   orderId: string,
 ): Promise<PreparationRoutingPlan | null> {
-    await requireRestaurantMode(tx, tenant);
-    const order = await tx.restaurantOrder.findFirst({
-      where: { tenantId: tenant, branchId, id: orderId },
-      select: {
-        id: true,
-        revision: true,
-        orderType: true,
-        tableId: true,
-        status: true,
-        lines: {
-          select: {
-            id: true,
-            lineNumber: true,
-            productId: true,
-            sku: true,
-            nameAr: true,
-            quantityScaled: true,
-            preparationNote: true,
-            preparationOptions: true,
-          },
-          orderBy: { lineNumber: 'asc' },
+  await requireRestaurantMode(tx, tenant);
+  const order = await tx.restaurantOrder.findFirst({
+    where: { tenantId: tenant, branchId, id: orderId },
+    select: {
+      id: true,
+      revision: true,
+      orderType: true,
+      tableId: true,
+      status: true,
+      lines: {
+        select: {
+          id: true,
+          lineNumber: true,
+          productId: true,
+          sku: true,
+          nameAr: true,
+          quantityScaled: true,
+          preparationNote: true,
+          preparationOptions: true,
+        },
+        orderBy: { lineNumber: 'asc' },
+      },
+    },
+  });
+  if (order === null) return null;
+  if (order.status !== 'open') throw new RestaurantPreparationRefusedError('order-not-open');
+  if (
+    order.orderType !== 'dine-in' &&
+    order.orderType !== 'takeaway' &&
+    order.orderType !== 'delivery'
+  ) {
+    throw new DatabaseError('Restaurant order has unknown order type.');
+  }
+
+  const productIds = [...new Set(order.lines.map((line) => line.productId))];
+  const routes = await tx.restaurantPreparationRoute.findMany({
+    where: {
+      tenantId: tenant,
+      branchId,
+      productId: { in: productIds },
+      station: { isActive: true },
+    },
+    select: {
+      productId: true,
+      station: {
+        select: {
+          id: true,
+          branchId: true,
+          code: true,
+          nameAr: true,
+          sortOrder: true,
+          isActive: true,
         },
       },
-    });
-    if (order === null) return null;
-    if (order.status !== 'open') throw new RestaurantPreparationRefusedError('order-not-open');
-    if (
-      order.orderType !== 'dine-in' &&
-      order.orderType !== 'takeaway' &&
-      order.orderType !== 'delivery'
-    ) {
-      throw new DatabaseError('Restaurant order has unknown order type.');
+    },
+    orderBy: [{ station: { sortOrder: 'asc' } }, { stationId: 'asc' }],
+  });
+
+  const stationMap = new Map<string, PreparationRoutingGroup>();
+  const routesByProduct = new Map<string, string[]>();
+  for (const route of routes) {
+    if (!stationMap.has(route.station.id)) {
+      stationMap.set(route.station.id, { station: asStation(route.station), lines: [] });
     }
+    const current = routesByProduct.get(route.productId) ?? [];
+    current.push(route.station.id);
+    routesByProduct.set(route.productId, current);
+  }
 
-    const productIds = [...new Set(order.lines.map((line) => line.productId))];
-    const routes = await tx.restaurantPreparationRoute.findMany({
-      where: {
-        tenantId: tenant,
-        branchId,
-        productId: { in: productIds },
-        station: { isActive: true },
-      },
-      select: {
-        productId: true,
-        station: {
-          select: {
-            id: true,
-            branchId: true,
-            code: true,
-            nameAr: true,
-            sortOrder: true,
-            isActive: true,
-          },
-        },
-      },
-      orderBy: [{ station: { sortOrder: 'asc' } }, { stationId: 'asc' }],
-    });
-
-    const stationMap = new Map<string, PreparationRoutingGroup>();
-    const routesByProduct = new Map<string, string[]>();
-    for (const route of routes) {
-      if (!stationMap.has(route.station.id)) {
-        stationMap.set(route.station.id, { station: asStation(route.station), lines: [] });
-      }
-      const current = routesByProduct.get(route.productId) ?? [];
-      current.push(route.station.id);
-      routesByProduct.set(route.productId, current);
-    }
-
-    const unroutedLines: PreparationRoutingLine[] = [];
-    for (const source of order.lines) {
-      const line: PreparationRoutingLine = {
-        lineId: source.id,
-        lineNumber: source.lineNumber,
-        productId: source.productId,
-        sku: source.sku,
-        nameAr: source.nameAr,
-        quantityScaled: source.quantityScaled.toString(),
-        preparationNote: source.preparationNote,
-        preparationOptions: source.preparationOptions,
-      };
-      const stationIds = routesByProduct.get(source.productId) ?? [];
-      if (stationIds.length === 0) {
-        unroutedLines.push(line);
-        continue;
-      }
-      for (const stationId of stationIds) {
-        const group = stationMap.get(stationId);
-        if (group !== undefined) {
-          (group.lines as PreparationRoutingLine[]).push(line);
-        }
-      }
-    }
-
-    return {
-      orderId: order.id,
-      revision: order.revision.toString(),
-      orderType: order.orderType,
-      tableId: order.tableId,
-      groups: [...stationMap.values()].filter((group) => group.lines.length > 0),
-      unroutedLines,
+  const unroutedLines: PreparationRoutingLine[] = [];
+  for (const source of order.lines) {
+    const line: PreparationRoutingLine = {
+      lineId: source.id,
+      lineNumber: source.lineNumber,
+      productId: source.productId,
+      sku: source.sku,
+      nameAr: source.nameAr,
+      quantityScaled: source.quantityScaled.toString(),
+      preparationNote: source.preparationNote,
+      preparationOptions: source.preparationOptions,
     };
-}
+    const stationIds = routesByProduct.get(source.productId) ?? [];
+    if (stationIds.length === 0) {
+      unroutedLines.push(line);
+      continue;
+    }
+    for (const stationId of stationIds) {
+      const group = stationMap.get(stationId);
+      if (group !== undefined) {
+        (group.lines as PreparationRoutingLine[]).push(line);
+      }
+    }
+  }
 
+  return {
+    orderId: order.id,
+    revision: order.revision.toString(),
+    orderType: order.orderType,
+    tableId: order.tableId,
+    groups: [...stationMap.values()].filter((group) => group.lines.length > 0),
+    unroutedLines,
+  };
+}
 
 function asTask(row: {
   id: string;
