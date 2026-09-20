@@ -161,7 +161,10 @@ export function createMerchantProductMigrationService(
           mappingIssues: validateProductMappings(sheet.rows[0]!, suggestedMapping),
           previewRows: sheet.rows
             .slice(1, MAX_PRODUCT_IMPORT_PREVIEW_ROWS + 1)
-            .map((cells, index) => ({ sourceRow: index + 2, cells })),
+            .map((cells, index) => ({
+              sourceRow: sheet.sourceRowNumbers?.[index + 1] ?? index + 2,
+              cells,
+            })),
         },
       };
     },
