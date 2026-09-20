@@ -3,7 +3,7 @@ import { buildServer } from '../server.js';
 import { loadConfig } from '../config.js';
 import type {
   MerchantProductMigrationService,
-  ProductCsvInspection,
+  ProductSourceInspection,
 } from '../migration/product-import-service.js';
 import type { AuthService } from '../auth/service.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
@@ -79,7 +79,7 @@ const summary: ProductImportSummary = {
   commitAt: null,
 };
 
-const inspection: ProductCsvInspection = {
+const inspection: ProductSourceInspection = {
   sourceSha256: 'a'.repeat(64),
   fileBytes: 50,
   totalRows: 1,
@@ -97,6 +97,17 @@ function service(): MerchantProductMigrationService {
     async createCsvJob(_principal, request) {
       calls.push({ method: 'createCsvJob', value: request });
       return { outcome: 'success', value: summary };
+    },
+    async inspectXlsx(_principal, input) {
+      calls.push({ method: 'inspectXlsx', value: input });
+      return { outcome: 'success', value: inspection };
+    },
+    async createXlsxJob(_principal, request) {
+      calls.push({ method: 'createXlsxJob', value: request });
+      return {
+        outcome: 'success',
+        value: { ...summary, format: 'xlsx', sourceFileName: 'products.xlsx' },
+      };
     },
     async readJob(_principal, jobId) {
       calls.push({ method: 'readJob', value: jobId });
@@ -186,6 +197,41 @@ describe('product migration HTTP authority', () => {
     expect(create.statusCode).toBe(201);
     expect(create.json()).toMatchObject({ id: JOB, status: 'reviewed', created: 0 });
     expect(calls.map((call) => call.method)).toEqual(['inspectCsv', 'createCsvJob']);
+  });
+
+  it('routes XLSX inspection and reviewed jobs through the same tenant-scoped authority', async () => {
+    const server = build(principal(['settings.manage']));
+    const xlsxBase64 = Buffer.from('xlsx-fixture').toString('base64');
+
+    const inspect = await server.inject({
+      method: 'POST',
+      url: '/v1/admin/migrations/products/inspect-xlsx',
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: { xlsxBase64, fileName: 'products.xlsx' },
+    });
+    const create = await server.inject({
+      method: 'POST',
+      url: '/v1/admin/migrations/products/jobs/xlsx',
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        xlsxBase64,
+        fileName: 'products.xlsx',
+        mapping: [],
+      },
+    });
+
+    expect(inspect.statusCode).toBe(200);
+    expect(create.statusCode).toBe(201);
+    expect(create.json()).toMatchObject({
+      id: JOB,
+      status: 'reviewed',
+      format: 'xlsx',
+      sourceFileName: 'products.xlsx',
+    });
+    expect(calls.map((call) => call.method)).toEqual(['inspectXlsx', 'createXlsxJob']);
+    expect(calls[0]?.value).not.toHaveProperty('tenantId');
+    expect(calls[1]?.value).not.toHaveProperty('sourceSha256');
   });
 
   it('keeps dry-run separate from commit and commit requires product.write too', async () => {
