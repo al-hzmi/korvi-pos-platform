@@ -130,6 +130,8 @@ model Tenant {
   zatcaComplianceEvidence       ZatcaComplianceEvidence[]
   zatcaFatooraCredentials       ZatcaFatooraCredential[]
   zatcaInvoiceSubmissions       ZatcaInvoiceSubmission[]
+  migrationImportJobs           MigrationImportJob[]
+  migrationImportRows           MigrationImportRow[]
 
   @@unique([provisioningOperationId])
   @@map("tenants")
@@ -332,6 +334,7 @@ model User {
   purchaseOrders           PurchaseOrder[]
   purchaseReceipts         PurchaseReceipt[]
   inventoryValuationEvents InventoryValuationEvent[]
+  migrationImportJobs       MigrationImportJob[]
 
   @@unique([tenantId, email])
   /// The tenant-consistency key. A child row references this table by
@@ -1761,6 +1764,82 @@ model IdempotencyKey {
   @@index([tenantId, status])
   @@index([expiresAt])
   @@map("idempotency_keys")
+}
+
+model MigrationImportJob {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+
+  actorUserId String @db.Uuid
+  domain      String
+  format      String
+
+  sourceFileName String?
+  sourceSystem   String?
+  sourceSha256   String @db.Char(64)
+
+  createOperationId String @db.Uuid
+  createRequestHash String @db.Char(64)
+  commitOperationId String? @db.Uuid
+
+  status         String @default("reviewed")
+  mappingVersion Int    @default(1)
+  mapping        Json
+  conflictPolicy String @default("reject")
+
+  totalRows   Int
+  validRows   Int
+  warningRows Int
+  errorRows   Int
+  blockedRows Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  dryRunAt  DateTime?
+  commitAt  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User   @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+  rows   MigrationImportRow[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, createOperationId])
+  @@unique([tenantId, commitOperationId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, actorUserId, createdAt])
+  @@map("migration_import_jobs")
+}
+
+model MigrationImportRow {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+  jobId    String @db.Uuid
+
+  sourceRow        Int
+  rowFingerprint   String @db.Char(64)
+  sourceIdentifier String?
+  sourceData       Json?
+  canonicalData    Json?
+  issues           Json
+
+  classification String
+  plannedAction   String
+  status          String @default("pending")
+
+  targetEntityId String? @db.Uuid
+  errorCode      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job    MigrationImportJob @relation(fields: [tenantId, jobId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, jobId, sourceRow])
+  @@index([tenantId, jobId, status, sourceRow])
+  @@index([tenantId, jobId, rowFingerprint])
+  @@map("migration_import_rows")
 }
 
 /// Append-only. Nothing updates or deletes an audit row.
