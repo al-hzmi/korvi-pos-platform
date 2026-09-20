@@ -18,6 +18,7 @@ export * from './credentials/index.js';
 export * from './bootstrap/index.js';
 export * from './entitlements/index.js';
 export * from './onboarding/index.js';
+export * from './migration/index.js';
 export * from './ids/uuidv7.js';
 export * from './zatca/tlv.js';
 export * from './zatca/base64.js';
