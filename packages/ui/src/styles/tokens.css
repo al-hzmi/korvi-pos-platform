@@ -19,15 +19,15 @@
 
   /* A deep teal-green: institutional and financial without being the default
      corporate blue every other ERP already uses. */
-  --primary: 172 62% 26%;
+  --primary: 170 77.4% 24.3%;
   --primary-foreground: 160 40% 98%;
 
   --secondary: 210 20% 96%;
   --secondary-foreground: 222 25% 20%;
   --muted: 210 20% 96%;
   --muted-foreground: 215 16% 45%;
-  --accent: 172 45% 94%;
-  --accent-foreground: 172 62% 20%;
+  --accent: 170 36% 94%;
+  --accent-foreground: 170 70% 20%;
 
   --destructive: 0 72% 45%;
   --destructive-foreground: 0 0% 100%;
@@ -38,16 +38,16 @@
 
   --border: 214 20% 89%;
   --input: 214 20% 89%;
-  --ring: 172 62% 32%;
+  --ring: 170 68% 31%;
 
-  --radius: 0.625rem;
+  --radius: 0.5rem;
 
   /* Brand — constant across themes and across print. See §2.4.
      One decimal place, because these round-trip exactly to #047857 and
      #34D399; rounding to integers lands on #027855, which is a different
      colour from the one the print rule emits literally. Do not round. */
-  --brand: 162.9 93.5% 24.3%;
-  --brand-on-dark: 158.1 64.4% 51.6%;
+  --brand: 170 77.4% 24.3%;
+  --brand-on-dark: 170 58% 48%;
 
   --font-sans:
     var(--font-plex-arabic), 'Segoe UI', 'Tahoma', 'Geeza Pro', 'Noto Sans Arabic', system-ui,
