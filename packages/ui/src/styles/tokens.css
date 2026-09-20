@@ -40,6 +40,11 @@
   --input: 214 20% 89%;
   --ring: 170 68% 31%;
 
+  --sidebar: 217.2 44.6% 12.7%;
+  --sidebar-foreground: 210 20% 96%;
+  --sidebar-muted: 215 16% 70%;
+  --sidebar-border: 216 30% 20%;
+
   --radius: 0.5rem;
 
   /* Brand — sampled from the approved 2026 Korvi wordmark.
