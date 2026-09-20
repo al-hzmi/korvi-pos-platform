@@ -79,9 +79,8 @@ describe('migration canonical model', () => {
   });
 
   it('blocks formula-like product authority and missing required mappings', () => {
-    const sheet = parseCsvDocument(
-      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n=1+1,قهوة,unit,each,10',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n=1+1,قهوة,unit,each,10')
+      .sheets[0]!;
     const mappings = suggestProductMappings(sheet.rows[0]!).map((suggestion) => ({
       sourceColumn: suggestion.sourceColumn,
       targetField: suggestion.targetField,
@@ -104,9 +103,8 @@ describe('migration canonical model', () => {
   });
 
   it('rejects one source column mapped to multiple Korvi fields', () => {
-    const sheet = parseCsvDocument(
-      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\nA1,قهوة,unit,each,10',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\nA1,قهوة,unit,each,10')
+      .sheets[0]!;
     const mappings = suggestProductMappings(sheet.rows[0]!).map((suggestion) => ({
       sourceColumn: suggestion.sourceColumn,
       targetField: suggestion.targetField,
