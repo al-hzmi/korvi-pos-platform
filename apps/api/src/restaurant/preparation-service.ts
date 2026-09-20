@@ -6,7 +6,7 @@ import {
   routeRestaurantOrderForPreparation,
   setProductPreparationRoutes,
 } from '@korvi/database';
-import { brandTenantId, requirePermission } from '@korvi/domain';
+import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
 import type {
   CreatePreparationStationRequest,
   PreparationMutationResult,
@@ -65,23 +65,23 @@ async function attempt<T>(work: () => Promise<T>): Promise<PreparationServiceRes
 export function createMerchantPreparationService(prisma: PrismaClient): MerchantPreparationService {
   return {
     async listStations(principal, branchId, activeOnly) {
-      requirePermission(principal, 'settings.manage');
+      requirePrincipalPermission(principal, 'settings.manage');
       return attempt(() =>
         listPreparationStations(prisma, scopeOf(principal), branchId, activeOnly),
       );
     },
     async createStation(principal, request) {
-      requirePermission(principal, 'settings.manage');
+      requirePrincipalPermission(principal, 'settings.manage');
       return attempt(() =>
         createPreparationStation(prisma, scopeOf(principal), { userId: principal.userId }, request),
       );
     },
     async listRoutes(principal, branchId) {
-      requirePermission(principal, 'settings.manage');
+      requirePrincipalPermission(principal, 'settings.manage');
       return attempt(() => listPreparationRoutes(prisma, scopeOf(principal), branchId));
     },
     async setProductRoutes(principal, request) {
-      requirePermission(principal, 'settings.manage');
+      requirePrincipalPermission(principal, 'settings.manage');
       return attempt(() =>
         setProductPreparationRoutes(
           prisma,
@@ -92,17 +92,13 @@ export function createMerchantPreparationService(prisma: PrismaClient): Merchant
       );
     },
     async routing(principal, orderId) {
-      requirePermission(principal, 'sale.create');
-      if (principal.branchId === null) {
+      requirePrincipalPermission(principal, 'sale.create');
+      const branchId = principal.branchId;
+      if (branchId === null) {
         return { outcome: 'failure', reason: 'unknown-branch' };
       }
       return attempt(() =>
-        routeRestaurantOrderForPreparation(
-          prisma,
-          scopeOf(principal),
-          principal.branchId!,
-          orderId,
-        ),
+        routeRestaurantOrderForPreparation(prisma, scopeOf(principal), branchId, orderId),
       );
     },
   };
