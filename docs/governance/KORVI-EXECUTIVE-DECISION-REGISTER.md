@@ -232,6 +232,32 @@ Source promotion:
 
 ---
 
+## 2026-09-20 — Full Restaurant Phase 2 is reactivated
+
+**Decision:** ACCEPTED — SUPERSEDES the 2026-09-16 limitation on the **active post-V1 restaurant execution scope**.
+
+Korvi Commercial/Sales V1 work already proven remains closed and is not reopened. Post-V1 product development now actively extends the existing Quick-Service/restaurant foundations into the broader Restaurant / Café operating mode, including tables/open orders, table transfer, cancellation, kitchen routing, preparation stations, KDS and the remaining explicitly adopted Restaurant Phase 2 capabilities.
+
+The existing financial, inventory, tenant-isolation, offline, audit, printing and ZATCA authorities remain mandatory. Restaurant work must extend them rather than fork them.
+
+Customer fiscal receipts and kitchen/preparation documents remain separate domains. Kitchen/preparation output is non-fiscal and must never carry VAT invoice identifiers, fiscal QR, ICV/PIH or other fiscal semantics.
+
+Verified checkpoint recorded in the same development cycle:
+
+- branch: `product/post-v1-restaurant-foundation`;
+- SHA: `997a17e7c6acf31420fccdf6101b11ee60d49f35`;
+- capability: Transfer Table UI + Cancel Order workflow on the existing backend authority;
+- status: **VERIFIED**;
+- evidence: CI run `35478694436`, 187 test files / 2,276 tests passed;
+- open gap / next action: Kitchen Routing → Preparation Stations → KDS.
+
+Source promotion:
+- Roadmap
+- Capability Matrix
+- this Decision Register
+
+---
+
 ## Register maintenance rule
 
 When a later executive decision supersedes one above, do not silently edit history. Add a new dated entry marked **SUPERSEDES** and update the affected authoritative source document.

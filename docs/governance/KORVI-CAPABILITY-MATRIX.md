@@ -123,20 +123,21 @@ Important: a row may carry `I/T` while still being incomplete as a sellable work
 
 | Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
 |---|---:|---:|---|---|---|
-| Restaurant/menu/categories foundation | B1 | C1 | A; vertical setting exists, real restaurant domain not yet claimed | Restaurant | UX, Data Integrity |
-| Modifiers/options | B1 | C0/C1 | A; not yet claimed | Restaurant/Pricing | Financial, UX |
-| Dine-in/takeaway/delivery modes | B1 | C1 | A; not yet claimed | Restaurant | UX, Data Integrity |
-| Tables/zones/order ownership | B1 | C1 | A; not yet claimed | Restaurant | Operational, UX |
-| Courses/notes | B1 | C1 | A; not yet claimed | Restaurant | UX |
-| Split/merge bills/orders | B1 | C0/C1 | A; must be architected against transaction authority | Restaurant/Transaction | Financial, Data Integrity |
-| Kitchen routing/KDS | B1 | C1 | A; not yet claimed implemented | Restaurant/KDS | Operational, Offline |
-| Waiter/server application | B1 | C1 | A; not yet claimed | Restaurant/Client | UX, Offline |
-| Customer/order-status display | B1/B2 | C2 | A; not yet claimed | Restaurant/Display | UX |
-| Self-service kiosk | B1/B2 | C1 | A; not yet claimed | Restaurant/Kiosk | UX, Security |
-| QR table menu/order/pay | B1/B2 | C0/C1 | A; not yet claimed | Restaurant/Payments | Security, Financial |
-| Online ordering | B1 | C1 | A; not yet claimed | Omnichannel/Restaurant | Integration, Idempotency |
-| Recipes/ingredients/consumption | B1 | C0/C1 | A; must use one stock/cost truth | Restaurant/Inventory | Data Integrity, Financial |
-| Waste/spoilage | B1 | C1 | A; not yet claimed | Restaurant/Inventory | Data Integrity, Audit |
+| Restaurant/menu/categories foundation | B1 | C1 | ADOPTED / IN PROGRESS; restaurant vertical reuses catalogue/category truth, dedicated menu/modifier depth remains open | Restaurant | UX, Data Integrity |
+| Modifiers/options | B1 | C0/C1 | ADOPTED; basic deterministic preparation options/notes exist, authoritative modifier groups/pricing remain open | Restaurant/Pricing | Financial, UX |
+| Dine-in/takeaway/delivery modes | B1 | C1 | IMPLEMENTED / VERIFIED on `product/post-v1-restaurant-foundation@997a17e7`; checkout/open-order context and POS flow covered by green CI | Restaurant | UX, Data Integrity |
+| Tables/zones/order ownership | B1 | C1 | IMPLEMENTED / VERIFIED through floor authority, open orders, hold/resume, revision-safe line edits and table transfer; `997a17e7` CI `35478694436` | Restaurant | Operational, UX |
+| Open-order cancellation | B1 | C1 | IMPLEMENTED / VERIFIED; `sale.void` server authority, explicit reason, idempotency/revision protection and audit, POS command surface on `997a17e7` | Restaurant | Security, Audit, UX |
+| Courses/notes | B1 | C1 | ADOPTED / PARTIAL; preparation notes exist, course/firing lifecycle remains open | Restaurant | UX |
+| Split/merge bills/orders | B1 | C0/C1 | ADOPTED; must be architected against transaction authority before implementation claim | Restaurant/Transaction | Financial, Data Integrity |
+| Kitchen routing/KDS | B1 | C1 | ADOPTED / IN PROGRESS next; current preparation ticket is explicitly non-fiscal, station routing/KDS authority not yet claimed | Restaurant/KDS | Operational, Offline |
+| Waiter/server application | B1 | C1 | ADOPTED; not yet claimed implemented | Restaurant/Client | UX, Offline |
+| Customer/order-status display | B1/B2 | C2 | ADOPTED; not yet claimed | Restaurant/Display | UX |
+| Self-service kiosk | B1/B2 | C1 | ADOPTED; not yet claimed | Restaurant/Kiosk | UX, Security |
+| QR table menu/order/pay | B1/B2 | C0/C1 | ADOPTED; not yet claimed | Restaurant/Payments | Security, Financial |
+| Online ordering | B1 | C1 | ADOPTED; not yet claimed | Omnichannel/Restaurant | Integration, Idempotency |
+| Recipes/ingredients/consumption | B1 | C0/C1 | ADOPTED; must use one stock/cost truth | Restaurant/Inventory | Data Integrity, Financial |
+| Waste/spoilage | B1 | C1 | ADOPTED; not yet claimed | Restaurant/Inventory | Data Integrity, Audit |
 
 ## H. Payments / omnichannel / integrations
 

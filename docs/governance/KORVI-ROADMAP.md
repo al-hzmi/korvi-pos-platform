@@ -177,24 +177,24 @@ Complete:
 
 Complete customer analytics/segmentation, explicit credit/balance authority where offered, loyalty ledger/rewards, gift/wallet value only as governed financial ledgers, and deterministic promotions with snapshot/refund explainability.
 
-### Stage 6 — Light Food / Quick-Service Vertical
+### Stage 6 — Restaurant / Café Operating Mode — REACTIVATED 2026-09-20
 
-Korvi is not currently pursuing full-service restaurant parity as an active commercial requirement. The target food-service profile is deliberately narrow and reuses the proven cashier/retail core for cafes, cafeterias, juice shops, shawarma/quick-service counters and similarly simple food merchants.
+The 2026-09-20 executive directive supersedes the earlier **active-execution** limitation to light quick-service only. Commercial V1 readiness already proven under the narrower scope remains historical evidence and is not reopened merely because the post-V1 product scope is broader.
 
-Complete only the capabilities needed to make that profile operationally credible:
+Restaurant Phase 2 now proceeds on the existing Korvi transaction/inventory/offline/ZATCA authorities rather than creating a disconnected restaurant POS.
 
-1. image/category-oriented product tiles while preserving search/barcode support;
-2. simple counter/takeaway order flow and deterministic order/queue number;
-3. ordinary customer receipt/invoice using the same financial/ZATCA authority as retail;
-4. separate non-fiscal preparation/kitchen ticket tied to the finalized order, not a second tax invoice;
-5. optional second-printer routing for preparation staff, with explicit failure/retry/reprint state and no duplicate-sale side effects;
-6. minimal deterministic item notes/options where commercially required without introducing a separate restaurant transaction engine;
-7. offline/restart/reconnect behavior consistent with the same Korvi Cashier guarantees;
-8. exact installed Windows/Android printer-profile proof for supported hardware.
+Verified checkpoint:
 
-The following are intentionally outside the active Commercial V1 / quick-service commitment and must not block it: table maps/zones, waiter/server application, courses, complex split/merge bills, full KDS orchestration, customer displays, kiosks, QR table ordering/payment, full recipes/ingredients/waste management, online ordering and delivery-platform adapters.
+- branch: `product/post-v1-restaurant-foundation`;
+- implementation/evidence SHA: `997a17e7c6acf31420fccdf6101b11ee60d49f35`;
+- CI: `35478694436` — Formatting, Lint, Invariants, Prisma, Build, Typecheck and Tests green;
+- tests: 187 files passed / 2,276 tests passed; 24 files and 369 live-only tests skipped by the normal CI profile;
+- implemented/verified: dine-in/takeaway/delivery context, zones/tables, open orders, hold/resume, revision-safe line editing, atomic settlement, table transfer UI, and permissioned/audited cancellation;
+- fiscal boundary preserved: customer fiscal receipt remains separate from non-fiscal preparation output.
 
-Those advanced full-service capabilities are future optional scope only. Re-entering them into active execution requires a new explicit executive decision and must not silently expand the sellable-V1 denominator.
+Immediate next action:
+
+**Kitchen Routing → Preparation Stations → KDS**, preserving non-fiscal preparation semantics, then continue remaining Restaurant Phase 2 capabilities from repository truth.
 
 ### Stage 7 — Payments / Omnichannel / Integrations
 
