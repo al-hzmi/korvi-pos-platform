@@ -176,7 +176,7 @@ function Workspace({
   }, []);
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted/40">
+    <div className="flex min-h-dvh flex-col bg-background">
       <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4">
         <div className="flex items-center gap-4">
           <KorviMark size="sm" suffix="CONTROL" />
@@ -235,18 +235,21 @@ function Workspace({
           </CardSurface>
         </main>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
-          <aside className="w-full shrink-0 lg:w-64" aria-label="التنقل">
-            <CardSurface className="p-2">
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          <aside
+            className="w-full shrink-0 border-b border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] p-2 lg:w-60 lg:border-b-0 lg:border-l lg:p-3 xl:w-64"
+            aria-label="التنقل"
+          >
+            <div className="lg:sticky lg:top-3">
               <ControlNav
                 active={activeSection}
                 permissions={principal.permissions}
                 locked={commandLocked}
               />
-            </CardSurface>
+            </div>
           </aside>
 
-          <main className="flex min-h-0 flex-1 flex-col gap-4">
+          <main className="flex min-h-0 flex-1 flex-col gap-5 p-4 md:p-6 lg:p-8">
             <div>
               <h1 className="text-2xl font-semibold text-foreground">
                 {sectionTitle(activeSection)}
