@@ -686,7 +686,7 @@ export function CashierScreen({
       : undefined;
 
   return (
-    <div className="flex h-screen flex-col bg-muted/30">
+    <div className="flex h-dvh flex-col bg-background">
       <TopBar
         cashierName={principal.user.displayName}
         controlCentreHref={authorizedControlHref}
@@ -697,7 +697,7 @@ export function CashierScreen({
       />
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(0,1fr)_28rem] lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_30rem]">
-        <CardSurface className="flex min-h-[28rem] flex-col border-border/80 bg-card p-3 shadow-sm sm:p-4 lg:min-h-0">
+        <CardSurface className="flex min-h-[28rem] flex-col border-border/80 bg-card p-3 sm:p-4 lg:min-h-0">
           {offlineSync.state.needsReview.length > 0 ? (
             <StatusNote tone="warning" className="mb-3" live>
               توجد {offlineSync.state.needsReview.length} عملية بيع دون اتصال رفضها الخادم وتحتاج
@@ -739,13 +739,13 @@ export function CashierScreen({
           aria-label={`السلة والدفع — ${drawerLabel}`}
         >
           {checkout.state.phase === 'queued' && checkout.state.intent !== null ? (
-            <CardSurface className="flex min-h-0 flex-1 flex-col gap-4 border-border/80 p-4 shadow-sm">
+            <CardSurface className="flex min-h-0 flex-1 flex-col gap-4 border-border/80 p-4">
               <StatusNote tone="warning" live>
                 تم حفظ البيع محلياً بنفس معرّف العملية وسيُرسل للخادم دون تغيير عند عودة الاتصال.
                 هذه ليست فاتورة ضريبية معتمدة بعد؛ المخزون والضريبة والحسابات تبقى بانتظار سلطة
                 الخادم.
               </StatusNote>
-              <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm">
+              <div className="rounded-md border border-border bg-muted/40 p-4 text-sm">
                 <p className="font-semibold">بيع دون اتصال — محفوظ بأمان</p>
                 {orderNumber === null ? null : (
                   <p className="mt-2 font-semibold">رقم الطلب: {orderNumber}</p>
@@ -766,7 +766,7 @@ export function CashierScreen({
               </Button>
             </CardSurface>
           ) : completed === null ? (
-            <CardSurface className="flex min-h-0 flex-1 flex-col border-border/80 p-4 shadow-sm">
+            <CardSurface className="flex min-h-0 flex-1 flex-col border-border/80 p-4">
               {durabilityLoading ? (
                 <StatusNote tone="info" className="mb-3" live>
                   جاري استعادة حالة البيع المحلية…
