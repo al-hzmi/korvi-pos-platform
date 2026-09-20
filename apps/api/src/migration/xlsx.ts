@@ -14,10 +14,8 @@ const METHOD_STORED = 0;
 const METHOD_DEFLATE = 8;
 
 const SHEET_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
-const OFFICE_REL_NS =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-const PACKAGE_REL_NS =
-  'http://schemas.openxmlformats.org/package/2006/relationships';
+const OFFICE_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
 const XML_OPTIONS = {
   option:
@@ -134,11 +132,7 @@ function parseCentralDirectory(
   if (disk !== 0 || centralDisk !== 0 || diskEntries !== totalEntries) {
     throw new XlsxParseError('Multi-disk ZIP files are not supported.');
   }
-  if (
-    totalEntries === 0xffff ||
-    centralSize === 0xffffffff ||
-    centralOffset === 0xffffffff
-  ) {
+  if (totalEntries === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) {
     throw new XlsxParseError('Zip64 XLSX files are not supported.');
   }
   if (totalEntries > options.maxEntries) {
@@ -170,7 +164,8 @@ function parseCentralDirectory(
     const end = offset + 46 + nameLength + extraLength + fileCommentLength;
     if (end > source.length) throw new XlsxParseError('Truncated ZIP central entry.');
     if (diskStart !== 0) throw new XlsxParseError('Multi-disk ZIP entry is not supported.');
-    if ((flags & ENCRYPTED_FLAG) !== 0) throw new XlsxParseError('Encrypted XLSX is not supported.');
+    if ((flags & ENCRYPTED_FLAG) !== 0)
+      throw new XlsxParseError('Encrypted XLSX is not supported.');
     if (method !== METHOD_STORED && method !== METHOD_DEFLATE) {
       throw new XlsxParseError('Unsupported XLSX compression method.');
     }
@@ -188,10 +183,7 @@ function parseCentralDirectory(
     if (totalUncompressed > options.maxUncompressedBytes) {
       throw new XlsxParseError('XLSX expands beyond configured size limit.');
     }
-    if (
-      compressedSize > 0 &&
-      uncompressedSize / compressedSize > options.maxCompressionRatio
-    ) {
+    if (compressedSize > 0 && uncompressedSize / compressedSize > options.maxCompressionRatio) {
       throw new XlsxParseError('XLSX compression ratio exceeds configured limit.');
     }
     entries.set(name, {
@@ -352,7 +344,10 @@ function relationshipTarget(base: string, target: string): string {
   return normalized;
 }
 
-function firstWorksheetPath(source: Buffer, entries: ReadonlyMap<string, ZipEntry>): {
+function firstWorksheetPath(
+  source: Buffer,
+  entries: ReadonlyMap<string, ZipEntry>,
+): {
   readonly name: string;
   readonly path: string;
 } {
@@ -500,20 +495,12 @@ function cellFromNode(
     }
     const styleRaw = node.get('@s')?.content;
     const styleIndex =
-      styleRaw === undefined
-        ? null
-        : /^(0|[1-9][0-9]*)$/u.test(styleRaw)
-          ? Number(styleRaw)
-          : null;
+      styleRaw === undefined ? null : /^(0|[1-9][0-9]*)$/u.test(styleRaw) ? Number(styleRaw) : null;
     resolved = { kind: 'number', value: simpleLeadingZeroFormat(value, styleIndex, styleTable) };
   }
 
   const text =
-    resolved.kind === 'text'
-      ? resolved.value
-      : resolved.kind === 'number'
-        ? resolved.value
-        : null;
+    resolved.kind === 'text' ? resolved.value : resolved.kind === 'number' ? resolved.value : null;
   if (text !== null && text.length > maxCellCharacters) {
     throw new XlsxParseError('XLSX cell exceeds configured size limit.');
   }
@@ -570,10 +557,7 @@ function worksheet(
   }
 }
 
-export function parseXlsxDocument(
-  source: Buffer,
-  options: XlsxParseOptions = {},
-): ImportDocument {
+export function parseXlsxDocument(source: Buffer, options: XlsxParseOptions = {}): ImportDocument {
   if (source.length < 22) throw new XlsxParseError('XLSX ZIP is too small.');
   const maxEntries = boundedInteger(options.maxEntries, DEFAULT_MAX_ENTRIES, 4, 10_000, 'entry');
   const maxUncompressedBytes = boundedInteger(

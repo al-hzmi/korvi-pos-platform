@@ -28,9 +28,8 @@ describe('migration canonical model', () => {
   });
 
   it('preserves physical CSV row numbers when blank rows are skipped', () => {
-    const sheet = parseCsvDocument(
-      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n\nA1,قهوة,unit,each,10',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n\nA1,قهوة,unit,each,10')
+      .sheets[0]!;
     expect(sheet.sourceRowNumbers).toEqual([1, 3]);
     const mappings = suggestProductMappings(sheet.rows[0]!).map((suggestion) => ({
       sourceColumn: suggestion.sourceColumn,

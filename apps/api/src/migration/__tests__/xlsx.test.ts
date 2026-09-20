@@ -166,9 +166,7 @@ describe('XLSX migration adapter', () => {
 
   it('rejects active content and external relationships', () => {
     expect(() =>
-      parseXlsxDocument(
-        workbookZip([{ name: 'xl/vbaProject.bin', data: Buffer.from([1, 2, 3]) }]),
-      ),
+      parseXlsxDocument(workbookZip([{ name: 'xl/vbaProject.bin', data: Buffer.from([1, 2, 3]) }])),
     ).toThrow(XlsxParseError);
 
     const externalRels = Buffer.from(
@@ -188,9 +186,9 @@ describe('XLSX migration adapter', () => {
   });
 
   it('rejects decompression expansion beyond configured limits', () => {
-    expect(() =>
-      parseXlsxDocument(workbookZip(), { maxUncompressedBytes: 1024 }),
-    ).toThrow(XlsxParseError);
+    expect(() => parseXlsxDocument(workbookZip(), { maxUncompressedBytes: 1024 })).toThrow(
+      XlsxParseError,
+    );
   });
 
   it('rejects XML entity declarations before libxml parsing', () => {
