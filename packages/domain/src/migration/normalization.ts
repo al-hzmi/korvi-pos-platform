@@ -78,7 +78,9 @@ export function parseVatBasisPoints(value: string): number {
   if (percent !== null) return Number(percent[1]) * 100;
   const bps = BASIS_POINTS.exec(candidate);
   if (bps !== null) return Number(bps[1]);
-  throw new ImportNormalizationError('VAT must be an explicit whole percent or basis-points value.');
+  throw new ImportNormalizationError(
+    'VAT must be an explicit whole percent or basis-points value.',
+  );
 }
 
 export function importCellText(cell: ImportCell): string | null {

@@ -14,12 +14,7 @@ import {
   parseVatBasisPoints,
 } from './normalization.js';
 import { classifyImportIssues } from './model.js';
-import type {
-  ImportCell,
-  ImportIssue,
-  ImportRowReview,
-  ImportSheet,
-} from './model.js';
+import type { ImportCell, ImportIssue, ImportRowReview, ImportSheet } from './model.js';
 import type { ProductType } from '../ports/persistence.js';
 
 export type ProductImportField =
@@ -71,7 +66,15 @@ const ALIASES: Readonly<Record<ProductImportField, readonly string[]>> = {
   productType: ['product type', 'item type', 'نوع الصنف', 'نوع المنتج'],
   unitLabel: ['unit', 'uom', 'unit label', 'الوحدة', 'وحدة', 'وحدة القياس'],
   sellingPrice: ['price', 'selling price', 'sale price', 'سعر البيع', 'السعر', 'سعر الحبة'],
-  vatRate: ['vat', 'vat rate', 'tax', 'tax rate', 'الضريبة', 'نسبة الضريبة', 'ضريبة القيمة المضافة'],
+  vatRate: [
+    'vat',
+    'vat rate',
+    'tax',
+    'tax rate',
+    'الضريبة',
+    'نسبة الضريبة',
+    'ضريبة القيمة المضافة',
+  ],
 };
 
 const ALIAS_TO_FIELD = new Map<string, ProductImportField>();
@@ -131,7 +134,14 @@ export function validateProductMappings(
       mapping.sourceColumn >= headerRow.length
     ) {
       issues.push(
-        issue('BLOCKED', 'source-column-out-of-range', 'Mapped source column does not exist.', null, mapping.sourceColumn, mapping.targetField),
+        issue(
+          'BLOCKED',
+          'source-column-out-of-range',
+          'Mapped source column does not exist.',
+          null,
+          mapping.sourceColumn,
+          mapping.targetField,
+        ),
       );
       continue;
     }
@@ -173,7 +183,8 @@ export function validateProductMappings(
 function parseProductType(value: string): ProductType {
   const normalized = normalizeHeaderKey(value);
   if (normalized === 'unit' || normalized === 'وحدة' || normalized === 'حبة') return 'unit';
-  if (normalized === 'weighted' || normalized === 'weight' || normalized === 'وزني') return 'weighted';
+  if (normalized === 'weighted' || normalized === 'weight' || normalized === 'وزني')
+    return 'weighted';
   throw new ImportNormalizationError('Product type must be explicitly unit or weighted.');
 }
 
@@ -265,7 +276,8 @@ export function reviewProductSheet(
         const unitLabel = normalizeUnitLabel(unitRaw);
         const priceMinor = normalizeProductPriceMinor(parseExactSarToMinor(priceRaw));
         const vatRaw = values.get('vatRate')?.value ?? null;
-        const vatBasisPoints = vatRaw === null || vatRaw === '' ? undefined : parseVatBasisPoints(vatRaw);
+        const vatBasisPoints =
+          vatRaw === null || vatRaw === '' ? undefined : parseVatBasisPoints(vatRaw);
 
         const previousSku = seenSku.get(sku);
         if (previousSku !== undefined) {
@@ -313,9 +325,7 @@ export function reviewProductSheet(
         };
       } catch (error) {
         if (error instanceof ImportNormalizationError || error instanceof ProductBootstrapError) {
-          issues.push(
-            issue('ERROR', 'invalid-product-row', error.message, sourceRow, null, null),
-          );
+          issues.push(issue('ERROR', 'invalid-product-row', error.message, sourceRow, null, null));
         } else {
           throw error;
         }
