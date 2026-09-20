@@ -267,7 +267,7 @@ export function MembersPanel({
         </StatusNote>
       )}
 
-      <CardSurface className="p-5">
+      <CardSurface className="p-4 md:p-5">
         <div className="mb-4">
           <h2 className="text-base font-semibold text-foreground">إضافة موظف</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -327,7 +327,7 @@ export function MembersPanel({
             const membershipActive = member.membershipStatus === 'active';
             const editing = edit?.userId === member.userId;
             return (
-              <CardSurface key={member.userId} className="p-5">
+              <CardSurface key={member.userId} className="p-4 md:p-5">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
