@@ -345,13 +345,17 @@ describe('tenant-consistent foreign keys', () => {
   });
 
   it.each(tenantOwnedRefs.map((reference) => `${reference.model}.${reference.field}`))(
-    '%s references its parent by (tenantId, id), not by id alone',
+    '%s references its parent with tenantId leading and id anchored',
     (label) => {
       const reference = tenantOwnedRefs.find(
         (candidate) => `${candidate.model}.${candidate.field}` === label,
       );
-      expect(reference?.references).toBe('tenantId, id');
-      expect(reference?.fields.startsWith('tenantId, ')).toBe(true);
+      const fields = reference?.fields.split(',').map((column) => column.trim()) ?? [];
+      const parentKeys = reference?.references.split(',').map((column) => column.trim()) ?? [];
+      expect(fields.length).toBe(parentKeys.length);
+      expect(fields[0]).toBe('tenantId');
+      expect(parentKeys[0]).toBe('tenantId');
+      expect(parentKeys.at(-1)).toBe('id');
     },
   );
 

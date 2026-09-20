@@ -66,15 +66,15 @@ CREATE INDEX "restaurant_preparation_routes_tenantId_branchId_productId_idx"
 
 ALTER TABLE "restaurant_preparation_stations" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "restaurant_preparation_stations" FORCE ROW LEVEL SECURITY;
-CREATE POLICY "restaurant_preparation_stations_isolation"
-  ON "restaurant_preparation_stations"
+DROP POLICY IF EXISTS "restaurant_preparation_stations_isolation" ON "restaurant_preparation_stations";
+CREATE POLICY "restaurant_preparation_stations_isolation" ON "restaurant_preparation_stations"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "restaurant_preparation_routes" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "restaurant_preparation_routes" FORCE ROW LEVEL SECURITY;
-CREATE POLICY "restaurant_preparation_routes_isolation"
-  ON "restaurant_preparation_routes"
+DROP POLICY IF EXISTS "restaurant_preparation_routes_isolation" ON "restaurant_preparation_routes";
+CREATE POLICY "restaurant_preparation_routes_isolation" ON "restaurant_preparation_routes"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
