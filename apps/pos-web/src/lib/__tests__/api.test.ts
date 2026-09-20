@@ -234,7 +234,9 @@ describe('the API client', () => {
         operationId: 'receipt-op-1',
         purchaseOrderId: 'order-1',
         reference: null,
-        lines: [{ purchaseOrderLineId: 'line-1', acceptedQuantityScaled: '1000' }],
+        lines: [
+          { purchaseOrderLineId: 'line-1', acceptedQuantityScaled: '1000' },
+        ],
       });
       const caught = attempt.catch((error: unknown) => error);
 
