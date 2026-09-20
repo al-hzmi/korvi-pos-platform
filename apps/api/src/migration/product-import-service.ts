@@ -150,7 +150,6 @@ function parseSource(input: CsvProductSourceInput): ProductMigrationResult<{
   }
 }
 
-
 function decodeBase64Strict(value: string): Buffer | null {
   if (value === '' || value.length > 7_000_000 || value.length % 4 !== 0) return null;
   if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) {
