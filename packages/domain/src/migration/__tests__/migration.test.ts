@@ -111,10 +111,7 @@ describe('migration canonical model', () => {
       sourceColumn: suggestion.sourceColumn,
       targetField: suggestion.targetField,
     }));
-    const duplicatedSource = [
-      ...mappings,
-      { sourceColumn: 0, targetField: 'barcode' as const },
-    ];
+    const duplicatedSource = [...mappings, { sourceColumn: 0, targetField: 'barcode' as const }];
     expect(reviewProductSheet(sheet, duplicatedSource)[0]?.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
