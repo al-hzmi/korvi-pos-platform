@@ -153,6 +153,50 @@ export interface RestaurantOrderCancelRequest {
   readonly reason: string;
 }
 
+export interface RestaurantPreparationStation {
+  readonly id: string;
+  readonly branchId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly sortOrder: number;
+  readonly isActive: boolean;
+}
+
+export type RestaurantPreparationTaskStatus = 'queued' | 'preparing' | 'ready' | 'served';
+
+export interface RestaurantPreparationTask {
+  readonly id: string;
+  readonly branchId: string;
+  readonly stationId: string;
+  readonly orderId: string;
+  readonly orderLineId: string;
+  readonly productId: string;
+  readonly orderRevision: string;
+  readonly lineNumber: number;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly quantityScaled: string;
+  readonly preparationNote: string | null;
+  readonly preparationOptions: string | null;
+  readonly status: RestaurantPreparationTaskStatus;
+  readonly revision: string;
+  readonly queuedAt: string;
+  readonly startedAt: string | null;
+  readonly readyAt: string | null;
+  readonly servedAt: string | null;
+}
+
+export interface RestaurantPreparationTaskUpdateRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly status: Exclude<RestaurantPreparationTaskStatus, 'queued'>;
+}
+
+export interface RestaurantPreparationTaskMutation {
+  readonly value: RestaurantPreparationTask;
+  readonly replayed: boolean;
+}
+
 export interface ProductSummary {
   readonly id: string;
   /** Optional only so pre-upgrade durable catalogue rows remain readable. */
