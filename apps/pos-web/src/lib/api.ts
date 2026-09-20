@@ -43,6 +43,10 @@ import type {
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
   RestaurantOrderTransferTableRequest,
+  RestaurantPreparationStation,
+  RestaurantPreparationTask,
+  RestaurantPreparationTaskMutation,
+  RestaurantPreparationTaskUpdateRequest,
   PurchasingBranch,
   PurchasingPage,
   PurchasingProduct,
@@ -146,6 +150,17 @@ export interface ApiClient {
     orderId: string,
     request: RestaurantOrderCancelRequest,
   ): Promise<RestaurantOrderMutationResult>;
+  restaurantPreparationStations(
+    options?: RequestOptions,
+  ): Promise<readonly RestaurantPreparationStation[]>;
+  restaurantPreparationTasks(
+    stationId: string,
+    options?: RequestOptions,
+  ): Promise<readonly RestaurantPreparationTask[]>;
+  updateRestaurantPreparationTask(
+    taskId: string,
+    request: RestaurantPreparationTaskUpdateRequest,
+  ): Promise<RestaurantPreparationTaskMutation>;
   dashboardSummary(options?: RequestOptions): Promise<DashboardSummary>;
   products(
     query: { readonly q?: string; readonly limit?: number },
@@ -422,6 +437,30 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     async cancelRestaurantOrder(orderId, request) {
       return retryableCommand<RestaurantOrderMutationResult>(
         `/v1/restaurant/orders/${encodeURIComponent(orderId)}/cancel`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async restaurantPreparationStations(options) {
+      return (await call(
+        '/v1/restaurant/preparation-stations',
+        { method: 'GET' },
+        options,
+      )) as readonly RestaurantPreparationStation[];
+    },
+
+    async restaurantPreparationTasks(stationId, options) {
+      return (await call(
+        `/v1/restaurant/preparation-stations/${encodeURIComponent(stationId)}/tasks`,
+        { method: 'GET' },
+        options,
+      )) as readonly RestaurantPreparationTask[];
+    },
+
+    async updateRestaurantPreparationTask(taskId, request) {
+      return retryableCommand<RestaurantPreparationTaskMutation>(
+        `/v1/restaurant/preparation-tasks/${encodeURIComponent(taskId)}/status`,
         request,
         RESTAURANT_COMMAND_TIMEOUT_MS,
       );
