@@ -183,18 +183,18 @@ The 2026-09-20 executive directive supersedes the earlier **active-execution** l
 
 Restaurant Phase 2 now proceeds on the existing Korvi transaction/inventory/offline/ZATCA authorities rather than creating a disconnected restaurant POS.
 
-Verified checkpoint:
+Verified checkpoints:
 
-- branch: `product/post-v1-restaurant-foundation`;
-- implementation/evidence SHA: `997a17e7c6acf31420fccdf6101b11ee60d49f35`;
-- CI: `35478694436` — Formatting, Lint, Invariants, Prisma, Build, Typecheck and Tests green;
-- tests: 187 files passed / 2,276 tests passed; 24 files and 369 live-only tests skipped by the normal CI profile;
-- implemented/verified: dine-in/takeaway/delivery context, zones/tables, open orders, hold/resume, revision-safe line editing, atomic settlement, table transfer UI, and permissioned/audited cancellation;
-- fiscal boundary preserved: customer fiscal receipt remains separate from non-fiscal preparation output.
+- `997a17e7c6acf31420fccdf6101b11ee60d49f35`: dine-in/takeaway/delivery context, zones/tables, open orders, hold/resume, revision-safe line editing, atomic settlement, table transfer UI, and permissioned/audited cancellation.
+- `bf9b9c77818f3093c5d20de674cd982bf7474541`: Preparation Stations + deterministic product→station routing, branch-scoped RLS, settings-managed configuration, audited/idempotent writes and non-fiscal routing output.
+- CI run `35507010055`: Formatting, Lint, Invariants, Prisma, Build, Typecheck and Tests green.
+- automated evidence: 188 test files passed / 2,291 tests passed; 24 files and 369 live-only tests skipped by the normal CI profile.
+- installed-client evidence on the same SHA: Windows and Android proof workflows green.
+- fiscal boundary preserved: customer fiscal receipt remains separate from non-fiscal preparation output; routing payload contains no price/VAT/invoice/QR/ICV/PIH semantics.
 
 Immediate next action:
 
-**Kitchen Routing → Preparation Stations → KDS**, preserving non-fiscal preparation semantics, then continue remaining Restaurant Phase 2 capabilities from repository truth.
+**KDS lifecycle + preparation status/timing/retry semantics**, built on the verified station-routing authority, then continue course/firing and remaining Restaurant Phase 2 capabilities from repository truth.
 
 ### Stage 7 — Payments / Omnichannel / Integrations
 

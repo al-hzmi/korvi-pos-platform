@@ -256,6 +256,17 @@ Source promotion:
 - Capability Matrix
 - this Decision Register
 
+### Verified follow-on checkpoint — Preparation Stations / Kitchen Routing
+
+- branch: `product/post-v1-restaurant-foundation`;
+- SHA: `bf9b9c77818f3093c5d20de674cd982bf7474541`;
+- capability: branch-scoped preparation stations plus deterministic product→station routing;
+- status: **VERIFIED**;
+- evidence: CI run `35507010055`, 188 test files / 2,291 tests passed, plus Windows and Android installed-client proof workflows green on the same SHA;
+- authority: station configuration is permissioned, tenant/branch scoped, RLS protected, idempotent and audited;
+- fiscal boundary: preparation routing remains operational/non-fiscal and excludes price/VAT/invoice/QR/ICV/PIH semantics;
+- open gap / next action: KDS lifecycle → preparation status/timing → retry/reprint semantics.
+
 ---
 
 ## Register maintenance rule

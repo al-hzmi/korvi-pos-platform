@@ -130,7 +130,7 @@ Important: a row may carry `I/T` while still being incomplete as a sellable work
 | Open-order cancellation | B1 | C1 | IMPLEMENTED / VERIFIED; `sale.void` server authority, explicit reason, idempotency/revision protection and audit, POS command surface on `997a17e7` | Restaurant | Security, Audit, UX |
 | Courses/notes | B1 | C1 | ADOPTED / PARTIAL; preparation notes exist, course/firing lifecycle remains open | Restaurant | UX |
 | Split/merge bills/orders | B1 | C0/C1 | ADOPTED; must be architected against transaction authority before implementation claim | Restaurant/Transaction | Financial, Data Integrity |
-| Kitchen routing/KDS | B1 | C1 | ADOPTED / IN PROGRESS next; current preparation ticket is explicitly non-fiscal, station routing/KDS authority not yet claimed | Restaurant/KDS | Operational, Offline |
+| Kitchen routing/KDS | B1 | C1 | Preparation Stations + deterministic product→station routing IMPLEMENTED / VERIFIED on `product/post-v1-restaurant-foundation@bf9b9c77`; branch-scoped RLS, audited/idempotent configuration and structurally non-fiscal routing are proven. KDS lifecycle/status orchestration remains IN PROGRESS. | Restaurant/KDS | Operational, Offline |
 | Waiter/server application | B1 | C1 | ADOPTED; not yet claimed implemented | Restaurant/Client | UX, Offline |
 | Customer/order-status display | B1/B2 | C2 | ADOPTED; not yet claimed | Restaurant/Display | UX |
 | Self-service kiosk | B1/B2 | C1 | ADOPTED; not yet claimed | Restaurant/Kiosk | UX, Security |
