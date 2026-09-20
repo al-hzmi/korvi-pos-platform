@@ -130,8 +130,7 @@ function issueFromUnknown(value: unknown): ImportIssue | null {
     code: candidate.code,
     message: candidate.message,
     row: typeof candidate.row === 'number' ? candidate.row : null,
-    sourceColumn:
-      typeof candidate.sourceColumn === 'number' ? candidate.sourceColumn : null,
+    sourceColumn: typeof candidate.sourceColumn === 'number' ? candidate.sourceColumn : null,
     targetField: typeof candidate.targetField === 'string' ? candidate.targetField : null,
   };
 }
@@ -163,7 +162,10 @@ function mappingFromUnknown(value: unknown): ProductColumnMapping[] {
       throw new DatabaseError('Product import mapping is corrupt.');
     }
     const target = candidate.targetField;
-    if (target !== null && (typeof target !== 'string' || !fields.has(target as ProductImportField))) {
+    if (
+      target !== null &&
+      (typeof target !== 'string' || !fields.has(target as ProductImportField))
+    ) {
       throw new DatabaseError('Product import mapping is corrupt.');
     }
     result.push({
@@ -200,9 +202,7 @@ function canonicalFromUnknown(value: unknown): CanonicalProductImportRow {
     productType,
     unitLabel: row.unitLabel,
     priceMinor: row.priceMinor,
-    ...(row.vatBasisPoints === undefined
-      ? {}
-      : { vatBasisPoints: row.vatBasisPoints as number }),
+    ...(row.vatBasisPoints === undefined ? {} : { vatBasisPoints: row.vatBasisPoints as number }),
   };
 }
 
