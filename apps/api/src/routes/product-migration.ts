@@ -1,7 +1,5 @@
 import { z } from 'zod';
-import {
-  MAX_PRODUCT_IMPORT_BYTES,
-} from '../migration/product-import-service.js';
+import { MAX_PRODUCT_IMPORT_BYTES } from '../migration/product-import-service.js';
 import type {
   MerchantProductMigrationService,
   ProductMigrationFailureReason,

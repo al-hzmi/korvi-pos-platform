@@ -20,11 +20,7 @@ import type {
   ProductMappingSuggestion,
   TenantScope,
 } from '@korvi/domain';
-import type {
-  PrismaClient,
-  ProductImportRefusal,
-  ProductImportSummary,
-} from '@korvi/database';
+import type { PrismaClient, ProductImportRefusal, ProductImportSummary } from '@korvi/database';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 
 export const MAX_PRODUCT_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -34,10 +30,7 @@ export const MAX_PRODUCT_IMPORT_PREVIEW_ROWS = 20;
 export type CsvDelimiter = ',' | ';' | '\t';
 
 export type ProductMigrationFailureReason =
-  | ProductImportRefusal
-  | 'file-too-large'
-  | 'invalid-csv'
-  | 'empty-file';
+  ProductImportRefusal | 'file-too-large' | 'invalid-csv' | 'empty-file';
 
 export type ProductMigrationResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
@@ -99,9 +92,7 @@ function sourceSha256(csvText: string): string {
   return createHash('sha256').update(csvText, 'utf8').digest('hex');
 }
 
-function parseSource(
-  input: CsvProductSourceInput,
-): ProductMigrationResult<{
+function parseSource(input: CsvProductSourceInput): ProductMigrationResult<{
   readonly sheet: ReturnType<typeof parseCsvDocument>['sheets'][number];
   readonly sha256: string;
   readonly bytes: number;
@@ -205,12 +196,7 @@ export function createMerchantProductMigrationService(
     async dryRun(principal, jobId) {
       requirePrincipalPermission(principal, 'settings.manage');
       return databaseAttempt(() =>
-        dryRunProductImport(
-          prisma,
-          scopeOf(principal),
-          { userId: principal.userId },
-          jobId,
-        ),
+        dryRunProductImport(prisma, scopeOf(principal), { userId: principal.userId }, jobId),
       );
     },
 
