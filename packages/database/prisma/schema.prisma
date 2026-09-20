@@ -113,6 +113,7 @@ model Tenant {
   restaurantOrderLines          RestaurantOrderLine[]
   restaurantPreparationStations RestaurantPreparationStation[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
+  restaurantPreparationTasks    RestaurantPreparationTask[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
   tenders                       Tender[]
@@ -166,6 +167,7 @@ model Branch {
   restaurantOrders         RestaurantOrder[]
   restaurantPreparationStations RestaurantPreparationStation[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
+  restaurantPreparationTasks    RestaurantPreparationTask[]
   returns                  Return[]
   memberships              TenantMembership[]
 
@@ -237,6 +239,7 @@ model RestaurantPreparationStation {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
   routes RestaurantPreparationRoute[]
+  tasks  RestaurantPreparationTask[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, branchId, id])
@@ -263,6 +266,47 @@ model RestaurantPreparationRoute {
   @@index([tenantId, branchId, stationId, productId])
   @@index([tenantId, branchId, productId])
   @@map("restaurant_preparation_routes")
+}
+
+model RestaurantPreparationTask {
+  id          String @id @db.Uuid
+  tenantId    String @db.Uuid
+  branchId    String @db.Uuid
+  stationId   String @db.Uuid
+  orderId     String @db.Uuid
+  orderLineId String @db.Uuid
+  productId   String @db.Uuid
+
+  orderRevision BigInt
+  lineNumber    Int
+  sku           String
+  nameAr        String
+  quantityScaled BigInt
+  preparationNote    String?
+  preparationOptions String?
+
+  status   String @default("queued")
+  revision BigInt @default(1)
+
+  queuedAt  DateTime
+  startedAt DateTime?
+  readyAt   DateTime?
+  servedAt  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch                       @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade)
+  station RestaurantPreparationStation @relation(fields: [tenantId, branchId, stationId], references: [tenantId, branchId, id], onDelete: NoAction)
+  order   RestaurantOrder              @relation(fields: [tenantId, branchId, orderId], references: [tenantId, branchId, id], onDelete: Cascade)
+  product Product                      @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, branchId, id])
+  @@unique([tenantId, branchId, orderId, orderRevision, stationId, orderLineId])
+  @@index([tenantId, branchId, stationId, status, queuedAt])
+  @@index([tenantId, branchId, orderId, orderRevision])
+  @@map("restaurant_preparation_tasks")
 }
 
 model RestaurantOrder {
@@ -293,10 +337,12 @@ model RestaurantOrder {
   terminal Terminal         @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
   user     User             @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: NoAction)
   table    RestaurantTable? @relation(fields: [tenantId, tableId], references: [tenantId, id], onDelete: NoAction)
-  lines    RestaurantOrderLine[]
-  sale     Sale?
+  lines            RestaurantOrderLine[]
+  preparationTasks RestaurantPreparationTask[]
+  sale             Sale?
 
   @@unique([tenantId, id])
+  @@unique([tenantId, branchId, id])
   @@index([tenantId, branchId, status, openedAt])
   @@index([tenantId, tableId, status])
   @@index([tenantId, terminalId, status])
@@ -694,8 +740,9 @@ model Product {
   purchaseOrderLines       PurchaseOrderLine[]
   purchaseReceiptLines     PurchaseReceiptLine[]
   saleLines                SaleLine[]
-  restaurantOrderLines     RestaurantOrderLine[]
+  restaurantOrderLines        RestaurantOrderLine[]
   restaurantPreparationRoutes RestaurantPreparationRoute[]
+  restaurantPreparationTasks  RestaurantPreparationTask[]
   returnLines              ReturnLine[]
 
   @@unique([tenantId, sku])

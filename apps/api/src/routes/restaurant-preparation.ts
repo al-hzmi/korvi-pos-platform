@@ -26,11 +26,31 @@ const createStationBody = z
   .strict();
 const productParams = z.object({ productId: UUID }).strict();
 const orderParams = z.object({ orderId: UUID }).strict();
+const stationParams = z.object({ stationId: UUID }).strict();
+const taskParams = z.object({ taskId: UUID }).strict();
 const routesBody = z
   .object({
     operationId: OPERATION,
     branchId: UUID,
     stationIds: z.array(UUID).max(32),
+  })
+  .strict();
+const fireBody = z
+  .object({
+    operationId: OPERATION,
+    expectedOrderRevision: z.string().regex(/^[1-9][0-9]{0,18}$/),
+  })
+  .strict();
+const taskStatusBody = z
+  .object({
+    operationId: OPERATION,
+    expectedRevision: z.string().regex(/^[1-9][0-9]{0,18}$/),
+    status: z.enum(['preparing', 'ready', 'served']),
+  })
+  .strict();
+const taskQuery = z
+  .object({
+    includeServed: z.enum(['true', 'false']).optional(),
   })
   .strict();
 
@@ -45,6 +65,11 @@ const STATUS: Record<string, number> = {
   'operation-in-progress': 409,
   'unknown-order': 404,
   'order-not-open': 409,
+  'stale-order': 409,
+  'unrouted-lines': 422,
+  'unknown-task': 404,
+  'stale-task': 409,
+  'invalid-transition': 409,
 };
 
 function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefined {
@@ -151,4 +176,51 @@ export function registerRestaurantPreparationRoutes(
       return respond(reply, result);
     },
   );
+
+  app.post(
+    '/v1/restaurant/orders/:orderId/preparation/fire',
+    { preHandler: operate },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = orderParams.safeParse(request.params);
+      const body = fireBody.safeParse(request.body);
+      if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.fire(principal, params.data.orderId, body.data));
+    },
+  );
+
+  app.get(
+    '/v1/restaurant/preparation-stations/:stationId/tasks',
+    { preHandler: operate },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = stationParams.safeParse(request.params);
+      const query = taskQuery.safeParse(request.query);
+      if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_query' });
+      return respond(
+        reply,
+        await service.tasks(
+          principal,
+          params.data.stationId,
+          query.data.includeServed === 'true',
+        ),
+      );
+    },
+  );
+
+  app.post(
+    '/v1/restaurant/preparation-tasks/:taskId/status',
+    { preHandler: operate },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = taskParams.safeParse(request.params);
+      const body = taskStatusBody.safeParse(request.body);
+      if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.updateTask(principal, params.data.taskId, body.data));
+    },
+  );
+
 }

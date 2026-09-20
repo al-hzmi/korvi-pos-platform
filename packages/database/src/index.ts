@@ -238,6 +238,9 @@ export {
   listPreparationRoutes,
   setProductPreparationRoutes,
   routeRestaurantOrderForPreparation,
+  fireRestaurantOrderForPreparation,
+  listPreparationTasks,
+  updatePreparationTaskStatus,
 } from './restaurant/preparation.js';
 export type {
   RestaurantPreparationRefusal,
@@ -250,6 +253,11 @@ export type {
   PreparationRoutingLine,
   PreparationRoutingGroup,
   PreparationRoutingPlan,
+  PreparationTaskStatus,
+  PreparationTask,
+  FirePreparationRequest,
+  PreparationFireResult,
+  UpdatePreparationTaskStatusRequest,
 } from './restaurant/preparation.js';
 
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates

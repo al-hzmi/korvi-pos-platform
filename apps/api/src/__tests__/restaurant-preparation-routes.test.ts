@@ -13,6 +13,7 @@ const STATION = '018fb600-0000-7000-8000-0000000000b1';
 const PRODUCT = '018fb600-0000-7000-8000-0000000000c1';
 const ORDER = '018fb600-0000-7000-8000-0000000000d1';
 const LINE = '018fb600-0000-7000-8000-0000000000e1';
+const TASK = '018fb600-0000-7000-8000-0000000000e2';
 const OP = '018fb600-0000-7000-8000-0000000000f1';
 const COOKIE = 'korvi_session=prep-test-token';
 const ORIGIN = 'http://localhost:3000';
@@ -122,6 +123,98 @@ function service(): MerchantPreparationService {
         },
       };
     },
+    async fire(_principal, _orderId, request) {
+      calls.push('fire');
+      return {
+        outcome: 'success',
+        value: {
+          value: {
+            orderId: ORDER,
+            orderRevision: request.expectedOrderRevision,
+            alreadyFired: false,
+            tasks: [{
+              id: TASK,
+              branchId: BRANCH,
+              stationId: STATION,
+              orderId: ORDER,
+              orderLineId: LINE,
+              productId: PRODUCT,
+              orderRevision: request.expectedOrderRevision,
+              lineNumber: 1,
+              sku: 'COF-1',
+              nameAr: 'قهوة',
+              quantityScaled: '1000',
+              preparationNote: 'بدون سكر',
+              preparationOptions: null,
+              status: 'queued',
+              revision: '1',
+              queuedAt: '2026-09-20T11:00:00.000Z',
+              startedAt: null,
+              readyAt: null,
+              servedAt: null,
+            }],
+          },
+          replayed: false,
+        },
+      };
+    },
+    async tasks() {
+      calls.push('tasks');
+      return {
+        outcome: 'success',
+        value: [{
+          id: TASK,
+          branchId: BRANCH,
+          stationId: STATION,
+          orderId: ORDER,
+          orderLineId: LINE,
+          productId: PRODUCT,
+          orderRevision: '3',
+          lineNumber: 1,
+          sku: 'COF-1',
+          nameAr: 'قهوة',
+          quantityScaled: '1000',
+          preparationNote: 'بدون سكر',
+          preparationOptions: null,
+          status: 'queued',
+          revision: '1',
+          queuedAt: '2026-09-20T11:00:00.000Z',
+          startedAt: null,
+          readyAt: null,
+          servedAt: null,
+        }],
+      };
+    },
+    async updateTask(_principal, _taskId, request) {
+      calls.push('updateTask');
+      return {
+        outcome: 'success',
+        value: {
+          value: {
+            id: TASK,
+            branchId: BRANCH,
+            stationId: STATION,
+            orderId: ORDER,
+            orderLineId: LINE,
+            productId: PRODUCT,
+            orderRevision: '3',
+            lineNumber: 1,
+            sku: 'COF-1',
+            nameAr: 'قهوة',
+            quantityScaled: '1000',
+            preparationNote: 'بدون سكر',
+            preparationOptions: null,
+            status: request.status,
+            revision: '2',
+            queuedAt: '2026-09-20T11:00:00.000Z',
+            startedAt: '2026-09-20T11:01:00.000Z',
+            readyAt: null,
+            servedAt: null,
+          },
+          replayed: false,
+        },
+      };
+    },
   };
 }
 
@@ -190,5 +283,53 @@ describe('restaurant preparation route authority', () => {
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
+  });
+
+
+  it('fires an exact order revision into non-fiscal KDS tasks', async () => {
+    const server = build(principal(['sale.create']));
+    const response = await server.inject({
+      method: 'POST',
+      url: `/v1/restaurant/orders/${ORDER}/preparation/fire`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: { operationId: OP, expectedOrderRevision: '3' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual(['fire']);
+    const body = response.json();
+    expect(body.value.tasks[0]).toMatchObject({
+      id: TASK,
+      status: 'queued',
+      revision: '1',
+      orderRevision: '3',
+    });
+    const serialized = JSON.stringify(body);
+    for (const forbidden of ['priceMinor', 'vatBasisPoints', 'invoiceNumber', 'qrCodeBase64', 'ICV', 'PIH']) {
+      expect(serialized).not.toContain(forbidden);
+    }
+  });
+
+  it('lists a station queue and advances task status under sale.create', async () => {
+    const server = build(principal(['sale.create']));
+    const listed = await server.inject({
+      method: 'GET',
+      url: `/v1/restaurant/preparation-stations/${STATION}/tasks`,
+      headers: { cookie: COOKIE },
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()[0]).toMatchObject({ id: TASK, status: 'queued' });
+
+    const advanced = await server.inject({
+      method: 'POST',
+      url: `/v1/restaurant/preparation-tasks/${TASK}/status`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: { operationId: OP, expectedRevision: '1', status: 'preparing' },
+    });
+    expect(advanced.statusCode).toBe(200);
+    expect(advanced.json()).toMatchObject({
+      value: { id: TASK, status: 'preparing', revision: '2' },
+      replayed: false,
+    });
+    expect(calls).toEqual(['tasks', 'updateTask']);
   });
 });

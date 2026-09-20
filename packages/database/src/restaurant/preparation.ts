@@ -9,6 +9,8 @@ import type { TransactionClient } from '../tenant-context.js';
 
 const CREATE_STATION_SCOPE = 'restaurant.preparation-station.create';
 const SET_ROUTES_SCOPE = 'restaurant.preparation-route.set';
+const FIRE_SCOPE = 'restaurant.preparation.fire';
+const TASK_STATUS_SCOPE = 'restaurant.preparation-task.status';
 
 export type RestaurantPreparationRefusal =
   | 'restaurant-mode-required'
@@ -20,7 +22,12 @@ export type RestaurantPreparationRefusal =
   | 'idempotency-conflict'
   | 'operation-in-progress'
   | 'unknown-order'
-  | 'order-not-open';
+  | 'order-not-open'
+  | 'stale-order'
+  | 'unrouted-lines'
+  | 'unknown-task'
+  | 'stale-task'
+  | 'invalid-transition';
 
 export class RestaurantPreparationRefusedError extends DatabaseError {
   public override readonly name = 'RestaurantPreparationRefusedError';
@@ -92,6 +99,48 @@ export interface PreparationRoutingPlan {
   readonly tableId: string | null;
   readonly groups: readonly PreparationRoutingGroup[];
   readonly unroutedLines: readonly PreparationRoutingLine[];
+}
+
+export type PreparationTaskStatus = 'queued' | 'preparing' | 'ready' | 'served';
+
+export interface PreparationTask {
+  readonly id: string;
+  readonly branchId: string;
+  readonly stationId: string;
+  readonly orderId: string;
+  readonly orderLineId: string;
+  readonly productId: string;
+  readonly orderRevision: string;
+  readonly lineNumber: number;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly quantityScaled: string;
+  readonly preparationNote: string | null;
+  readonly preparationOptions: string | null;
+  readonly status: PreparationTaskStatus;
+  readonly revision: string;
+  readonly queuedAt: string;
+  readonly startedAt: string | null;
+  readonly readyAt: string | null;
+  readonly servedAt: string | null;
+}
+
+export interface FirePreparationRequest {
+  readonly operationId: string;
+  readonly expectedOrderRevision: string;
+}
+
+export interface PreparationFireResult {
+  readonly orderId: string;
+  readonly orderRevision: string;
+  readonly alreadyFired: boolean;
+  readonly tasks: readonly PreparationTask[];
+}
+
+export interface UpdatePreparationTaskStatusRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly status: Exclude<PreparationTaskStatus, 'queued'>;
 }
 
 function uniqueViolation(error: unknown): boolean {
@@ -483,14 +532,12 @@ export async function setProductPreparationRoutes(
   });
 }
 
-export async function routeRestaurantOrderForPreparation(
-  prisma: PrismaClient,
-  scope: TenantScope,
+async function routingWithin(
+  tx: TransactionClient,
+  tenant: string,
   branchId: string,
   orderId: string,
 ): Promise<PreparationRoutingPlan | null> {
-  const tenant = tenantParam(scope);
-  return withTenant(prisma, scope.tenantId, async (tx) => {
     await requireRestaurantMode(tx, tenant);
     const order = await tx.restaurantOrder.findFirst({
       where: { tenantId: tenant, branchId, id: orderId },
@@ -593,5 +640,367 @@ export async function routeRestaurantOrderForPreparation(
       groups: [...stationMap.values()].filter((group) => group.lines.length > 0),
       unroutedLines,
     };
+}
+
+
+function asTask(row: {
+  id: string;
+  branchId: string;
+  stationId: string;
+  orderId: string;
+  orderLineId: string;
+  productId: string;
+  orderRevision: bigint;
+  lineNumber: number;
+  sku: string;
+  nameAr: string;
+  quantityScaled: bigint;
+  preparationNote: string | null;
+  preparationOptions: string | null;
+  status: string;
+  revision: bigint;
+  queuedAt: Date;
+  startedAt: Date | null;
+  readyAt: Date | null;
+  servedAt: Date | null;
+}): PreparationTask {
+  if (
+    row.status !== 'queued' &&
+    row.status !== 'preparing' &&
+    row.status !== 'ready' &&
+    row.status !== 'served'
+  ) {
+    throw new DatabaseError('Preparation task has unknown status.');
+  }
+  return {
+    id: row.id,
+    branchId: row.branchId,
+    stationId: row.stationId,
+    orderId: row.orderId,
+    orderLineId: row.orderLineId,
+    productId: row.productId,
+    orderRevision: row.orderRevision.toString(),
+    lineNumber: row.lineNumber,
+    sku: row.sku,
+    nameAr: row.nameAr,
+    quantityScaled: row.quantityScaled.toString(),
+    preparationNote: row.preparationNote,
+    preparationOptions: row.preparationOptions,
+    status: row.status,
+    revision: row.revision.toString(),
+    queuedAt: row.queuedAt.toISOString(),
+    startedAt: row.startedAt?.toISOString() ?? null,
+    readyAt: row.readyAt?.toISOString() ?? null,
+    servedAt: row.servedAt?.toISOString() ?? null,
+  };
+}
+
+const TASK_SELECT = {
+  id: true,
+  branchId: true,
+  stationId: true,
+  orderId: true,
+  orderLineId: true,
+  productId: true,
+  orderRevision: true,
+  lineNumber: true,
+  sku: true,
+  nameAr: true,
+  quantityScaled: true,
+  preparationNote: true,
+  preparationOptions: true,
+  status: true,
+  revision: true,
+  queuedAt: true,
+  startedAt: true,
+  readyAt: true,
+  servedAt: true,
+} as const;
+
+export async function routeRestaurantOrderForPreparation(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  branchId: string,
+  orderId: string,
+): Promise<PreparationRoutingPlan | null> {
+  const tenant = tenantParam(scope);
+  return withTenant(prisma, scope.tenantId, (tx) => routingWithin(tx, tenant, branchId, orderId));
+}
+
+export async function fireRestaurantOrderForPreparation(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  actor: RestaurantPreparationActor,
+  branchId: string,
+  orderId: string,
+  request: FirePreparationRequest,
+  clock: () => Date = () => new Date(),
+  nextId: () => string = newId,
+): Promise<PreparationMutationResult<PreparationFireResult>> {
+  const tenant = tenantParam(scope);
+  const requestHash = fingerprint({
+    branchId,
+    orderId,
+    expectedOrderRevision: request.expectedOrderRevision,
+  });
+
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    const replay = await reserve<PreparationFireResult>(
+      tx,
+      tenant,
+      FIRE_SCOPE,
+      request.operationId,
+      requestHash,
+      'restaurant-preparation-fire',
+      nextId,
+    );
+    if (replay !== null) return { value: replay, replayed: true };
+
+    const plan = await routingWithin(tx, tenant, branchId, orderId);
+    if (plan === null) throw new RestaurantPreparationRefusedError('unknown-order');
+    if (plan.revision !== request.expectedOrderRevision) {
+      throw new RestaurantPreparationRefusedError('stale-order');
+    }
+    if (plan.unroutedLines.length > 0) {
+      throw new RestaurantPreparationRefusedError('unrouted-lines');
+    }
+
+    const revision = BigInt(plan.revision);
+    const existing = await tx.restaurantPreparationTask.findMany({
+      where: { tenantId: tenant, branchId, orderId, orderRevision: revision },
+      select: TASK_SELECT,
+      orderBy: [{ stationId: 'asc' }, { lineNumber: 'asc' }, { id: 'asc' }],
+    });
+    if (existing.length > 0) {
+      const result: PreparationFireResult = {
+        orderId,
+        orderRevision: plan.revision,
+        alreadyFired: true,
+        tasks: existing.map(asTask),
+      };
+      const at = clock();
+      await complete(
+        tx,
+        tenant,
+        FIRE_SCOPE,
+        request.operationId,
+        'restaurant-preparation-fire',
+        orderId,
+        result,
+        at,
+      );
+      return { value: result, replayed: false };
+    }
+
+    const at = clock();
+    const rows = plan.groups.flatMap((group) =>
+      group.lines.map((line) => ({
+        id: nextId(),
+        tenantId: tenant,
+        branchId,
+        stationId: group.station.id,
+        orderId,
+        orderLineId: line.lineId,
+        productId: line.productId,
+        orderRevision: revision,
+        lineNumber: line.lineNumber,
+        sku: line.sku,
+        nameAr: line.nameAr,
+        quantityScaled: BigInt(line.quantityScaled),
+        preparationNote: line.preparationNote,
+        preparationOptions: line.preparationOptions,
+        status: 'queued',
+        revision: 1n,
+        queuedAt: at,
+        startedAt: null,
+        readyAt: null,
+        servedAt: null,
+        createdAt: at,
+        updatedAt: at,
+      })),
+    );
+    if (rows.length === 0) {
+      throw new RestaurantPreparationRefusedError('unrouted-lines');
+    }
+    await tx.restaurantPreparationTask.createMany({ data: rows });
+
+    const created = await tx.restaurantPreparationTask.findMany({
+      where: { tenantId: tenant, branchId, orderId, orderRevision: revision },
+      select: TASK_SELECT,
+      orderBy: [{ stationId: 'asc' }, { lineNumber: 'asc' }, { id: 'asc' }],
+    });
+    const result: PreparationFireResult = {
+      orderId,
+      orderRevision: plan.revision,
+      alreadyFired: false,
+      tasks: created.map(asTask),
+    };
+    await audit(
+      tx,
+      tenant,
+      actor,
+      branchId,
+      'restaurant.preparation.fired',
+      'restaurant-order',
+      orderId,
+      {
+        orderRevision: plan.revision,
+        taskCount: created.length,
+        stationCount: new Set(created.map((task) => task.stationId)).size,
+      },
+      at,
+      nextId,
+    );
+    await complete(
+      tx,
+      tenant,
+      FIRE_SCOPE,
+      request.operationId,
+      'restaurant-preparation-fire',
+      orderId,
+      result,
+      at,
+    );
+    return { value: result, replayed: false };
+  });
+}
+
+export async function listPreparationTasks(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  branchId: string,
+  stationId: string,
+  includeServed: boolean,
+): Promise<readonly PreparationTask[]> {
+  const tenant = tenantParam(scope);
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    await requireRestaurantMode(tx, tenant);
+    const station = await tx.restaurantPreparationStation.findFirst({
+      where: { tenantId: tenant, branchId, id: stationId },
+      select: { id: true },
+    });
+    if (station === null) throw new RestaurantPreparationRefusedError('unknown-station');
+    const rows = await tx.restaurantPreparationTask.findMany({
+      where: {
+        tenantId: tenant,
+        branchId,
+        stationId,
+        ...(includeServed ? {} : { status: { not: 'served' } }),
+      },
+      select: TASK_SELECT,
+      orderBy: [{ queuedAt: 'asc' }, { lineNumber: 'asc' }, { id: 'asc' }],
+    });
+    return rows.map(asTask);
+  });
+}
+
+export async function updatePreparationTaskStatus(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  actor: RestaurantPreparationActor,
+  branchId: string,
+  taskId: string,
+  request: UpdatePreparationTaskStatusRequest,
+  clock: () => Date = () => new Date(),
+  nextId: () => string = newId,
+): Promise<PreparationMutationResult<PreparationTask>> {
+  const tenant = tenantParam(scope);
+  const requestHash = fingerprint({
+    branchId,
+    taskId,
+    expectedRevision: request.expectedRevision,
+    status: request.status,
+  });
+
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    const replay = await reserve<PreparationTask>(
+      tx,
+      tenant,
+      TASK_STATUS_SCOPE,
+      request.operationId,
+      requestHash,
+      'restaurant-preparation-task',
+      nextId,
+    );
+    if (replay !== null) return { value: replay, replayed: true };
+
+    await requireRestaurantMode(tx, tenant);
+    const task = await tx.restaurantPreparationTask.findFirst({
+      where: { tenantId: tenant, branchId, id: taskId },
+      select: TASK_SELECT,
+    });
+    if (task === null) throw new RestaurantPreparationRefusedError('unknown-task');
+
+    let expected: bigint;
+    try {
+      expected = BigInt(request.expectedRevision);
+    } catch {
+      throw new RestaurantPreparationRefusedError('stale-task');
+    }
+    if (task.revision !== expected) throw new RestaurantPreparationRefusedError('stale-task');
+
+    const nextByStatus: Readonly<Record<PreparationTaskStatus, PreparationTaskStatus | null>> = {
+      queued: 'preparing',
+      preparing: 'ready',
+      ready: 'served',
+      served: null,
+    };
+    if (nextByStatus[asTask(task).status] !== request.status) {
+      throw new RestaurantPreparationRefusedError('invalid-transition');
+    }
+
+    const at = clock();
+    const changed = await tx.restaurantPreparationTask.updateMany({
+      where: {
+        tenantId: tenant,
+        branchId,
+        id: taskId,
+        revision: expected,
+        status: task.status,
+      },
+      data: {
+        status: request.status,
+        revision: { increment: 1n },
+        updatedAt: at,
+        ...(request.status === 'preparing' ? { startedAt: at } : {}),
+        ...(request.status === 'ready' ? { readyAt: at } : {}),
+        ...(request.status === 'served' ? { servedAt: at } : {}),
+      },
+    });
+    if (changed.count !== 1) throw new RestaurantPreparationRefusedError('stale-task');
+
+    const updated = await tx.restaurantPreparationTask.findFirst({
+      where: { tenantId: tenant, branchId, id: taskId },
+      select: TASK_SELECT,
+    });
+    if (updated === null) throw new DatabaseError('Preparation task disappeared after transition.');
+    const value = asTask(updated);
+    await audit(
+      tx,
+      tenant,
+      actor,
+      branchId,
+      'restaurant.preparation-task.status-changed',
+      'restaurant-preparation-task',
+      taskId,
+      {
+        fromStatus: task.status,
+        toStatus: request.status,
+        revision: value.revision,
+      },
+      at,
+      nextId,
+    );
+    await complete(
+      tx,
+      tenant,
+      TASK_STATUS_SCOPE,
+      request.operationId,
+      'restaurant-preparation-task',
+      taskId,
+      value,
+      at,
+    );
+    return { value, replayed: false };
   });
 }
