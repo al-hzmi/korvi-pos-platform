@@ -7,9 +7,7 @@ import type { ImportCell, ImportDocument, ImportSheet } from '@korvi/domain';
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_SIGNATURE = 0x02014b50;
 const LOCAL_SIGNATURE = 0x04034b50;
-const UTF8_FLAG = 0x0800;
 const ENCRYPTED_FLAG = 0x0001;
-const DATA_DESCRIPTOR_FLAG = 0x0008;
 const METHOD_STORED = 0;
 const METHOD_DEFLATE = 8;
 
