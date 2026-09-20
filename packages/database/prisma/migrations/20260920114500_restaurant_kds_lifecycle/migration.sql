@@ -75,8 +75,7 @@ CREATE INDEX "restaurant_preparation_tasks_order_revision_idx"
 
 ALTER TABLE "restaurant_preparation_tasks" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "restaurant_preparation_tasks" FORCE ROW LEVEL SECURITY;
-CREATE POLICY "restaurant_preparation_tasks_isolation"
-  ON "restaurant_preparation_tasks"
+CREATE POLICY "restaurant_preparation_tasks_isolation" ON "restaurant_preparation_tasks"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
