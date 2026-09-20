@@ -35,6 +35,8 @@ const ALLOWED_BEHIND = {
     'Commercial V1 RC freeze directive (2026-09-18): keep the verified 3.9.7 formatter baseline until post-RC to avoid unrelated repository-wide formatting churn.',
   typescript: 'ADR-0007: typescript-eslint declares `typescript <6.1.0`.',
   tailwindcss: 'ADR-0007: the design system ships a verified v3 config (v3-lts).',
+  tsx:
+    'Post-V1 parallel product-development baseline (2026-09-20): retain the verified 4.23.13 TypeScript execution tool during Restaurant/Migration feature work; upgrade to 4.23.15 only in a dedicated dependency-maintenance change.',
   '@types/node':
     'ADR-0007: typings track the Node 24 runtime. A newer major describes APIs ' +
     'the runtime does not have, so code typechecks and then fails at run time.',
