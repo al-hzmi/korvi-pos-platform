@@ -162,7 +162,7 @@ Important: a row may carry `I/T` while still being incomplete as a sellable work
 | Profitability Intelligence | B2 | C1 | A; cost/report foundations exist, strategic engine not yet claimed | Intelligence | Financial, Explainability |
 | Command Center / Attention Center | B2 | C1 | A/AR principles; dashboard foundation exists, evidence/action engine not yet claimed | Intelligence | Evidence, Audit |
 | Guardian / Watchdog anomaly detection | B2 | C1 | A/AR principles; not yet claimed implemented | Intelligence/Risk | Explainability, Privacy |
-| Migration Engine | B2 | C1 | A; not yet claimed implemented | Migration | Data Integrity, Reconciliation |
+| Migration Engine / customer data onboarding | B0/B1 | C0/C1 | ADOPTED P0; M0 architecture/canonical model + bounded CSV parse + deterministic Arabic/English product mapping + normalization/row diagnostics VERIFIED on `product/post-v1-migration-engine@72402789`; M1 product commit path IN PROGRESS; CUSTOMER MIGRATION READINESS is not GREEN yet | Migration/Onboarding | Data Integrity, Security, Tenant Isolation, Idempotency, Audit, Reconciliation |
 | Product Knowledge / national catalogue | B2 | C1 | A; shared-catalogue concept accepted, production knowledge layer not yet claimed | Product Knowledge | Provenance, Governance |
 | Explainable Reorder | B2 | C1 | A; not yet claimed implemented | Intelligence/Inventory | Explainability, Data Integrity |
 | Expiry Intelligence | B2 | C1 | A; batch/expiry dependency not yet implemented | Intelligence/Inventory | Evidence, Data Integrity |

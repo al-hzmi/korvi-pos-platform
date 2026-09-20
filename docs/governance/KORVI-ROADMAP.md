@@ -124,6 +124,36 @@ Provide the executive operator with exactly what is needed to test personally:
 
 Never write passwords, CSIDs, API keys, HSM material or persistent secrets into source control or issue comments.
 
+### P0-7 — Customer Migration Engine — ACTIVE IN PARALLEL
+
+Customer data migration is a P0 onboarding requirement and must advance independently of Restaurant Phase 2 wherever shared-core dependencies do not require serialization.
+
+Required controlled pipeline:
+
+**UPLOAD → FILE INSPECTION → PARSE → NORMALIZE → COLUMN DETECTION → FIELD MAPPING → VALIDATION → PREVIEW → ERROR/WARNING REVIEW → DRY RUN → EXPLICIT COMMIT → IMPORT RESULT → AUDIT**
+
+Never permit upload → direct database write.
+
+Supported architecture must remain adapter-based:
+
+**SOURCE → ADAPTER → CANONICAL IMPORT MODEL → VALIDATION → KORVI DOMAIN SERVICES**
+
+Milestone sequence:
+
+- **M0 — VERIFIED** on `product/post-v1-migration-engine@72402789b59628b98c7366e101ef4d2ac0fe2ce4`: canonical import model, `VALID/WARNING/ERROR/BLOCKED` classification, bounded CSV parser, formula-authority refusal, Arabic/Eastern-Arabic digit handling, exact monetary parsing without thousands-separator guessing, deterministic Arabic/English product header aliases, duplicate source/target mapping refusal and row-level SKU/barcode diagnostics.
+- Evidence: CI `35506589825` — dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests green; 188 test files / 2,284 tests passed, 24 files / 369 live-only tests skipped by the normal CI profile.
+- **M1 — IN PROGRESS:** Product XLSX/CSV vertical slice through preview/dry-run/controlled commit/audit/idempotency.
+- **M2:** categories + product mapping.
+- **M3:** customers.
+- **M4:** suppliers.
+- **M5:** opening inventory through explicit opening-stock semantics, never direct balance fabrication.
+- **M6:** richer explicit conflict/update strategies.
+- **M7:** system-specific adapters only from real customer demand.
+
+**CUSTOMER MIGRATION READINESS remains IN PROGRESS.** It cannot become GREEN until a realistic merchant can import products, customers, suppliers and opening inventory from supported spreadsheet formats with mapping, validation, preview, dry run, controlled commit, error reporting, audit, tenant isolation and idempotency.
+
+Opening cost remains unknown unless source authority and meaning are explicit. Opening customer balances remain deferred until accounting/ledger semantics are defined; arbitrary derived-total writes are prohibited.
+
 ## Foundation already established
 
 The repository has substantial evidence for:

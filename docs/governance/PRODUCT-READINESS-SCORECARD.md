@@ -186,6 +186,31 @@ This replaces the historical `58 / 100` baseline because the old number had no
 stable denominator. Progress now moves only when a named gate closes from the
 evidence required by that gate.
 
+## 5A. Customer Migration Readiness — supplemental onboarding gate
+
+This is a newly adopted P0 onboarding gate and is tracked separately from the historical 50-gate arithmetic above until the scorecard denominator is explicitly revised. Therefore M0 progress does **not** silently change the canonical `88 / 100` release score.
+
+Current state: **IN PROGRESS**
+
+Verified foundation:
+
+- branch `product/post-v1-migration-engine`;
+- SHA `72402789b59628b98c7366e101ef4d2ac0fe2ce4`;
+- CI `35506589825` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- 188 test files / 2,284 tests passed;
+- canonical import model, bounded CSV parsing, deterministic Arabic/English product mapping, formula-authority blocking, exact monetary normalization and row-level duplicate diagnostics are implemented/tested.
+
+This gate may be marked GREEN only after a realistic merchant can import all of:
+
+- products;
+- customers;
+- suppliers;
+- opening inventory;
+
+from supported spreadsheet formats with field mapping, validation, preview, dry run, controlled commit, row-level error reporting, audit/provenance, tenant isolation and idempotency.
+
+Current next action: **M1 Product XLSX/CSV import through controlled commit**.
+
 ## 6. What must happen next
 
 The score must move only when a named open gate closes. The nearest legitimate

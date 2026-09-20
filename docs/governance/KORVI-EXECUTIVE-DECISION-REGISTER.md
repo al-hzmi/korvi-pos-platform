@@ -232,6 +232,44 @@ Source promotion:
 
 ---
 
+## 2026-09-20 — Migration Engine is a P0 customer-onboarding requirement
+
+**Decision:** ACCEPTED — SUPERSEDES the earlier roadmap interpretation of Migration Engine as B2/future-only work.
+
+Korvi must support controlled migration/import of merchant operational data from existing POS/ERP exports. Initial production priority is XLSX + CSV without paid migration SaaS dependencies. The implementation must be a reusable adapter/canonical-model architecture rather than a one-off uploader.
+
+Mandatory invariants:
+
+- no upload-to-direct-database path;
+- deterministic mapping/validation is authoritative; AI is not a correctness authority;
+- files are untrusted input and formulas/macros are never executed or treated as authority;
+- every import belongs to one authorized tenant and must not disclose or mutate another tenant;
+- network retry cannot duplicate committed records;
+- inventory opening state must use explicit migration/opening-stock semantics rather than fabricated purchases/sales or direct balance mutation;
+- cost remains UNKNOWN unless its authority is explicit;
+- financial opening balances require defined ledger semantics before implementation;
+- committed rows retain sufficient migration provenance and audit evidence.
+
+M0 repository checkpoint in the same development cycle:
+
+- branch: `product/post-v1-migration-engine`;
+- SHA: `72402789b59628b98c7366e101ef4d2ac0fe2ce4`;
+- capability: canonical import model + bounded CSV parse + deterministic product mapping/normalization/row review;
+- status: **VERIFIED**;
+- evidence: CI `35506589825`; 188 test files / 2,284 tests passed;
+- open gaps: XLSX parser boundary, Product M1 preview/dry-run/controlled commit, categories, customers, suppliers, opening inventory and end-to-end error export;
+- next action: Product Import M1.
+
+The overall **CUSTOMER MIGRATION READINESS** gate remains **IN PROGRESS** and is not satisfied by M0 alone.
+
+Source promotion:
+- Capability Matrix
+- Roadmap
+- Product Readiness Scorecard
+- this Decision Register
+
+---
+
 ## Register maintenance rule
 
 When a later executive decision supersedes one above, do not silently edit history. Add a new dated entry marked **SUPERSEDES** and update the affected authoritative source document.
