@@ -209,7 +209,17 @@ This gate may be marked GREEN only after a realistic merchant can import all of:
 
 from supported spreadsheet formats with field mapping, validation, preview, dry run, controlled commit, row-level error reporting, audit/provenance, tenant isolation and idempotency.
 
-Current next action: **M1 Product XLSX/CSV import through controlled commit**.
+Verified Product M1 authority follow-on:
+
+- branch `product/post-v1-migration-engine`;
+- SHA `ef49a18610248133feb97bc17ed7778f10558264`;
+- CI `35519052509` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- 188 test files / 2,294 tests passed;
+- tenant-scoped import-job/row persistence, dry-run catalogue conflict checks, reject-only conflict policy, controlled create-only commit through existing product authority, retry/idempotency, audit/provenance and row result tracking are VERIFIED.
+
+This does **not** make M1 or Customer Migration Readiness GREEN. HTTP upload/file inspection, production XLSX adapter, merchant mapping/preview/error UX, downloadable error results and end-to-end API authorization/tenant-isolation proof remain open.
+
+Current next action: **finish Product M1 HTTP/XLSX/UI boundary on top of the verified authority slice**.
 
 ## 6. What must happen next
 

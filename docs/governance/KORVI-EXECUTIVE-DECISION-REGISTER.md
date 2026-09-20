@@ -262,6 +262,17 @@ M0 repository checkpoint in the same development cycle:
 
 The overall **CUSTOMER MIGRATION READINESS** gate remains **IN PROGRESS** and is not satisfied by M0 alone.
 
+### Verified follow-on checkpoint — Product M1 authority slice
+
+- branch: `product/post-v1-migration-engine`;
+- SHA: `ef49a18610248133feb97bc17ed7778f10558264`;
+- status: **VERIFIED authority slice / M1 IN PROGRESS**;
+- evidence: CI `35519052509`, 188 test files / 2,294 tests passed;
+- implemented: tenant-scoped import jobs and rows, source/mapping provenance, dry-run conflict detection, explicit reject policy, controlled create-only product commit through the existing product bootstrap authority, idempotent commit retry, row result tracking and audit;
+- open gaps: production XLSX adapter, upload/file-inspection API, merchant mapping/preview/error UX, downloadable error results and end-to-end API authorization/tenant-isolation proof.
+
+Customer Migration Readiness remains **IN PROGRESS**.
+
 Source promotion:
 - Capability Matrix
 - Roadmap

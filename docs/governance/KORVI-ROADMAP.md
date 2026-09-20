@@ -143,6 +143,8 @@ Milestone sequence:
 - **M0 — VERIFIED** on `product/post-v1-migration-engine@72402789b59628b98c7366e101ef4d2ac0fe2ce4`: canonical import model, `VALID/WARNING/ERROR/BLOCKED` classification, bounded CSV parser, formula-authority refusal, Arabic/Eastern-Arabic digit handling, exact monetary parsing without thousands-separator guessing, deterministic Arabic/English product header aliases, duplicate source/target mapping refusal and row-level SKU/barcode diagnostics.
 - Evidence: CI `35506589825` — dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests green; 188 test files / 2,284 tests passed, 24 files / 369 live-only tests skipped by the normal CI profile.
 - **M1 — IN PROGRESS:** Product XLSX/CSV vertical slice through preview/dry-run/controlled commit/audit/idempotency.
+  - **Verified authority slice:** `product/post-v1-migration-engine@ef49a18610248133feb97bc17ed7778f10558264`, CI `35519052509` green; 188 test files / 2,294 tests passed. Implemented: tenant-scoped import jobs/rows, source/mapping provenance, deterministic row review summaries, dry-run catalogue conflict detection, reject-only conflict policy, controlled create-only commit through Korvi's existing product bootstrap authority, retry/idempotency protection, audit events and row result tracking.
+  - **Open before M1 complete:** HTTP upload/file-inspection boundary, production XLSX adapter, merchant mapping/preview/error UI, downloadable error results and end-to-end API authorization/tenant-isolation proof.
 - **M2:** categories + product mapping.
 - **M3:** customers.
 - **M4:** suppliers.
