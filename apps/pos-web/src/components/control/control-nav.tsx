@@ -45,7 +45,10 @@ export interface ControlNavProps {
 
 export function ControlNav({ active, onSelect, permissions = [] }: ControlNavProps): JSX.Element {
   return (
-    <nav aria-label="أقسام لوحة التحكم" className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+    <nav
+      aria-label="أقسام لوحة التحكم"
+      className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
+    >
       {CONTROL_ENTRIES.map((entry) => {
         const built = entry.section !== null;
         const authorized =
