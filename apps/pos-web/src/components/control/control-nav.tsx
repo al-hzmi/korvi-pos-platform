@@ -92,19 +92,20 @@ export function ControlNav({
 
         const navigationLocked = locked && entry.section !== active;
         const isActive = entry.section === active;
-        let stateClassName = 'text-foreground hover:bg-accent hover:text-accent-foreground';
+        let stateClassName =
+          'text-[hsl(var(--sidebar-foreground))] hover:bg-white/5 hover:text-white';
 
         if (isActive) {
-          stateClassName = 'bg-primary text-primary-foreground shadow-sm';
+          stateClassName = 'bg-primary text-primary-foreground';
         }
         if (navigationLocked) {
-          stateClassName = 'cursor-not-allowed text-muted-foreground';
+          stateClassName = 'cursor-not-allowed text-[hsl(var(--sidebar-muted))]';
         }
 
         const className = cn(
-          'flex h-touch shrink-0 items-center justify-between gap-3 rounded-lg px-3.5 text-sm font-medium transition-colors lg:w-full',
+          'flex h-10 shrink-0 items-center justify-between gap-3 rounded-md px-3 text-sm font-medium transition-colors lg:w-full',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          'focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--sidebar))]',
           stateClassName,
         );
 
