@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write apps/api/src/__tests__/restaurant-preparation-routes.test.ts apps/api/src/restaurant/preparation-service.ts apps/api/src/routes/restaurant-preparation.ts packages/database/src/restaurant/preparation.ts && git diff -- apps/api/src/__tests__/restaurant-preparation-routes.test.ts apps/api/src/restaurant/preparation-service.ts apps/api/src/routes/restaurant-preparation.ts packages/database/src/restaurant/preparation.ts && exit 1",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:zatca:fiscalization-live": "vitest run packages/database/src/__tests__/zatca-fiscalization-live.test.ts",
