@@ -182,7 +182,10 @@ export function RestaurantOpenOrdersControl({
 
           {canCancel ? (
             <div className="mt-3 rounded-md border border-destructive/25 bg-destructive/5 p-3">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="cancel-order-reason">
+              <label
+                className="text-xs font-medium text-muted-foreground"
+                htmlFor="cancel-order-reason"
+              >
                 سبب إلغاء الطلب
               </label>
               <div className="mt-2 flex gap-2">

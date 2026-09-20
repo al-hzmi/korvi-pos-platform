@@ -269,9 +269,7 @@ describe('the API client', () => {
       reason: 'طلب العميل الإلغاء',
     });
 
-    expect(transport.calls[0]!.url).toBe(
-      `/v1/restaurant/orders/${order.id}/transfer-table`,
-    );
+    expect(transport.calls[0]!.url).toBe(`/v1/restaurant/orders/${order.id}/transfer-table`);
     expect(bodyOf(transport.calls[0]!.init)).toEqual({
       operationId: '018f2000-0000-7000-8000-000000000202',
       expectedRevision: '7',
