@@ -162,6 +162,16 @@ export function registerRestaurantPreparationRoutes(
   );
 
   app.get(
+    '/v1/restaurant/preparation-stations',
+    { preHandler: operate },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      return respond(reply, await service.operationalStations(principal));
+    },
+  );
+
+  app.get(
     '/v1/restaurant/orders/:orderId/preparation-routing',
     { preHandler: operate },
     async (request, reply) => {
