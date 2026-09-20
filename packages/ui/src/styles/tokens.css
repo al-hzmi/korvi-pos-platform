@@ -42,10 +42,9 @@
 
   --radius: 0.5rem;
 
-  /* Brand — constant across themes and across print. See §2.4.
-     One decimal place, because these round-trip exactly to #047857 and
-     #34D399; rounding to integers lands on #027855, which is a different
-     colour from the one the print rule emits literally. Do not round. */
+  /* Brand — sampled from the approved 2026 Korvi wordmark.
+     Product chrome uses the same deep green as a signal, never as decoration.
+     The darker navy remains the primary text/canvas authority. */
   --brand: 170 77.4% 24.3%;
   --brand-on-dark: 170 58% 48%;
 
@@ -185,7 +184,7 @@ body {
   /* Browsers drop non-essential colour when printing. The brand mark is
      essential: it must be the same green on paper as on screen. */
   .text-brand {
-    color: #047857 !important;
+    color: #0e6e5e !important;
     print-color-adjust: exact;
   }
 
