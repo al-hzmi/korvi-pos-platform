@@ -34,9 +34,9 @@ function Figure({
   readonly hint?: string;
 }): JSX.Element {
   return (
-    <CardSurface className="flex flex-col gap-1 p-4">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-2xl font-semibold text-card-foreground">{value}</span>
+    <CardSurface className="flex min-h-28 flex-col justify-between gap-2 p-4">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="text-2xl font-semibold tracking-tight text-card-foreground">{value}</span>
       {hint === undefined ? null : <span className="text-xs text-muted-foreground">{hint}</span>}
     </CardSurface>
   );
@@ -86,7 +86,7 @@ export function DashboardPanel({ api }: { readonly api: ApiClient }): JSX.Elemen
   const summary = state.summary;
   return (
     <div className="flex flex-col gap-4">
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <Figure
           label="مبيعات آخر ٢٤ ساعة"
           value={<Numeric value={formatMinor(summary.grossSalesLast24HoursMinor)} />}

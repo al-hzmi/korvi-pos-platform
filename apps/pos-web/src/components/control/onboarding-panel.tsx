@@ -19,7 +19,6 @@ const LABELS: Readonly<Record<OnboardingCheckKey, string>> = {
   'active-branch': 'يوجد فرع مفعّل',
   'active-terminal': 'يوجد صندوق مفعّل',
   'viable-administrator': 'يوجد مدير بصلاحية فعلية',
-  'pos-operator': 'يوجد مستخدم جاهز لنقطة البيع',
   'active-product': 'يوجد صنف مفعّل للبيع',
 };
 
@@ -47,17 +46,6 @@ function canOpen(section: ControlSection, permissions: readonly string[]): boole
       return permissions.includes('users.manage');
     case 'products':
       return permissions.includes('product.write');
-    case 'inventory':
-      return permissions.includes('inventory.read');
-    case 'purchasing':
-      return permissions.includes('purchasing.read');
-    case 'customers':
-      return permissions.includes('customer.read');
-    case 'sales':
-    case 'reports':
-      return permissions.includes('report.read');
-    case 'zatca':
-      return permissions.includes('zatca.manage');
     case 'home':
       return true;
   }
@@ -117,7 +105,7 @@ export function OnboardingPanel({
 
   if (state.kind === 'loading') {
     return (
-      <CardSurface className="p-5">
+      <CardSurface className="p-4 md:p-5">
         <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
           جارٍ التحقق من جاهزية المنشأة…
         </p>
@@ -152,7 +140,7 @@ export function OnboardingPanel({
   }
 
   return (
-    <CardSurface className="p-5">
+    <CardSurface className="p-4 md:p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground">إكمال إعداد كورفي</h2>
@@ -194,11 +182,6 @@ export function OnboardingPanel({
                 </span>
                 <div>
                   <p className="text-sm font-medium text-foreground">{LABELS[check.key]}</p>
-                  {!check.ready && check.key === 'pos-operator' ? (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      اربط مستخدمًا نشطًا بفرع افتراضي لديه صندوق نشط وصلاحيات البيع والورديات.
-                    </p>
-                  ) : null}
                   {!check.ready && check.remediation === 'tenant-lifecycle' ? (
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       تفعيل المنشأة من صلاحيات منصة كورفي وليس من حساب التاجر.

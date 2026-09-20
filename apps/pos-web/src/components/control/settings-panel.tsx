@@ -74,7 +74,7 @@ function BooleanSetting({
   readonly onChange: (checked: boolean) => void;
 }): JSX.Element {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-background p-4">
+    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-md border border-border bg-background p-4">
       <span className="min-w-0">
         <span className="block text-sm font-semibold text-foreground">{label}</span>
         <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
@@ -185,7 +185,7 @@ export function SettingsPanel({ api }: { readonly api: ApiClient }): JSX.Element
         </StatusNote>
       ) : null}
 
-      <CardSurface className="p-5">
+      <CardSurface className="p-4 md:p-5">
         <div className="mb-4">
           <h2 className="text-base font-semibold text-foreground">هوية التشغيل</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -199,7 +199,7 @@ export function SettingsPanel({ api }: { readonly api: ApiClient }): JSX.Element
             ['العملة', settings.currency],
             ['ضريبة القيمة المضافة', formatBasisPoints(settings.defaultVatBasisPoints)],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-border bg-muted/40 p-3">
+            <div key={label} className="rounded-md border border-border bg-muted/40 p-3">
               <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
               <dd className="mt-1 text-sm font-semibold text-foreground" dir="auto">
                 {value}
@@ -209,7 +209,7 @@ export function SettingsPanel({ api }: { readonly api: ApiClient }): JSX.Element
         </dl>
       </CardSurface>
 
-      <CardSurface className="p-5">
+      <CardSurface className="p-4 md:p-5">
         <div className="mb-4">
           <h2 className="text-base font-semibold text-foreground">سلوك نقطة البيع</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -255,7 +255,7 @@ export function SettingsPanel({ api }: { readonly api: ApiClient }): JSX.Element
         </div>
       </CardSurface>
 
-      <CardSurface className="p-5">
+      <CardSurface className="p-4 md:p-5">
         <div className="mb-4">
           <h2 className="text-base font-semibold text-foreground">رأس وتذييل الإيصال</h2>
           <p className="mt-1 text-sm text-muted-foreground">
