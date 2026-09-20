@@ -128,7 +128,7 @@ function BalanceTable({ rows }: { readonly rows: readonly InventoryBalanceRow[] 
               key={row.productId}
               className="border-b border-border last:border-b-0 hover:bg-accent/40"
             >
-              <td className="px-3 py-4 font-medium text-card-foreground">
+              <td className="px-3 py-3 font-medium text-card-foreground">
                 <span>{row.nameAr}</span>
                 {row.nameEn === null ? null : (
                   <BidiIsolate className="mt-1 block text-xs text-muted-foreground">
@@ -136,18 +136,18 @@ function BalanceTable({ rows }: { readonly rows: readonly InventoryBalanceRow[] 
                   </BidiIsolate>
                 )}
               </td>
-              <td className="px-3 py-4 text-muted-foreground">
+              <td className="px-3 py-3 text-muted-foreground">
                 <BidiIsolate>{row.sku}</BidiIsolate>
               </td>
-              <td className="px-3 py-4 text-muted-foreground">
+              <td className="px-3 py-3 text-muted-foreground">
                 <span>{row.productType === 'weighted' ? 'بالوزن' : 'بالوحدة'}</span>
                 <span aria-hidden="true"> · </span>
                 <BidiIsolate>{row.unitLabel}</BidiIsolate>
               </td>
-              <td className="px-3 py-4 font-semibold text-card-foreground">
+              <td className="px-3 py-3 font-semibold text-card-foreground">
                 <Numeric value={formatScaled(row.quantityScaled)} />
               </td>
-              <td className="px-3 py-4 text-muted-foreground">
+              <td className="px-3 py-3 text-muted-foreground">
                 <Numeric value={row.revision} />
               </td>
             </tr>
