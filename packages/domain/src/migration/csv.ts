@@ -39,10 +39,12 @@ export function parseCsvDocument(text: string, options: CsvParseOptions = {}): I
   );
 
   const rows: Array<Array<ReturnType<typeof textCell>>> = [];
+  const sourceRowNumbers: number[] = [];
   let row: Array<ReturnType<typeof textCell>> = [];
   let cell = '';
   let quoted = false;
   let index = 0;
+  let sourceRow = 1;
 
   const pushCell = (): void => {
     if (cell.length > maxCellCharacters) {
@@ -58,11 +60,15 @@ export function parseCsvDocument(text: string, options: CsvParseOptions = {}): I
   const pushRow = (): void => {
     pushCell();
     const hasValue = row.some((entry) => entry.kind !== 'blank');
-    if (hasValue) rows.push(row);
+    if (hasValue) {
+      rows.push(row);
+      sourceRowNumbers.push(sourceRow);
+    }
     if (rows.length > maxRows) {
       throw new ImportParseError('CSV exceeds configured row limit.');
     }
     row = [];
+    sourceRow += 1;
   };
 
   const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
@@ -111,7 +117,7 @@ export function parseCsvDocument(text: string, options: CsvParseOptions = {}): I
   if (quoted) throw new ImportParseError('CSV ended inside a quoted field.');
   if (cell !== '' || row.length > 0) pushRow();
 
-  const sheet: ImportSheet = { name: 'CSV', rows };
+  const sheet: ImportSheet = { name: 'CSV', rows, sourceRowNumbers };
   return {
     source: {
       format: 'csv',
