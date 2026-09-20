@@ -431,6 +431,7 @@ function lazyRestaurantPreparationService(config: ApiConfig): MerchantPreparatio
   return {
     listStations: (principal, branchId, activeOnly) =>
       resolve().listStations(principal, branchId, activeOnly),
+    operationalStations: (principal) => resolve().operationalStations(principal),
     createStation: (principal, request) => resolve().createStation(principal, request),
     listRoutes: (principal, branchId) => resolve().listRoutes(principal, branchId),
     setProductRoutes: (principal, request) => resolve().setProductRoutes(principal, request),
