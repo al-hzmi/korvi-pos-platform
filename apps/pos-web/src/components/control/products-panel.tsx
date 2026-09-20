@@ -95,7 +95,7 @@ export function ProductsPanel({
   return (
     <div className="flex flex-col gap-4">
       {canWrite ? (
-        <CardSurface className="p-5">
+        <CardSurface className="p-4 md:p-5">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold text-foreground">إضافة صنف</h2>
             <p className="text-sm text-muted-foreground">
@@ -119,7 +119,7 @@ export function ProductsPanel({
             </div>
           )}
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
               رقم الصنف
               <input
@@ -261,7 +261,7 @@ export function ProductsPanel({
           <table className="w-full min-w-[44rem] text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="px-3 py-3 text-start font-medium">
+                <th scope="col" className="px-3 py-2.5 text-start font-medium">
                   الصنف
                 </th>
                 <th scope="col" className="px-3 py-3 text-start font-medium">
@@ -290,28 +290,28 @@ export function ProductsPanel({
                   key={product.id}
                   className="border-b border-border last:border-b-0 hover:bg-accent/40"
                 >
-                  <td className="px-3 py-4 font-medium text-card-foreground">{product.nameAr}</td>
-                  <td className="px-3 py-4">
+                  <td className="px-3 py-3 font-medium text-card-foreground">{product.nameAr}</td>
+                  <td className="px-3 py-3">
                     <BidiIsolate className="text-muted-foreground">{product.sku}</BidiIsolate>
                   </td>
-                  <td className="px-3 py-4 text-muted-foreground">
+                  <td className="px-3 py-3 text-muted-foreground">
                     {product.primaryBarcode === null ? (
                       <span aria-label="بدون باركود">—</span>
                     ) : (
                       <BidiIsolate>{product.primaryBarcode}</BidiIsolate>
                     )}
                   </td>
-                  <td className="px-3 py-4 text-muted-foreground">
+                  <td className="px-3 py-3 text-muted-foreground">
                     {product.productType === 'weighted' ? 'بالوزن' : 'بالوحدة'}
                     {product.unitLabel === null ? '' : ` · ${product.unitLabel}`}
                   </td>
-                  <td className="px-3 py-4">
+                  <td className="px-3 py-3">
                     <Numeric value={formatMinor(product.priceMinor)} />
                   </td>
-                  <td className="px-3 py-4">
+                  <td className="px-3 py-3">
                     <Numeric value={formatBasisPoints(product.vatBasisPoints)} />
                   </td>
-                  <td className="px-3 py-4 text-muted-foreground">
+                  <td className="px-3 py-3 text-muted-foreground">
                     {product.trackInventory ? 'يُتابَع' : 'لا يُتابَع'}
                   </td>
                 </tr>
