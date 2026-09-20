@@ -27,6 +27,8 @@ const REGISTRY = process.env.NPM_PUBLIC_REGISTRY ?? 'https://registry.npmjs.org'
 
 /** Pin -> the ADR explaining why it is not the newest production-stable version. */
 const ALLOWED_BEHIND = {
+  '@tauri-apps/cli':
+    'Post-V1 parallel product-development baseline (2026-09-20): retain the exact 2.11.4 installed-client toolchain already proven on the current lineage; upgrade to 2.11.5 only in a dedicated installed-client dependency-maintenance change, not inside Restaurant or Migration feature work.',
   eslint:
     'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
   prettier:
