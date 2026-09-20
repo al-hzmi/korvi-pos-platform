@@ -104,19 +104,18 @@ export function suggestProductMappings(
   headerRow: readonly ImportCell[],
 ): readonly ProductMappingSuggestion[] {
   return headerRow.map((cell, sourceColumn) => {
-    let header = '';
     try {
-      header = rawCell(cell) ?? '';
+      const header = rawCell(cell) ?? '';
+      const targetField = ALIAS_TO_FIELD.get(normalizeHeaderKey(header)) ?? null;
+      return {
+        sourceColumn,
+        sourceHeader: header,
+        targetField,
+        reason: targetField === null ? 'unmapped' : 'exact-alias',
+      } as const;
     } catch {
       return { sourceColumn, sourceHeader: '', targetField: null, reason: 'unmapped' } as const;
     }
-    const targetField = ALIAS_TO_FIELD.get(normalizeHeaderKey(header)) ?? null;
-    return {
-      sourceColumn,
-      sourceHeader: header,
-      targetField,
-      reason: targetField === null ? 'unmapped' : 'exact-alias',
-    } as const;
   });
 }
 
