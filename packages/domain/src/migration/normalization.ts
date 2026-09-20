@@ -58,7 +58,7 @@ export function textCell(value: string): ImportCell {
  * is grouping or decimal punctuation is financial reinterpretation.
  */
 export function parseExactSarToMinor(value: string): string {
-  const candidate = normalizeArabicDigits(value).replace(/\s+/gu, '');
+  const candidate = normalizeArabicDigits(value).replace(/\s+/gu, '').replace('٫', '.');
   const match = EXACT_MONEY.exec(candidate);
   if (match === null) {
     throw new ImportNormalizationError('Ambiguous or invalid monetary value.');
