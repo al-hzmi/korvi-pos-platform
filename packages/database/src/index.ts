@@ -242,6 +242,24 @@ export type {
   AdminProductBootstrap,
 } from './administration/product-bootstrap.js';
 
+// Customer Migration Engine — Product M1 orchestration. File parsing/mapping
+// stays in @korvi/domain/API; committed catalogue truth reuses the existing
+// product bootstrap writer rather than creating a second product authority.
+export {
+  ProductImportRefusedError,
+  createProductImportJob,
+  readProductImportJob,
+  dryRunProductImport,
+  commitProductImport,
+} from './migration/product-import.js';
+export type {
+  ProductImportRefusal,
+  ProductImportActor,
+  CreateProductImportJobRequest,
+  ProductImportRowResult,
+  ProductImportSummary,
+} from './migration/product-import.js';
+
 // Commercial plan/entitlement control-plane foundation (Strike 4C).
 // No merchant HTTP authority and no billing-provider semantics live here.
 export {
