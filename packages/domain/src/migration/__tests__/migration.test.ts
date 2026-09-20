@@ -27,6 +27,18 @@ describe('migration canonical model', () => {
     });
   });
 
+  it('preserves physical CSV row numbers when blank rows are skipped', () => {
+    const sheet = parseCsvDocument(
+      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n\nA1,قهوة,unit,each,10',
+    ).sheets[0]!;
+    expect(sheet.sourceRowNumbers).toEqual([1, 3]);
+    const mappings = suggestProductMappings(sheet.rows[0]!).map((suggestion) => ({
+      sourceColumn: suggestion.sourceColumn,
+      targetField: suggestion.targetField,
+    }));
+    expect(reviewProductSheet(sheet, mappings)[0]?.sourceRow).toBe(3);
+  });
+
   it('refuses malformed or unbounded CSV deterministically', () => {
     expect(() => parseCsvDocument('"open')).toThrow(ImportParseError);
     expect(() => parseCsvDocument('a,b,c\n1,2,3', { maxColumns: 2 })).toThrow(ImportParseError);
