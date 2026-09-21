@@ -373,7 +373,8 @@ export async function createProductImportJob(
   const sourceRows = request.sheet.rows.slice(1);
   const rowFingerprints = sourceRows.map((row, index) =>
     sha256({
-      sourceRow: reviews[index]?.sourceRow ?? request.sheet.sourceRowNumbers?.[index + 1] ?? index + 2,
+      sourceRow:
+        reviews[index]?.sourceRow ?? request.sheet.sourceRowNumbers?.[index + 1] ?? index + 2,
       cells: row,
     }),
   );

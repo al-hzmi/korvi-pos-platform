@@ -39,9 +39,8 @@ describe('migration canonical model', () => {
   });
 
   it('preserves physical row numbers even when mapping validation blocks the row', () => {
-    const sheet = parseCsvDocument(
-      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n\nA1,قهوة,unit,each,10',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n\nA1,قهوة,unit,each,10')
+      .sheets[0]!;
     const incomplete = suggestProductMappings(sheet.rows[0]!)
       .map((suggestion) => ({
         sourceColumn: suggestion.sourceColumn,
