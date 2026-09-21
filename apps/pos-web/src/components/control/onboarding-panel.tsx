@@ -42,6 +42,7 @@ function canOpen(section: ControlSection, permissions: readonly string[]): boole
   switch (section) {
     case 'settings':
     case 'branches':
+    case 'migration':
       return permissions.includes('settings.manage');
     case 'staff':
       return permissions.includes('users.manage');
