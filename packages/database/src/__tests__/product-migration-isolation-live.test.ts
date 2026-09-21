@@ -172,8 +172,10 @@ describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live
     await client.end();
   });
 
-  it('runs under a non-superuser, non-bypass runtime role and forces RLS on migration tables', async () => {
-    const role = await client.query<{ usesuper: boolean; rolbypassrls: boolean }>(
+  it(
+    'runs under a non-superuser, non-bypass runtime role and forces RLS on migration tables',
+    async () => {
+      const role = await client.query<{ usesuper: boolean; rolbypassrls: boolean }>(
       `SELECT u.usesuper, r.rolbypassrls
          FROM pg_user u
          JOIN pg_roles r ON r.rolname = u.usename
@@ -196,7 +198,8 @@ describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live
       expect(table.relrowsecurity, table.relname).toBe(true);
       expect(table.relforcerowsecurity, table.relname).toBe(true);
     }
-  });
+    },
+  );
 
   it('makes Tenant B jobs and rows invisible to Tenant A even by exact UUID', async () => {
     const counts = await asTenant(A.tenant, async () => {
