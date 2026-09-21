@@ -267,6 +267,17 @@ Source promotion:
 - fiscal boundary: preparation routing remains operational/non-fiscal and excludes price/VAT/invoice/QR/ICV/PIH semantics;
 - open gap / next action: KDS lifecycle → preparation status/timing → retry/reprint semantics.
 
+### Verified follow-on checkpoint — KDS core lifecycle / POS fire safety
+
+- branch: `product/post-v1-restaurant-foundation`;
+- SHA: `1123897555d8ba27407ed9edcaf7343461d725c2`;
+- status: **VERIFIED KDS core / Restaurant Phase 2 IN PROGRESS**;
+- evidence: CI `35547240369` green, 189 test files / 2,306 tests passed; Android installed-client proof green on the same SHA; Windows installed proof still running at checkpoint capture and is not claimed complete;
+- implemented: station task persistence, explicit revision-bound/idempotent fire, queued→preparing→ready→served transitions, preparation timestamps, audited status changes, station KDS UI and explicit POS send-to-kitchen workflow;
+- safety: once preparation tasks exist, open-order line replacement and cancellation are refused server-side, avoiding silent duplicate preparation until safe delta/cancel-to-kitchen semantics are implemented;
+- fiscal boundary: KDS/preparation payloads remain operational/non-fiscal and do not carry price/VAT/invoice/fiscal QR/ICV/PIH authority;
+- open gap / next action: course sequencing and safe post-fire delta semantics, then remaining split/merge/payment and recipe/inventory restaurant capabilities.
+
 ---
 
 ## Register maintenance rule

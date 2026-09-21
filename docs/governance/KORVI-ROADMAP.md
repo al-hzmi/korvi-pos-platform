@@ -187,6 +187,7 @@ Verified checkpoints:
 
 - `997a17e7c6acf31420fccdf6101b11ee60d49f35`: dine-in/takeaway/delivery context, zones/tables, open orders, hold/resume, revision-safe line editing, atomic settlement, table transfer UI, and permissioned/audited cancellation.
 - `bf9b9c77818f3093c5d20de674cd982bf7474541`: Preparation Stations + deterministic product→station routing, branch-scoped RLS, settings-managed configuration, audited/idempotent writes and non-fiscal routing output.
+- `1123897555d8ba27407ed9edcaf7343461d725c2`: KDS core lifecycle + explicit POS send-to-kitchen + post-fire safety lock VERIFIED. CI `35547240369` green through Formatting/Lint/Invariants/Prisma/Build/Typecheck/Tests; 189 test files / 2,306 tests passed, 24 files / 369 live-only tests skipped. Android installed proof is green; Windows installed proof remains a separate in-progress build proof and is not silently claimed complete.
 - CI run `35507010055`: Formatting, Lint, Invariants, Prisma, Build, Typecheck and Tests green.
 - automated evidence: 188 test files passed / 2,291 tests passed; 24 files and 369 live-only tests skipped by the normal CI profile.
 - installed-client evidence on the same SHA: Windows and Android proof workflows green.
@@ -194,7 +195,7 @@ Verified checkpoints:
 
 Immediate next action:
 
-**KDS lifecycle + preparation status/timing/retry semantics**, built on the verified station-routing authority, then continue course/firing and remaining Restaurant Phase 2 capabilities from repository truth.
+**Course sequencing / safe post-fire delta semantics → split/merge and split-payment restaurant workflows → recipe/BOM + ingredient consumption**, continuing from the verified KDS core without weakening financial, inventory or fiscal boundaries.
 
 ### Stage 7 — Payments / Omnichannel / Integrations
 
