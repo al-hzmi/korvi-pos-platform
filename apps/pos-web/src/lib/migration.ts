@@ -19,6 +19,7 @@ export const PRODUCT_MIGRATION_FIELD_LABELS: Readonly<Record<ProductMigrationTar
     barcode: 'الباركود',
     nameAr: 'الاسم العربي',
     nameEn: 'الاسم الإنجليزي',
+    categoryNameAr: 'اسم الفئة',
     productType: 'نوع الصنف',
     unitLabel: 'وحدة البيع',
     sellingPrice: 'سعر البيع',
@@ -127,5 +128,5 @@ export function productMigrationProblemsCsv(rows: readonly ProductMigrationRowRe
 }
 
 export const PRODUCT_MIGRATION_TEMPLATE_CSV =
-  '\uFEFFرقم الصنف,رقم الباركود,اسم الصنف,الاسم الانجليزي,نوع الصنف,الوحدة,سعر البيع,نسبة الضريبة\r\n' +
-  'SKU-001,6281000000001,قهوة,Coffee,unit,each,12.50,15%\r\n';
+  '\uFEFFرقم الصنف,رقم الباركود,اسم الصنف,الاسم الانجليزي,اسم الفئة,نوع الصنف,الوحدة,سعر البيع,نسبة الضريبة\r\n' +
+  'SKU-001,6281000000001,قهوة,Coffee,مشروبات ساخنة,unit,each,12.50,15%\r\n';
