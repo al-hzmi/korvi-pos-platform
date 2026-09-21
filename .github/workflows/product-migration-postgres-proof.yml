@@ -1,0 +1,106 @@
+name: Product Migration PostgreSQL Isolation Proof
+
+on:
+  push:
+    branches:
+      - product/post-v1-migration-engine
+    paths:
+      - packages/database/src/migration/**
+      - packages/database/src/__tests__/product-migration-isolation-live.test.ts
+      - packages/database/prisma/**
+      - scripts/deploy/production-migrate.sh
+      - scripts/prove-migration-state.sh
+      - .github/workflows/product-migration-postgres-proof.yml
+  workflow_dispatch:
+
+concurrency:
+  group: product-migration-postgres-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  migration-isolation:
+    name: PostgreSQL 17 / RLS / cross-tenant migration isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_migration_proof
+      MIGRATION_DATABASE_URL: postgresql://korvi_migrator:korvi_migration_migrator@localhost:5432/korvi_migration_proof?schema=public
+      SHADOW_DATABASE_URL: postgresql://korvi_migrator:korvi_migration_migrator@localhost:5432/korvi_migration_proof_shadow?schema=public
+      DATABASE_URL: postgresql://korvi_runtime:korvi_migration_runtime@localhost:5432/korvi_migration_proof
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:korvi_migration_runtime@localhost:5432/korvi_migration_proof
+      PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_migration_proof
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_migration_proof"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Create restricted migrator/runtime identities and shadow
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_migrator
+            LOGIN PASSWORD 'korvi_migration_migrator'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          CREATE ROLE korvi_runtime
+            LOGIN PASSWORD 'korvi_migration_runtime'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          ALTER DATABASE korvi_migration_proof OWNER TO korvi_migrator;
+          SQL
+
+          psql postgresql://postgres:postgres@localhost:5432/postgres             --no-psqlrc --set=ON_ERROR_STOP=1             --command 'CREATE DATABASE korvi_migration_proof_shadow OWNER korvi_migrator'
+
+          flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command             "SELECT rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='korvi_runtime'")"
+          test "$flags" = 'f|f|f|f|f|f'
+
+      - name: Apply exact production migrations and runtime grants
+        env:
+          NODE_ENV: production
+          KORVI_ENVIRONMENT: production
+        run: bash scripts/deploy/production-migrate.sh
+
+      - name: Generate and build migration authority
+        run: |
+          npm run db:generate
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/database
+
+      - name: Prove product migration isolation as restricted runtime
+        run: >-
+          npx --no-install vitest run
+          packages/database/src/__tests__/product-migration-isolation-live.test.ts
+
+      - name: Recheck hygiene
+        run: |
+          npm run format:check
+          git diff --check
