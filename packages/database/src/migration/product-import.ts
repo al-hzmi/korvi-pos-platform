@@ -156,6 +156,7 @@ function mappingFromUnknown(value: unknown): ProductColumnMapping[] {
     'barcode',
     'nameAr',
     'nameEn',
+    'categoryNameAr',
     'productType',
     'unitLabel',
     'sellingPrice',
@@ -190,11 +191,13 @@ function canonicalFromUnknown(value: unknown): CanonicalProductImportRow {
   }
   const row = value as Record<string, unknown>;
   const productType = row.productType;
+  const categoryNameAr = row.categoryNameAr === undefined ? null : row.categoryNameAr;
   if (
     typeof row.sku !== 'string' ||
     typeof row.nameAr !== 'string' ||
     (row.nameEn !== null && typeof row.nameEn !== 'string') ||
     (row.barcode !== null && typeof row.barcode !== 'string') ||
+    (categoryNameAr !== null && typeof categoryNameAr !== 'string') ||
     (productType !== 'unit' && productType !== 'weighted') ||
     typeof row.unitLabel !== 'string' ||
     typeof row.priceMinor !== 'string' ||
@@ -207,6 +210,7 @@ function canonicalFromUnknown(value: unknown): CanonicalProductImportRow {
     barcode: row.barcode as string | null,
     nameAr: row.nameAr,
     nameEn: row.nameEn as string | null,
+    categoryNameAr: categoryNameAr as string | null,
     productType,
     unitLabel: row.unitLabel,
     priceMinor: row.priceMinor,
@@ -214,12 +218,16 @@ function canonicalFromUnknown(value: unknown): CanonicalProductImportRow {
   };
 }
 
-function bootstrapDraft(row: CanonicalProductImportRow): ProductBootstrapDraft {
+function bootstrapDraft(
+  row: CanonicalProductImportRow,
+  categoryId: string | null,
+): ProductBootstrapDraft {
   return {
     sku: row.sku,
     barcode: row.barcode,
     nameAr: row.nameAr,
     nameEn: row.nameEn,
+    categoryId,
     productType: row.productType,
     unitLabel: row.unitLabel,
     priceMinor: row.priceMinor,
@@ -251,6 +259,40 @@ function commitIssue(sourceRow: number, refusal: ProductBootstrapRefusal): Impor
     sourceColumn: null,
     targetField: null,
   };
+}
+
+function categoryResolutionIssue(
+  sourceRow: number,
+  code: 'category-not-found' | 'category-inactive',
+): ImportIssue {
+  return {
+    classification: 'ERROR',
+    code,
+    message:
+      code === 'category-not-found'
+        ? 'The category name does not exist in this merchant catalogue.'
+        : 'The category name resolves to an inactive category in this merchant catalogue.',
+    row: sourceRow,
+    sourceColumn: null,
+    targetField: 'categoryNameAr',
+  };
+}
+
+async function categoryByNameWithin(
+  tx: TransactionClient,
+  tenant: string,
+  categoryNameAr: string,
+): Promise<{ readonly id: string; readonly isActive: boolean } | null> {
+  const rows = await tx.$queryRaw<{ id: string; isActive: boolean }[]>`
+    SELECT "id","isActive"
+      FROM "categories"
+     WHERE "tenantId" = ${tenant}::uuid
+       AND "nameAr" = ${categoryNameAr}
+     FOR SHARE`;
+  if (rows.length > 1) {
+    throw new DatabaseError('Product import category resolution is ambiguous.');
+  }
+  return rows.at(0) ?? null;
 }
 
 async function clearSourceData(
@@ -657,6 +699,14 @@ export async function dryRunProductImport(
           issues.push(conflictIssue(row.sourceRow, 'barcode', 'barcode-conflict'));
         }
       }
+      if (canonical.categoryNameAr !== null) {
+        const category = await categoryByNameWithin(tx, tenant, canonical.categoryNameAr);
+        if (category === null) {
+          issues.push(categoryResolutionIssue(row.sourceRow, 'category-not-found'));
+        } else if (!category.isActive) {
+          issues.push(categoryResolutionIssue(row.sourceRow, 'category-inactive'));
+        }
+      }
       if (
         issues.some(
           (issue) => issue.classification === 'ERROR' || issue.classification === 'BLOCKED',
@@ -708,7 +758,11 @@ export async function dryRunProductImport(
         eventType: 'migration.product.dry-run',
         entityType: 'migration-import-job',
         entityId: jobId,
-        metadata: { ...counts, conflictPolicy: 'reject' },
+        metadata: {
+          ...counts,
+          conflictPolicy: 'reject',
+          categoryResolution: 'server-tenant-scoped-nameAr',
+        },
         occurredAt: at,
       },
     });
@@ -750,11 +804,23 @@ async function processPendingRow(
 
     await tx.$executeRawUnsafe('SAVEPOINT korvi_product_import_row');
     try {
+      let categoryId: string | null = null;
+      if (canonical.categoryNameAr !== null) {
+        const category = await categoryByNameWithin(tx, tenant, canonical.categoryNameAr);
+        if (category === null) {
+          throw new ProductBootstrapRefusedError('category-not-found');
+        }
+        if (!category.isActive) {
+          throw new ProductBootstrapRefusedError('category-inactive');
+        }
+        categoryId = category.id;
+      }
+
       const product: AdminProductBootstrap = await createBootstrapProductWithin(
         tx,
         tenant,
         actor,
-        bootstrapDraft(canonical),
+        bootstrapDraft(canonical, categoryId),
         at,
         nextId,
       );
@@ -884,6 +950,7 @@ export async function commitProductImport(
             created: count('committed'),
             failed: count('failed'),
             rejected: count('rejected'),
+            categoryResolution: 'server-tenant-scoped-nameAr',
           },
           occurredAt: at,
         },
