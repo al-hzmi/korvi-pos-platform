@@ -13,16 +13,17 @@ export const PRODUCT_MIGRATION_REQUIRED_FIELDS: readonly ProductMigrationTargetF
   'sellingPrice',
 ];
 
-export const PRODUCT_MIGRATION_FIELD_LABELS: Readonly<Record<ProductMigrationTargetField, string>> = {
-  sku: 'رقم الصنف / SKU',
-  barcode: 'الباركود',
-  nameAr: 'الاسم العربي',
-  nameEn: 'الاسم الإنجليزي',
-  productType: 'نوع الصنف',
-  unitLabel: 'وحدة البيع',
-  sellingPrice: 'سعر البيع',
-  vatRate: 'نسبة الضريبة',
-};
+export const PRODUCT_MIGRATION_FIELD_LABELS: Readonly<Record<ProductMigrationTargetField, string>> =
+  {
+    sku: 'رقم الصنف / SKU',
+    barcode: 'الباركود',
+    nameAr: 'الاسم العربي',
+    nameEn: 'الاسم الإنجليزي',
+    productType: 'نوع الصنف',
+    unitLabel: 'وحدة البيع',
+    sellingPrice: 'سعر البيع',
+    vatRate: 'نسبة الضريبة',
+  };
 
 export interface MigrationMappingProblem {
   readonly code: 'duplicate-source' | 'duplicate-target' | 'required-unmapped';
@@ -89,16 +90,20 @@ function csvCell(value: string): string {
   return '"' + safe.replace(/"/g, '""') + '"';
 }
 
-export function productMigrationProblemsCsv(
-  rows: readonly ProductMigrationRowResult[],
-): string {
+export function productMigrationProblemsCsv(rows: readonly ProductMigrationRowResult[]): string {
   const header = ['ROW', 'SOURCE IDENTIFIER', 'FIELD', 'ERROR', 'REASON'];
   const lines = [header.map(csvCell).join(',')];
   for (const row of rows) {
     if (row.issues.length === 0 && row.errorCode === null) continue;
     if (row.issues.length === 0) {
       lines.push(
-        [String(row.sourceRow), row.sourceIdentifier ?? '', '', row.errorCode ?? '', row.errorCode ?? '']
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          '',
+          row.errorCode ?? '',
+          row.errorCode ?? '',
+        ]
           .map(csvCell)
           .join(','),
       );

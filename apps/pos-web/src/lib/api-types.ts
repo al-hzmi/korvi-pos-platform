@@ -183,7 +183,6 @@ export interface AdminProductCreateInput {
   readonly barcode?: string | null;
 }
 
-
 export type ProductMigrationTargetField =
   | 'sku'
   | 'barcode'

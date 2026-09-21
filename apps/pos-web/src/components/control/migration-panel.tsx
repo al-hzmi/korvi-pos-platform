@@ -106,7 +106,8 @@ export function MigrationPanel({
 
   const mappingProblems = useMemo(() => migrationMappingProblems(mapping), [mapping]);
   const selectedFormat = file === null ? null : fileFormat(file);
-  const commandLocked = busy === 'create' || busy === 'dry-run' || busy === 'commit' || pending !== null;
+  const commandLocked =
+    busy === 'create' || busy === 'dry-run' || busy === 'commit' || pending !== null;
 
   const resetFromFile = (nextFile: File | null): void => {
     setFile(nextFile);
@@ -519,7 +520,8 @@ export function MigrationPanel({
             <div className="p-5 pb-2">
               <h3 className="font-semibold text-foreground">معاينة المصدر</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                {inspection.totalRows} صف بيانات · المعروض أول {inspection.previewRows.length} صف فقط.
+                {inspection.totalRows} صف بيانات · المعروض أول {inspection.previewRows.length} صف
+                فقط.
               </p>
             </div>
             <table className="min-w-full text-xs">

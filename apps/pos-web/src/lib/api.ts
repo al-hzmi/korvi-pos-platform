@@ -171,10 +171,7 @@ export interface ApiClient {
   createProductMigrationXlsxJob(
     request: CreateXlsxProductMigrationJobRequest,
   ): Promise<ProductMigrationSummary>;
-  productMigrationJob(
-    jobId: string,
-    options?: RequestOptions,
-  ): Promise<ProductMigrationSummary>;
+  productMigrationJob(jobId: string, options?: RequestOptions): Promise<ProductMigrationSummary>;
   productMigrationRows(
     jobId: string,
     query?: {
@@ -185,10 +182,7 @@ export interface ApiClient {
     options?: RequestOptions,
   ): Promise<ProductMigrationRowPage>;
   dryRunProductMigration(jobId: string): Promise<ProductMigrationSummary>;
-  commitProductMigration(
-    jobId: string,
-    operationId: string,
-  ): Promise<ProductMigrationSummary>;
+  commitProductMigration(jobId: string, operationId: string): Promise<ProductMigrationSummary>;
   inventoryBranches(
     query?: { readonly limit?: number; readonly cursor?: string },
     options?: RequestOptions,
