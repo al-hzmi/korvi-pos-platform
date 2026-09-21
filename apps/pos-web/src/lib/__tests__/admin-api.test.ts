@@ -107,6 +107,41 @@ describe('merchant administration API client', () => {
     );
   });
 
+
+  it('uses category migration endpoints without tenant or category id authority', async () => {
+    const wire = transport({ id: 'category-job', status: 'reviewed' });
+    const api = createApiClient(wire.fetch);
+    await api.inspectCategoryMigrationCsv({
+      csvText: 'اسم الفئة,الترتيب\\nمشروبات,10',
+      fileName: 'categories.csv',
+      sourceSystem: null,
+      delimiter: ',',
+    });
+    await api.createCategoryMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-0000000000e1',
+      csvText: 'اسم الفئة,الترتيب\\nمشروبات,10',
+      fileName: 'categories.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'nameAr' },
+        { sourceColumn: 1, targetField: 'sortOrder' },
+      ],
+    });
+    await api.commitCategoryMigration(
+      'category/job',
+      '018fb700-0000-7000-8000-0000000000e2',
+    );
+
+    expect(wire.calls.map((call) => call.url)).toEqual([
+      '/v1/admin/migrations/categories/inspect-csv',
+      '/v1/admin/migrations/categories/jobs',
+      '/v1/admin/migrations/categories/jobs/category%2Fjob/commit',
+    ]);
+    const bodies = wire.calls.map((call) => String(call.init.body ?? ''));
+    expect(bodies.join(' ')).not.toMatch(/tenant|categoryId|actor/);
+  });
+
   it('reads bounded inventory branches without borrowing settings authority', async () => {
     const wire = transport({ rows: [], nextCursor: null });
     await createApiClient(wire.fetch).inventoryBranches({
