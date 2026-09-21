@@ -50,7 +50,7 @@ describe('product migration category-name contract', () => {
 
   it('rejects malformed category names instead of repairing control characters', () => {
     const sheet = parseCsvDocument(
-      'SKU,اسم الصنف,نوع الصنف,الوحدة,سعر البيع,اسم الفئة\nA1,ماء,unit,each,1,مشروبات\u0000ساخنة',
+      'SKU,اسم الصنف,نوع الصنف,الوحدة,سعر البيع,اسم الفئة\nA1,ماء,unit,each,1,مشروبات\u007fساخنة',
     ).sheets[0]!;
     const mapping = suggestProductMappings(sheet.rows[0]!).map((entry) => ({
       sourceColumn: entry.sourceColumn,
