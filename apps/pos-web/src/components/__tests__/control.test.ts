@@ -240,14 +240,17 @@ describe('control centre first paint', () => {
       createElement(MigrationPanel, {
         api: idleApi,
         canCommit: true,
+        canCustomerCommit: true,
         onCommandLockChange: () => undefined,
       }),
     );
     expect(markup).toContain('استيراد المنتجات');
     expect(markup).toContain('استيراد الفئات');
+    expect(markup).toContain('استيراد العملاء');
     expect(markup).toContain('فحص الملف');
     expect(markup).toContain('قالب المنتجات CSV');
     expect(markup).toContain('قالب الفئات CSV');
+    expect(markup).toContain('قالب العملاء CSV');
     expect(markup).not.toContain('نتيجة مهمة الترحيل');
     expect(markup).not.toContain('اعتماد الاستيراد');
   });
