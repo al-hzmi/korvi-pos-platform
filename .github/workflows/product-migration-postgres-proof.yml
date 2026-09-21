@@ -1,4 +1,4 @@
-name: Product Migration PostgreSQL Isolation Proof
+name: Migration PostgreSQL Isolation Proof
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - packages/database/src/migration/**
       - packages/database/src/__tests__/product-migration-isolation-live.test.ts
       - packages/database/src/__tests__/product-category-migration-isolation-live.test.ts
+      - packages/database/src/__tests__/category-migration-isolation-live.test.ts
       - packages/database/prisma/**
       - scripts/deploy/production-migrate.sh
       - scripts/prove-migration-state.sh
@@ -15,7 +16,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: product-migration-postgres-${{ github.ref }}
+  group: migration-postgres-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -96,11 +97,12 @@ jobs:
           npm run build -w @korvi/domain
           npm run build -w @korvi/database
 
-      - name: Prove product migration isolation as restricted runtime
+      - name: Prove migration isolation as restricted runtime
         run: >-
           npx --no-install vitest run
           packages/database/src/__tests__/product-migration-isolation-live.test.ts
           packages/database/src/__tests__/product-category-migration-isolation-live.test.ts
+          packages/database/src/__tests__/category-migration-isolation-live.test.ts
 
       - name: Recheck hygiene
         run: |
