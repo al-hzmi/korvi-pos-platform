@@ -33,6 +33,8 @@ export type ProductBootstrapRefusal =
   | 'settings-missing'
   | 'barcode-required'
   | 'weighted-disabled'
+  | 'category-not-found'
+  | 'category-inactive'
   | 'sku-taken'
   | 'barcode-taken';
 
@@ -61,6 +63,7 @@ export interface AdminProductBootstrap {
   readonly priceMinor: string;
   readonly vatBasisPoints: number;
   readonly primaryBarcode: string | null;
+  readonly categoryId: string | null;
   readonly trackInventory: boolean;
   readonly isActive: true;
   readonly createdAt: string;
@@ -83,6 +86,7 @@ interface ProductReadRow {
   priceMinor: bigint;
   vatBasisPoints: number;
   barcode: string | null;
+  categoryId: string | null;
   trackInventory: boolean;
   isActive: boolean;
   createdAt: Date;
@@ -105,6 +109,7 @@ function asProduct(row: ProductReadRow): AdminProductBootstrap {
     priceMinor: row.priceMinor.toString(),
     vatBasisPoints: row.vatBasisPoints,
     primaryBarcode: row.barcode,
+    categoryId: row.categoryId,
     trackInventory: row.trackInventory,
     isActive: true,
     createdAt: row.createdAt.toISOString(),
@@ -143,6 +148,22 @@ export async function createBootstrapProductWithin(
     throw error;
   }
 
+  if (input.categoryId !== null) {
+    const categoryRows = await tx.$queryRaw<{ isActive: boolean }[]>`
+      SELECT "isActive"
+        FROM "categories"
+       WHERE "tenantId" = ${tenant}::uuid
+         AND "id" = ${input.categoryId}::uuid
+       FOR SHARE`;
+    const category = categoryRows.at(0);
+    if (category === undefined) {
+      throw new ProductBootstrapRefusedError('category-not-found');
+    }
+    if (!category.isActive) {
+      throw new ProductBootstrapRefusedError('category-inactive');
+    }
+  }
+
   if (settings.requireBarcode && input.barcode === null) {
     throw new ProductBootstrapRefusedError('barcode-required');
   }
@@ -165,7 +186,7 @@ export async function createBootstrapProductWithin(
        "priceMinor","vatBasisPoints","barcode","codeReverse","imageUrl","trackInventory",
        "isActive","createdAt","updatedAt")
     VALUES
-      (${productId}::uuid, ${tenant}::uuid, NULL, ${input.sku}, ${input.nameAr}, ${input.nameEn},
+      (${productId}::uuid, ${tenant}::uuid, ${input.categoryId}::uuid, ${input.sku}, ${input.nameAr}, ${input.nameEn},
        ${input.productType}, ${input.unitLabel}, ${input.priceMinor}::bigint, ${vatColumn},
        ${input.barcode}, ${reversed}, NULL, ${settings.trackInventory}, true, ${at}, ${at})
     ON CONFLICT ("tenantId","sku") DO NOTHING
@@ -214,6 +235,7 @@ export async function createBootstrapProductWithin(
         vatBasisPoints: vatColumn,
         trackInventory: settings.trackInventory,
         hasBarcode: input.barcode !== null,
+        hasCategory: input.categoryId !== null,
       },
       occurredAt: at,
     },
@@ -221,7 +243,7 @@ export async function createBootstrapProductWithin(
 
   const rows = await tx.$queryRaw<ProductReadRow[]>`
     SELECT "id","sku","nameAr","nameEn","productType","unitLabel","priceMinor",
-           "vatBasisPoints","barcode","trackInventory","isActive","createdAt"
+           "vatBasisPoints","barcode","categoryId","trackInventory","isActive","createdAt"
       FROM "products"
      WHERE "tenantId" = ${tenant}::uuid AND "id" = ${productId}::uuid`;
   const row = rows.at(0);

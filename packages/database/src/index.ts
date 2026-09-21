@@ -230,6 +230,18 @@ export type {
   RestaurantOrderMutationResult,
 } from './restaurant/orders.js';
 
+// Category bootstrap. Tenant-scoped catalogue authority used by onboarding/migration.
+export {
+  CategoryBootstrapRefusedError,
+  ensureCategory,
+} from './administration/category-bootstrap.js';
+export type {
+  CategoryBootstrapRefusal,
+  CategoryBootstrapActor,
+  AdminCategoryBootstrap,
+  EnsureCategoryResult,
+} from './administration/category-bootstrap.js';
+
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.
 export {
