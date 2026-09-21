@@ -146,7 +146,9 @@ Milestone sequence:
   - **Verified checkpoint:** `product/post-v1-migration-engine@b07c050be788d6afd50faadd54e9f23c5e733735`, CI `35547048238` green; 190 test files / 2,305 tests passed, 24 files / 369 live-only tests skipped by the normal CI profile.
   - Implemented/proven: bounded CSV inspection and bounded XLSX parsing; formula/macro/external-reference authority protections; deterministic Arabic/English mapping suggestions and explicit mapping contract; preview rows; tenant-scoped reviewed import jobs/rows; original physical spreadsheet row provenance; source SHA-256 and row fingerprints; dry-run catalogue conflict detection; reject-only conflict policy; explicit commit requiring `settings.manage + product.write`; controlled create-only commit through Korvi's existing product bootstrap authority; retry/idempotency protection; audit events; row-level results and source-data minimization after commit.
   - HTTP callers cannot assert tenant identity or source hash; those remain server/principal-derived.
-  - **Open before M1 complete:** merchant-facing mapping/preview/error workflow, downloadable/exportable error results, stronger database-level cross-tenant/adversarial proof, and final onboarding UX integration.
+  - **Merchant workflow checkpoint VERIFIED:** `product/post-v1-migration-engine@e1a407565642ea5fcfda6820f475c0c833a6cbea`, CI `35612574884`; 191 test files / 2,315 tests passed, 24 files / 369 live-only tests skipped by the normal CI profile.
+  - Implemented/proven in that checkpoint: Arabic-first Control Center migration surface, CSV/XLSX file selection, deterministic mapping override, source preview, reviewed-job creation, dry-run, explicit commit, ambiguous-command same-operation retry, row-level problem table, official product CSV template and downloadable formula-safe CSV error export.
+  - **Open before M1 complete:** stronger database-level cross-tenant/adversarial proof. M2 categories may proceed in parallel without weakening the verified M1 pipeline.
 - **M2:** categories + product mapping.
 - **M3:** customers.
 - **M4:** suppliers.
