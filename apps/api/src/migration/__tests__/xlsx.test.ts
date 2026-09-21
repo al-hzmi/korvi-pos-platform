@@ -1,4 +1,5 @@
 import { deflateRawSync } from 'node:zlib';
+import { reviewProductSheet, suggestProductMappings } from '@korvi/domain';
 import { describe, expect, it } from 'vitest';
 import { parseXlsxDocument, XlsxParseError } from '../xlsx.js';
 
@@ -208,4 +209,48 @@ describe('XLSX migration adapter', () => {
       ),
     ).toThrow(XlsxParseError);
   });
+
+  it('carries Arabic categoryNameAr from XLSX into the product canonical review', () => {
+    const categorySharedStrings = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<si><t>SKU</t></si><si><t>اسم الصنف</t></si><si><t>نوع الصنف</t></si>' +
+        '<si><t>الوحدة</t></si><si><t>سعر البيع</t></si><si><t>اسم الفئة</t></si>' +
+        '<si><t>A-1</t></si><si><t>قهوة</t></si><si><t>unit</t></si>' +
+        '<si><t>each</t></si><si><t>10.00</t></si><si><t>مشروبات ساخنة</t></si>' +
+        '</sst>',
+    );
+    const categorySheet = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c>' +
+        '<c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c>' +
+        '<c r="E1" t="s"><v>4</v></c><c r="F1" t="s"><v>5</v></c></row>' +
+        '<row r="2"><c r="A2" t="s"><v>6</v></c><c r="B2" t="s"><v>7</v></c>' +
+        '<c r="C2" t="s"><v>8</v></c><c r="D2" t="s"><v>9</v></c>' +
+        '<c r="E2" t="s"><v>10</v></c><c r="F2" t="s"><v>11</v></c></row>' +
+        '</sheetData></worksheet>',
+    );
+    const document = parseXlsxDocument(
+      storedZip([
+        { name: 'xl/workbook.xml', data: workbook },
+        { name: 'xl/_rels/workbook.xml.rels', data: workbookRels },
+        { name: 'xl/sharedStrings.xml', data: categorySharedStrings },
+        { name: 'xl/worksheets/sheet1.xml', data: categorySheet },
+      ]),
+    );
+    const parsed = document.sheets[0]!;
+    const mapping = suggestProductMappings(parsed.rows[0]!).map((entry) => ({
+      sourceColumn: entry.sourceColumn,
+      targetField: entry.targetField,
+    }));
+    expect(reviewProductSheet(parsed, mapping)[0]).toMatchObject({
+      classification: 'VALID',
+      record: {
+        sku: 'A-1',
+        categoryNameAr: 'مشروبات ساخنة',
+      },
+    });
+  });
+
 });
