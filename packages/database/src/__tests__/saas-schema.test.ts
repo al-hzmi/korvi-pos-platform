@@ -162,7 +162,7 @@ describe('row-level security', () => {
   });
 
   it.each(tenantOwnedTables)('defines an isolation policy for %s', (table) => {
-    expect(migration).toMatch(new RegExp(`CREATE POLICY "\\w+" ON "${table}"`));
+    expect(migration).toMatch(new RegExp(`CREATE POLICY "\\w+"\\s+ON "${table}"`));
   });
 
   it('gives every tenant isolation policy both USING and WITH CHECK', () => {
