@@ -377,6 +377,73 @@ export async function readMerchantCustomer(
   });
 }
 
+/**
+ * Same customer create authority as the public customer command, but inside an
+ * already tenant-scoped transaction. Migration uses this so customer truth and
+ * migration-row state can commit atomically without inventing a second writer.
+ *
+ * Intentionally not re-exported from the package index.
+ */
+export async function createMerchantCustomerWithin(
+  tx: TransactionClient,
+  tenant: string,
+  actor: CustomerActor,
+  request: Omit<CustomerCreateRequest, 'operationId'>,
+  at: Date,
+  nextId: () => string = newId,
+): Promise<AdminCustomer> {
+  await lockTenant(tx, tenant);
+  if (request.phone !== null) {
+    const conflict = await tx.customer.findFirst({
+      where: { tenantId: tenant, phone: request.phone },
+    });
+    if (conflict !== null) throw new CustomerAdminRefusedError('phone-taken');
+  }
+
+  const id = nextId();
+  let row: CustomerRow;
+  try {
+    row = await tx.customer.create({
+      data: {
+        id,
+        tenantId: tenant,
+        nameAr: request.nameAr,
+        nameEn: request.nameEn,
+        phone: request.phone,
+        email: request.email,
+        vatNumber: request.vatNumber,
+        isActive: true,
+        createdAt: at,
+        updatedAt: at,
+      },
+    });
+  } catch (error) {
+    if (
+      request.phone !== null &&
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002'
+    ) {
+      throw new CustomerAdminRefusedError('phone-taken');
+    }
+    throw error;
+  }
+  const customer = asCustomer(row);
+
+  await appendAudit(
+    tx,
+    tenant,
+    actor,
+    'customer.created',
+    id,
+    { hasPhone: request.phone !== null, hasVatNumber: request.vatNumber !== null },
+    at,
+    nextId,
+  );
+  return customer;
+}
+
 export async function createMerchantCustomer(
   prisma: PrismaClient,
   scope: TenantScope,
@@ -407,39 +474,18 @@ export async function createMerchantCustomer(
       return { customer: reservation.replay, replayed: true };
     }
 
-    await lockTenant(tx, tenant);
-    if (request.phone !== null) {
-      const conflict = await tx.customer.findFirst({
-        where: { tenantId: tenant, phone: request.phone },
-      });
-      if (conflict !== null) throw new CustomerAdminRefusedError('phone-taken');
-    }
-
     const at = clock();
-    const id = nextId();
-    const row: CustomerRow = await tx.customer.create({
-      data: {
-        id,
-        tenantId: tenant,
+    const customer = await createMerchantCustomerWithin(
+      tx,
+      tenant,
+      actor,
+      {
         nameAr: request.nameAr,
         nameEn: request.nameEn,
         phone: request.phone,
         email: request.email,
         vatNumber: request.vatNumber,
-        isActive: true,
-        createdAt: at,
-        updatedAt: at,
       },
-    });
-    const customer = asCustomer(row);
-
-    await appendAudit(
-      tx,
-      tenant,
-      actor,
-      'customer.created',
-      id,
-      { hasPhone: request.phone !== null, hasVatNumber: request.vatNumber !== null },
       at,
       nextId,
     );
