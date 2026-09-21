@@ -14,6 +14,7 @@ import {
   createProductImportJob,
   dryRunProductImport,
   readProductImportJob,
+  readProductImportRows,
 } from '@korvi/database';
 import type {
   ImportCell,
@@ -21,7 +22,12 @@ import type {
   ProductMappingSuggestion,
   TenantScope,
 } from '@korvi/domain';
-import type { PrismaClient, ProductImportRefusal, ProductImportSummary } from '@korvi/database';
+import type {
+  PrismaClient,
+  ProductImportRefusal,
+  ProductImportRowPage,
+  ProductImportSummary,
+} from '@korvi/database';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 
 export const MAX_PRODUCT_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -93,6 +99,15 @@ export interface MerchantProductMigrationService {
     principal: AuthenticatedPrincipal,
     jobId: string,
   ): Promise<ProductMigrationResult<ProductImportSummary | null>>;
+  rows(
+    principal: AuthenticatedPrincipal,
+    jobId: string,
+    options: {
+      readonly limit: number;
+      readonly afterSourceRow: number | null;
+      readonly problemsOnly: boolean;
+    },
+  ): Promise<ProductMigrationResult<ProductImportRowPage | null>>;
   dryRun(
     principal: AuthenticatedPrincipal,
     jobId: string,
@@ -312,6 +327,13 @@ export function createMerchantProductMigrationService(
     async readJob(principal, jobId) {
       requirePrincipalPermission(principal, 'settings.manage');
       return databaseAttempt(() => readProductImportJob(prisma, scopeOf(principal), jobId));
+    },
+
+    async rows(principal, jobId, options) {
+      requirePrincipalPermission(principal, 'settings.manage');
+      return databaseAttempt(() =>
+        readProductImportRows(prisma, scopeOf(principal), jobId, options),
+      );
     },
 
     async dryRun(principal, jobId) {

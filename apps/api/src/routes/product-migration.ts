@@ -62,6 +62,13 @@ const CREATE_XLSX_JOB = XLSX_SOURCE.extend({
     .max(200),
 }).strict();
 const JOB_PARAMS = z.object({ jobId: UUID }).strict();
+const ROW_QUERY = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(500).optional().default(200),
+    afterSourceRow: z.coerce.number().int().min(1).nullable().optional().default(null),
+    problemsOnly: z.enum(['true', 'false']).optional().default('false'),
+  })
+  .strict();
 const COMMIT = z.object({ operationId: UUID }).strict();
 
 const STATUS: Readonly<Record<ProductMigrationFailureReason, number>> = {
@@ -157,6 +164,29 @@ export function registerProductMigrationRoutes(
       const params = JOB_PARAMS.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
       const result = await service.readJob(principal, params.data.jobId);
+      if (result.outcome === 'success' && result.value === null) {
+        return reply.code(404).send({ error: 'unknown_job' });
+      }
+      return respond(reply, result);
+    },
+  );
+
+  app.get(
+    '/v1/admin/migrations/products/jobs/:jobId/rows',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = JOB_PARAMS.safeParse(request.params);
+      const query = ROW_QUERY.safeParse(request.query);
+      if (!params.success || !query.success) {
+        return reply.code(400).send({ error: 'invalid_query' });
+      }
+      const result = await service.rows(principal, params.data.jobId, {
+        limit: query.data.limit,
+        afterSourceRow: query.data.afterSourceRow,
+        problemsOnly: query.data.problemsOnly === 'true',
+      });
       if (result.outcome === 'success' && result.value === null) {
         return reply.code(404).send({ error: 'unknown_job' });
       }

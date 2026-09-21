@@ -249,6 +249,7 @@ export {
   ProductImportRefusedError,
   createProductImportJob,
   readProductImportJob,
+  readProductImportRows,
   dryRunProductImport,
   commitProductImport,
 } from './migration/product-import.js';
@@ -258,6 +259,7 @@ export type {
   CreateProductImportJobRequest,
   ProductImportRowResult,
   ProductImportSummary,
+  ProductImportRowPage,
 } from './migration/product-import.js';
 
 // Commercial plan/entitlement control-plane foundation (Strike 4C).

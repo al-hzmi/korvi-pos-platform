@@ -30,6 +30,7 @@ import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
 
 const ROW_BATCH = 250;
+const SUMMARY_ROW_PREVIEW_LIMIT = 200;
 
 export type ProductImportRefusal =
   | 'unknown-job'
@@ -71,6 +72,11 @@ export interface ProductImportRowResult {
   readonly issues: readonly ImportIssue[];
 }
 
+export interface ProductImportRowPage {
+  readonly rows: readonly ProductImportRowResult[];
+  readonly nextAfterSourceRow: number | null;
+}
+
 export interface ProductImportSummary {
   readonly id: string;
   readonly domain: 'products';
@@ -90,7 +96,9 @@ export interface ProductImportSummary {
   readonly created: number;
   readonly failed: number;
   readonly rejected: number;
+  /** Bounded preview only. Use the paginated row endpoint for complete result/error export. */
   readonly rows: readonly ProductImportRowResult[];
+  readonly rowsTruncated: boolean;
   readonly createdAt: string;
   readonly dryRunAt: string | null;
   readonly commitAt: string | null;
@@ -266,6 +274,48 @@ async function clearSourceData(
        AND "id" = ${rowId}::uuid`;
 }
 
+async function productRowResult(row: {
+  sourceRow: number;
+  sourceIdentifier: string | null;
+  classification: string;
+  plannedAction: string;
+  status: string;
+  targetEntityId: string | null;
+  errorCode: string | null;
+  issues: unknown;
+}): Promise<ProductImportRowResult> {
+  if (
+    row.classification !== 'VALID' &&
+    row.classification !== 'WARNING' &&
+    row.classification !== 'ERROR' &&
+    row.classification !== 'BLOCKED'
+  ) {
+    throw new DatabaseError('Product import row carries unknown classification.');
+  }
+  if (row.plannedAction !== 'create' && row.plannedAction !== 'reject') {
+    throw new DatabaseError('Product import row carries unknown action.');
+  }
+  if (
+    row.status !== 'pending' &&
+    row.status !== 'committing' &&
+    row.status !== 'rejected' &&
+    row.status !== 'committed' &&
+    row.status !== 'failed'
+  ) {
+    throw new DatabaseError('Product import row carries unknown status.');
+  }
+  return {
+    sourceRow: row.sourceRow,
+    sourceIdentifier: row.sourceIdentifier,
+    classification: row.classification,
+    plannedAction: row.plannedAction,
+    status: row.status,
+    targetEntityId: row.targetEntityId,
+    errorCode: row.errorCode,
+    issues: issuesFromUnknown(row.issues),
+  };
+}
+
 async function summaryWithin(
   tx: TransactionClient,
   tenant: string,
@@ -273,7 +323,6 @@ async function summaryWithin(
 ): Promise<ProductImportSummary | null> {
   const job = await tx.migrationImportJob.findFirst({
     where: { tenantId: tenant, id: jobId },
-    include: { rows: { orderBy: { sourceRow: 'asc' } } },
   });
   if (job === null) return null;
   if (job.domain !== 'products' || (job.format !== 'csv' && job.format !== 'xlsx')) {
@@ -288,44 +337,31 @@ async function summaryWithin(
     throw new DatabaseError('Product import job carries unknown lifecycle status.');
   }
 
-  let created = 0;
-  let failed = 0;
-  let rejected = 0;
-  const rows: ProductImportRowResult[] = job.rows.map((row) => {
-    if (
-      row.classification !== 'VALID' &&
-      row.classification !== 'WARNING' &&
-      row.classification !== 'ERROR' &&
-      row.classification !== 'BLOCKED'
-    ) {
-      throw new DatabaseError('Product import row carries unknown classification.');
-    }
-    if (row.plannedAction !== 'create' && row.plannedAction !== 'reject') {
-      throw new DatabaseError('Product import row carries unknown action.');
-    }
-    if (
-      row.status !== 'pending' &&
-      row.status !== 'committing' &&
-      row.status !== 'rejected' &&
-      row.status !== 'committed' &&
-      row.status !== 'failed'
-    ) {
-      throw new DatabaseError('Product import row carries unknown status.');
-    }
-    if (row.status === 'committed') created += 1;
-    if (row.status === 'failed') failed += 1;
-    if (row.status === 'rejected') rejected += 1;
-    return {
-      sourceRow: row.sourceRow,
-      sourceIdentifier: row.sourceIdentifier,
-      classification: row.classification,
-      plannedAction: row.plannedAction,
-      status: row.status,
-      targetEntityId: row.targetEntityId,
-      errorCode: row.errorCode,
-      issues: issuesFromUnknown(row.issues),
-    };
-  });
+  const [previewRows, statusCounts] = await Promise.all([
+    tx.migrationImportRow.findMany({
+      where: { tenantId: tenant, jobId },
+      select: {
+        sourceRow: true,
+        sourceIdentifier: true,
+        classification: true,
+        plannedAction: true,
+        status: true,
+        targetEntityId: true,
+        errorCode: true,
+        issues: true,
+      },
+      orderBy: [{ sourceRow: 'asc' }, { id: 'asc' }],
+      take: SUMMARY_ROW_PREVIEW_LIMIT,
+    }),
+    tx.migrationImportRow.groupBy({
+      by: ['status'],
+      where: { tenantId: tenant, jobId },
+      _count: { _all: true },
+    }),
+  ]);
+  const count = (status: string) =>
+    statusCounts.find((entry) => entry.status === status)?._count._all ?? 0;
+  const rows = await Promise.all(previewRows.map(productRowResult));
 
   return {
     id: job.id,
@@ -343,14 +379,80 @@ async function summaryWithin(
     warningRows: job.warningRows,
     errorRows: job.errorRows,
     blockedRows: job.blockedRows,
-    created,
-    failed,
-    rejected,
+    created: count('committed'),
+    failed: count('failed'),
+    rejected: count('rejected'),
     rows,
+    rowsTruncated: job.totalRows > rows.length,
     createdAt: job.createdAt.toISOString(),
     dryRunAt: job.dryRunAt?.toISOString() ?? null,
     commitAt: job.commitAt?.toISOString() ?? null,
   };
+}
+
+export async function readProductImportRows(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  jobId: string,
+  options: {
+    readonly limit: number;
+    readonly afterSourceRow: number | null;
+    readonly problemsOnly: boolean;
+  },
+): Promise<ProductImportRowPage | null> {
+  if (!Number.isInteger(options.limit) || options.limit < 1 || options.limit > 500) {
+    throw new ProductImportRefusedError('invalid-operation');
+  }
+  if (
+    options.afterSourceRow !== null &&
+    (!Number.isInteger(options.afterSourceRow) || options.afterSourceRow < 1)
+  ) {
+    throw new ProductImportRefusedError('invalid-operation');
+  }
+
+  const tenant = tenantParam(scope);
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    const job = await tx.migrationImportJob.findFirst({
+      where: { tenantId: tenant, id: jobId, domain: 'products' },
+      select: { id: true },
+    });
+    if (job === null) return null;
+
+    const rows = await tx.migrationImportRow.findMany({
+      where: {
+        tenantId: tenant,
+        jobId,
+        ...(options.afterSourceRow === null ? {} : { sourceRow: { gt: options.afterSourceRow } }),
+        ...(options.problemsOnly
+          ? {
+              OR: [
+                { classification: { in: ['WARNING', 'ERROR', 'BLOCKED'] } },
+                { status: { in: ['rejected', 'failed'] } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        sourceRow: true,
+        sourceIdentifier: true,
+        classification: true,
+        plannedAction: true,
+        status: true,
+        targetEntityId: true,
+        errorCode: true,
+        issues: true,
+      },
+      orderBy: [{ sourceRow: 'asc' }, { id: 'asc' }],
+      take: options.limit + 1,
+    });
+    const hasMore = rows.length > options.limit;
+    const pageRows = rows.slice(0, options.limit);
+    return {
+      rows: await Promise.all(pageRows.map(productRowResult)),
+      nextAfterSourceRow:
+        hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1]!.sourceRow : null,
+    };
+  });
 }
 
 export async function createProductImportJob(

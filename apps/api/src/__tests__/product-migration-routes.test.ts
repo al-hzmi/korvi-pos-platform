@@ -74,6 +74,7 @@ const summary: ProductImportSummary = {
   failed: 0,
   rejected: 0,
   rows: [],
+  rowsTruncated: false,
   createdAt: '2026-09-20T12:00:00.000Z',
   dryRunAt: null,
   commitAt: null,
@@ -112,6 +113,10 @@ function service(): MerchantProductMigrationService {
     async readJob(_principal, jobId) {
       calls.push({ method: 'readJob', value: jobId });
       return { outcome: 'success', value: summary };
+    },
+    async rows(_principal, jobId, options) {
+      calls.push({ method: 'rows', value: { jobId, options } });
+      return { outcome: 'success', value: { rows: [], nextAfterSourceRow: null } };
     },
     async dryRun(_principal, jobId) {
       calls.push({ method: 'dryRun', value: jobId });
@@ -232,6 +237,26 @@ describe('product migration HTTP authority', () => {
     expect(calls.map((call) => call.method)).toEqual(['inspectXlsx', 'createXlsxJob']);
     expect(calls[0]?.value).not.toHaveProperty('tenantId');
     expect(calls[1]?.value).not.toHaveProperty('sourceSha256');
+  });
+
+  it('pages row results without tenant-controlled scope', async () => {
+    const server = build(principal(['settings.manage']));
+    const response = await server.inject({
+      method: 'GET',
+      url: `/v1/admin/migrations/products/jobs/${JOB}/rows?limit=50&afterSourceRow=100&problemsOnly=true`,
+      headers: { cookie: COOKIE },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ rows: [], nextAfterSourceRow: null });
+    expect(calls).toEqual([
+      {
+        method: 'rows',
+        value: {
+          jobId: JOB,
+          options: { limit: 50, afterSourceRow: 100, problemsOnly: true },
+        },
+      },
+    ]);
   });
 
   it('keeps dry-run separate from commit and commit requires product.write too', async () => {
