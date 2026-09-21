@@ -38,6 +38,28 @@ describe('migration canonical model', () => {
     expect(reviewProductSheet(sheet, mappings)[0]?.sourceRow).toBe(3);
   });
 
+  it('preserves physical row numbers even when mapping validation blocks the row', () => {
+    const sheet = parseCsvDocument(
+      'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\n\nA1,قهوة,unit,each,10',
+    ).sheets[0]!;
+    const incomplete = suggestProductMappings(sheet.rows[0]!)
+      .map((suggestion) => ({
+        sourceColumn: suggestion.sourceColumn,
+        targetField: suggestion.targetField,
+      }))
+      .filter((mapping) => mapping.targetField !== 'sellingPrice');
+    const row = reviewProductSheet(sheet, incomplete)[0]!;
+    expect(row.sourceRow).toBe(3);
+    expect(row.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'required-field-unmapped',
+          row: 3,
+        }),
+      ]),
+    );
+  });
+
   it('refuses malformed or unbounded CSV deterministically', () => {
     expect(() => parseCsvDocument('"open')).toThrow(ImportParseError);
     expect(() => parseCsvDocument('a,b,c\n1,2,3', { maxColumns: 2 })).toThrow(ImportParseError);
