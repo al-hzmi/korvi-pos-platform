@@ -218,9 +218,17 @@ Verified Product M1 backend/API follow-on:
 - bounded CSV/XLSX inspection, deterministic mapping/preview data, tenant-scoped import-job/row persistence, physical source-row provenance, dry-run catalogue conflict checks, reject-only conflict policy, controlled create-only commit through existing product authority, retry/idempotency, audit and row result tracking are VERIFIED;
 - HTTP authority proves `settings.manage` for inspection/jobs/dry-run and `product.write` additionally for commit, while tenant/source-hash authority is not accepted from request bodies.
 
-This does **not** make M1 or Customer Migration Readiness GREEN. Merchant-facing mapping/preview/error UX, downloadable error export, stronger database-level cross-tenant/adversarial proof, and M2–M5 domain coverage remain open.
+Verified Product M1 merchant-workflow follow-on:
 
-Current next action: **finish Product M1 merchant UI/error-export boundary while starting M2 categories without weakening the verified import pipeline**.
+- branch `product/post-v1-migration-engine`;
+- SHA `e1a407565642ea5fcfda6820f475c0c833a6cbea`;
+- CI `35612574884` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- 191 test files / 2,315 tests passed; 24 files / 369 live-only tests skipped by the standard CI profile;
+- Arabic-first CSV/XLSX upload, deterministic mapping/manual override, preview, dry-run, explicit commit, ambiguity-safe same-operation retry, row-level problem review, official product template and downloadable formula-safe CSV error export are VERIFIED.
+
+This does **not** make M1 or Customer Migration Readiness GREEN. Stronger database-level cross-tenant/adversarial proof and M2–M5 domain coverage remain open.
+
+Current next action: **close Product M1 cross-tenant/adversarial DB proof while starting M2 categories without weakening the verified import pipeline**.
 
 ## 6. What must happen next
 
