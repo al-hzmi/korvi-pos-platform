@@ -9,6 +9,7 @@ on:
       - packages/database/src/__tests__/product-migration-isolation-live.test.ts
       - packages/database/src/__tests__/product-category-migration-isolation-live.test.ts
       - packages/database/src/__tests__/category-migration-isolation-live.test.ts
+      - packages/database/src/__tests__/customer-migration-isolation-live.test.ts
       - packages/database/prisma/**
       - scripts/deploy/production-migrate.sh
       - scripts/prove-migration-state.sh
@@ -97,14 +98,15 @@ jobs:
           npm run build -w @korvi/domain
           npm run build -w @korvi/database
 
-      # M2 closure proof: Category import isolation plus Product -> Category
-      # server-side name resolution run under the same non-BYPASSRLS runtime.
+      # M2/M3 proof: category/product-category isolation plus customer import
+      # isolation run under the same non-BYPASSRLS runtime.
       - name: Prove migration isolation as restricted runtime
         run: >-
           npx --no-install vitest run
           packages/database/src/__tests__/product-migration-isolation-live.test.ts
           packages/database/src/__tests__/product-category-migration-isolation-live.test.ts
           packages/database/src/__tests__/category-migration-isolation-live.test.ts
+          packages/database/src/__tests__/customer-migration-isolation-live.test.ts
 
       - name: Recheck hygiene
         run: |
