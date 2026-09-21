@@ -25,6 +25,7 @@ import {
   InventoryPanelView,
 } from '../control/inventory-panel';
 import { MembersPanel } from '../control/members-panel';
+import { MigrationPanel } from '../control/migration-panel';
 import { ProductsPanel } from '../control/products-panel';
 import {
   OrderDetail,
@@ -123,6 +124,7 @@ describe('control navigation', () => {
       'الموظفون والصلاحيات',
       'التقارير',
       'الإعدادات',
+      'الترحيل والاستيراد',
       'ZATCA',
     ]);
   });
@@ -231,6 +233,21 @@ describe('control centre first paint', () => {
     const markup = renderToStaticMarkup(createElement(ProductsPanel, { api: idleApi }));
     expect(markup).toContain('عرض فقط');
     expect(markup).not.toContain('حفظ');
+  });
+
+  it('starts migration with an explicit file workflow and no invented import result', () => {
+    const markup = renderToStaticMarkup(
+      createElement(MigrationPanel, {
+        api: idleApi,
+        canCommit: true,
+        onCommandLockChange: () => undefined,
+      }),
+    );
+    expect(markup).toContain('استيراد المنتجات');
+    expect(markup).toContain('فحص الملف');
+    expect(markup).toContain('قالب المنتجات CSV');
+    expect(markup).not.toContain('نتيجة مهمة الترحيل');
+    expect(markup).not.toContain('اعتماد الاستيراد');
   });
 
   it('does not claim settings are editable until their authority has loaded', () => {
