@@ -176,28 +176,28 @@ describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live
     'runs under a non-superuser, non-bypass runtime role and forces RLS on migration tables',
     async () => {
       const role = await client.query<{ usesuper: boolean; rolbypassrls: boolean }>(
-      `SELECT u.usesuper, r.rolbypassrls
+        `SELECT u.usesuper, r.rolbypassrls
          FROM pg_user u
          JOIN pg_roles r ON r.rolname = u.usename
         WHERE u.usename = current_user`,
-    );
-    expect(role.rows[0]).toEqual({ usesuper: false, rolbypassrls: false });
+      );
+      expect(role.rows[0]).toEqual({ usesuper: false, rolbypassrls: false });
 
-    const tables = await client.query<{
-      relname: string;
-      relrowsecurity: boolean;
-      relforcerowsecurity: boolean;
-    }>(
-      `SELECT relname, relrowsecurity, relforcerowsecurity
+      const tables = await client.query<{
+        relname: string;
+        relrowsecurity: boolean;
+        relforcerowsecurity: boolean;
+      }>(
+        `SELECT relname, relrowsecurity, relforcerowsecurity
          FROM pg_class
         WHERE relname IN ('migration_import_jobs','migration_import_rows')
         ORDER BY relname`,
-    );
-    expect(tables.rows).toHaveLength(2);
-    for (const table of tables.rows) {
-      expect(table.relrowsecurity, table.relname).toBe(true);
-      expect(table.relforcerowsecurity, table.relname).toBe(true);
-    }
+      );
+      expect(tables.rows).toHaveLength(2);
+      for (const table of tables.rows) {
+        expect(table.relrowsecurity, table.relname).toBe(true);
+        expect(table.relforcerowsecurity, table.relname).toBe(true);
+      }
     },
   );
 
