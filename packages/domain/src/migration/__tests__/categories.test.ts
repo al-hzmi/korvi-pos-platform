@@ -11,6 +11,7 @@ describe('category migration canonical review', () => {
     const sheet = parseCsvDocument(
       'اسم الفئة,English Name,الترتيب,Parent Category\nمشروبات,Drinks,10,Root',
     ).sheets[0]!;
+    const suggestions = suggestCategoryMappings(sheet.rows[0]!);
     expect(suggestions).toEqual([
       expect.objectContaining({ targetField: 'nameAr', reason: 'exact-alias' }),
       expect.objectContaining({ targetField: 'nameEn', reason: 'exact-alias' }),
@@ -58,7 +59,6 @@ describe('category migration canonical review', () => {
 
   it('rejects missing required mapping and ambiguous duplicate mappings', () => {
     const sheet = parseCsvDocument('اسم الفئة,Category Name,الترتيب\nمشروبات,Drinks,1').sheets[0]!;
-    const suggestions = suggestCategoryMappings(sheet.rows[0]!);
     expect(
       validateCategoryMappings(sheet.rows[0]!, [
         { sourceColumn: 0, targetField: 'nameAr' },
