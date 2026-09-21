@@ -183,10 +183,6 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'بعض أصناف الطلب غير مرتبطة بمحطة تحضير. أكمل إعداد توجيه المطبخ قبل الإرسال.',
     action: 'blocking',
   },
-  operation_in_progress: {
-    message: 'العملية نفسها ما زالت قيد التنفيذ. أعد المحاولة بنفس العملية.',
-    action: 'retry-same',
-  },
   table_occupied: {
     message: 'الطاولة مشغولة بطلب مفتوح آخر.',
     action: 'amend-cart',
