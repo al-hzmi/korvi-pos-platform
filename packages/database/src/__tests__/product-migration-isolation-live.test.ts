@@ -91,14 +91,7 @@ describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live
            "conflictPolicy","totalRows","validRows","warningRows","errorRows","blockedRows","updatedAt")
          VALUES ($1,$2,$3,'products','csv',$4,$5,$6,'reviewed',1,'[]'::jsonb,
                  'reject',1,1,0,0,0,now())`,
-        [
-          input.job,
-          input.tenant,
-          input.user,
-          input.sourceHash,
-          input.job,
-          input.requestHash,
-        ],
+        [input.job, input.tenant, input.user, input.sourceHash, input.job, input.requestHash],
       );
       await client.query(
         `INSERT INTO "migration_import_rows"
@@ -172,41 +165,37 @@ describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live
     await client.end();
   });
 
-  it(
-    'runs under a non-superuser, non-bypass runtime role and forces RLS on migration tables',
-    async () => {
-      const role = await client.query<{ usesuper: boolean; rolbypassrls: boolean }>(
-        `SELECT u.usesuper, r.rolbypassrls
+  it('runs under a non-superuser, non-bypass runtime role and forces RLS on migration tables', async () => {
+    const role = await client.query<{ usesuper: boolean; rolbypassrls: boolean }>(
+      `SELECT u.usesuper, r.rolbypassrls
          FROM pg_user u
          JOIN pg_roles r ON r.rolname = u.usename
         WHERE u.usename = current_user`,
-      );
-      expect(role.rows[0]).toEqual({ usesuper: false, rolbypassrls: false });
+    );
+    expect(role.rows[0]).toEqual({ usesuper: false, rolbypassrls: false });
 
-      const tables = await client.query<{
-        relname: string;
-        relrowsecurity: boolean;
-        relforcerowsecurity: boolean;
-      }>(
-        `SELECT relname, relrowsecurity, relforcerowsecurity
+    const tables = await client.query<{
+      relname: string;
+      relrowsecurity: boolean;
+      relforcerowsecurity: boolean;
+    }>(
+      `SELECT relname, relrowsecurity, relforcerowsecurity
          FROM pg_class
         WHERE relname IN ('migration_import_jobs','migration_import_rows')
         ORDER BY relname`,
-      );
-      expect(tables.rows).toHaveLength(2);
-      for (const table of tables.rows) {
-        expect(table.relrowsecurity, table.relname).toBe(true);
-        expect(table.relforcerowsecurity, table.relname).toBe(true);
-      }
-    },
-  );
+    );
+    expect(tables.rows).toHaveLength(2);
+    for (const table of tables.rows) {
+      expect(table.relrowsecurity, table.relname).toBe(true);
+      expect(table.relforcerowsecurity, table.relname).toBe(true);
+    }
+  });
 
   it('makes Tenant B jobs and rows invisible to Tenant A even by exact UUID', async () => {
     const counts = await asTenant(A.tenant, async () => {
-      const jobs = await client.query(
-        'SELECT "id" FROM "migration_import_jobs" WHERE "id" = $1',
-        [B.job],
-      );
+      const jobs = await client.query('SELECT "id" FROM "migration_import_jobs" WHERE "id" = $1', [
+        B.job,
+      ]);
       const rows = await client.query(
         'SELECT "id","sourceIdentifier" FROM "migration_import_rows" WHERE "id" = $1',
         [B.row],
@@ -293,10 +282,9 @@ describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live
         `UPDATE "migration_import_jobs" SET "status" = 'completed' WHERE "id" = $1`,
         [B.job],
       );
-      const deleted = await client.query(
-        'DELETE FROM "migration_import_rows" WHERE "id" = $1',
-        [B.row],
-      );
+      const deleted = await client.query('DELETE FROM "migration_import_rows" WHERE "id" = $1', [
+        B.row,
+      ]);
       return { updated: updated.rowCount, deleted: deleted.rowCount };
     });
     expect(effect).toEqual({ updated: 0, deleted: 0 });
