@@ -133,6 +133,43 @@ export function categoryMigrationMappingProblems(
   return problems;
 }
 
+export function customerMigrationMappingProblems(
+  mappings: readonly CustomerMigrationMapping[],
+): readonly MigrationMappingProblem[] {
+  const problems: MigrationMappingProblem[] = [];
+  const sources = new Set<number>();
+  const targets = new Set<CustomerMigrationTargetField>();
+
+  for (const mapping of mappings) {
+    if (sources.has(mapping.sourceColumn)) {
+      problems.push({
+        code: 'duplicate-source',
+        message: 'عمود المصدر رقم ' + String(mapping.sourceColumn + 1) + ' مربوط أكثر من مرة.',
+      });
+    }
+    sources.add(mapping.sourceColumn);
+    if (mapping.targetField === null) continue;
+    if (targets.has(mapping.targetField)) {
+      problems.push({
+        code: 'duplicate-target',
+        message:
+          'حقل «' + CUSTOMER_MIGRATION_FIELD_LABELS[mapping.targetField] + '» مربوط بأكثر من عمود.',
+      });
+    }
+    targets.add(mapping.targetField);
+  }
+
+  for (const field of CUSTOMER_MIGRATION_REQUIRED_FIELDS) {
+    if (!targets.has(field)) {
+      problems.push({
+        code: 'required-unmapped',
+        message: 'الحقل الإلزامي «' + CUSTOMER_MIGRATION_FIELD_LABELS[field] + '» غير مربوط.',
+      });
+    }
+  }
+  return problems;
+}
+
 export function migrationCellText(cell: MigrationImportCell): string {
   switch (cell.kind) {
     case 'blank':
