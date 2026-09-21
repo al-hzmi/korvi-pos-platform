@@ -185,20 +185,46 @@ function mappedValue(
   row: readonly ImportCell[],
   mappings: readonly CategoryColumnMapping[],
   field: CategoryImportField,
-): { readonly value: string | null; readonly column: number | null; readonly formula: boolean } {
+): {
+  readonly value: string | null;
+  readonly column: number | null;
+  readonly formula: boolean;
+  readonly controlCharacter: boolean;
+} {
   const mapping = mappings.find((candidate) => candidate.targetField === field);
-  if (mapping === undefined) return { value: null, column: null, formula: false };
+  if (mapping === undefined) {
+    return { value: null, column: null, formula: false, controlCharacter: false };
+  }
   const cell = row[mapping.sourceColumn];
   if (cell?.kind === 'formula') {
-    return { value: null, column: mapping.sourceColumn, formula: true };
+    return {
+      value: null,
+      column: mapping.sourceColumn,
+      formula: true,
+      controlCharacter: false,
+    };
   }
   if (cell?.kind === 'text' && cell.formulaLike) {
-    return { value: null, column: mapping.sourceColumn, formula: true };
+    return {
+      value: null,
+      column: mapping.sourceColumn,
+      formula: true,
+      controlCharacter: false,
+    };
+  }
+  if (cell?.kind === 'text' && /[\u0000-\u001f\u007f]/u.test(cell.value)) {
+    return {
+      value: null,
+      column: mapping.sourceColumn,
+      formula: false,
+      controlCharacter: true,
+    };
   }
   return {
     value: cell === undefined ? null : importCellText(cell),
     column: mapping.sourceColumn,
     formula: false,
+    controlCharacter: false,
   };
 }
 
@@ -253,10 +279,26 @@ export function reviewCategorySheet(
           ),
         );
       }
+      if (value.controlCharacter) {
+        issues.push(
+          issue(
+            'ERROR',
+            'control-character-not-allowed',
+            'Control characters are not valid category data.',
+            sourceRow,
+            value.column,
+            field,
+          ),
+        );
+      }
     }
 
     let record: CanonicalCategoryImportRow | null = null;
-    if (!issues.some((entry) => entry.classification === 'BLOCKED')) {
+    if (
+      !issues.some(
+        (entry) => entry.classification === 'BLOCKED' || entry.classification === 'ERROR',
+      )
+    ) {
       try {
         const nameArRaw = values.get('nameAr')?.value ?? '';
         if (nameArRaw.trim() === '') {
