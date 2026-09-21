@@ -242,4 +242,73 @@ describe.skipIf(url === '')('product category-name migration authority, PostgreS
     );
     expect(foreign.rows).toEqual([]);
   });
+
+  it('rechecks category authority at commit after a successful dry-run', async () => {
+    const category = '018fba00-0000-7000-8000-0000000000c1';
+    const job = '018fba00-0000-7000-8000-0000000000c2';
+    const row = '018fba00-0000-7000-8000-0000000000c3';
+    const operation = '018fba00-0000-7000-8000-0000000000c4';
+    const name = 'فئة تتغير بعد الفحص';
+
+    await asTenant(A.tenant, async () => {
+      await client.query(
+        `INSERT INTO "categories"
+          ("id","tenantId","nameAr","nameEn","sortOrder","isActive","updatedAt")
+         VALUES ($1,$2,$3,NULL,0,true,now())`,
+        [category, A.tenant, name],
+      );
+    });
+    await seedProductJob({
+      tenant: A.tenant,
+      user: A.user,
+      job,
+      row,
+      sourceHash: 'd'.repeat(64),
+      requestHash: 'e'.repeat(64),
+      rowHash: 'f'.repeat(64),
+      sku: 'A-CATEGORY-RACE',
+      categoryNameAr: name,
+    });
+
+    const dryRun = await dryRunProductImport(
+      prisma,
+      { tenantId: tenantId(A.tenant) },
+      { userId: A.user },
+      job,
+    );
+    expect(dryRun.errorRows).toBe(0);
+
+    await asTenant(A.tenant, async () => {
+      await client.query(
+        'UPDATE "categories" SET "isActive" = false, "updatedAt" = now() WHERE "id" = $1',
+        [category],
+      );
+    });
+
+    const committed = await commitProductImport(
+      prisma,
+      { tenantId: tenantId(A.tenant) },
+      { userId: A.user },
+      job,
+      operation,
+    );
+    expect(committed.status).toBe('completed');
+    expect(committed.created).toBe(0);
+    expect(committed.failed).toBe(1);
+
+    const rows = await readProductImportRows(
+      prisma,
+      { tenantId: tenantId(A.tenant) },
+      job,
+      { limit: 20, afterSourceRow: null, problemsOnly: true },
+    );
+    expect(rows?.rows[0]).toMatchObject({
+      status: 'failed',
+      errorCode: 'category-inactive',
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'commit-category-inactive' }),
+      ]),
+    });
+  });
+
 });
