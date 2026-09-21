@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { newId } from '@korvi/domain';
+import { addKnownCostValue, newId } from '@korvi/domain';
+import { prepareMovementCost } from '../costing/ledger.js';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
@@ -69,6 +70,28 @@ export interface SetRestaurantRecipeRequest {
 export interface RestaurantRecipeMutationResult {
   readonly recipe: RestaurantRecipeRecord;
   readonly replayed: boolean;
+}
+
+export interface RestaurantRecipeIngredientCost {
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly requiredQuantityScaled: string;
+  readonly stockQuantityScaled: string;
+  readonly knownQuantityScaled: string;
+  readonly unknownQuantityScaled: string;
+  readonly knownValueMinor: string;
+  readonly status: 'known' | 'unknown';
+}
+
+export interface RestaurantRecipeCost {
+  readonly branchId: string;
+  readonly productId: string;
+  readonly recipeRevision: string;
+  readonly yieldQuantityScaled: string;
+  readonly status: 'known' | 'unknown';
+  readonly yieldCostMinor: string | null;
+  readonly ingredients: readonly RestaurantRecipeIngredientCost[];
 }
 
 function uniqueViolation(error: unknown): boolean {
@@ -401,5 +424,101 @@ export async function setRestaurantRecipe(
     });
     await complete(tx, tenant, request.operationId, recipe, at);
     return { recipe, replayed: false };
+  });
+}
+
+
+export async function readRestaurantRecipeCost(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  branchId: string,
+  productId: string,
+): Promise<RestaurantRecipeCost | null> {
+  const tenant = tenantParam(scope);
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    await requireRestaurantMode(tx, tenant);
+    const recipe = await readWithin(tx, tenant, productId);
+    if (recipe === null) return null;
+
+    const branch = await tx.branch.findFirst({
+      where: { tenantId: tenant, id: branchId },
+      select: { id: true },
+    });
+    if (branch === null) return null;
+
+    const ingredientIds = recipe.ingredients.map((ingredient) => ingredient.productId);
+    const balances = await tx.inventoryBalance.findMany({
+      where: { tenantId: tenant, branchId, productId: { in: ingredientIds } },
+      select: { productId: true, quantityScaled: true, revision: true },
+    });
+    const costs = await tx.inventoryCostBalance.findMany({
+      where: { tenantId: tenant, branchId, productId: { in: ingredientIds } },
+      select: {
+        productId: true,
+        knownQuantityScaled: true,
+        knownValueMinor: true,
+        stockRevision: true,
+        costRevision: true,
+      },
+    });
+    const balanceByProduct = new Map(balances.map((row) => [row.productId, row]));
+    const costByProduct = new Map(costs.map((row) => [row.productId, row]));
+
+    let totalKnown = 0n;
+    let allKnown = true;
+    const ingredients: RestaurantRecipeIngredientCost[] = [];
+
+    for (const ingredient of recipe.ingredients) {
+      const required = BigInt(ingredient.quantityScaled);
+      const balance = balanceByProduct.get(ingredient.productId);
+      const cost = costByProduct.get(ingredient.productId);
+      const stockQuantity = balance?.quantityScaled ?? 0n;
+      const stockRevision = balance?.revision ?? 0n;
+
+      if (
+        (cost !== undefined && balance === undefined) ||
+        (cost === undefined && (stockQuantity !== 0n || stockRevision !== 0n)) ||
+        (cost !== undefined && cost.stockRevision !== stockRevision)
+      ) {
+        throw new DatabaseError(
+          'Costing invariant failed: recipe costing found an unsynchronized inventory cost cursor.',
+        );
+      }
+
+      const state = {
+        knownQuantityScaled: cost?.knownQuantityScaled ?? 0n,
+        knownValueMinor: cost?.knownValueMinor ?? 0n,
+        stockRevision,
+        costRevision: cost?.costRevision ?? 0n,
+      };
+      const evidence = prepareMovementCost(stockQuantity, -required, state).evidence;
+      const known = evidence.unknownQuantityScaled === 0n;
+      if (known) {
+        totalKnown = addKnownCostValue(totalKnown, evidence.knownValueMinor);
+      } else {
+        allKnown = false;
+      }
+      ingredients.push({
+        productId: ingredient.productId,
+        sku: ingredient.sku,
+        nameAr: ingredient.nameAr,
+        requiredQuantityScaled: ingredient.quantityScaled,
+        stockQuantityScaled: stockQuantity.toString(),
+        knownQuantityScaled: evidence.knownQuantityScaled.toString(),
+        unknownQuantityScaled: evidence.unknownQuantityScaled.toString(),
+        knownValueMinor: evidence.knownValueMinor.toString(),
+        status: known ? 'known' : 'unknown',
+      });
+    }
+
+    return {
+      branchId,
+      productId,
+      recipeRevision: recipe.revision,
+      yieldQuantityScaled: recipe.yieldQuantityScaled,
+      status: allKnown ? 'known' : 'unknown',
+      yieldCostMinor: allKnown ? totalKnown.toString() : null,
+      ingredients,
+    };
   });
 }

@@ -265,6 +265,7 @@ export {
   RestaurantRecipeRefusedError,
   readRestaurantRecipe,
   setRestaurantRecipe,
+  readRestaurantRecipeCost,
 } from './restaurant/recipes.js';
 export type {
   RestaurantRecipeRefusal,
@@ -273,6 +274,8 @@ export type {
   RestaurantRecipeRecord,
   SetRestaurantRecipeRequest,
   RestaurantRecipeMutationResult,
+  RestaurantRecipeIngredientCost,
+  RestaurantRecipeCost,
 } from './restaurant/recipes.js';
 
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates

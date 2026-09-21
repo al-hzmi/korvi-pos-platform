@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 
 const TENANT = '018fb700-0000-7000-8000-00000000000a';
 const USER = '018fb700-0000-7000-8000-0000000000a1';
+const BRANCH = '018fb700-0000-7000-8000-0000000000b0';
 const PRODUCT = '018fb700-0000-7000-8000-0000000000b1';
 const INGREDIENT = '018fb700-0000-7000-8000-0000000000c1';
 const RECIPE = '018fb700-0000-7000-8000-0000000000d1';
@@ -89,6 +90,33 @@ function service(): MerchantRestaurantRecipeService {
         },
       };
     },
+    async cost() {
+      calls.push('cost');
+      return {
+        outcome: 'success',
+        value: {
+          branchId: BRANCH,
+          productId: PRODUCT,
+          recipeRevision: '1',
+          yieldQuantityScaled: '1000',
+          status: 'unknown',
+          yieldCostMinor: null,
+          ingredients: [
+            {
+              productId: INGREDIENT,
+              sku: 'MILK',
+              nameAr: 'حليب',
+              requiredQuantityScaled: '250',
+              stockQuantityScaled: '1000',
+              knownQuantityScaled: '0',
+              unknownQuantityScaled: '250',
+              knownValueMinor: '0',
+              status: 'unknown',
+            },
+          ],
+        },
+      };
+    },
   };
 }
 
@@ -133,6 +161,33 @@ describe('restaurant recipe route authority', () => {
     });
     expect(response.statusCode).toBe(403);
     expect(calls).toEqual([]);
+  });
+
+  it('requires inventory.cost.read and preserves unknown cost instead of inventing a yield cost', async () => {
+    const denied = build(principal(['product.read']));
+    const deniedResponse = await denied.inject({
+      method: 'GET',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}/cost?branchId=${BRANCH}`,
+      headers: { cookie: COOKIE },
+    });
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(calls).toEqual([]);
+    await denied.close();
+    app = null;
+
+    const server = build(principal(['product.read', 'inventory.cost.read']));
+    const response = await server.inject({
+      method: 'GET',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}/cost?branchId=${BRANCH}`,
+      headers: { cookie: COOKIE },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'unknown',
+      yieldCostMinor: null,
+      ingredients: [{ productId: INGREDIENT, status: 'unknown', unknownQuantityScaled: '250' }],
+    });
+    expect(calls).toEqual(['cost']);
   });
 
   it('writes only through strict server-authorized recipe input', async () => {

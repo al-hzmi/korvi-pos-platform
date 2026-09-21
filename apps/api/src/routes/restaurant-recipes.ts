@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 const UUID = z.string().uuid();
 const POSITIVE_QUANTITY = z.string().regex(/^[1-9][0-9]{0,18}$/);
 const PARAMS = z.object({ productId: UUID }).strict();
+const COST_QUERY = z.object({ branchId: UUID }).strict();
 const BODY = z
   .object({
     operationId: UUID,
@@ -74,6 +75,31 @@ export function registerRestaurantRecipeRoutes(
       const result = await service.detail(principal, params.data.productId);
       if (result.outcome === 'success' && result.value === null) {
         return reply.code(404).send({ error: 'restaurant_recipe_not_found' });
+      }
+      return respond(reply, result);
+    },
+  );
+
+  app.get(
+    '/v1/admin/restaurant/recipes/:productId/cost',
+    {
+      preHandler: [
+        guards.requireSession,
+        guards.requirePermission('product.read'),
+        guards.requirePermission('inventory.cost.read'),
+      ],
+    },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = PARAMS.safeParse(request.params);
+      const query = COST_QUERY.safeParse(request.query);
+      if (!params.success || !query.success) {
+        return reply.code(400).send({ error: 'invalid_query' });
+      }
+      const result = await service.cost(principal, query.data.branchId, params.data.productId);
+      if (result.outcome === 'success' && result.value === null) {
+        return reply.code(404).send({ error: 'restaurant_recipe_cost_not_found' });
       }
       return respond(reply, result);
     },

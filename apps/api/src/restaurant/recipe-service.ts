@@ -1,11 +1,13 @@
 import {
   RestaurantRecipeRefusedError,
   readRestaurantRecipe,
+  readRestaurantRecipeCost,
   setRestaurantRecipe,
 } from '@korvi/database';
 import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
 import type {
   PrismaClient,
+  RestaurantRecipeCost,
   RestaurantRecipeMutationResult,
   RestaurantRecipeRecord,
   RestaurantRecipeRefusal,
@@ -27,6 +29,11 @@ export interface MerchantRestaurantRecipeService {
     productId: string,
     request: SetRestaurantRecipeRequest,
   ): Promise<RestaurantRecipeServiceResult<RestaurantRecipeMutationResult>>;
+  cost(
+    principal: AuthenticatedPrincipal,
+    branchId: string,
+    productId: string,
+  ): Promise<RestaurantRecipeServiceResult<RestaurantRecipeCost | null>>;
 }
 
 function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
@@ -63,6 +70,13 @@ export function createMerchantRestaurantRecipeService(
           productId,
           request,
         ),
+      );
+    },
+    async cost(principal, branchId, productId) {
+      requirePrincipalPermission(principal, 'product.read');
+      requirePrincipalPermission(principal, 'inventory.cost.read');
+      return attempt(() =>
+        readRestaurantRecipeCost(prisma, scopeOf(principal), branchId, productId),
       );
     },
   };
