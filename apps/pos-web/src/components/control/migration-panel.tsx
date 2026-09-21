@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { newId } from '@korvi/domain';
 import { Button, CardSurface } from '@korvi/ui';
 import { StatusNote } from '../status-note';
+import { CategoryMigrationPanel } from './category-migration-panel';
 import { ApiError } from '../../lib/api';
 import {
   migrationCellText,
@@ -103,11 +104,13 @@ export function MigrationPanel({
   const [pending, setPending] = useState<PendingCommand | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [categoryCommandLocked, setCategoryCommandLocked] = useState(false);
 
   const mappingProblems = useMemo(() => migrationMappingProblems(mapping), [mapping]);
   const selectedFormat = file === null ? null : fileFormat(file);
-  const commandLocked =
+  const productCommandLocked =
     busy === 'create' || busy === 'dry-run' || busy === 'commit' || pending !== null;
+  const commandLocked = productCommandLocked || categoryCommandLocked;
 
   const resetFromFile = (nextFile: File | null): void => {
     setFile(nextFile);
@@ -647,6 +650,16 @@ export function MigrationPanel({
           )}
         </CardSurface>
       )}
+
+      <CategoryMigrationPanel
+        api={api}
+        canCommit={canCommit}
+        disabled={productCommandLocked}
+        onCommandLockChange={(locked) => {
+          setCategoryCommandLocked(locked);
+          onCommandLockChange(locked);
+        }}
+      />
     </div>
   );
 }
