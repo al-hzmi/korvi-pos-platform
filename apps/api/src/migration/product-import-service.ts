@@ -31,11 +31,7 @@ export const MAX_PRODUCT_IMPORT_PREVIEW_ROWS = 20;
 export type CsvDelimiter = ',' | ';' | '\t';
 
 export type ProductMigrationFailureReason =
-  | ProductImportRefusal
-  | 'file-too-large'
-  | 'invalid-csv'
-  | 'invalid-xlsx'
-  | 'empty-file';
+  ProductImportRefusal | 'file-too-large' | 'invalid-csv' | 'invalid-xlsx' | 'empty-file';
 
 export type ProductMigrationResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
