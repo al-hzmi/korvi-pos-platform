@@ -181,6 +181,16 @@ export function validateCategoryMappings(
   return issues;
 }
 
+function hasAsciiControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function mappedValue(
   row: readonly ImportCell[],
   mappings: readonly CategoryColumnMapping[],
@@ -212,7 +222,7 @@ function mappedValue(
       controlCharacter: false,
     };
   }
-  if (cell?.kind === 'text' && /[\u0000-\u001f\u007f]/u.test(cell.value)) {
+  if (cell?.kind === 'text' && hasAsciiControlCharacter(cell.value)) {
     return {
       value: null,
       column: mapping.sourceColumn,
