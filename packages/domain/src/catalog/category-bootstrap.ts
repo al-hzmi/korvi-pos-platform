@@ -28,12 +28,12 @@ export interface NormalizedCategoryBootstrap {
 }
 
 export function normalizeCategoryName(value: string): string {
-  const candidate = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
-  if (
-    candidate === '' ||
-    candidate.length > MAX_CATEGORY_NAME ||
-    hasAsciiControlCharacter(candidate)
-  ) {
+  const normalized = value.normalize('NFKC');
+  if (hasAsciiControlCharacter(normalized)) {
+    throw new CategoryBootstrapError('Invalid category name.');
+  }
+  const candidate = normalized.replace(/\s+/gu, ' ').trim();
+  if (candidate === '' || candidate.length > MAX_CATEGORY_NAME) {
     throw new CategoryBootstrapError('Invalid category name.');
   }
   return candidate;
@@ -41,7 +41,11 @@ export function normalizeCategoryName(value: string): string {
 
 export function normalizeOptionalCategoryName(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
-  const candidate = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+  const normalized = value.normalize('NFKC');
+  if (hasAsciiControlCharacter(normalized)) {
+    throw new CategoryBootstrapError('Invalid category name.');
+  }
+  const candidate = normalized.replace(/\s+/gu, ' ').trim();
   if (candidate === '') return null;
   return normalizeCategoryName(candidate);
 }
