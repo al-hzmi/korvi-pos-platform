@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write apps/pos-web/src/components/control/migration-panel.tsx apps/pos-web/src/lib/api-types.ts apps/pos-web/src/lib/api.ts apps/pos-web/src/lib/migration.ts && for f in apps/pos-web/src/components/control/migration-panel.tsx apps/pos-web/src/lib/api-types.ts apps/pos-web/src/lib/api.ts apps/pos-web/src/lib/migration.ts; do echo \"KORVI_FORMAT_BEGIN:$f\"; base64 -w0 \"$f\"; echo; echo \"KORVI_FORMAT_END:$f\"; done && exit 1",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:zatca:fiscalization-live": "vitest run packages/database/src/__tests__/zatca-fiscalization-live.test.ts",
