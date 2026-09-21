@@ -7,6 +7,7 @@ on:
     paths:
       - packages/database/src/migration/**
       - packages/database/src/__tests__/product-migration-isolation-live.test.ts
+      - packages/database/src/__tests__/product-category-migration-isolation-live.test.ts
       - packages/database/prisma/**
       - scripts/deploy/production-migrate.sh
       - scripts/prove-migration-state.sh
@@ -99,6 +100,7 @@ jobs:
         run: >-
           npx --no-install vitest run
           packages/database/src/__tests__/product-migration-isolation-live.test.ts
+          packages/database/src/__tests__/product-category-migration-isolation-live.test.ts
 
       - name: Recheck hygiene
         run: |
