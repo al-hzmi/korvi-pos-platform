@@ -34,6 +34,8 @@ const ALLOWED_BEHIND = {
   prettier:
     'Commercial V1 RC freeze directive (2026-09-18): keep the verified 3.9.7 formatter baseline until post-RC to avoid unrelated repository-wide formatting churn.',
   typescript: 'ADR-0007: typescript-eslint declares `typescript <6.1.0`.',
+  'typescript-eslint':
+    'Post-V1 parallel product-development baseline (2026-09-21): retain the verified 8.70.0 lint/parser toolchain during Migration M2/M3 work; upgrade to 8.70.1 only in a dedicated dependency-maintenance change, not inside a migration vertical slice.',
   tailwindcss: 'ADR-0007: the design system ships a verified v3 config (v3-lts).',
   tsx: 'Post-V1 parallel product-development baseline (2026-09-20): retain the verified 4.23.13 TypeScript execution tool during Restaurant/Migration feature work; upgrade to 4.23.15 only in a dedicated dependency-maintenance change.',
   '@types/node':
