@@ -274,6 +274,27 @@ export type {
   ProductImportRowPage,
 } from './migration/product-import.js';
 
+
+// Customer Migration Engine — Category M2 orchestration. Uses the same
+// tenant-scoped migration job/row ledger as Product M1 and commits only through
+// the established category bootstrap authority.
+export {
+  CategoryImportRefusedError,
+  createCategoryImportJob,
+  readCategoryImportJob,
+  readCategoryImportRows,
+  dryRunCategoryImport,
+  commitCategoryImport,
+} from './migration/category-import.js';
+export type {
+  CategoryImportRefusal,
+  CategoryImportActor,
+  CreateCategoryImportJobRequest,
+  CategoryImportRowResult,
+  CategoryImportSummary,
+  CategoryImportRowPage,
+} from './migration/category-import.js';
+
 // Commercial plan/entitlement control-plane foundation (Strike 4C).
 // No merchant HTTP authority and no billing-provider semantics live here.
 export {
