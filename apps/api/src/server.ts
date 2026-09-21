@@ -411,6 +411,7 @@ function lazyProductMigrationService(config: ApiConfig): MerchantProductMigratio
     inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
     createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
     readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
     dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
     commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
   };
