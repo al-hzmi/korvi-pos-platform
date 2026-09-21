@@ -29,7 +29,11 @@ export interface NormalizedCategoryBootstrap {
 
 export function normalizeCategoryName(value: string): string {
   const candidate = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
-  if (candidate === '' || candidate.length > MAX_CATEGORY_NAME || hasAsciiControlCharacter(candidate)) {
+  if (
+    candidate === '' ||
+    candidate.length > MAX_CATEGORY_NAME ||
+    hasAsciiControlCharacter(candidate)
+  ) {
     throw new CategoryBootstrapError('Invalid category name.');
   }
   return candidate;

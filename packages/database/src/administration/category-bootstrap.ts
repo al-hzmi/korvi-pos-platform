@@ -1,8 +1,4 @@
-import {
-  CategoryBootstrapError,
-  newId,
-  normalizeCategoryBootstrap,
-} from '@korvi/domain';
+import { CategoryBootstrapError, newId, normalizeCategoryBootstrap } from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
