@@ -1,4 +1,7 @@
 import type {
+  CategoryMigrationMapping,
+  CategoryMigrationRowResult,
+  CategoryMigrationTargetField,
   MigrationImportCell,
   ProductMigrationMapping,
   ProductMigrationRowResult,
@@ -25,6 +28,16 @@ export const PRODUCT_MIGRATION_FIELD_LABELS: Readonly<Record<ProductMigrationTar
     sellingPrice: 'سعر البيع',
     vatRate: 'نسبة الضريبة',
   };
+
+export const CATEGORY_MIGRATION_REQUIRED_FIELDS: readonly CategoryMigrationTargetField[] = ['nameAr'];
+
+export const CATEGORY_MIGRATION_FIELD_LABELS: Readonly<
+  Record<CategoryMigrationTargetField, string>
+> = {
+  nameAr: 'اسم الفئة بالعربية',
+  nameEn: 'اسم الفئة بالإنجليزية',
+  sortOrder: 'ترتيب العرض',
+};
 
 export interface MigrationMappingProblem {
   readonly code: 'duplicate-source' | 'duplicate-target' | 'required-unmapped';
@@ -62,6 +75,43 @@ export function migrationMappingProblems(
       problems.push({
         code: 'required-unmapped',
         message: 'الحقل الإلزامي «' + PRODUCT_MIGRATION_FIELD_LABELS[field] + '» غير مربوط.',
+      });
+    }
+  }
+  return problems;
+}
+
+export function categoryMigrationMappingProblems(
+  mappings: readonly CategoryMigrationMapping[],
+): readonly MigrationMappingProblem[] {
+  const problems: MigrationMappingProblem[] = [];
+  const sources = new Set<number>();
+  const targets = new Set<CategoryMigrationTargetField>();
+
+  for (const mapping of mappings) {
+    if (sources.has(mapping.sourceColumn)) {
+      problems.push({
+        code: 'duplicate-source',
+        message: 'عمود المصدر رقم ' + String(mapping.sourceColumn + 1) + ' مربوط أكثر من مرة.',
+      });
+    }
+    sources.add(mapping.sourceColumn);
+    if (mapping.targetField === null) continue;
+    if (targets.has(mapping.targetField)) {
+      problems.push({
+        code: 'duplicate-target',
+        message:
+          'حقل «' + CATEGORY_MIGRATION_FIELD_LABELS[mapping.targetField] + '» مربوط بأكثر من عمود.',
+      });
+    }
+    targets.add(mapping.targetField);
+  }
+
+  for (const field of CATEGORY_MIGRATION_REQUIRED_FIELDS) {
+    if (!targets.has(field)) {
+      problems.push({
+        code: 'required-unmapped',
+        message: 'الحقل الإلزامي «' + CATEGORY_MIGRATION_FIELD_LABELS[field] + '» غير مربوط.',
       });
     }
   }
@@ -126,6 +176,47 @@ export function productMigrationProblemsCsv(rows: readonly ProductMigrationRowRe
   }
   return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
+
+export function categoryMigrationProblemsCsv(rows: readonly CategoryMigrationRowResult[]): string {
+  const header = ['ROW', 'SOURCE IDENTIFIER', 'FIELD', 'ERROR', 'REASON'];
+  const lines = [header.map(csvCell).join(',')];
+  for (const row of rows) {
+    if (row.issues.length === 0 && row.errorCode === null) continue;
+    if (row.issues.length === 0) {
+      lines.push(
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          '',
+          row.errorCode ?? '',
+          row.errorCode ?? '',
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+      continue;
+    }
+    for (const issue of row.issues) {
+      lines.push(
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          issue.targetField ?? '',
+          issue.code,
+          issue.message,
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+    }
+  }
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
+}
+
+export const CATEGORY_MIGRATION_TEMPLATE_CSV =
+  '\uFEFFاسم الفئة,الاسم الانجليزي,الترتيب\r\n' +
+  'مشروبات ساخنة,Hot Drinks,10\r\n' +
+  'مخبوزات,Bakery,20\r\n';
 
 export const PRODUCT_MIGRATION_TEMPLATE_CSV =
   '\uFEFFرقم الصنف,رقم الباركود,اسم الصنف,الاسم الانجليزي,اسم الفئة,نوع الصنف,الوحدة,سعر البيع,نسبة الضريبة\r\n' +
