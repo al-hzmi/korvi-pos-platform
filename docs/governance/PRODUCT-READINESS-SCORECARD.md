@@ -209,17 +209,18 @@ This gate may be marked GREEN only after a realistic merchant can import all of:
 
 from supported spreadsheet formats with field mapping, validation, preview, dry run, controlled commit, row-level error reporting, audit/provenance, tenant isolation and idempotency.
 
-Verified Product M1 authority follow-on:
+Verified Product M1 backend/API follow-on:
 
 - branch `product/post-v1-migration-engine`;
-- SHA `ef49a18610248133feb97bc17ed7778f10558264`;
-- CI `35519052509` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
-- 188 test files / 2,294 tests passed;
-- tenant-scoped import-job/row persistence, dry-run catalogue conflict checks, reject-only conflict policy, controlled create-only commit through existing product authority, retry/idempotency, audit/provenance and row result tracking are VERIFIED.
+- SHA `b07c050be788d6afd50faadd54e9f23c5e733735`;
+- CI `35547048238` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- 190 test files / 2,305 tests passed; 24 files / 369 live-only tests skipped by the standard CI profile;
+- bounded CSV/XLSX inspection, deterministic mapping/preview data, tenant-scoped import-job/row persistence, physical source-row provenance, dry-run catalogue conflict checks, reject-only conflict policy, controlled create-only commit through existing product authority, retry/idempotency, audit and row result tracking are VERIFIED;
+- HTTP authority proves `settings.manage` for inspection/jobs/dry-run and `product.write` additionally for commit, while tenant/source-hash authority is not accepted from request bodies.
 
-This does **not** make M1 or Customer Migration Readiness GREEN. HTTP upload/file inspection, production XLSX adapter, merchant mapping/preview/error UX, downloadable error results and end-to-end API authorization/tenant-isolation proof remain open.
+This does **not** make M1 or Customer Migration Readiness GREEN. Merchant-facing mapping/preview/error UX, downloadable error export, stronger database-level cross-tenant/adversarial proof, and M2–M5 domain coverage remain open.
 
-Current next action: **finish Product M1 HTTP/XLSX/UI boundary on top of the verified authority slice**.
+Current next action: **finish Product M1 merchant UI/error-export boundary while starting M2 categories without weakening the verified import pipeline**.
 
 ## 6. What must happen next
 

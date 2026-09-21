@@ -262,14 +262,15 @@ M0 repository checkpoint in the same development cycle:
 
 The overall **CUSTOMER MIGRATION READINESS** gate remains **IN PROGRESS** and is not satisfied by M0 alone.
 
-### Verified follow-on checkpoint — Product M1 authority slice
+### Verified follow-on checkpoint — Product M1 backend/API slice
 
 - branch: `product/post-v1-migration-engine`;
-- SHA: `ef49a18610248133feb97bc17ed7778f10558264`;
-- status: **VERIFIED authority slice / M1 IN PROGRESS**;
-- evidence: CI `35519052509`, 188 test files / 2,294 tests passed;
-- implemented: tenant-scoped import jobs and rows, source/mapping provenance, dry-run conflict detection, explicit reject policy, controlled create-only product commit through the existing product bootstrap authority, idempotent commit retry, row result tracking and audit;
-- open gaps: production XLSX adapter, upload/file-inspection API, merchant mapping/preview/error UX, downloadable error results and end-to-end API authorization/tenant-isolation proof.
+- SHA: `b07c050be788d6afd50faadd54e9f23c5e733735`;
+- status: **VERIFIED backend/API slice / M1 IN PROGRESS**;
+- evidence: CI `35547048238`, 190 test files / 2,305 tests passed; 24 files / 369 live-only tests skipped by the standard CI profile;
+- implemented: bounded CSV and XLSX inspection, deterministic mapping/preview contract, tenant-scoped import jobs/rows, source SHA-256 + physical row provenance/fingerprints, dry-run catalogue conflict detection, explicit reject-only conflict policy, controlled create-only commit through existing product bootstrap authority, idempotent create/commit retry, audit, row result tracking and post-commit source-data minimization;
+- authorization evidence: inspection/job/dry-run require `settings.manage`; commit additionally requires `product.write`; request bodies cannot assert tenant identity or source hash;
+- open gaps: merchant mapping/preview/error UI, downloadable/exportable error results, stronger database-level cross-tenant/adversarial proof, categories/customer/supplier/opening-inventory milestones.
 
 Customer Migration Readiness remains **IN PROGRESS**.
 
