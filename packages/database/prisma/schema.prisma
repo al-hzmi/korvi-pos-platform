@@ -114,6 +114,8 @@ model Tenant {
   restaurantPreparationStations RestaurantPreparationStation[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
+  restaurantRecipes             RestaurantRecipe[]
+  restaurantRecipeIngredients   RestaurantRecipeIngredient[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
   tenders                       Tender[]
@@ -307,6 +309,43 @@ model RestaurantPreparationTask {
   @@index([tenantId, branchId, stationId, status, queuedAt])
   @@index([tenantId, branchId, orderId, orderRevision])
   @@map("restaurant_preparation_tasks")
+}
+
+model RestaurantRecipe {
+  id                  String   @id @db.Uuid
+  tenantId            String   @db.Uuid
+  productId           String   @db.Uuid
+  yieldQuantityScaled BigInt
+  revision            BigInt   @default(1)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant      Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product     Product                      @relation("RestaurantRecipeFinishedProduct", fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  ingredients RestaurantRecipeIngredient[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, productId])
+  @@index([tenantId, updatedAt])
+  @@map("restaurant_recipes")
+}
+
+model RestaurantRecipeIngredient {
+  id                  String   @id @db.Uuid
+  tenantId            String   @db.Uuid
+  recipeId            String   @db.Uuid
+  ingredientProductId String   @db.Uuid
+  quantityScaled      BigInt
+  createdAt           DateTime @default(now())
+
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recipe            RestaurantRecipe @relation(fields: [tenantId, recipeId], references: [tenantId, id], onDelete: Cascade)
+  ingredientProduct Product          @relation("RestaurantRecipeIngredientProduct", fields: [tenantId, ingredientProductId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, recipeId, ingredientProductId])
+  @@index([tenantId, ingredientProductId])
+  @@map("restaurant_recipe_ingredients")
 }
 
 model RestaurantOrder {
@@ -740,10 +779,12 @@ model Product {
   purchaseOrderLines       PurchaseOrderLine[]
   purchaseReceiptLines     PurchaseReceiptLine[]
   saleLines                SaleLine[]
-  restaurantOrderLines        RestaurantOrderLine[]
-  restaurantPreparationRoutes RestaurantPreparationRoute[]
-  restaurantPreparationTasks  RestaurantPreparationTask[]
-  returnLines              ReturnLine[]
+  restaurantOrderLines          RestaurantOrderLine[]
+  restaurantPreparationRoutes   RestaurantPreparationRoute[]
+  restaurantPreparationTasks    RestaurantPreparationTask[]
+  restaurantRecipe              RestaurantRecipe?             @relation("RestaurantRecipeFinishedProduct")
+  restaurantRecipeIngredients   RestaurantRecipeIngredient[]   @relation("RestaurantRecipeIngredientProduct")
+  returnLines                   ReturnLine[]
 
   @@unique([tenantId, sku])
   /// The tenant-consistency key. A child row references this table by

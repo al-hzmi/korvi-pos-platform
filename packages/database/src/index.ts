@@ -260,6 +260,21 @@ export type {
   UpdatePreparationTaskStatusRequest,
 } from './restaurant/preparation.js';
 
+// Restaurant recipe/BOM authority. Flat recipes only in this slice; no cost or stock movement is implied.
+export {
+  RestaurantRecipeRefusedError,
+  readRestaurantRecipe,
+  setRestaurantRecipe,
+} from './restaurant/recipes.js';
+export type {
+  RestaurantRecipeRefusal,
+  RestaurantRecipeActor,
+  RestaurantRecipeIngredientRecord,
+  RestaurantRecipeRecord,
+  SetRestaurantRecipeRequest,
+  RestaurantRecipeMutationResult,
+} from './restaurant/recipes.js';
+
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.
 export {

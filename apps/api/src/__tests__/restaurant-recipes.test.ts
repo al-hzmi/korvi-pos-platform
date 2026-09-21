@@ -1,0 +1,190 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { buildServer } from '../server.js';
+import { loadConfig } from '../config.js';
+import type { MerchantRestaurantRecipeService } from '../restaurant/recipe-service.js';
+import type { AuthService } from '../auth/service.js';
+import type { AuthenticatedPrincipal } from '@korvi/domain';
+import type { FastifyInstance } from 'fastify';
+
+const TENANT = '018fb700-0000-7000-8000-00000000000a';
+const USER = '018fb700-0000-7000-8000-0000000000a1';
+const PRODUCT = '018fb700-0000-7000-8000-0000000000b1';
+const INGREDIENT = '018fb700-0000-7000-8000-0000000000c1';
+const RECIPE = '018fb700-0000-7000-8000-0000000000d1';
+const OP = '018fb700-0000-7000-8000-0000000000e1';
+const COOKIE = 'korvi_session=recipe-test-token';
+const ORIGIN = 'http://localhost:3000';
+
+let app: FastifyInstance | null = null;
+let calls: string[] = [];
+
+function principal(permissions: AuthenticatedPrincipal['permissions']): AuthenticatedPrincipal {
+  return {
+    tenantId: TENANT,
+    tenantSlug: 'restaurant-a',
+    userId: USER,
+    sessionId: '018fb700-0000-7000-8000-0000000000aa',
+    email: 'manager@restaurant.test',
+    displayName: 'المدير',
+    roles: ['manager'],
+    permissions,
+    maxDiscountBasisPoints: 0n,
+    branchId: null,
+  };
+}
+
+function auth(subject: AuthenticatedPrincipal): AuthService {
+  return {
+    async login() {
+      return { outcome: 'failure', reason: 'bad-password' };
+    },
+    async authenticate(token) {
+      return token === 'recipe-test-token'
+        ? { outcome: 'success', principal: subject }
+        : { outcome: 'failure', reason: 'malformed-token' };
+    },
+    async logout() {
+      return true;
+    },
+    async logoutAll() {
+      return 1;
+    },
+  };
+}
+
+const recipe = {
+  id: RECIPE,
+  productId: PRODUCT,
+  productSku: 'LATTE',
+  productNameAr: 'لاتيه',
+  productType: 'unit' as const,
+  yieldQuantityScaled: '1000',
+  revision: '1',
+  ingredients: [
+    {
+      id: '018fb700-0000-7000-8000-0000000000f1',
+      productId: INGREDIENT,
+      sku: 'MILK',
+      nameAr: 'حليب',
+      productType: 'weighted' as const,
+      unitLabel: 'ml',
+      quantityScaled: '250',
+    },
+  ],
+};
+
+function service(): MerchantRestaurantRecipeService {
+  return {
+    async detail() {
+      calls.push('detail');
+      return { outcome: 'success', value: recipe };
+    },
+    async set(_principal, _productId, request) {
+      calls.push('set');
+      return {
+        outcome: 'success',
+        value: {
+          recipe: { ...recipe, revision: request.expectedRevision === null ? '1' : '2' },
+          replayed: false,
+        },
+      };
+    },
+  };
+}
+
+function build(subject: AuthenticatedPrincipal): FastifyInstance {
+  calls = [];
+  app = buildServer(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'fatal' }), {
+    auth: auth(subject),
+    restaurantRecipes: service(),
+  });
+  return app;
+}
+
+afterEach(async () => {
+  if (app !== null) await app.close();
+  app = null;
+});
+
+describe('restaurant recipe route authority', () => {
+  it('requires product.read for recipe reads', async () => {
+    const server = build(principal([]));
+    const response = await server.inject({
+      method: 'GET',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}`,
+      headers: { cookie: COOKIE },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it('requires both product.write and inventory.adjust for recipe mutation', async () => {
+    const server = build(principal(['product.write']));
+    const response = await server.inject({
+      method: 'PUT',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        expectedRevision: null,
+        yieldQuantityScaled: '1000',
+        ingredients: [{ productId: INGREDIENT, quantityScaled: '250' }],
+      },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it('writes only through strict server-authorized recipe input', async () => {
+    const server = build(principal(['product.write', 'inventory.adjust']));
+    const response = await server.inject({
+      method: 'PUT',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        expectedRevision: null,
+        yieldQuantityScaled: '1000',
+        ingredients: [{ productId: INGREDIENT, quantityScaled: '250' }],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      recipe: { id: RECIPE, productId: PRODUCT, revision: '1' },
+      replayed: false,
+    });
+    expect(calls).toEqual(['set']);
+
+    for (const forbidden of [
+      'priceMinor',
+      'costValueMinor',
+      'vatBasisPoints',
+      'invoiceNumber',
+      'qrCodeBase64',
+      'ICV',
+      'PIH',
+    ]) {
+      expect(response.body).not.toContain(forbidden);
+    }
+  });
+
+  it('rejects client-supplied authority fields before service execution', async () => {
+    const server = build(principal(['product.write', 'inventory.adjust']));
+    const response = await server.inject({
+      method: 'PUT',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        expectedRevision: null,
+        yieldQuantityScaled: '1000',
+        tenantId: TENANT,
+        revision: '99',
+        costValueMinor: '1',
+        ingredients: [{ productId: INGREDIENT, quantityScaled: '250' }],
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(calls).toEqual([]);
+  });
+});
