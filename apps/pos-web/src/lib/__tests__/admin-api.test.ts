@@ -30,6 +30,83 @@ function bodyOf(call: Recorded): Record<string, unknown> {
 }
 
 describe('merchant administration API client', () => {
+  it('inspects product migration source without sending tenant authority', async () => {
+    const wire = transport({ sourceSha256: 'a'.repeat(64), header: [], previewRows: [] });
+    await createApiClient(wire.fetch).inspectProductMigrationCsv({
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: 'Legacy POS',
+      delimiter: ',',
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/migrations/products/inspect-csv');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: 'Legacy POS',
+      delimiter: ',',
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(/tenant|actor|permission/);
+  });
+
+  it('creates a product migration review with only source, mapping and operation identity', async () => {
+    const wire = transport({ id: 'job-1', status: 'reviewed' });
+    await createApiClient(wire.fetch).createProductMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-000000000001',
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'sku' },
+        { sourceColumn: 1, targetField: 'nameAr' },
+      ],
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/migrations/products/jobs');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: '018fb700-0000-7000-8000-000000000001',
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'sku' },
+        { sourceColumn: 1, targetField: 'nameAr' },
+      ],
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(/tenant|actor|created|updated/);
+  });
+
+  it('reads only bounded migration result rows with explicit problem filtering', async () => {
+    const wire = transport({ rows: [], nextAfterSourceRow: null });
+    await createApiClient(wire.fetch).productMigrationRows('job/one', {
+      limit: 500,
+      afterSourceRow: 25,
+      problemsOnly: true,
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/migrations/products/jobs/job%2Fone/rows?limit=500&afterSourceRow=25&problemsOnly=true',
+    );
+  });
+
+  it('commits a reviewed product migration with only the stable operation id', async () => {
+    const wire = transport({ id: 'job-1', status: 'completed' });
+    await createApiClient(wire.fetch).commitProductMigration(
+      'job/one',
+      '018fb700-0000-7000-8000-000000000002',
+    );
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/migrations/products/jobs/job%2Fone/commit');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: '018fb700-0000-7000-8000-000000000002',
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /tenant|actor|records|created|failed|status/,
+    );
+  });
+
   it('reads bounded inventory branches without borrowing settings authority', async () => {
     const wire = transport({ rows: [], nextCursor: null });
     await createApiClient(wire.fetch).inventoryBranches({
