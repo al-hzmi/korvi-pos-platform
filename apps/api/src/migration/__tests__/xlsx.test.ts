@@ -1,5 +1,10 @@
 import { deflateRawSync } from 'node:zlib';
-import { reviewProductSheet, suggestProductMappings } from '@korvi/domain';
+import {
+  reviewCustomerSheet,
+  reviewProductSheet,
+  suggestCustomerMappings,
+  suggestProductMappings,
+} from '@korvi/domain';
 import { describe, expect, it } from 'vitest';
 import { parseXlsxDocument, XlsxParseError } from '../xlsx.js';
 
@@ -252,4 +257,47 @@ describe('XLSX migration adapter', () => {
       },
     });
   });
+
+  it('carries Arabic customer fields from XLSX into the customer canonical review', () => {
+    const customerSharedStrings = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<si><t>اسم العميل</t></si><si><t>رقم الجوال</t></si><si><t>البريد الإلكتروني</t></si>' +
+        '<si><t>الرقم الضريبي</t></si><si><t>مؤسسة ميم</t></si><si><t>0501234567</t></si>' +
+        '<si><t>sales@example.test</t></si><si><t>310000000000003</t></si>' +
+        '</sst>',
+    );
+    const customerSheet = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c>' +
+        '<c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c></row>' +
+        '<row r="2"><c r="A2" t="s"><v>4</v></c><c r="B2" t="s"><v>5</v></c>' +
+        '<c r="C2" t="s"><v>6</v></c><c r="D2" t="s"><v>7</v></c></row>' +
+        '</sheetData></worksheet>',
+    );
+    const document = parseXlsxDocument(
+      storedZip([
+        { name: 'xl/workbook.xml', data: workbook },
+        { name: 'xl/_rels/workbook.xml.rels', data: workbookRels },
+        { name: 'xl/sharedStrings.xml', data: customerSharedStrings },
+        { name: 'xl/worksheets/sheet1.xml', data: customerSheet },
+      ]),
+    );
+    const parsed = document.sheets[0]!;
+    const mapping = suggestCustomerMappings(parsed.rows[0]!).map((entry) => ({
+      sourceColumn: entry.sourceColumn,
+      targetField: entry.targetField,
+    }));
+    expect(reviewCustomerSheet(parsed, mapping)[0]).toMatchObject({
+      classification: 'VALID',
+      record: {
+        nameAr: 'مؤسسة ميم',
+        phone: '0501234567',
+        email: 'sales@example.test',
+        vatNumber: '310000000000003',
+      },
+    });
+  });
+
 });
