@@ -113,9 +113,7 @@ export function normalizeProductBarcode(value: string | null | undefined): strin
   return candidate;
 }
 
-export function normalizeOptionalCategoryId(
-  value: string | null | undefined,
-): string | null {
+export function normalizeOptionalCategoryId(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   const candidate = value.normalize('NFKC').trim().toLowerCase();
   if (!isUuidV7(candidate)) {
