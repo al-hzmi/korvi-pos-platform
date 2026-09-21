@@ -149,11 +149,12 @@ Milestone sequence:
   - **Merchant workflow checkpoint VERIFIED:** `product/post-v1-migration-engine@e1a407565642ea5fcfda6820f475c0c833a6cbea`, CI `35612574884`; 191 test files / 2,315 tests passed, 24 files / 369 live-only tests skipped by the normal CI profile.
   - Implemented/proven in that checkpoint: Arabic-first Control Center migration surface, CSV/XLSX file selection, deterministic mapping override, source preview, reviewed-job creation, dry-run, explicit commit, ambiguous-command same-operation retry, row-level problem table, official product CSV template and downloadable formula-safe CSV error export.
   - **Open before M1 complete:** stronger database-level cross-tenant/adversarial proof. M2 categories may proceed in parallel without weakening the verified M1 pipeline.
-- **M2 — IN PROGRESS / CATEGORY BACKEND+API VERIFIED:** categories + product mapping.
-  - Category checkpoint: `product/post-v1-migration-engine@c1a974989bd1bce0fc2aede109693186a29ce581`, CI `35623377323` green; 194 test files / 2,327 tests passed.
-  - Verified: deterministic Arabic/English category mapping, CSV/XLSX inspection/preview, formula/control-character refusal, tenant-scoped reviewed jobs/rows, dry run, reject-only existing-category conflict handling, explicit create-only commit through category bootstrap authority, idempotency, audit/provenance and source-data minimization.
-  - Remaining before M2 complete: server-derived product→category resolution without accepting category UUID authority from files/clients; Arabic-first category workflow/template/error export; restricted-runtime PostgreSQL isolation proof.
-- **M3:** customers.
+- **M2 — VERIFIED:** categories + product→category authority.
+  - Closure checkpoint: `product/post-v1-migration-engine@9ce8afc54c4336111f4489a4fb03b651bc9fe6c3`, CI `35631102915` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests; 195 test files / 2,335 tests passed, 27 files / 382 live-only tests skipped by the standard CI profile.
+  - Restricted-runtime PostgreSQL proof: workflow `35630229494` green on `b593ffc534744097140789302e0f649b23ac2be2`; the later M2 closure delta contains only CI-baseline/test-fixture changes and no production migration authority changes.
+  - Verified category vertical slice: deterministic Arabic/English mapping, bounded CSV/XLSX inspection/preview, formula/control-character refusal, tenant-scoped reviewed jobs/rows, dry run, reject-only existing-category conflict handling, explicit create-only commit through category bootstrap authority, idempotency, audit/provenance, source-data minimization, Arabic-first merchant workflow, official category template and formula-safe error export.
+  - Verified product→category authority: files/browser may provide only `categoryNameAr`; dry-run and commit independently resolve the name inside the authenticated tenant, never accept `categoryId` from client-controlled input, never auto-create a missing category, reject missing/inactive categories row-by-row, and do not disclose or bind a category from another tenant.
+- **M3 — IN PROGRESS:** customers.
 - **M4:** suppliers.
 - **M5:** opening inventory through explicit opening-stock semantics, never direct balance fabrication.
 - **M6:** richer explicit conflict/update strategies.

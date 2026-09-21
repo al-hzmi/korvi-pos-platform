@@ -309,6 +309,21 @@ Customer Migration Readiness remains **IN PROGRESS** because customers, supplier
 
 Customer Migration Readiness remains **IN PROGRESS**.
 
+### Verified Category M2 closure — Product/category authority + merchant workflow + PostgreSQL isolation
+
+- branch: `product/post-v1-migration-engine`;
+- closure SHA: `9ce8afc54c4336111f4489a4fb03b651bc9fe6c3`;
+- status: **VERIFIED M2**;
+- standard CI: `35631102915` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- evidence: 195 test files / 2,335 tests passed; 27 files / 382 live-only tests skipped by the standard CI profile;
+- PostgreSQL security/isolation proof: workflow `35630229494` green on `b593ffc534744097140789302e0f649b23ac2be2`, using the restricted non-superuser, non-BYPASSRLS runtime role;
+- category capability: deterministic CSV/XLSX mapping and validation, preview, dry run, controlled create-only commit through the existing category authority, audit/idempotency/provenance, Arabic merchant UI, official template and formula-safe error export;
+- product→category authority: client-controlled sources may provide `categoryNameAr` only. The server resolves it inside the current tenant during dry-run and resolves it again at commit. `categoryId` from CSV/XLSX/browser payload is not accepted as authority;
+- missing or inactive categories produce row-level errors; Product Import does not create categories and does not guess similar names;
+- isolation evidence proves a category belonging to Tenant A cannot satisfy Tenant B resolution, and foreign migration/category state is not disclosed through the flow;
+- gaps: M2 has no remaining implementation gap. Overall Customer Migration Readiness remains **IN PROGRESS** because M3 customers, M4 suppliers and M5 opening inventory remain open;
+- next action: **M3 Customer Migration vertical slice** using only the fields and semantics supported by Korvi's existing customer domain.
+
 Source promotion:
 - Capability Matrix
 - Roadmap

@@ -228,18 +228,19 @@ Verified Product M1 merchant-workflow follow-on:
 
 Product M1 is now **VERIFIED** on `product/post-v1-migration-engine@2442de56437bb933c1b9730c3fc982e186fce2d3`. PostgreSQL isolation workflow `35615195979` succeeded under the restricted runtime role and proves forced RLS, exact-UUID invisibility across tenants, non-disclosing dry-run behavior, cross-tenant update/delete refusal and tenant-consistent FK enforcement.
 
-Verified Category M2 backend/API checkpoint:
+Category M2 is now **VERIFIED**:
 
 - branch `product/post-v1-migration-engine`;
-- SHA `c1a974989bd1bce0fc2aede109693186a29ce581`;
-- CI `35623377323` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
-- 194 test files / 2,327 tests passed; 25 files / 375 live-only tests skipped by the standard CI profile;
-- deterministic Arabic/English category mapping, row-level validation, formula/control-character refusal, tenant-scoped reviewed jobs/rows, CSV/XLSX inspection, preview, dry run, explicit create-only commit through the existing category bootstrap authority, audit/idempotency/provenance and bounded row paging are **VERIFIED**;
-- current M2 status remains **IN PROGRESS** until product→category mapping, merchant category UI/template/error export and restricted-runtime PostgreSQL tenant-isolation proof are completed.
+- closure SHA `9ce8afc54c4336111f4489a4fb03b651bc9fe6c3`;
+- CI `35631102915` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- 195 test files / 2,335 tests passed; 27 files / 382 live-only tests skipped by the standard CI profile;
+- restricted-runtime PostgreSQL isolation workflow `35630229494` green on `b593ffc534744097140789302e0f649b23ac2be2`, proving category import isolation and product→category name resolution under a non-superuser, non-BYPASSRLS runtime role;
+- category CSV/XLSX mapping/preview/dry-run/controlled commit, Arabic merchant workflow, official category template and formula-safe error export are verified;
+- product imports accept `categoryNameAr` only; server-side dry-run and commit re-resolve that name inside the authenticated tenant and derive `categoryId` internally. Missing/inactive categories are row-level errors; categories are never auto-created during product import; client-controlled category UUID authority and cross-tenant category binding/leakage are rejected.
 
-This still does **not** make Customer Migration Readiness GREEN. M2–M5 domain coverage remains open.
+This still does **not** make Customer Migration Readiness GREEN. **M3 Customer Migration is IN PROGRESS**; M4 suppliers and M5 opening inventory remain open.
 
-Current next action: **M2 categories + product/category mapping, then M3 customers, M4 suppliers and M5 opening inventory without weakening the verified Product M1 pipeline**.
+Current next action: **M3 customers, then M4 suppliers and M5 opening inventory without weakening the verified M1/M2 pipeline**.
 
 ## 6. What must happen next
 
