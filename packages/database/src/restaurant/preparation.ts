@@ -3,10 +3,7 @@ import { newId } from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
-import {
-  pendingPreparationLines,
-  pendingUnroutedPreparationLines,
-} from './preparation-policy.js';
+import { pendingPreparationLines, pendingUnroutedPreparationLines } from './preparation-policy.js';
 import type { TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
@@ -776,10 +773,7 @@ export async function fireRestaurantOrderForPreparation(
       ],
     });
     const firedLineIds = new Set(existing.map((task) => task.orderLineId));
-    const pendingUnrouted = pendingUnroutedPreparationLines(
-      plan.unroutedLines,
-      firedLineIds,
-    );
+    const pendingUnrouted = pendingUnroutedPreparationLines(plan.unroutedLines, firedLineIds);
     if (pendingUnrouted.length > 0) {
       throw new RestaurantPreparationRefusedError('unrouted-lines');
     }

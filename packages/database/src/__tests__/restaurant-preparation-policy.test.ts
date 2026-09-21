@@ -21,32 +21,25 @@ const SECOND = {
 describe('restaurant preparation delta policy', () => {
   it('keeps fired lines immutable while allowing a new tail line', () => {
     expect(
-      preparationReplacementPreservesFiredLines(
-        [FIRST],
-        new Set([FIRST.id]),
-        [
-          {
-            lineId: FIRST.id,
-            quantityScaled: '1000',
-            preparationNote: 'بدون سكر',
-            preparationOptions: null,
-          },
-          {
-            productId: 'product-2',
-            quantityScaled: '1000',
-            preparationNote: null,
-            preparationOptions: null,
-          },
-        ],
-      ),
+      preparationReplacementPreservesFiredLines([FIRST], new Set([FIRST.id]), [
+        {
+          lineId: FIRST.id,
+          quantityScaled: '1000',
+          preparationNote: 'بدون سكر',
+          preparationOptions: null,
+        },
+        {
+          productId: 'product-2',
+          quantityScaled: '1000',
+          preparationNote: null,
+          preparationOptions: null,
+        },
+      ]),
     ).toBe(true);
   });
 
   it.each([
-    [
-      'removal',
-      [],
-    ],
+    ['removal', []],
     [
       'quantity change',
       [
@@ -87,31 +80,27 @@ describe('restaurant preparation delta policy', () => {
       ],
     ],
   ] as const)('rejects fired-line %s', (_label, requested) => {
-    expect(
-      preparationReplacementPreservesFiredLines([FIRST], new Set([FIRST.id]), requested),
-    ).toBe(false);
+    expect(preparationReplacementPreservesFiredLines([FIRST], new Set([FIRST.id]), requested)).toBe(
+      false,
+    );
   });
 
   it('still allows editing an unfired line after an earlier line has fired', () => {
     expect(
-      preparationReplacementPreservesFiredLines(
-        [FIRST, SECOND],
-        new Set([FIRST.id]),
-        [
-          {
-            lineId: FIRST.id,
-            quantityScaled: '1000',
-            preparationNote: 'بدون سكر',
-            preparationOptions: null,
-          },
-          {
-            lineId: SECOND.id,
-            quantityScaled: '3000',
-            preparationNote: 'ساخن',
-            preparationOptions: null,
-          },
-        ],
-      ),
+      preparationReplacementPreservesFiredLines([FIRST, SECOND], new Set([FIRST.id]), [
+        {
+          lineId: FIRST.id,
+          quantityScaled: '1000',
+          preparationNote: 'بدون سكر',
+          preparationOptions: null,
+        },
+        {
+          lineId: SECOND.id,
+          quantityScaled: '3000',
+          preparationNote: 'ساخن',
+          preparationOptions: null,
+        },
+      ]),
     ).toBe(true);
   });
 

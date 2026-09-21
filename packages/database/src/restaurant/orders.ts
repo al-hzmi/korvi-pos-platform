@@ -906,13 +906,7 @@ export async function replaceRestaurantOrderLines(
       select: { orderLineId: true },
     });
     const firedLineIds = new Set(preparationTasks.map((task) => task.orderLineId));
-    if (
-      !preparationReplacementPreservesFiredLines(
-        existing.lines,
-        firedLineIds,
-        normalizedLines,
-      )
-    ) {
+    if (!preparationReplacementPreservesFiredLines(existing.lines, firedLineIds, normalizedLines)) {
       throw new RestaurantOrderRefusedError('preparation-started');
     }
 
