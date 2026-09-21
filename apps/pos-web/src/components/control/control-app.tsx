@@ -8,6 +8,7 @@ import { CustomersPanel } from './customers-panel';
 import { DashboardPanel } from './dashboard-panel';
 import { InventoryPanel } from './inventory-panel';
 import { MembersPanel } from './members-panel';
+import { MigrationPanel } from './migration-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
 import { PurchasingPanel } from './purchasing-panel';
@@ -77,6 +78,8 @@ function sectionTitle(section: ControlSection): string {
       return 'التقارير';
     case 'settings':
       return 'إعدادات المنشأة';
+    case 'migration':
+      return 'الترحيل والاستيراد';
     case 'zatca':
       return 'ZATCA';
   }
@@ -140,6 +143,14 @@ function Section({
       return <ReportsPanel />;
     case 'settings':
       return <SettingsPanel api={api} />;
+    case 'migration':
+      return (
+        <MigrationPanel
+          api={api}
+          canCommit={hasPermission(principal, 'product.write')}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
     case 'zatca':
       return <ZatcaPanel />;
   }
@@ -271,7 +282,8 @@ function Workspace({
                 activeSection === 'customers' ||
                 activeSection === 'branches' ||
                 activeSection === 'staff' ||
-                activeSection === 'settings' ? (
+                activeSection === 'settings' ||
+                activeSection === 'migration' ? (
                 <p className="mt-1 text-sm text-muted-foreground">
                   إدارة المنشأة من صلاحيات جلستك الحالية؛ الخادم هو صاحب القرار النهائي لكل تغيير.
                 </p>
