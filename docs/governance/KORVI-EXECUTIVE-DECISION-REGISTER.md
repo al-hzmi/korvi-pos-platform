@@ -285,6 +285,18 @@ Customer Migration Readiness remains **IN PROGRESS**.
 
 Customer Migration Readiness remains **IN PROGRESS**.
 
+### Verified Product M1 closure — PostgreSQL tenant-isolation proof
+
+- branch: `product/post-v1-migration-engine`;
+- SHA: `2442de56437bb933c1b9730c3fc982e186fce2d3`;
+- status: **VERIFIED M1**;
+- standard CI: `35615195972` / PR CI `35615200612` green;
+- database proof: `35615195979` green using a non-superuser, non-BYPASSRLS runtime role against PostgreSQL 17;
+- proved: forced RLS on migration jobs/rows, Tenant B exact UUID invisibility to Tenant A, identical unknown-job behavior for foreign dry-run/commit, no foreign catalogue-conflict leakage, tenant-consistent FK rejection and inability to update/delete foreign migration state;
+- next action: M2 categories + product/category mapping.
+
+Customer Migration Readiness remains **IN PROGRESS** because customers, suppliers and opening inventory are not yet end-to-end verified.
+
 Source promotion:
 - Capability Matrix
 - Roadmap
