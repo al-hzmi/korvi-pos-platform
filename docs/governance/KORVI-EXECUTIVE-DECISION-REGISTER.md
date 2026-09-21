@@ -274,6 +274,17 @@ The overall **CUSTOMER MIGRATION READINESS** gate remains **IN PROGRESS** and is
 
 Customer Migration Readiness remains **IN PROGRESS**.
 
+### Verified follow-on checkpoint — Product M1 merchant workflow
+
+- branch: `product/post-v1-migration-engine`;
+- SHA: `e1a407565642ea5fcfda6820f475c0c833a6cbea`;
+- status: **VERIFIED merchant workflow / M1 IN PROGRESS**;
+- evidence: CI `35612574884`; 191 test files / 2,315 tests passed, 24 files / 369 live-only tests skipped by the standard CI profile;
+- implemented: Arabic-first XLSX/CSV upload workflow, deterministic field mapping/manual override, source preview, dry run, explicit commit, same-operation retry after ambiguous responses, row-level problem review, product import template and downloadable formula-safe CSV error report;
+- remaining M1 closure gap: stronger database-level cross-tenant/adversarial proof.
+
+Customer Migration Readiness remains **IN PROGRESS**.
+
 Source promotion:
 - Capability Matrix
 - Roadmap
