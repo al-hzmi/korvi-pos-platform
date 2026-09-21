@@ -72,11 +72,7 @@ describe('merchant migration presentation helpers', () => {
         { sourceColumn: 0, targetField: null },
         { sourceColumn: 1, targetField: 'sortOrder' },
       ]),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: 'required-unmapped' }),
-      ]),
-    );
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]));
     expect(CATEGORY_MIGRATION_TEMPLATE_CSV).toContain('اسم الفئة');
     expect(CATEGORY_MIGRATION_TEMPLATE_CSV).toContain('مشروبات ساخنة');
 
@@ -102,8 +98,8 @@ describe('merchant migration presentation helpers', () => {
       },
     ];
     const csv = categoryMigrationProblemsCsv(rows);
-    expect(csv).toContain("\"'=CMD\"");
-    expect(csv).toContain("\"'+existing\"");
+    expect(csv).toContain('"\'=CMD"');
+    expect(csv).toContain('"\'+existing"');
   });
 
   it('includes category name in the official product template without exposing categoryId', () => {
@@ -111,5 +107,4 @@ describe('merchant migration presentation helpers', () => {
     expect(PRODUCT_MIGRATION_TEMPLATE_CSV).toContain('مشروبات ساخنة');
     expect(PRODUCT_MIGRATION_TEMPLATE_CSV).not.toContain('categoryId');
   });
-
 });

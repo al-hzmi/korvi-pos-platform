@@ -195,12 +195,11 @@ describe.skipIf(url === '')('product category-name migration authority, PostgreS
     expect(b.status).toBe('dry-run');
     expect(b.errorRows).toBe(1);
 
-    const bRows = await readProductImportRows(
-      prisma,
-      { tenantId: tenantId(B.tenant) },
-      B.job,
-      { limit: 20, afterSourceRow: null, problemsOnly: true },
-    );
+    const bRows = await readProductImportRows(prisma, { tenantId: tenantId(B.tenant) }, B.job, {
+      limit: 20,
+      afterSourceRow: null,
+      problemsOnly: true,
+    });
     expect(bRows?.rows).toEqual([
       expect.objectContaining({
         sourceIdentifier: 'B-CATEGORY-PRODUCT',
@@ -296,12 +295,11 @@ describe.skipIf(url === '')('product category-name migration authority, PostgreS
     expect(committed.created).toBe(0);
     expect(committed.failed).toBe(1);
 
-    const rows = await readProductImportRows(
-      prisma,
-      { tenantId: tenantId(A.tenant) },
-      job,
-      { limit: 20, afterSourceRow: null, problemsOnly: true },
-    );
+    const rows = await readProductImportRows(prisma, { tenantId: tenantId(A.tenant) }, job, {
+      limit: 20,
+      afterSourceRow: null,
+      problemsOnly: true,
+    });
     expect(rows?.rows[0]).toMatchObject({
       status: 'failed',
       errorCode: 'category-inactive',
@@ -310,5 +308,4 @@ describe.skipIf(url === '')('product category-name migration authority, PostgreS
       ]),
     });
   });
-
 });

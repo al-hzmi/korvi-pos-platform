@@ -109,11 +109,7 @@ export function CategoryMigrationPanel({
   const mappingProblems = useMemo(() => categoryMigrationMappingProblems(mapping), [mapping]);
   const selectedFormat = file === null ? null : fileFormat(file);
   const commandLocked =
-    disabled ||
-    busy === 'create' ||
-    busy === 'dry-run' ||
-    busy === 'commit' ||
-    pending !== null;
+    disabled || busy === 'create' || busy === 'dry-run' || busy === 'commit' || pending !== null;
 
   const resetFromFile = (nextFile: File | null): void => {
     setFile(nextFile);

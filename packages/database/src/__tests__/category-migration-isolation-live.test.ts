@@ -200,12 +200,11 @@ describe.skipIf(url === '')('category migration tenant isolation, PostgreSQL liv
       B.job,
     );
     expect(b.errorRows).toBe(1);
-    const bRows = await readCategoryImportRows(
-      prisma,
-      { tenantId: tenantId(B.tenant) },
-      B.job,
-      { limit: 20, afterSourceRow: null, problemsOnly: true },
-    );
+    const bRows = await readCategoryImportRows(prisma, { tenantId: tenantId(B.tenant) }, B.job, {
+      limit: 20,
+      afterSourceRow: null,
+      problemsOnly: true,
+    });
     expect(bRows?.rows[0]).toMatchObject({
       sourceIdentifier: NAME,
       classification: 'ERROR',

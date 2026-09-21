@@ -29,7 +29,9 @@ export const PRODUCT_MIGRATION_FIELD_LABELS: Readonly<Record<ProductMigrationTar
     vatRate: 'نسبة الضريبة',
   };
 
-export const CATEGORY_MIGRATION_REQUIRED_FIELDS: readonly CategoryMigrationTargetField[] = ['nameAr'];
+export const CATEGORY_MIGRATION_REQUIRED_FIELDS: readonly CategoryMigrationTargetField[] = [
+  'nameAr',
+];
 
 export const CATEGORY_MIGRATION_FIELD_LABELS: Readonly<
   Record<CategoryMigrationTargetField, string>

@@ -107,7 +107,6 @@ describe('merchant administration API client', () => {
     );
   });
 
-
   it('uses category migration endpoints without tenant or category id authority', async () => {
     const wire = transport({ id: 'category-job', status: 'reviewed' });
     const api = createApiClient(wire.fetch);
@@ -128,10 +127,7 @@ describe('merchant administration API client', () => {
         { sourceColumn: 1, targetField: 'sortOrder' },
       ],
     });
-    await api.commitCategoryMigration(
-      'category/job',
-      '018fb700-0000-7000-8000-0000000000e2',
-    );
+    await api.commitCategoryMigration('category/job', '018fb700-0000-7000-8000-0000000000e2');
 
     expect(wire.calls.map((call) => call.url)).toEqual([
       '/v1/admin/migrations/categories/inspect-csv',

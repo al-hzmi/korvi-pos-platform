@@ -36,9 +36,8 @@ describe('product migration category-name contract', () => {
   });
 
   it('keeps category optional for backward-compatible product files', () => {
-    const sheet = parseCsvDocument(
-      'SKU,اسم الصنف,نوع الصنف,الوحدة,سعر البيع\nA1,ماء,unit,each,1',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('SKU,اسم الصنف,نوع الصنف,الوحدة,سعر البيع\nA1,ماء,unit,each,1')
+      .sheets[0]!;
     const mapping = suggestProductMappings(sheet.rows[0]!).map((entry) => ({
       sourceColumn: entry.sourceColumn,
       targetField: entry.targetField,

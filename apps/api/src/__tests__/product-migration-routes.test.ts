@@ -299,8 +299,7 @@ describe('product migration HTTP authority', () => {
       headers: { cookie: COOKIE, origin: ORIGIN },
       payload: {
         operationId: OP,
-        csvText:
-          'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر,اسم الفئة\\nA1,قهوة,unit,each,10,مشروبات',
+        csvText: 'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر,اسم الفئة\\nA1,قهوة,unit,each,10,مشروبات',
         mapping: [{ sourceColumn: 5, targetField: 'categoryNameAr' }],
       },
     });
@@ -330,8 +329,7 @@ describe('product migration HTTP authority', () => {
       headers: { cookie: COOKIE, origin: ORIGIN },
       payload: {
         operationId: '018fb700-0000-7000-8000-0000000000c3',
-        csvText:
-          'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\\nA3,ماء,unit,each,2',
+        csvText: 'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\\nA3,ماء,unit,each,2',
         mapping: [],
         categoryId: '018fb700-0000-7000-8000-0000000000d1',
       },
@@ -339,5 +337,4 @@ describe('product migration HTTP authority', () => {
     expect(forgedTopLevel.statusCode).toBe(400);
     expect(calls).toHaveLength(1);
   });
-
 });
