@@ -280,6 +280,19 @@ Source promotion:
 
 ---
 
+### Verified follow-on checkpoint — Recipe/BOM authority + authoritative costing
+
+- branch: `product/post-v1-restaurant-foundation`;
+- SHA: `5ff6a633b5818aab71f53315dbc0d90597b0eeee`;
+- status: **VERIFIED recipe/BOM foundation / Restaurant Phase 2 IN PROGRESS**;
+- evidence: CI `35616882259` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests; 192 test files / 2,329 tests passed, 24 files / 369 live-only tests skipped by the standard profile;
+- implemented: revisioned/idempotent recipe/BOM writes, explicit ingredient quantities/yield, duplicate/self/nested-recipe guards, tenant-scoped product authority and branch recipe costing;
+- financial invariant: recipe cost is derived only from synchronized inventory-cost authority; any unknown ingredient cost keeps the recipe yield cost UNKNOWN rather than inventing margin;
+- fiscal boundary: recipe/KDS APIs remain operational and do not create sales, VAT invoices, fiscal QR, ICV or PIH semantics;
+- open gap / next action: ingredient consumption/production inventory movements, waste/spoilage, then remaining split/merge/payment and course/delta semantics.
+
+---
+
 ## Register maintenance rule
 
 When a later executive decision supersedes one above, do not silently edit history. Add a new dated entry marked **SUPERSEDES** and update the affected authoritative source document.
