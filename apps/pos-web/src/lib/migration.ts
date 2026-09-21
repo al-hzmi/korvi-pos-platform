@@ -2,6 +2,9 @@ import type {
   CategoryMigrationMapping,
   CategoryMigrationRowResult,
   CategoryMigrationTargetField,
+  CustomerMigrationMapping,
+  CustomerMigrationRowResult,
+  CustomerMigrationTargetField,
   MigrationImportCell,
   ProductMigrationMapping,
   ProductMigrationRowResult,
@@ -39,6 +42,16 @@ export const CATEGORY_MIGRATION_FIELD_LABELS: Readonly<
   nameAr: 'اسم الفئة بالعربية',
   nameEn: 'اسم الفئة بالإنجليزية',
   sortOrder: 'ترتيب العرض',
+};
+
+export const CUSTOMER_MIGRATION_REQUIRED_FIELDS: readonly CustomerMigrationTargetField[] = ['nameAr'];
+
+export const CUSTOMER_MIGRATION_FIELD_LABELS: Readonly<Record<CustomerMigrationTargetField, string>> = {
+  nameAr: 'اسم العميل بالعربية',
+  nameEn: 'اسم العميل بالإنجليزية',
+  phone: 'رقم الجوال',
+  email: 'البريد الإلكتروني',
+  vatNumber: 'الرقم الضريبي',
 };
 
 export interface MigrationMappingProblem {
