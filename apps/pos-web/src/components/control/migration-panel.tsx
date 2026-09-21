@@ -5,6 +5,7 @@ import { newId } from '@korvi/domain';
 import { Button, CardSurface } from '@korvi/ui';
 import { StatusNote } from '../status-note';
 import { CategoryMigrationPanel } from './category-migration-panel';
+import { CustomerMigrationPanel } from './customer-migration-panel';
 import { ApiError } from '../../lib/api';
 import {
   migrationCellText,
@@ -84,10 +85,12 @@ function rowTone(classification: ProductMigrationRowResult['classification']): s
 export function MigrationPanel({
   api,
   canCommit,
+  canCustomerCommit,
   onCommandLockChange,
 }: {
   readonly api: ApiClient;
   readonly canCommit: boolean;
+  readonly canCustomerCommit: boolean;
   readonly onCommandLockChange: (locked: boolean) => void;
 }): JSX.Element {
   const [file, setFile] = useState<File | null>(null);
@@ -105,12 +108,13 @@ export function MigrationPanel({
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [categoryCommandLocked, setCategoryCommandLocked] = useState(false);
+  const [customerCommandLocked, setCustomerCommandLocked] = useState(false);
 
   const mappingProblems = useMemo(() => migrationMappingProblems(mapping), [mapping]);
   const selectedFormat = file === null ? null : fileFormat(file);
   const productCommandLocked =
     busy === 'create' || busy === 'dry-run' || busy === 'commit' || pending !== null;
-  const commandLocked = productCommandLocked || categoryCommandLocked;
+  const commandLocked = productCommandLocked || categoryCommandLocked || customerCommandLocked;
 
   const resetFromFile = (nextFile: File | null): void => {
     setFile(nextFile);
@@ -654,9 +658,19 @@ export function MigrationPanel({
       <CategoryMigrationPanel
         api={api}
         canCommit={canCommit}
-        disabled={productCommandLocked}
+        disabled={productCommandLocked || customerCommandLocked}
         onCommandLockChange={(locked) => {
           setCategoryCommandLocked(locked);
+          onCommandLockChange(locked);
+        }}
+      />
+
+      <CustomerMigrationPanel
+        api={api}
+        canCommit={canCustomerCommit}
+        disabled={productCommandLocked || categoryCommandLocked}
+        onCommandLockChange={(locked) => {
+          setCustomerCommandLocked(locked);
           onCommandLockChange(locked);
         }}
       />
