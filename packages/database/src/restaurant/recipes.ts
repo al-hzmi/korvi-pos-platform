@@ -427,7 +427,6 @@ export async function setRestaurantRecipe(
   });
 }
 
-
 export async function readRestaurantRecipeCost(
   prisma: PrismaClient,
   scope: TenantScope,
