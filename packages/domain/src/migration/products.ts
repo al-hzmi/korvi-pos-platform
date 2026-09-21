@@ -235,12 +235,15 @@ export function reviewProductSheet(
   const header = sheet.rows[0] ?? [];
   const mappingIssues = validateProductMappings(header, mappings);
   if (mappingIssues.some((entry) => entry.classification === 'BLOCKED')) {
-    return sheet.rows.slice(1).map((_row, index) => ({
-      sourceRow: index + 2,
-      classification: 'BLOCKED',
-      record: null,
-      issues: mappingIssues.map((entry) => ({ ...entry, row: index + 2 })),
-    }));
+    return sheet.rows.slice(1).map((_row, index) => {
+      const sourceRow = sheet.sourceRowNumbers?.[index + 1] ?? index + 2;
+      return {
+        sourceRow,
+        classification: 'BLOCKED' as const,
+        record: null,
+        issues: mappingIssues.map((entry) => ({ ...entry, row: sourceRow })),
+      };
+    });
   }
 
   const reviews: ImportRowReview<CanonicalProductImportRow>[] = [];
