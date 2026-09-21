@@ -183,6 +183,124 @@ export interface AdminProductCreateInput {
   readonly barcode?: string | null;
 }
 
+
+export type ProductMigrationTargetField =
+  | 'sku'
+  | 'barcode'
+  | 'nameAr'
+  | 'nameEn'
+  | 'productType'
+  | 'unitLabel'
+  | 'sellingPrice'
+  | 'vatRate';
+
+export type MigrationImportCell =
+  | { readonly kind: 'blank' }
+  | { readonly kind: 'text'; readonly value: string; readonly formulaLike: boolean }
+  | { readonly kind: 'number'; readonly value: string }
+  | { readonly kind: 'boolean'; readonly value: boolean }
+  | {
+      readonly kind: 'formula';
+      readonly expression: string;
+      readonly cachedValue: string | null;
+    };
+
+export interface ProductMigrationMapping {
+  readonly sourceColumn: number;
+  readonly targetField: ProductMigrationTargetField | null;
+}
+
+export interface ProductMigrationMappingSuggestion extends ProductMigrationMapping {
+  readonly sourceHeader: string;
+  readonly reason: 'exact-alias' | 'unmapped';
+}
+
+export interface MigrationImportIssue {
+  readonly classification: 'WARNING' | 'ERROR' | 'BLOCKED';
+  readonly code: string;
+  readonly message: string;
+  readonly row: number | null;
+  readonly sourceColumn: number | null;
+  readonly targetField: string | null;
+}
+
+export interface ProductMigrationInspection {
+  readonly sourceSha256: string;
+  readonly fileBytes: number;
+  readonly totalRows: number;
+  readonly header: readonly ProductMigrationMappingSuggestion[];
+  readonly mappingIssues: readonly MigrationImportIssue[];
+  readonly previewRows: readonly {
+    readonly sourceRow: number;
+    readonly cells: readonly MigrationImportCell[];
+  }[];
+}
+
+export interface ProductMigrationRowResult {
+  readonly sourceRow: number;
+  readonly sourceIdentifier: string | null;
+  readonly classification: 'VALID' | 'WARNING' | 'ERROR' | 'BLOCKED';
+  readonly plannedAction: 'create' | 'reject';
+  readonly status: 'pending' | 'committing' | 'rejected' | 'committed' | 'failed';
+  readonly targetEntityId: string | null;
+  readonly errorCode: string | null;
+  readonly issues: readonly MigrationImportIssue[];
+}
+
+export interface ProductMigrationRowPage {
+  readonly rows: readonly ProductMigrationRowResult[];
+  readonly nextAfterSourceRow: number | null;
+}
+
+export interface ProductMigrationSummary {
+  readonly id: string;
+  readonly domain: 'products';
+  readonly format: 'csv' | 'xlsx';
+  readonly sourceFileName: string | null;
+  readonly sourceSystem: string | null;
+  readonly sourceSha256: string;
+  readonly status: 'reviewed' | 'dry-run' | 'committing' | 'completed';
+  readonly mappingVersion: number;
+  readonly mapping: readonly ProductMigrationMapping[];
+  readonly conflictPolicy: 'reject';
+  readonly totalRows: number;
+  readonly validRows: number;
+  readonly warningRows: number;
+  readonly errorRows: number;
+  readonly blockedRows: number;
+  readonly created: number;
+  readonly failed: number;
+  readonly rejected: number;
+  readonly rows: readonly ProductMigrationRowResult[];
+  readonly rowsTruncated: boolean;
+  readonly createdAt: string;
+  readonly dryRunAt: string | null;
+  readonly commitAt: string | null;
+}
+
+export interface CsvProductMigrationSource {
+  readonly csvText: string;
+  readonly fileName: string | null;
+  readonly sourceSystem: string | null;
+  readonly delimiter: ',' | ';' | '\t';
+}
+
+export interface XlsxProductMigrationSource {
+  readonly xlsxBase64: string;
+  readonly fileName: string | null;
+  readonly sourceSystem: string | null;
+}
+
+export interface CreateCsvProductMigrationJobRequest extends CsvProductMigrationSource {
+  readonly operationId: string;
+  readonly mapping: readonly ProductMigrationMapping[];
+}
+
+export interface CreateXlsxProductMigrationJobRequest extends XlsxProductMigrationSource {
+  readonly operationId: string;
+  readonly mapping: readonly ProductMigrationMapping[];
+}
+
 export type OnboardingCheckKey =
   | 'tenant-active'
   | 'settings-present'
