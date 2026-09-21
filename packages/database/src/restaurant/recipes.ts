@@ -293,10 +293,7 @@ export async function setRestaurantRecipe(
     for (const ingredient of normalizedIngredients) {
       const product = byId.get(ingredient.productId);
       if (product === undefined) throw new RestaurantRecipeRefusedError('unknown-product');
-      if (
-        productType(product.productType) === 'unit' &&
-        ingredient.quantityScaled % 1000n !== 0n
-      ) {
+      if (productType(product.productType) === 'unit' && ingredient.quantityScaled % 1000n !== 0n) {
         throw new RestaurantRecipeRefusedError('invalid-quantity');
       }
     }

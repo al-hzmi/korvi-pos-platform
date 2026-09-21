@@ -48,10 +48,7 @@ function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefine
   return request.auth;
 }
 
-function respond<T>(
-  reply: FastifyReply,
-  result: RestaurantRecipeServiceResult<T>,
-): FastifyReply {
+function respond<T>(reply: FastifyReply, result: RestaurantRecipeServiceResult<T>): FastifyReply {
   if (result.outcome === 'failure') {
     return reply.code(STATUS[result.reason]).send({
       error: result.reason.replace(/-/g, '_'),
