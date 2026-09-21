@@ -29,19 +29,13 @@ export interface NormalizedCategoryBootstrap {
 
 export function normalizeCategoryName(value: string): string {
   const candidate = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
-  if (
-    candidate === '' ||
-    candidate.length > MAX_CATEGORY_NAME ||
-    hasAsciiControlCharacter(candidate)
-  ) {
+  if (candidate === '' || candidate.length > MAX_CATEGORY_NAME || hasAsciiControlCharacter(candidate)) {
     throw new CategoryBootstrapError('Invalid category name.');
   }
   return candidate;
 }
 
-export function normalizeOptionalCategoryName(
-  value: string | null | undefined,
-): string | null {
+export function normalizeOptionalCategoryName(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   const candidate = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
   if (candidate === '') return null;
@@ -52,11 +46,7 @@ export function normalizeCategoryBootstrap(
   draft: CategoryBootstrapDraft,
 ): NormalizedCategoryBootstrap {
   const sortOrder = draft.sortOrder ?? 0;
-  if (
-    !Number.isInteger(sortOrder) ||
-    sortOrder < 0 ||
-    sortOrder > MAX_CATEGORY_SORT_ORDER
-  ) {
+  if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > MAX_CATEGORY_SORT_ORDER) {
     throw new CategoryBootstrapError('Invalid category sort order.');
   }
   return {
