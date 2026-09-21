@@ -7,6 +7,10 @@ import {
   normalizeUnitLabel,
 } from '../catalog/product-bootstrap.js';
 import {
+  CategoryBootstrapError,
+  normalizeOptionalCategoryName,
+} from '../catalog/category-bootstrap.js';
+import {
   ImportNormalizationError,
   importCellText,
   normalizeHeaderKey,
@@ -22,6 +26,7 @@ export type ProductImportField =
   | 'barcode'
   | 'nameAr'
   | 'nameEn'
+  | 'categoryNameAr'
   | 'productType'
   | 'unitLabel'
   | 'sellingPrice'
@@ -44,6 +49,7 @@ export interface CanonicalProductImportRow {
   readonly barcode: string | null;
   readonly nameAr: string;
   readonly nameEn: string | null;
+  readonly categoryNameAr: string | null;
   readonly productType: ProductType;
   readonly unitLabel: string;
   readonly priceMinor: string;
@@ -63,6 +69,17 @@ const ALIASES: Readonly<Record<ProductImportField, readonly string[]>> = {
   barcode: ['barcode', 'bar code', 'ean', 'باركود', 'الباركود', 'رقم الباركود'],
   nameAr: ['arabic name', 'name ar', 'اسم عربي', 'الاسم العربي', 'اسم الصنف', 'اسم المنتج'],
   nameEn: ['english name', 'name en', 'اسم انجليزي', 'الاسم الانجليزي', 'اسم الصنف انجليزي'],
+  categoryNameAr: [
+    'category',
+    'category name',
+    'category name ar',
+    'اسم الفئة',
+    'الفئة',
+    'اسم التصنيف',
+    'التصنيف',
+    'اسم القسم',
+    'القسم',
+  ],
   productType: ['product type', 'item type', 'نوع الصنف', 'نوع المنتج'],
   unitLabel: ['unit', 'uom', 'unit label', 'الوحدة', 'وحدة', 'وحدة القياس'],
   sellingPrice: ['price', 'selling price', 'sale price', 'سعر البيع', 'السعر', 'سعر الحبة'],
@@ -289,6 +306,9 @@ export function reviewProductSheet(
         const barcode = normalizeProductBarcode(values.get('barcode')?.value);
         const nameAr = normalizeProductName(nameArRaw);
         const nameEn = cleanOptionalName(values.get('nameEn')?.value ?? null);
+        const categoryNameAr = normalizeOptionalCategoryName(
+          values.get('categoryNameAr')?.value ?? null,
+        );
         const productType = parseProductType(typeRaw);
         const unitLabel = normalizeUnitLabel(unitRaw);
         const priceMinor = normalizeProductPriceMinor(parseExactSarToMinor(priceRaw));
@@ -335,13 +355,18 @@ export function reviewProductSheet(
           barcode,
           nameAr,
           nameEn,
+          categoryNameAr,
           productType,
           unitLabel,
           priceMinor,
           vatBasisPoints,
         };
       } catch (error) {
-        if (error instanceof ImportNormalizationError || error instanceof ProductBootstrapError) {
+        if (
+          error instanceof ImportNormalizationError ||
+          error instanceof ProductBootstrapError ||
+          error instanceof CategoryBootstrapError
+        ) {
           issues.push(issue('ERROR', 'invalid-product-row', error.message, sourceRow, null, null));
         } else {
           throw error;
