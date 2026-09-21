@@ -11,8 +11,14 @@ import type {
   AdminTenantSettings,
   AdminTerminal,
   CheckoutRequest,
+  CategoryMigrationInspection,
+  CategoryMigrationRowPage,
+  CategoryMigrationSummary,
+  CreateCsvCategoryMigrationJobRequest,
   CreateCsvProductMigrationJobRequest,
+  CreateXlsxCategoryMigrationJobRequest,
   CreateXlsxProductMigrationJobRequest,
+  CsvCategoryMigrationSource,
   CsvProductMigrationSource,
   DashboardSummary,
   CheckoutResponse,
@@ -56,6 +62,7 @@ import type {
   SupplierMutationResult,
   SupplierUpdateRequest,
   TerminalsResponse,
+  XlsxCategoryMigrationSource,
   XlsxProductMigrationSource,
 } from './api-types';
 
@@ -183,6 +190,34 @@ export interface ApiClient {
   ): Promise<ProductMigrationRowPage>;
   dryRunProductMigration(jobId: string): Promise<ProductMigrationSummary>;
   commitProductMigration(jobId: string, operationId: string): Promise<ProductMigrationSummary>;
+
+  inspectCategoryMigrationCsv(
+    input: CsvCategoryMigrationSource,
+    options?: RequestOptions,
+  ): Promise<CategoryMigrationInspection>;
+  inspectCategoryMigrationXlsx(
+    input: XlsxCategoryMigrationSource,
+    options?: RequestOptions,
+  ): Promise<CategoryMigrationInspection>;
+  createCategoryMigrationCsvJob(
+    request: CreateCsvCategoryMigrationJobRequest,
+  ): Promise<CategoryMigrationSummary>;
+  createCategoryMigrationXlsxJob(
+    request: CreateXlsxCategoryMigrationJobRequest,
+  ): Promise<CategoryMigrationSummary>;
+  categoryMigrationJob(jobId: string, options?: RequestOptions): Promise<CategoryMigrationSummary>;
+  categoryMigrationRows(
+    jobId: string,
+    query?: {
+      readonly limit?: number;
+      readonly afterSourceRow?: number | null;
+      readonly problemsOnly?: boolean;
+    },
+    options?: RequestOptions,
+  ): Promise<CategoryMigrationRowPage>;
+  dryRunCategoryMigration(jobId: string): Promise<CategoryMigrationSummary>;
+  commitCategoryMigration(jobId: string, operationId: string): Promise<CategoryMigrationSummary>;
+
   inventoryBranches(
     query?: { readonly limit?: number; readonly cursor?: string },
     options?: RequestOptions,
@@ -588,6 +623,81 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     async commitProductMigration(jobId, operationId) {
       return retryableCommand<ProductMigrationSummary>(
         `/v1/admin/migrations/products/jobs/${encodeURIComponent(jobId)}/commit`,
+        { operationId },
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async inspectCategoryMigrationCsv(input, options) {
+      return (await call(
+        '/v1/admin/migrations/categories/inspect-csv',
+        json(input),
+        options,
+      )) as CategoryMigrationInspection;
+    },
+
+    async inspectCategoryMigrationXlsx(input, options) {
+      return (await call(
+        '/v1/admin/migrations/categories/inspect-xlsx',
+        json(input),
+        options,
+      )) as CategoryMigrationInspection;
+    },
+
+    async createCategoryMigrationCsvJob(request) {
+      return retryableCommand<CategoryMigrationSummary>(
+        '/v1/admin/migrations/categories/jobs',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async createCategoryMigrationXlsxJob(request) {
+      return retryableCommand<CategoryMigrationSummary>(
+        '/v1/admin/migrations/categories/jobs/xlsx',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async categoryMigrationJob(jobId, options) {
+      return (await call(
+        `/v1/admin/migrations/categories/jobs/${encodeURIComponent(jobId)}`,
+        { method: 'GET' },
+        options,
+      )) as CategoryMigrationSummary;
+    },
+
+    async categoryMigrationRows(jobId, query = {}, options) {
+      const search = new URLSearchParams();
+      if (query.limit !== undefined) search.set('limit', String(query.limit));
+      if (query.afterSourceRow !== undefined && query.afterSourceRow !== null) {
+        search.set('afterSourceRow', String(query.afterSourceRow));
+      }
+      if (query.problemsOnly !== undefined) {
+        search.set('problemsOnly', String(query.problemsOnly));
+      }
+      const suffix = search.toString();
+      return (await call(
+        `/v1/admin/migrations/categories/jobs/${encodeURIComponent(jobId)}/rows${
+          suffix === '' ? '' : `?${suffix}`
+        }`,
+        { method: 'GET' },
+        options,
+      )) as CategoryMigrationRowPage;
+    },
+
+    async dryRunCategoryMigration(jobId) {
+      return retryableCommand<CategoryMigrationSummary>(
+        `/v1/admin/migrations/categories/jobs/${encodeURIComponent(jobId)}/dry-run`,
+        {},
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async commitCategoryMigration(jobId, operationId) {
+      return retryableCommand<CategoryMigrationSummary>(
+        `/v1/admin/migrations/categories/jobs/${encodeURIComponent(jobId)}/commit`,
         { operationId },
         MIGRATION_COMMAND_TIMEOUT_MS,
       );
