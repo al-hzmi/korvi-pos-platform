@@ -244,8 +244,10 @@ describe('control centre first paint', () => {
       }),
     );
     expect(markup).toContain('استيراد المنتجات');
+    expect(markup).toContain('استيراد الفئات');
     expect(markup).toContain('فحص الملف');
     expect(markup).toContain('قالب المنتجات CSV');
+    expect(markup).toContain('قالب الفئات CSV');
     expect(markup).not.toContain('نتيجة مهمة الترحيل');
     expect(markup).not.toContain('اعتماد الاستيراد');
   });
