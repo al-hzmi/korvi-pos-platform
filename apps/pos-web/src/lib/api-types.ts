@@ -390,6 +390,95 @@ export interface CreateXlsxCategoryMigrationJobRequest extends XlsxCategoryMigra
   readonly mapping: readonly CategoryMigrationMapping[];
 }
 
+export type CustomerMigrationTargetField = 'nameAr' | 'nameEn' | 'phone' | 'email' | 'vatNumber';
+
+export interface CustomerMigrationMapping {
+  readonly sourceColumn: number;
+  readonly targetField: CustomerMigrationTargetField | null;
+}
+
+export interface CustomerMigrationMappingSuggestion extends CustomerMigrationMapping {
+  readonly sourceHeader: string;
+  readonly reason: 'exact-alias' | 'unmapped';
+}
+
+export interface CustomerMigrationInspection {
+  readonly sourceSha256: string;
+  readonly fileBytes: number;
+  readonly totalRows: number;
+  readonly header: readonly CustomerMigrationMappingSuggestion[];
+  readonly mappingIssues: readonly MigrationImportIssue[];
+  readonly previewRows: readonly {
+    readonly sourceRow: number;
+    readonly cells: readonly MigrationImportCell[];
+  }[];
+}
+
+export interface CustomerMigrationRowResult {
+  readonly sourceRow: number;
+  readonly sourceIdentifier: string | null;
+  readonly classification: 'VALID' | 'WARNING' | 'ERROR' | 'BLOCKED';
+  readonly plannedAction: 'create' | 'reject';
+  readonly status: 'pending' | 'committing' | 'rejected' | 'committed' | 'failed';
+  readonly targetEntityId: string | null;
+  readonly errorCode: string | null;
+  readonly issues: readonly MigrationImportIssue[];
+}
+
+export interface CustomerMigrationRowPage {
+  readonly rows: readonly CustomerMigrationRowResult[];
+  readonly nextAfterSourceRow: number | null;
+}
+
+export interface CustomerMigrationSummary {
+  readonly id: string;
+  readonly domain: 'customers';
+  readonly format: 'csv' | 'xlsx';
+  readonly sourceFileName: string | null;
+  readonly sourceSystem: string | null;
+  readonly sourceSha256: string;
+  readonly status: 'reviewed' | 'dry-run' | 'committing' | 'completed';
+  readonly mappingVersion: number;
+  readonly mapping: readonly CustomerMigrationMapping[];
+  readonly conflictPolicy: 'reject';
+  readonly totalRows: number;
+  readonly validRows: number;
+  readonly warningRows: number;
+  readonly errorRows: number;
+  readonly blockedRows: number;
+  readonly created: number;
+  readonly failed: number;
+  readonly rejected: number;
+  readonly rows: readonly CustomerMigrationRowResult[];
+  readonly rowsTruncated: boolean;
+  readonly createdAt: string;
+  readonly dryRunAt: string | null;
+  readonly commitAt: string | null;
+}
+
+export interface CsvCustomerMigrationSource {
+  readonly csvText: string;
+  readonly fileName: string | null;
+  readonly sourceSystem: string | null;
+  readonly delimiter: ',' | ';' | '\t';
+}
+
+export interface XlsxCustomerMigrationSource {
+  readonly xlsxBase64: string;
+  readonly fileName: string | null;
+  readonly sourceSystem: string | null;
+}
+
+export interface CreateCsvCustomerMigrationJobRequest extends CsvCustomerMigrationSource {
+  readonly operationId: string;
+  readonly mapping: readonly CustomerMigrationMapping[];
+}
+
+export interface CreateXlsxCustomerMigrationJobRequest extends XlsxCustomerMigrationSource {
+  readonly operationId: string;
+  readonly mapping: readonly CustomerMigrationMapping[];
+}
+
 export type OnboardingCheckKey =
   | 'tenant-active'
   | 'settings-present'
