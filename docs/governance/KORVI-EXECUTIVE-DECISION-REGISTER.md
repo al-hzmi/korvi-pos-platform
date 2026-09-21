@@ -297,6 +297,18 @@ Customer Migration Readiness remains **IN PROGRESS**.
 
 Customer Migration Readiness remains **IN PROGRESS** because customers, suppliers and opening inventory are not yet end-to-end verified.
 
+### Verified Category M2 backend/API checkpoint
+
+- branch: `product/post-v1-migration-engine`;
+- SHA: `c1a974989bd1bce0fc2aede109693186a29ce581`;
+- status: **VERIFIED backend/API slice / M2 IN PROGRESS**;
+- evidence: CI `35623377323`; 194 test files / 2,327 tests passed, 25 files / 375 live-only tests skipped by the standard CI profile;
+- implemented: deterministic category mapping/row review, bounded CSV/XLSX inspection, tenant-scoped reviewed jobs, preview, dry run, reject-only category conflicts, controlled create-only commit through the existing category authority, idempotency, audit/provenance and row-level results;
+- authority boundary: clients/files may provide category names and mappings, but must not gain category UUID authority;
+- open gaps before M2 closure: product→category server-side resolution, merchant category UI/template/error export and restricted-runtime PostgreSQL tenant-isolation proof.
+
+Customer Migration Readiness remains **IN PROGRESS**.
+
 Source promotion:
 - Capability Matrix
 - Roadmap
