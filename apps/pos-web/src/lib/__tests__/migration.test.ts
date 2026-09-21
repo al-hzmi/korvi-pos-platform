@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   CATEGORY_MIGRATION_TEMPLATE_CSV,
+  CUSTOMER_MIGRATION_TEMPLATE_CSV,
   categoryMigrationMappingProblems,
   categoryMigrationProblemsCsv,
+  customerMigrationMappingProblems,
+  customerMigrationProblemsCsv,
   migrationCellText,
   migrationMappingProblems,
   PRODUCT_MIGRATION_TEMPLATE_CSV,
   productMigrationProblemsCsv,
 } from '../migration';
-import type { CategoryMigrationRowResult, ProductMigrationRowResult } from '../api-types';
+import type {
+  CategoryMigrationRowResult,
+  CustomerMigrationRowResult,
+  ProductMigrationRowResult,
+} from '../api-types';
 
 describe('merchant migration presentation helpers', () => {
   it('requires the deterministic product fields and rejects duplicate targets', () => {
@@ -107,4 +114,43 @@ describe('merchant migration presentation helpers', () => {
     expect(PRODUCT_MIGRATION_TEMPLATE_CSV).toContain('مشروبات ساخنة');
     expect(PRODUCT_MIGRATION_TEMPLATE_CSV).not.toContain('categoryId');
   });
+
+  it('ships customer mapping rules, Arabic template and formula-safe customer error export', () => {
+    expect(
+      customerMigrationMappingProblems([
+        { sourceColumn: 0, targetField: null },
+        { sourceColumn: 1, targetField: 'phone' },
+      ]),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]));
+
+    expect(CUSTOMER_MIGRATION_TEMPLATE_CSV).toContain('اسم العميل');
+    expect(CUSTOMER_MIGRATION_TEMPLATE_CSV).toContain('رقم الجوال');
+    expect(CUSTOMER_MIGRATION_TEMPLATE_CSV).toContain('الرقم الضريبي');
+
+    const rows: readonly CustomerMigrationRowResult[] = [
+      {
+        sourceRow: 9,
+        sourceIdentifier: '=CMD',
+        classification: 'ERROR',
+        plannedAction: 'reject',
+        status: 'rejected',
+        targetEntityId: null,
+        errorCode: null,
+        issues: [
+          {
+            classification: 'ERROR',
+            code: 'phone-conflict',
+            message: '+existing',
+            row: 9,
+            sourceColumn: 2,
+            targetField: 'phone',
+          },
+        ],
+      },
+    ];
+    const csv = customerMigrationProblemsCsv(rows);
+    expect(csv).toContain('"\'=CMD"');
+    expect(csv).toContain('"\'+existing"');
+  });
+
 });
