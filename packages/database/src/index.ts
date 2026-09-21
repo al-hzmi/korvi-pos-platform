@@ -294,6 +294,26 @@ export type {
   CategoryImportRowPage,
 } from './migration/category-import.js';
 
+// Customer Migration Engine — M3 customer directory orchestration. Create-only
+// import reuses the authoritative tenant-scoped customer writer and rejects
+// phone conflicts rather than inventing merge/update semantics.
+export {
+  CustomerImportRefusedError,
+  createCustomerImportJob,
+  readCustomerImportJob,
+  readCustomerImportRows,
+  dryRunCustomerImport,
+  commitCustomerImport,
+} from './migration/customer-import.js';
+export type {
+  CustomerImportRefusal,
+  CustomerImportActor,
+  CreateCustomerImportJobRequest,
+  CustomerImportRowResult,
+  CustomerImportSummary,
+  CustomerImportRowPage,
+} from './migration/customer-import.js';
+
 // Commercial plan/entitlement control-plane foundation (Strike 4C).
 // No merchant HTTP authority and no billing-provider semantics live here.
 export {
