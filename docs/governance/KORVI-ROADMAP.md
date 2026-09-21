@@ -149,7 +149,10 @@ Milestone sequence:
   - **Merchant workflow checkpoint VERIFIED:** `product/post-v1-migration-engine@e1a407565642ea5fcfda6820f475c0c833a6cbea`, CI `35612574884`; 191 test files / 2,315 tests passed, 24 files / 369 live-only tests skipped by the normal CI profile.
   - Implemented/proven in that checkpoint: Arabic-first Control Center migration surface, CSV/XLSX file selection, deterministic mapping override, source preview, reviewed-job creation, dry-run, explicit commit, ambiguous-command same-operation retry, row-level problem table, official product CSV template and downloadable formula-safe CSV error export.
   - **Open before M1 complete:** stronger database-level cross-tenant/adversarial proof. M2 categories may proceed in parallel without weakening the verified M1 pipeline.
-- **M2:** categories + product mapping.
+- **M2 — IN PROGRESS / CATEGORY BACKEND+API VERIFIED:** categories + product mapping.
+  - Category checkpoint: `product/post-v1-migration-engine@c1a974989bd1bce0fc2aede109693186a29ce581`, CI `35623377323` green; 194 test files / 2,327 tests passed.
+  - Verified: deterministic Arabic/English category mapping, CSV/XLSX inspection/preview, formula/control-character refusal, tenant-scoped reviewed jobs/rows, dry run, reject-only existing-category conflict handling, explicit create-only commit through category bootstrap authority, idempotency, audit/provenance and source-data minimization.
+  - Remaining before M2 complete: server-derived product→category resolution without accepting category UUID authority from files/clients; Arabic-first category workflow/template/error export; restricted-runtime PostgreSQL isolation proof.
 - **M3:** customers.
 - **M4:** suppliers.
 - **M5:** opening inventory through explicit opening-stock semantics, never direct balance fabrication.
