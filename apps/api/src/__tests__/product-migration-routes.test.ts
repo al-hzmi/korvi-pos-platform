@@ -290,4 +290,54 @@ describe('product migration HTTP authority', () => {
     expect(committed.json()).toMatchObject({ id: JOB, status: 'completed', created: 1 });
     expect(calls).toEqual([{ method: 'commit', value: { jobId: JOB, operationId: OP } }]);
   });
+
+  it('accepts categoryNameAr mapping but rejects client-controlled category ids', async () => {
+    const server = build(principal(['settings.manage']));
+    const accepted = await server.inject({
+      method: 'POST',
+      url: '/v1/admin/migrations/products/jobs',
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        csvText:
+          'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر,اسم الفئة\\nA1,قهوة,unit,each,10,مشروبات',
+        mapping: [{ sourceColumn: 5, targetField: 'categoryNameAr' }],
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.value).toMatchObject({
+      mapping: [{ sourceColumn: 5, targetField: 'categoryNameAr' }],
+    });
+
+    const forgedMapping = await server.inject({
+      method: 'POST',
+      url: '/v1/admin/migrations/products/jobs',
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: '018fb700-0000-7000-8000-0000000000c2',
+        csvText:
+          'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر,categoryId\\nA2,شاي,unit,each,8,018fb700-0000-7000-8000-0000000000d1',
+        mapping: [{ sourceColumn: 5, targetField: 'categoryId' }],
+      },
+    });
+    expect(forgedMapping.statusCode).toBe(400);
+    expect(calls).toHaveLength(1);
+
+    const forgedTopLevel = await server.inject({
+      method: 'POST',
+      url: '/v1/admin/migrations/products/jobs',
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: '018fb700-0000-7000-8000-0000000000c3',
+        csvText:
+          'SKU,اسم الصنف,نوع الصنف,الوحدة,السعر\\nA3,ماء,unit,each,2',
+        mapping: [],
+        categoryId: '018fb700-0000-7000-8000-0000000000d1',
+      },
+    });
+    expect(forgedTopLevel.statusCode).toBe(400);
+    expect(calls).toHaveLength(1);
+  });
+
 });
