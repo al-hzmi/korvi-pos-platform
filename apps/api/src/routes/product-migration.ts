@@ -14,6 +14,7 @@ const TARGET_FIELD = z.enum([
   'barcode',
   'nameAr',
   'nameEn',
+  'categoryNameAr',
   'productType',
   'unitLabel',
   'sellingPrice',
