@@ -267,7 +267,9 @@ function KdsWorkspace({
           >
             تحديث
           </Button>
-          {loadingTasks ? <span className="text-xs text-muted-foreground">جارٍ التحديث…</span> : null}
+          {loadingTasks ? (
+            <span className="text-xs text-muted-foreground">جارٍ التحديث…</span>
+          ) : null}
         </CardSurface>
 
         {notice === null ? null : (
@@ -282,11 +284,13 @@ function KdsWorkspace({
         )}
 
         <div className="grid min-h-[60vh] gap-4 lg:grid-cols-3">
-          {([
-            ['queued', 'بانتظار التحضير'],
-            ['preparing', 'قيد التحضير'],
-            ['ready', 'جاهز للتقديم'],
-          ] as const).map(([status, title]) => (
+          {(
+            [
+              ['queued', 'بانتظار التحضير'],
+              ['preparing', 'قيد التحضير'],
+              ['ready', 'جاهز للتقديم'],
+            ] as const
+          ).map(([status, title]) => (
             <section
               key={status}
               className="flex min-h-64 flex-col gap-3 rounded-xl border border-border bg-background/60 p-3"
@@ -303,12 +307,7 @@ function KdsWorkspace({
                 </p>
               ) : (
                 groups[status].map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    busy={pending !== null}
-                    onAdvance={advance}
-                  />
+                  <TaskCard key={task.id} task={task} busy={pending !== null} onAdvance={advance} />
                 ))
               )}
             </section>
@@ -353,7 +352,9 @@ export function KdsApp({ api: injected }: { readonly api?: ApiClient } = {}): JS
   }
 
   if (session.state.kind === 'anonymous') {
-    return <LoginScreen api={api} onAuthenticated={session.signedIn} notice={session.state.notice} />;
+    return (
+      <LoginScreen api={api} onAuthenticated={session.signedIn} notice={session.state.notice} />
+    );
   }
 
   if (!hasPermission(session.state.principal, 'sale.create')) {
