@@ -31,6 +31,7 @@ export interface RestaurantOpenOrdersControlProps {
   readonly onRelease: () => void;
   readonly onTransferTable: (tableId: string) => void;
   readonly onCancel: (reason: string) => void;
+  readonly onFirePreparation: () => void;
   readonly onRetry: () => void;
 }
 
@@ -61,6 +62,7 @@ export function RestaurantOpenOrdersControl({
   onRelease,
   onTransferTable,
   onCancel,
+  onFirePreparation,
   onRetry,
 }: RestaurantOpenOrdersControlProps): JSX.Element {
   const active = activeIdentity !== null;
@@ -137,6 +139,20 @@ export function RestaurantOpenOrdersControl({
               ترك الطلب مفتوحاً
             </Button>
           </div>
+
+          <Button
+            className="mt-2 w-full"
+            variant="secondary"
+            disabled={locked || activeOrder === null || dirty || !cartHasLines}
+            onClick={onFirePreparation}
+          >
+            إرسال للمطبخ
+          </Button>
+          {dirty ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              احفظ تعديلات الأصناف قبل إرسال الطلب للمطبخ.
+            </p>
+          ) : null}
 
           {activeOrder?.orderType === 'dine-in' ? (
             <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">

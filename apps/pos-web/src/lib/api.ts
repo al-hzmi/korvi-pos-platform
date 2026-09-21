@@ -43,6 +43,8 @@ import type {
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
   RestaurantOrderTransferTableRequest,
+  RestaurantPreparationFireMutation,
+  RestaurantPreparationFireRequest,
   RestaurantPreparationStation,
   RestaurantPreparationTask,
   RestaurantPreparationTaskMutation,
@@ -150,6 +152,10 @@ export interface ApiClient {
     orderId: string,
     request: RestaurantOrderCancelRequest,
   ): Promise<RestaurantOrderMutationResult>;
+  fireRestaurantPreparation(
+    orderId: string,
+    request: RestaurantPreparationFireRequest,
+  ): Promise<RestaurantPreparationFireMutation>;
   restaurantPreparationStations(
     options?: RequestOptions,
   ): Promise<readonly RestaurantPreparationStation[]>;
@@ -437,6 +443,14 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     async cancelRestaurantOrder(orderId, request) {
       return retryableCommand<RestaurantOrderMutationResult>(
         `/v1/restaurant/orders/${encodeURIComponent(orderId)}/cancel`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async fireRestaurantPreparation(orderId, request) {
+      return retryableCommand<RestaurantPreparationFireMutation>(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}/preparation/fire`,
         request,
         RESTAURANT_COMMAND_TIMEOUT_MS,
       );

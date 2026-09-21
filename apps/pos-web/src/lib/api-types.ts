@@ -186,6 +186,23 @@ export interface RestaurantPreparationTask {
   readonly servedAt: string | null;
 }
 
+export interface RestaurantPreparationFireRequest {
+  readonly operationId: string;
+  readonly expectedOrderRevision: string;
+}
+
+export interface RestaurantPreparationFireResult {
+  readonly orderId: string;
+  readonly orderRevision: string;
+  readonly alreadyFired: boolean;
+  readonly tasks: readonly RestaurantPreparationTask[];
+}
+
+export interface RestaurantPreparationFireMutation {
+  readonly value: RestaurantPreparationFireResult;
+  readonly replayed: boolean;
+}
+
 export interface RestaurantPreparationTaskUpdateRequest {
   readonly operationId: string;
   readonly expectedRevision: string;

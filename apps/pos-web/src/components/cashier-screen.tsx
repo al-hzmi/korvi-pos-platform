@@ -48,6 +48,7 @@ import type {
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
   RestaurantOrderTransferTableRequest,
+  RestaurantPreparationFireRequest,
   ShiftSummary,
   TerminalSummary,
 } from '../lib/api-types';
@@ -73,6 +74,11 @@ type PendingRestaurantOrderCommand =
       readonly kind: 'cancel';
       readonly orderId: string;
       readonly request: RestaurantOrderCancelRequest;
+    }
+  | {
+      readonly kind: 'fire-preparation';
+      readonly orderId: string;
+      readonly request: RestaurantPreparationFireRequest;
     };
 
 /**
@@ -443,6 +449,18 @@ export function CashierScreen({
       setRestaurantOrderCommandStatus('running');
       setRestaurantOrderNotice(null);
       try {
+        if (command.kind === 'fire-preparation') {
+          const fired = await api.fireRestaurantPreparation(command.orderId, command.request);
+          setPendingRestaurantOrderCommand(null);
+          setRestaurantOrderCommandStatus('idle');
+          setRestaurantOrderNotice(
+            fired.value.alreadyFired
+              ? 'الطلب مرسل للمطبخ مسبقاً بهذه النسخة.'
+              : `تم إرسال الطلب للمطبخ · ${String(fired.value.tasks.length)} مهمة تحضير.`,
+          );
+          return;
+        }
+
         const result =
           command.kind === 'create'
             ? await api.createRestaurantOrder(command.request)
@@ -623,6 +641,32 @@ export function CashierScreen({
       restaurantOrderDirty,
     ],
   );
+
+  const fireRestaurantPreparation = useCallback(() => {
+    if (
+      activeRestaurantOrderIdentity === null ||
+      activeRestaurantOrder === null ||
+      restaurantOrderDirty ||
+      cart.lines.length === 0
+    ) {
+      return;
+    }
+    const request: RestaurantPreparationFireRequest = {
+      operationId: newId(),
+      expectedOrderRevision: activeRestaurantOrderIdentity.revision,
+    };
+    void executeRestaurantOrderCommand({
+      kind: 'fire-preparation',
+      orderId: activeRestaurantOrderIdentity.id,
+      request,
+    });
+  }, [
+    activeRestaurantOrder,
+    activeRestaurantOrderIdentity,
+    cart.lines.length,
+    executeRestaurantOrderCommand,
+    restaurantOrderDirty,
+  ]);
 
   const resumeRestaurantOrder = useCallback(
     (orderId: string) => {
@@ -896,6 +940,7 @@ export function CashierScreen({
                   onRelease={releaseRestaurantOrder}
                   onTransferTable={transferRestaurantOrderTable}
                   onCancel={cancelRestaurantOrder}
+                  onFirePreparation={fireRestaurantPreparation}
                   onRetry={retryRestaurantOrderCommand}
                 />
               ) : null}

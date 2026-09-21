@@ -25,6 +25,7 @@ export type RestaurantOrderRefusal =
   | 'invalid-quantity'
   | 'unknown-line'
   | 'duplicate-line'
+  | 'preparation-started'
   | 'unknown-order'
   | 'order-not-open'
   | 'stale-revision'
@@ -677,6 +678,14 @@ export async function cancelRestaurantOrder(
       throw new RestaurantOrderRefusedError('stale-revision');
     }
 
+    const preparationStarted = await tx.restaurantPreparationTask.findFirst({
+      where: { tenantId: tenant, branchId: actor.branchId, orderId },
+      select: { id: true },
+    });
+    if (preparationStarted !== null) {
+      throw new RestaurantOrderRefusedError('preparation-started');
+    }
+
     const at = clock();
     const changed = await tx.restaurantOrder.updateMany({
       where: {
@@ -889,6 +898,14 @@ export async function replaceRestaurantOrderLines(
     }
     if (expected.toString() !== existing.revision) {
       throw new RestaurantOrderRefusedError('stale-revision');
+    }
+
+    const preparationStarted = await tx.restaurantPreparationTask.findFirst({
+      where: { tenantId: tenant, branchId: actor.branchId, orderId },
+      select: { id: true },
+    });
+    if (preparationStarted !== null) {
+      throw new RestaurantOrderRefusedError('preparation-started');
     }
 
     const existingById = new Map(existing.lines.map((line) => [line.id, line]));

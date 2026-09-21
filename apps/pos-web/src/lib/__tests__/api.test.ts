@@ -316,27 +316,45 @@ describe('the API client', () => {
       servedAt: null,
     };
     const transport = stub([
+      ok({
+        value: {
+          orderId: task.orderId,
+          orderRevision: task.orderRevision,
+          alreadyFired: false,
+          tasks: [task],
+        },
+        replayed: false,
+      }),
       ok([station]),
       ok([task]),
       ok({ value: { ...task, status: 'preparing', revision: '2' }, replayed: false }),
     ]);
     const api = createApiClient(transport.fetch);
 
+    await api.fireRestaurantPreparation(task.orderId, {
+      operationId: '018f3000-0000-7000-8000-000000000207',
+      expectedOrderRevision: '3',
+    });
     await api.restaurantPreparationStations();
     await api.restaurantPreparationTasks(stationId);
     await api.updateRestaurantPreparationTask(taskId, {
-      operationId: '018f3000-0000-7000-8000-000000000207',
+      operationId: '018f3000-0000-7000-8000-000000000208',
       expectedRevision: '1',
       status: 'preparing',
     });
 
     expect(transport.calls.map((call) => call.url)).toEqual([
+      `/v1/restaurant/orders/${task.orderId}/preparation/fire`,
       '/v1/restaurant/preparation-stations',
       `/v1/restaurant/preparation-stations/${stationId}/tasks`,
       `/v1/restaurant/preparation-tasks/${taskId}/status`,
     ]);
-    expect(bodyOf(transport.calls[2]!.init)).toEqual({
+    expect(bodyOf(transport.calls[0]!.init)).toEqual({
       operationId: '018f3000-0000-7000-8000-000000000207',
+      expectedOrderRevision: '3',
+    });
+    expect(bodyOf(transport.calls[3]!.init)).toEqual({
+      operationId: '018f3000-0000-7000-8000-000000000208',
       expectedRevision: '1',
       status: 'preparing',
     });

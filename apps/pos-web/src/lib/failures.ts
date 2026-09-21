@@ -170,6 +170,23 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'لا يمكن حفظ نفس سطر الطلب مرتين.',
     action: 'amend-cart',
   },
+  restaurant_order_preparation_started: {
+    message:
+      'بدأ تحضير هذا الطلب. لا يمكن تعديل أصنافه أو إلغاؤه من نقطة البيع حتى تتم معالجة المطبخ بأمان.',
+    action: 'blocking',
+  },
+  stale_order: {
+    message: 'تغيّرت نسخة الطلب قبل إرسالها للمطبخ. أعد تحميل الطلب ثم حاول مرة أخرى.',
+    action: 'blocking',
+  },
+  unrouted_lines: {
+    message: 'بعض أصناف الطلب غير مرتبطة بمحطة تحضير. أكمل إعداد توجيه المطبخ قبل الإرسال.',
+    action: 'blocking',
+  },
+  operation_in_progress: {
+    message: 'العملية نفسها ما زالت قيد التنفيذ. أعد المحاولة بنفس العملية.',
+    action: 'retry-same',
+  },
   table_occupied: {
     message: 'الطاولة مشغولة بطلب مفتوح آخر.',
     action: 'amend-cart',
