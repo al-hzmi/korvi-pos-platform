@@ -372,7 +372,10 @@ export async function createProductImportJob(
   const counts = summarizeImportReviews(reviews);
   const sourceRows = request.sheet.rows.slice(1);
   const rowFingerprints = sourceRows.map((row, index) =>
-    sha256({ sourceRow: index + 2, cells: row }),
+    sha256({
+      sourceRow: reviews[index]?.sourceRow ?? request.sheet.sourceRowNumbers?.[index + 1] ?? index + 2,
+      cells: row,
+    }),
   );
   const requestHash = sha256({
     sourceSha256: request.sourceSha256,
