@@ -36,7 +36,7 @@ const SHARED_SKU = 'PRIVATE-B-SKU';
 
 describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live', () => {
   let client: pg.Client;
-  const prisma = createPrismaClient(url);
+  let prisma: ReturnType<typeof createPrismaClient>;
 
   async function asTenant<T>(id: string, work: () => Promise<T>): Promise<T> {
     await client.query('BEGIN');
@@ -120,6 +120,7 @@ describe.skipIf(url === '')('product migration tenant isolation, PostgreSQL live
   }
 
   beforeAll(async () => {
+    prisma = createPrismaClient(url);
     client = new pg.Client({ connectionString: url });
     await client.connect();
     await removeTenant(A.tenant);
