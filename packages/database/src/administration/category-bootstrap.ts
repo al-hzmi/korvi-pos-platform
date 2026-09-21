@@ -6,10 +6,7 @@ import {
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
-import type {
-  CategoryBootstrapDraft,
-  TenantScope,
-} from '@korvi/domain';
+import type { CategoryBootstrapDraft, TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
 
