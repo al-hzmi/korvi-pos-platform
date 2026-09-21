@@ -228,6 +228,15 @@ Verified Product M1 merchant-workflow follow-on:
 
 Product M1 is now **VERIFIED** on `product/post-v1-migration-engine@2442de56437bb933c1b9730c3fc982e186fce2d3`. PostgreSQL isolation workflow `35615195979` succeeded under the restricted runtime role and proves forced RLS, exact-UUID invisibility across tenants, non-disclosing dry-run behavior, cross-tenant update/delete refusal and tenant-consistent FK enforcement.
 
+Verified Category M2 backend/API checkpoint:
+
+- branch `product/post-v1-migration-engine`;
+- SHA `c1a974989bd1bce0fc2aede109693186a29ce581`;
+- CI `35623377323` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- 194 test files / 2,327 tests passed; 25 files / 375 live-only tests skipped by the standard CI profile;
+- deterministic Arabic/English category mapping, row-level validation, formula/control-character refusal, tenant-scoped reviewed jobs/rows, CSV/XLSX inspection, preview, dry run, explicit create-only commit through the existing category bootstrap authority, audit/idempotency/provenance and bounded row paging are **VERIFIED**;
+- current M2 status remains **IN PROGRESS** until product→category mapping, merchant category UI/template/error export and restricted-runtime PostgreSQL tenant-isolation proof are completed.
+
 This still does **not** make Customer Migration Readiness GREEN. M2–M5 domain coverage remains open.
 
 Current next action: **M2 categories + product/category mapping, then M3 customers, M4 suppliers and M5 opening inventory without weakening the verified Product M1 pipeline**.
