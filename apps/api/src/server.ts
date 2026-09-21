@@ -460,6 +460,7 @@ function lazyRestaurantRecipeService(config: ApiConfig): MerchantRestaurantRecip
   return {
     detail: (principal, productId) => resolve().detail(principal, productId),
     set: (principal, productId, request) => resolve().set(principal, productId, request),
+    cost: (principal, branchId, productId) => resolve().cost(principal, branchId, productId),
   };
 }
 
