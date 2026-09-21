@@ -11,6 +11,9 @@ import type {
   AdminTenantSettings,
   AdminTerminal,
   CheckoutRequest,
+  CreateCsvProductMigrationJobRequest,
+  CreateXlsxProductMigrationJobRequest,
+  CsvProductMigrationSource,
   DashboardSummary,
   CheckoutResponse,
   InventoryBalancePage,
@@ -26,6 +29,9 @@ import type {
   InventoryTransferResult,
   OnboardingReadiness,
   Principal,
+  ProductMigrationInspection,
+  ProductMigrationRowPage,
+  ProductMigrationSummary,
   PurchaseOrder,
   PurchaseOrderCreateRequest,
   PurchaseOrderCreateResult,
@@ -50,6 +56,7 @@ import type {
   SupplierMutationResult,
   SupplierUpdateRequest,
   TerminalsResponse,
+  XlsxProductMigrationSource,
 } from './api-types';
 
 /**
@@ -80,6 +87,7 @@ import type {
 export const CHECKOUT_TIMEOUT_MS = 20_000;
 export const INVENTORY_COMMAND_TIMEOUT_MS = 20_000;
 export const PURCHASING_COMMAND_TIMEOUT_MS = 20_000;
+export const MIGRATION_COMMAND_TIMEOUT_MS = 120_000;
 const RESTAURANT_COMMAND_TIMEOUT_MS = 20_000;
 
 export type ApiFailureKind = 'network' | 'http';
@@ -149,6 +157,38 @@ export interface ApiClient {
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
 
   onboardingReadiness(options?: RequestOptions): Promise<OnboardingReadiness>;
+  inspectProductMigrationCsv(
+    input: CsvProductMigrationSource,
+    options?: RequestOptions,
+  ): Promise<ProductMigrationInspection>;
+  inspectProductMigrationXlsx(
+    input: XlsxProductMigrationSource,
+    options?: RequestOptions,
+  ): Promise<ProductMigrationInspection>;
+  createProductMigrationCsvJob(
+    request: CreateCsvProductMigrationJobRequest,
+  ): Promise<ProductMigrationSummary>;
+  createProductMigrationXlsxJob(
+    request: CreateXlsxProductMigrationJobRequest,
+  ): Promise<ProductMigrationSummary>;
+  productMigrationJob(
+    jobId: string,
+    options?: RequestOptions,
+  ): Promise<ProductMigrationSummary>;
+  productMigrationRows(
+    jobId: string,
+    query?: {
+      readonly limit?: number;
+      readonly afterSourceRow?: number | null;
+      readonly problemsOnly?: boolean;
+    },
+    options?: RequestOptions,
+  ): Promise<ProductMigrationRowPage>;
+  dryRunProductMigration(jobId: string): Promise<ProductMigrationSummary>;
+  commitProductMigration(
+    jobId: string,
+    operationId: string,
+  ): Promise<ProductMigrationSummary>;
   inventoryBranches(
     query?: { readonly limit?: number; readonly cursor?: string },
     options?: RequestOptions,
@@ -482,6 +522,81 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         { method: 'GET' },
         options,
       )) as OnboardingReadiness;
+    },
+
+    async inspectProductMigrationCsv(input, options) {
+      return (await call(
+        '/v1/admin/migrations/products/inspect-csv',
+        json(input),
+        options,
+      )) as ProductMigrationInspection;
+    },
+
+    async inspectProductMigrationXlsx(input, options) {
+      return (await call(
+        '/v1/admin/migrations/products/inspect-xlsx',
+        json(input),
+        options,
+      )) as ProductMigrationInspection;
+    },
+
+    async createProductMigrationCsvJob(request) {
+      return retryableCommand<ProductMigrationSummary>(
+        '/v1/admin/migrations/products/jobs',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async createProductMigrationXlsxJob(request) {
+      return retryableCommand<ProductMigrationSummary>(
+        '/v1/admin/migrations/products/jobs/xlsx',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async productMigrationJob(jobId, options) {
+      return (await call(
+        `/v1/admin/migrations/products/jobs/${encodeURIComponent(jobId)}`,
+        { method: 'GET' },
+        options,
+      )) as ProductMigrationSummary;
+    },
+
+    async productMigrationRows(jobId, query = {}, options) {
+      const search = new URLSearchParams();
+      if (query.limit !== undefined) search.set('limit', String(query.limit));
+      if (query.afterSourceRow !== undefined && query.afterSourceRow !== null) {
+        search.set('afterSourceRow', String(query.afterSourceRow));
+      }
+      if (query.problemsOnly !== undefined) {
+        search.set('problemsOnly', String(query.problemsOnly));
+      }
+      const suffix = search.toString();
+      return (await call(
+        `/v1/admin/migrations/products/jobs/${encodeURIComponent(jobId)}/rows${
+          suffix === '' ? '' : `?${suffix}`
+        }`,
+        { method: 'GET' },
+        options,
+      )) as ProductMigrationRowPage;
+    },
+
+    async dryRunProductMigration(jobId) {
+      return retryableCommand<ProductMigrationSummary>(
+        `/v1/admin/migrations/products/jobs/${encodeURIComponent(jobId)}/dry-run`,
+        {},
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async commitProductMigration(jobId, operationId) {
+      return retryableCommand<ProductMigrationSummary>(
+        `/v1/admin/migrations/products/jobs/${encodeURIComponent(jobId)}/commit`,
+        { operationId },
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
     },
 
     async inventoryBranches(query = {}, options) {
