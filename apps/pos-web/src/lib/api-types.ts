@@ -188,6 +188,7 @@ export type ProductMigrationTargetField =
   | 'barcode'
   | 'nameAr'
   | 'nameEn'
+  | 'categoryNameAr'
   | 'productType'
   | 'unitLabel'
   | 'sellingPrice'
