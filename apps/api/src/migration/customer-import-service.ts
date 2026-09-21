@@ -30,11 +30,11 @@ import type {
 } from '@korvi/database';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 
-export const MAX_PRODUCT_IMPORT_BYTES = 5 * 1024 * 1024;
-export const MAX_PRODUCT_IMPORT_DATA_ROWS = 50_000;
-export const MAX_PRODUCT_IMPORT_PREVIEW_ROWS = 20;
+export const MAX_CUSTOMER_IMPORT_BYTES = 5 * 1024 * 1024;
+export const MAX_CUSTOMER_IMPORT_DATA_ROWS = 50_000;
+export const MAX_CUSTOMER_IMPORT_PREVIEW_ROWS = 20;
 
-export type CustomerCustomerCsvDelimiter = ',' | ';' | '\t';
+export type CustomerCsvDelimiter = ',' | ';' | '\t';
 
 export type CustomerMigrationFailureReason =
   CustomerImportRefusal | 'file-too-large' | 'invalid-csv' | 'invalid-xlsx' | 'empty-file';
@@ -133,13 +133,13 @@ function parseSource(input: CsvCustomerSourceInput): CustomerMigrationResult<{
   readonly bytes: number;
 }> {
   const bytes = Buffer.byteLength(input.csvText, 'utf8');
-  if (bytes > MAX_PRODUCT_IMPORT_BYTES) {
+  if (bytes > MAX_CUSTOMER_IMPORT_BYTES) {
     return { outcome: 'failure', reason: 'file-too-large' };
   }
   try {
     const document = parseCsvDocument(input.csvText, {
       delimiter: input.delimiter,
-      maxRows: MAX_PRODUCT_IMPORT_DATA_ROWS + 1,
+      maxRows: MAX_CUSTOMER_IMPORT_DATA_ROWS + 1,
       maxColumns: 200,
       maxCellCharacters: 20_000,
       fileName: input.fileName,
@@ -178,14 +178,14 @@ function parseXlsxSource(input: XlsxCustomerSourceInput): CustomerMigrationResul
 }> {
   const decoded = decodeBase64Strict(input.xlsxBase64);
   if (decoded === null) return { outcome: 'failure', reason: 'invalid-xlsx' };
-  if (decoded.length > MAX_PRODUCT_IMPORT_BYTES) {
+  if (decoded.length > MAX_CUSTOMER_IMPORT_BYTES) {
     return { outcome: 'failure', reason: 'file-too-large' };
   }
   try {
     const document = parseXlsxDocument(decoded, {
       fileName: input.fileName,
       sourceSystem: input.sourceSystem,
-      maxRows: MAX_PRODUCT_IMPORT_DATA_ROWS + 1,
+      maxRows: MAX_CUSTOMER_IMPORT_DATA_ROWS + 1,
       maxColumns: 200,
       maxCellCharacters: 20_000,
       maxUncompressedBytes: 40 * 1024 * 1024,
@@ -243,7 +243,7 @@ export function createMerchantCustomerMigrationService(
           header,
           mappingIssues: validateCustomerMappings(sheet.rows[0]!, suggestedMapping),
           previewRows: sheet.rows
-            .slice(1, MAX_PRODUCT_IMPORT_PREVIEW_ROWS + 1)
+            .slice(1, MAX_CUSTOMER_IMPORT_PREVIEW_ROWS + 1)
             .map((cells, index) => ({
               sourceRow: sheet.sourceRowNumbers?.[index + 1] ?? index + 2,
               cells,
@@ -293,7 +293,7 @@ export function createMerchantCustomerMigrationService(
           header,
           mappingIssues: validateCustomerMappings(sheet.rows[0]!, suggestedMapping),
           previewRows: sheet.rows
-            .slice(1, MAX_PRODUCT_IMPORT_PREVIEW_ROWS + 1)
+            .slice(1, MAX_CUSTOMER_IMPORT_PREVIEW_ROWS + 1)
             .map((cells, index) => ({
               sourceRow: sheet.sourceRowNumbers?.[index + 1] ?? index + 2,
               cells,
