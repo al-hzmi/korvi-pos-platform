@@ -265,6 +265,41 @@ export function categoryMigrationProblemsCsv(rows: readonly CategoryMigrationRow
   return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
 
+export function customerMigrationProblemsCsv(rows: readonly CustomerMigrationRowResult[]): string {
+  const header = ['ROW', 'SOURCE IDENTIFIER', 'FIELD', 'ERROR', 'REASON'];
+  const lines = [header.map(csvCell).join(',')];
+  for (const row of rows) {
+    if (row.issues.length === 0 && row.errorCode === null) continue;
+    if (row.issues.length === 0) {
+      lines.push(
+        [String(row.sourceRow), row.sourceIdentifier ?? '', '', row.errorCode ?? '', row.errorCode ?? '']
+          .map(csvCell)
+          .join(','),
+      );
+      continue;
+    }
+    for (const issue of row.issues) {
+      lines.push(
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          issue.targetField ?? '',
+          issue.code,
+          issue.message,
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+    }
+  }
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
+}
+
+export const CUSTOMER_MIGRATION_TEMPLATE_CSV =
+  '\uFEFFاسم العميل,الاسم الانجليزي,رقم الجوال,البريد الإلكتروني,الرقم الضريبي\r\n' +
+  'مؤسسة ميم,Meem Trading,0501234567,sales@example.test,310000000000003\r\n' +
+  'عميل نقدي,,0551234567,,\r\n';
+
 export const CATEGORY_MIGRATION_TEMPLATE_CSV =
   '\uFEFFاسم الفئة,الاسم الانجليزي,الترتيب\r\n' +
   'مشروبات ساخنة,Hot Drinks,10\r\n' +
