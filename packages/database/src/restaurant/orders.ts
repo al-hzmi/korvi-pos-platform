@@ -3,6 +3,7 @@ import { newId } from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
+import { preparationReplacementPreservesFiredLines } from './preparation-policy.js';
 import type { TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
@@ -900,11 +901,18 @@ export async function replaceRestaurantOrderLines(
       throw new RestaurantOrderRefusedError('stale-revision');
     }
 
-    const preparationStarted = await tx.restaurantPreparationTask.findFirst({
+    const preparationTasks = await tx.restaurantPreparationTask.findMany({
       where: { tenantId: tenant, branchId: actor.branchId, orderId },
-      select: { id: true },
+      select: { orderLineId: true },
     });
-    if (preparationStarted !== null) {
+    const firedLineIds = new Set(preparationTasks.map((task) => task.orderLineId));
+    if (
+      !preparationReplacementPreservesFiredLines(
+        existing.lines,
+        firedLineIds,
+        normalizedLines,
+      )
+    ) {
       throw new RestaurantOrderRefusedError('preparation-started');
     }
 

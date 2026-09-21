@@ -3,6 +3,10 @@ import { newId } from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
+import {
+  pendingPreparationLines,
+  pendingUnroutedPreparationLines,
+} from './preparation-policy.js';
 import type { TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
@@ -760,24 +764,66 @@ export async function fireRestaurantOrderForPreparation(
     if (plan.revision !== request.expectedOrderRevision) {
       throw new RestaurantPreparationRefusedError('stale-order');
     }
-    if (plan.unroutedLines.length > 0) {
+    const existing = await tx.restaurantPreparationTask.findMany({
+      where: { tenantId: tenant, branchId, orderId },
+      select: TASK_SELECT,
+      orderBy: [
+        { queuedAt: 'asc' },
+        { orderRevision: 'asc' },
+        { stationId: 'asc' },
+        { lineNumber: 'asc' },
+        { id: 'asc' },
+      ],
+    });
+    const firedLineIds = new Set(existing.map((task) => task.orderLineId));
+    const pendingUnrouted = pendingUnroutedPreparationLines(
+      plan.unroutedLines,
+      firedLineIds,
+    );
+    if (pendingUnrouted.length > 0) {
       throw new RestaurantPreparationRefusedError('unrouted-lines');
     }
 
     const revision = BigInt(plan.revision);
-    const existing = await tx.restaurantPreparationTask.findMany({
-      where: { tenantId: tenant, branchId, orderId, orderRevision: revision },
-      select: TASK_SELECT,
-      orderBy: [{ stationId: 'asc' }, { lineNumber: 'asc' }, { id: 'asc' }],
-    });
-    if (existing.length > 0) {
+    const pendingLineIds = new Set(
+      pendingPreparationLines(plan.groups, firedLineIds).map((line) => line.lineId),
+    );
+    const at = clock();
+    const rows = plan.groups.flatMap((group) =>
+      group.lines
+        .filter((line) => pendingLineIds.has(line.lineId))
+        .map((line) => ({
+          id: nextId(),
+          tenantId: tenant,
+          branchId,
+          stationId: group.station.id,
+          orderId,
+          orderLineId: line.lineId,
+          productId: line.productId,
+          orderRevision: revision,
+          lineNumber: line.lineNumber,
+          sku: line.sku,
+          nameAr: line.nameAr,
+          quantityScaled: BigInt(line.quantityScaled),
+          preparationNote: line.preparationNote,
+          preparationOptions: line.preparationOptions,
+          status: 'queued',
+          revision: 1n,
+          queuedAt: at,
+          startedAt: null,
+          readyAt: null,
+          servedAt: null,
+          createdAt: at,
+          updatedAt: at,
+        })),
+    );
+    if (rows.length === 0) {
       const result: PreparationFireResult = {
         orderId,
         orderRevision: plan.revision,
         alreadyFired: true,
         tasks: existing.map(asTask),
       };
-      const at = clock();
       await complete(
         tx,
         tenant,
@@ -790,38 +836,7 @@ export async function fireRestaurantOrderForPreparation(
       );
       return { value: result, replayed: false };
     }
-
-    const at = clock();
-    const rows = plan.groups.flatMap((group) =>
-      group.lines.map((line) => ({
-        id: nextId(),
-        tenantId: tenant,
-        branchId,
-        stationId: group.station.id,
-        orderId,
-        orderLineId: line.lineId,
-        productId: line.productId,
-        orderRevision: revision,
-        lineNumber: line.lineNumber,
-        sku: line.sku,
-        nameAr: line.nameAr,
-        quantityScaled: BigInt(line.quantityScaled),
-        preparationNote: line.preparationNote,
-        preparationOptions: line.preparationOptions,
-        status: 'queued',
-        revision: 1n,
-        queuedAt: at,
-        startedAt: null,
-        readyAt: null,
-        servedAt: null,
-        createdAt: at,
-        updatedAt: at,
-      })),
-    );
-    if (rows.length === 0) {
-      throw new RestaurantPreparationRefusedError('unrouted-lines');
-    }
-    await tx.restaurantPreparationTask.createMany({ data: rows });
+    await tx.restaurantPreparationTask.createMany({ data: rows, skipDuplicates: true });
 
     const created = await tx.restaurantPreparationTask.findMany({
       where: { tenantId: tenant, branchId, orderId, orderRevision: revision },
@@ -846,6 +861,8 @@ export async function fireRestaurantOrderForPreparation(
         orderRevision: plan.revision,
         taskCount: created.length,
         stationCount: new Set(created.map((task) => task.stationId)).size,
+        deltaLineCount: new Set(created.map((task) => task.orderLineId)).size,
+        previouslyFiredLineCount: firedLineIds.size,
       },
       at,
       nextId,
