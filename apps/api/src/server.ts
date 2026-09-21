@@ -26,6 +26,7 @@ import { createCheckoutService } from './checkout/service.js';
 import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
+import { createMerchantCategoryMigrationService } from './migration/category-import-service.js';
 import { createMerchantProductMigrationService } from './migration/product-import-service.js';
 import { createPlatformAuth } from './platform/auth.js';
 import { registerPlatformDeviceRoutes } from './platform/device-routes.js';
@@ -45,6 +46,7 @@ import { registerCustomerRoutes } from './routes/customers.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
+import { registerCategoryMigrationRoutes } from './routes/category-migration.js';
 import { registerProductMigrationRoutes } from './routes/product-migration.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
@@ -63,6 +65,7 @@ import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantCustomerService } from './customers/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
+import type { MerchantCategoryMigrationService } from './migration/category-import-service.js';
 import type { MerchantProductMigrationService } from './migration/product-import-service.js';
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
@@ -110,6 +113,8 @@ export interface ServerDeps {
   readonly onboarding?: MerchantOnboardingService;
   /** P0 customer-migration orchestration; tenant identity is session-derived. */
   readonly productMigration?: MerchantProductMigrationService;
+  /** Category M2 migration orchestration; uses the same tenant-scoped migration ledger. */
+  readonly categoryMigration?: MerchantCategoryMigrationService;
   /** Operational restaurant open-order authority; non-fiscal until checkout. */
   readonly restaurantOrders?: MerchantRestaurantOrderService;
   /** Merchant customer directory and mutation authority. */
@@ -396,6 +401,27 @@ function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   return { readReadiness: (principal) => resolve().readReadiness(principal) };
 }
 
+function lazyCategoryMigrationService(config: ApiConfig): MerchantCategoryMigrationService {
+  let built: MerchantCategoryMigrationService | null = null;
+  const resolve = (): MerchantCategoryMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantCategoryMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
 function lazyProductMigrationService(config: ApiConfig): MerchantProductMigrationService {
   let built: MerchantProductMigrationService | null = null;
   const resolve = (): MerchantProductMigrationService => {
@@ -615,6 +641,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerProductMigrationRoutes(app, {
     service: deps.productMigration ?? lazyProductMigrationService(config),
+    guards,
+  });
+  registerCategoryMigrationRoutes(app, {
+    service: deps.categoryMigration ?? lazyCategoryMigrationService(config),
     guards,
   });
   registerCustomerRoutes(app, {
