@@ -37,14 +37,20 @@ function principal(permissions: AuthenticatedPrincipal['permissions']): Authenti
 
 function auth(subject: AuthenticatedPrincipal): AuthService {
   return {
-    async login() { return { outcome: 'failure', reason: 'bad-password' }; },
+    async login() {
+      return { outcome: 'failure', reason: 'bad-password' };
+    },
     async authenticate(token) {
       return token === 'category-migration-test-token'
         ? { outcome: 'success', principal: subject }
         : { outcome: 'failure', reason: 'malformed-token' };
     },
-    async logout() { return true; },
-    async logoutAll() { return 1; },
+    async logout() {
+      return true;
+    },
+    async logoutAll() {
+      return 1;
+    },
   };
 }
 

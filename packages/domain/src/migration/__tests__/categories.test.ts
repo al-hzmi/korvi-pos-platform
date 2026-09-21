@@ -42,9 +42,7 @@ describe('category migration canonical review', () => {
   });
 
   it('blocks formulas and rejects duplicate category names row-by-row', () => {
-    const sheet = parseCsvDocument(
-      'اسم الفئة,الترتيب\nمشروبات,1\nمشروبات,2\n=1+1,3',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('اسم الفئة,الترتيب\nمشروبات,1\nمشروبات,2\n=1+1,3').sheets[0]!;
     const mapping = suggestCategoryMappings(sheet.rows[0]!).map((entry) => ({
       sourceColumn: entry.sourceColumn,
       targetField: entry.targetField,
@@ -60,15 +58,15 @@ describe('category migration canonical review', () => {
   });
 
   it('rejects missing required mapping and ambiguous duplicate mappings', () => {
-    const sheet = parseCsvDocument(
-      'اسم الفئة,Category Name,الترتيب\nمشروبات,Drinks,1',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('اسم الفئة,Category Name,الترتيب\nمشروبات,Drinks,1').sheets[0]!;
     const suggestions = suggestCategoryMappings(sheet.rows[0]!);
-    expect(validateCategoryMappings(sheet.rows[0]!, [
-      { sourceColumn: 0, targetField: 'nameAr' },
-      { sourceColumn: 1, targetField: 'nameAr' },
-      { sourceColumn: 2, targetField: 'sortOrder' },
-    ])).toEqual(
+    expect(
+      validateCategoryMappings(sheet.rows[0]!, [
+        { sourceColumn: 0, targetField: 'nameAr' },
+        { sourceColumn: 1, targetField: 'nameAr' },
+        { sourceColumn: 2, targetField: 'sortOrder' },
+      ]),
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           classification: 'BLOCKED',
@@ -78,10 +76,12 @@ describe('category migration canonical review', () => {
       ]),
     );
 
-    expect(validateCategoryMappings(sheet.rows[0]!, [
-      { sourceColumn: 0, targetField: null },
-      { sourceColumn: 2, targetField: 'sortOrder' },
-    ])).toEqual(
+    expect(
+      validateCategoryMappings(sheet.rows[0]!, [
+        { sourceColumn: 0, targetField: null },
+        { sourceColumn: 2, targetField: 'sortOrder' },
+      ]),
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           classification: 'BLOCKED',
@@ -93,9 +93,8 @@ describe('category migration canonical review', () => {
   });
 
   it('rejects control characters and unsafe sort orders rather than repairing them', () => {
-    const sheet = parseCsvDocument(
-      'اسم الفئة,الترتيب\n"قهوة\nساخنة",1\nمخبوزات,1000001',
-    ).sheets[0]!;
+    const sheet = parseCsvDocument('اسم الفئة,الترتيب\n"قهوة\nساخنة",1\nمخبوزات,1000001')
+      .sheets[0]!;
     const mapping = suggestCategoryMappings(sheet.rows[0]!).map((entry) => ({
       sourceColumn: entry.sourceColumn,
       targetField: entry.targetField,

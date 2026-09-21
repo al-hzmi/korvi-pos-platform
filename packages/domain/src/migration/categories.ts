@@ -9,12 +9,7 @@ import {
   normalizeHeaderKey,
 } from './normalization.js';
 import { classifyImportIssues } from './model.js';
-import type {
-  ImportCell,
-  ImportIssue,
-  ImportRowReview,
-  ImportSheet,
-} from './model.js';
+import type { ImportCell, ImportIssue, ImportRowReview, ImportSheet } from './model.js';
 
 export type CategoryImportField = 'nameAr' | 'nameEn' | 'sortOrder';
 

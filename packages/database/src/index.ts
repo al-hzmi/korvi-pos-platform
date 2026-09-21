@@ -274,7 +274,6 @@ export type {
   ProductImportRowPage,
 } from './migration/product-import.js';
 
-
 // Customer Migration Engine — Category M2 orchestration. Uses the same
 // tenant-scoped migration job/row ledger as Product M1 and commits only through
 // the established category bootstrap authority.

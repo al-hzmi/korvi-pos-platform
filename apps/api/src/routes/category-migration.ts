@@ -26,12 +26,16 @@ const XLSX_SOURCE = z
     sourceSystem: z.string().trim().min(1).max(120).nullable().optional().default(null),
   })
   .strict();
-const MAPPING = z.array(
-  z.object({
-    sourceColumn: z.number().int().min(0).max(199),
-    targetField: TARGET_FIELD.nullable(),
-  }).strict(),
-).max(200);
+const MAPPING = z
+  .array(
+    z
+      .object({
+        sourceColumn: z.number().int().min(0).max(199),
+        targetField: TARGET_FIELD.nullable(),
+      })
+      .strict(),
+  )
+  .max(200);
 const CREATE_JOB = SOURCE.extend({ operationId: UUID, mapping: MAPPING }).strict();
 const CREATE_XLSX_JOB = XLSX_SOURCE.extend({ operationId: UUID, mapping: MAPPING }).strict();
 const JOB_PARAMS = z.object({ jobId: UUID }).strict();
@@ -80,108 +84,144 @@ export function registerCategoryMigrationRoutes(
   const { service, guards } = options;
   const manage = [guards.requireSession, guards.requirePermission('settings.manage')];
 
-  app.post('/v1/admin/migrations/categories/inspect-csv', {
-    preHandler: manage,
-    bodyLimit: 8 * 1024 * 1024,
-  }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const body = SOURCE.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
-    return respond(reply, await service.inspectCsv(principal, body.data));
-  });
+  app.post(
+    '/v1/admin/migrations/categories/inspect-csv',
+    {
+      preHandler: manage,
+      bodyLimit: 8 * 1024 * 1024,
+    },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const body = SOURCE.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.inspectCsv(principal, body.data));
+    },
+  );
 
-  app.post('/v1/admin/migrations/categories/inspect-xlsx', {
-    preHandler: manage,
-    bodyLimit: 8 * 1024 * 1024,
-  }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const body = XLSX_SOURCE.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
-    return respond(reply, await service.inspectXlsx(principal, body.data));
-  });
+  app.post(
+    '/v1/admin/migrations/categories/inspect-xlsx',
+    {
+      preHandler: manage,
+      bodyLimit: 8 * 1024 * 1024,
+    },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const body = XLSX_SOURCE.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.inspectXlsx(principal, body.data));
+    },
+  );
 
-  app.post('/v1/admin/migrations/categories/jobs', {
-    preHandler: manage,
-    bodyLimit: 8 * 1024 * 1024,
-  }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const body = CREATE_JOB.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
-    return respond(reply, await service.createCsvJob(principal, body.data), 201);
-  });
+  app.post(
+    '/v1/admin/migrations/categories/jobs',
+    {
+      preHandler: manage,
+      bodyLimit: 8 * 1024 * 1024,
+    },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const body = CREATE_JOB.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.createCsvJob(principal, body.data), 201);
+    },
+  );
 
-  app.post('/v1/admin/migrations/categories/jobs/xlsx', {
-    preHandler: manage,
-    bodyLimit: 8 * 1024 * 1024,
-  }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const body = CREATE_XLSX_JOB.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
-    return respond(reply, await service.createXlsxJob(principal, body.data), 201);
-  });
+  app.post(
+    '/v1/admin/migrations/categories/jobs/xlsx',
+    {
+      preHandler: manage,
+      bodyLimit: 8 * 1024 * 1024,
+    },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const body = CREATE_XLSX_JOB.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(reply, await service.createXlsxJob(principal, body.data), 201);
+    },
+  );
 
-  app.get('/v1/admin/migrations/categories/jobs/:jobId', { preHandler: manage }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const params = JOB_PARAMS.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
-    const result = await service.readJob(principal, params.data.jobId);
-    if (result.outcome === 'success' && result.value === null) {
-      return reply.code(404).send({ error: 'unknown_job' });
-    }
-    return respond(reply, result);
-  });
+  app.get(
+    '/v1/admin/migrations/categories/jobs/:jobId',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = JOB_PARAMS.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      const result = await service.readJob(principal, params.data.jobId);
+      if (result.outcome === 'success' && result.value === null) {
+        return reply.code(404).send({ error: 'unknown_job' });
+      }
+      return respond(reply, result);
+    },
+  );
 
-  app.get('/v1/admin/migrations/categories/jobs/:jobId/rows', { preHandler: manage }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const params = JOB_PARAMS.safeParse(request.params);
-    const query = ROW_QUERY.safeParse(request.query);
-    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_query' });
-    const result = await service.rows(principal, params.data.jobId, {
-      limit: query.data.limit,
-      afterSourceRow: query.data.afterSourceRow,
-      problemsOnly: query.data.problemsOnly === 'true',
-    });
-    if (result.outcome === 'success' && result.value === null) {
-      return reply.code(404).send({ error: 'unknown_job' });
-    }
-    return respond(reply, result);
-  });
+  app.get(
+    '/v1/admin/migrations/categories/jobs/:jobId/rows',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = JOB_PARAMS.safeParse(request.params);
+      const query = ROW_QUERY.safeParse(request.query);
+      if (!params.success || !query.success)
+        return reply.code(400).send({ error: 'invalid_query' });
+      const result = await service.rows(principal, params.data.jobId, {
+        limit: query.data.limit,
+        afterSourceRow: query.data.afterSourceRow,
+        problemsOnly: query.data.problemsOnly === 'true',
+      });
+      if (result.outcome === 'success' && result.value === null) {
+        return reply.code(404).send({ error: 'unknown_job' });
+      }
+      return respond(reply, result);
+    },
+  );
 
-  app.post('/v1/admin/migrations/categories/jobs/:jobId/dry-run', { preHandler: manage }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const params = JOB_PARAMS.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
-    if (
-      request.body !== undefined &&
-      request.body !== null &&
-      (typeof request.body !== 'object' ||
-        Array.isArray(request.body) ||
-        Object.keys(request.body as object).length !== 0)
-    ) {
-      return reply.code(400).send({ error: 'invalid_body' });
-    }
-    return respond(reply, await service.dryRun(principal, params.data.jobId));
-  });
+  app.post(
+    '/v1/admin/migrations/categories/jobs/:jobId/dry-run',
+    { preHandler: manage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = JOB_PARAMS.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      if (
+        request.body !== undefined &&
+        request.body !== null &&
+        (typeof request.body !== 'object' ||
+          Array.isArray(request.body) ||
+          Object.keys(request.body as object).length !== 0)
+      ) {
+        return reply.code(400).send({ error: 'invalid_body' });
+      }
+      return respond(reply, await service.dryRun(principal, params.data.jobId));
+    },
+  );
 
-  app.post('/v1/admin/migrations/categories/jobs/:jobId/commit', {
-    preHandler: [
-      guards.requireSession,
-      guards.requirePermission('settings.manage'),
-      guards.requirePermission('product.write'),
-    ],
-  }, async (request, reply) => {
-    const principal = principalOf(request);
-    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-    const params = JOB_PARAMS.safeParse(request.params);
-    const body = COMMIT.safeParse(request.body);
-    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
-    return respond(reply, await service.commit(principal, params.data.jobId, body.data.operationId));
-  });
+  app.post(
+    '/v1/admin/migrations/categories/jobs/:jobId/commit',
+    {
+      preHandler: [
+        guards.requireSession,
+        guards.requirePermission('settings.manage'),
+        guards.requirePermission('product.write'),
+      ],
+    },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = JOB_PARAMS.safeParse(request.params);
+      const body = COMMIT.safeParse(request.body);
+      if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
+      return respond(
+        reply,
+        await service.commit(principal, params.data.jobId, body.data.operationId),
+      );
+    },
+  );
 }

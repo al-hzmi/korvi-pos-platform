@@ -197,11 +197,7 @@ function conflictIssue(sourceRow: number): ImportIssue {
   };
 }
 
-function commitIssue(
-  sourceRow: number,
-  code: string,
-  message: string,
-): ImportIssue {
+function commitIssue(sourceRow: number, code: string, message: string): ImportIssue {
   return {
     classification: 'ERROR',
     code,

@@ -37,11 +37,7 @@ export const MAX_CATEGORY_IMPORT_PREVIEW_ROWS = 20;
 export type CategoryCsvDelimiter = ',' | ';' | '\t';
 
 export type CategoryMigrationFailureReason =
-  | CategoryImportRefusal
-  | 'file-too-large'
-  | 'invalid-csv'
-  | 'invalid-xlsx'
-  | 'empty-file';
+  CategoryImportRefusal | 'file-too-large' | 'invalid-csv' | 'invalid-xlsx' | 'empty-file';
 
 export type CategoryMigrationResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
