@@ -44,9 +44,13 @@ export const CATEGORY_MIGRATION_FIELD_LABELS: Readonly<
   sortOrder: 'ترتيب العرض',
 };
 
-export const CUSTOMER_MIGRATION_REQUIRED_FIELDS: readonly CustomerMigrationTargetField[] = ['nameAr'];
+export const CUSTOMER_MIGRATION_REQUIRED_FIELDS: readonly CustomerMigrationTargetField[] = [
+  'nameAr',
+];
 
-export const CUSTOMER_MIGRATION_FIELD_LABELS: Readonly<Record<CustomerMigrationTargetField, string>> = {
+export const CUSTOMER_MIGRATION_FIELD_LABELS: Readonly<
+  Record<CustomerMigrationTargetField, string>
+> = {
   nameAr: 'اسم العميل بالعربية',
   nameEn: 'اسم العميل بالإنجليزية',
   phone: 'رقم الجوال',
@@ -272,7 +276,13 @@ export function customerMigrationProblemsCsv(rows: readonly CustomerMigrationRow
     if (row.issues.length === 0 && row.errorCode === null) continue;
     if (row.issues.length === 0) {
       lines.push(
-        [String(row.sourceRow), row.sourceIdentifier ?? '', '', row.errorCode ?? '', row.errorCode ?? '']
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          '',
+          row.errorCode ?? '',
+          row.errorCode ?? '',
+        ]
           .map(csvCell)
           .join(','),
       );
