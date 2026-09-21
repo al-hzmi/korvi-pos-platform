@@ -148,6 +148,7 @@ function Section({
         <MigrationPanel
           api={api}
           canCommit={hasPermission(principal, 'product.write')}
+          canCustomerCommit={hasPermission(principal, 'customer.write')}
           onCommandLockChange={onCommandLockChange}
         />
       );
