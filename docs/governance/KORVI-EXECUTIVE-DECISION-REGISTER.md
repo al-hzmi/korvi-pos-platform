@@ -319,6 +319,20 @@ Source promotion:
 - fiscal boundary: waste is operational inventory truth only; it creates no sale, tender, VAT invoice, fiscal QR, ICV or PIH;
 - remaining gap / exact next action: **split/merge restaurant order/bill authority and split-payment workflow**, then course sequencing / safe post-fire delta semantics.
 
+
+### Verified follow-on checkpoint — Cashier split / mixed tender workflow
+
+- branch: `product/post-v1-restaurant-split-payment`;
+- implementation/proof SHA: `d70c04cddc1e37ca6e19cd1326baae37f5b56d53`;
+- capability: cashier-facing cash + multiple electronic tender composition, durable offline preservation and exact retry/replay into Korvi's existing checkout settlement authority;
+- status: **VERIFIED split/mixed-tender client workflow / Restaurant Phase 2 IN PROGRESS**;
+- standard CI evidence: `35754600795` GREEN through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests; 194 test files / 2,370 tests passed, 26 files / 381 live-only tests skipped by the standard profile;
+- financial authority: browser arithmetic is UX preview only and remains bigint/minor-unit based; server/domain checkout independently prices and validates tender composition, forbids electronic change, attributes change to cash only and remains the sole sale/invoice/fiscal authority;
+- security boundary: electronic entries contain scheme, amount and external approval reference only; PAN/CVV/cardholder data is explicitly outside Korvi business data;
+- continuity: the immutable tender list is carried through checkout flight, IndexedDB/offline queue and sync replay, so an outage cannot silently turn a mixed payment into cash-only or mint a different intent;
+- scope truth: this closes the **split-payment workflow**, not operational restaurant bill splitting or merging;
+- remaining gap / exact next action: **restaurant bill/order split + merge authority**, then course sequencing / safe post-fire delta semantics.
+
 ---
 
 ## Register maintenance rule

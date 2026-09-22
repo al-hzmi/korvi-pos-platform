@@ -129,7 +129,7 @@ Important: a row may carry `I/T` while still being incomplete as a sellable work
 | Tables/zones/order ownership | B1 | C1 | IMPLEMENTED / VERIFIED through floor authority, open orders, hold/resume, revision-safe line edits and table transfer; `997a17e7` CI `35478694436` | Restaurant | Operational, UX |
 | Open-order cancellation | B1 | C1 | IMPLEMENTED / VERIFIED; `sale.void` server authority, explicit reason, idempotency/revision protection and audit, POS command surface on `997a17e7` | Restaurant | Security, Audit, UX |
 | Courses/notes | B1 | C1 | ADOPTED / PARTIAL; preparation notes exist, course/firing lifecycle remains open | Restaurant | UX |
-| Split/merge bills/orders | B1 | C0/C1 | ADOPTED; must be architected against transaction authority before implementation claim | Restaurant/Transaction | Financial, Data Integrity |
+| Split/merge bills/orders | B1 | C0/C1 | ADOPTED / IN PROGRESS; split/mixed tender cashier workflow is verified, but operational bill/order split + merge authority remains open and must stay revision-bound/idempotent against the existing atomic checkout settlement authority | Restaurant/Transaction | Financial, Data Integrity |
 | Kitchen routing/KDS | B1 | C1 | KDS CORE IMPLEMENTED / VERIFIED; latest green lineage `product/post-v1-restaurant-foundation@5ff6a633` with CI `35616882259` (192 test files / 2,329 tests passed). Branch-scoped Preparation Stations, deterministic product→station routing, idempotent revision-bound fire, queued→preparing→ready→served lifecycle with timing/revision/audit, dedicated KDS UI, explicit POS «إرسال للمطبخ», retry-safe firing and server-side post-fire lock are present. Preparation payloads remain structurally non-fiscal. Advanced course sequencing and safe delta/re-fire semantics remain open. | Restaurant/KDS | Operational, Offline |
 | Waiter/server application | B1 | C1 | ADOPTED; not yet claimed implemented | Restaurant/Client | UX, Offline |
 | Customer/order-status display | B1/B2 | C2 | ADOPTED; not yet claimed | Restaurant/Display | UX |
@@ -144,8 +144,8 @@ Important: a row may carry `I/T` while still being incomplete as a sellable work
 | Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
 |---|---:|---:|---|---|---|
 | PSP/payment adapters | B1 | C0 | A; tender domain exists, direct provider adapters not yet claimed | Integrations/Payments | Security, Financial |
-| Electronic tender UX | B0/B1 | C0/C1 | A; backend tender foundation stronger than current cashier UX | POS/Payments | Financial, UX |
-| Split/mixed tender UX | B1 | C0 | A; domain support exists, full cashier product proof pending | POS/Payments | Financial, UX |
+| Electronic tender UX | B0/B1 | C0/C1 | IMPLEMENTED / VERIFIED on `product/post-v1-restaurant-split-payment@d70c04cd`; cashier can compose bounded electronic tenders while server/domain checkout remains financial authority; CI `35754600795` GREEN | POS/Payments | Financial, UX |
+| Split/mixed tender UX | B1 | C0 | IMPLEMENTED / VERIFIED on `product/post-v1-restaurant-split-payment@d70c04cd`; cash + multiple electronic tenders use integer minor units, approval-reference-only evidence, exact offline intent persistence/replay and server-owned settlement/change; CI `35754600795` GREEN (194 files / 2,370 tests) | POS/Payments | Financial, UX |
 | Ecommerce adapters | B1 | C1 | A; not yet claimed | Integrations | Idempotency, Operations |
 | Delivery-platform adapters | B1 | C1 | A; not yet claimed | Integrations | Idempotency, Operations |
 | Salla/Zid-style integration seams | B1/B2 | C1 | A; not yet claimed | Integrations | Security, Idempotency |
