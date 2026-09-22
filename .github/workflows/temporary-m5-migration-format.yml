@@ -1,0 +1,51 @@
+name: Temporary M5 Migration Format
+
+on:
+  push:
+    branches:
+      - product/post-v1-migration-engine
+    paths:
+      - .github/workflows/temporary-m5-migration-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: product/post-v1-migration-engine
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format migration M5 files only
+        run: |
+          npx --no-install prettier --write             apps/api/src/migration/opening-inventory-import-service.ts             apps/api/src/routes/opening-inventory-migration.ts             packages/database/src/migration/opening-inventory.ts             packages/domain/src/migration/opening-inventory.ts             packages/domain/src/migration/__tests__/opening-inventory.test.ts
+          git diff --check
+
+      - name: Commit mechanical formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No formatting changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add             apps/api/src/migration/opening-inventory-import-service.ts             apps/api/src/routes/opening-inventory-migration.ts             packages/database/src/migration/opening-inventory.ts             packages/domain/src/migration/opening-inventory.ts             packages/domain/src/migration/__tests__/opening-inventory.test.ts
+          git commit -m "style(migration): format M5 opening inventory slice"
+          git push origin HEAD:product/post-v1-migration-engine
