@@ -1,7 +1,4 @@
-import {
-  RestaurantWasteRefusedError,
-  recordRestaurantWaste,
-} from '@korvi/database';
+import { RestaurantWasteRefusedError, recordRestaurantWaste } from '@korvi/database';
 import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
 import type {
   PrismaClient,
@@ -45,12 +42,7 @@ export function createMerchantRestaurantWasteService(
       requirePrincipalPermission(principal, 'product.read');
       requirePrincipalPermission(principal, 'inventory.adjust');
       return attempt(() =>
-        recordRestaurantWaste(
-          prisma,
-          scopeOf(principal),
-          { userId: principal.userId },
-          request,
-        ),
+        recordRestaurantWaste(prisma, scopeOf(principal), { userId: principal.userId }, request),
       );
     },
   };

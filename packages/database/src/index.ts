@@ -290,10 +290,7 @@ export type {
   RestaurantRecipeProductionResult,
 } from './restaurant/production.js';
 
-export {
-  RestaurantWasteRefusedError,
-  recordRestaurantWaste,
-} from './restaurant/waste.js';
+export { RestaurantWasteRefusedError, recordRestaurantWaste } from './restaurant/waste.js';
 export type {
   RestaurantWasteReason,
   RestaurantWasteRefusal,

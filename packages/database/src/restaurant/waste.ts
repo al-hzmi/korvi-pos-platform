@@ -108,7 +108,9 @@ function normalizeNote(note: string | null): string | null {
   return value;
 }
 
-function validateLines(lines: readonly RestaurantWasteLineRequest[]): readonly ValidatedWasteLine[] {
+function validateLines(
+  lines: readonly RestaurantWasteLineRequest[],
+): readonly ValidatedWasteLine[] {
   if (lines.length === 0 || lines.length > MAX_LINES) {
     throw new RestaurantWasteRefusedError('invalid-lines');
   }
