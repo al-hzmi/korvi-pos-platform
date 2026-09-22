@@ -15,6 +15,7 @@ on:
       - package-lock.json
       - scripts/zatca-39-native-subset-c14n.c
       - .github/workflows/zatca-39-sealing-cryptographic-proof.yml
+      - docs/acquisition/ZATCA-PRODUCTION-ACTIVATION.md
   workflow_dispatch:
 
 concurrency:
