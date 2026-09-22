@@ -8,6 +8,7 @@ import {
 import {
   CustomerAdminRefusedError,
   createMerchantCustomerWithin,
+  updateMerchantCustomerWithin,
 } from '../administration/customers.js';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
@@ -46,8 +47,11 @@ export interface CustomerImportActor {
   readonly userId: string;
 }
 
+export type CustomerImportConflictPolicy = 'reject' | 'update-existing-by-phone';
+
 export interface CreateCustomerImportJobRequest {
   readonly operationId: string;
+  readonly conflictPolicy?: CustomerImportConflictPolicy;
   readonly sourceSha256: string;
   readonly format: 'csv' | 'xlsx';
   readonly sourceFileName: string | null;
@@ -60,7 +64,7 @@ export interface CustomerImportRowResult {
   readonly sourceRow: number;
   readonly sourceIdentifier: string | null;
   readonly classification: ImportClassification;
-  readonly plannedAction: 'create' | 'reject';
+  readonly plannedAction: 'create' | 'update' | 'reject';
   readonly status: 'pending' | 'committing' | 'rejected' | 'committed' | 'failed';
   readonly targetEntityId: string | null;
   readonly errorCode: string | null;
@@ -82,13 +86,14 @@ export interface CustomerImportSummary {
   readonly status: 'reviewed' | 'dry-run' | 'committing' | 'completed';
   readonly mappingVersion: number;
   readonly mapping: readonly CustomerColumnMapping[];
-  readonly conflictPolicy: 'reject';
+  readonly conflictPolicy: CustomerImportConflictPolicy;
   readonly totalRows: number;
   readonly validRows: number;
   readonly warningRows: number;
   readonly errorRows: number;
   readonly blockedRows: number;
   readonly created: number;
+  readonly updated: number;
   readonly failed: number;
   readonly rejected: number;
   readonly rows: readonly CustomerImportRowResult[];
@@ -201,6 +206,32 @@ function conflictIssue(sourceRow: number): ImportIssue {
   };
 }
 
+function updatePlannedIssue(sourceRow: number): ImportIssue {
+  return {
+    classification: 'WARNING',
+    code: 'phone-match-update-planned',
+    message: 'An existing customer in this merchant matches the phone and will be updated.',
+    row: sourceRow,
+    sourceColumn: null,
+    targetField: 'phone',
+  };
+}
+
+function conflictPolicyFromUnknown(value: unknown): CustomerImportConflictPolicy {
+  if (value === 'reject' || value === 'update-existing-by-phone') return value;
+  throw new DatabaseError('Customer import conflict policy is corrupt.');
+}
+
+async function lockTenantForCustomerImport(tx: TransactionClient, tenant: string): Promise<void> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "tenants"
+     WHERE "id" = ${tenant}::uuid
+     FOR UPDATE`;
+  if (rows.length !== 1) {
+    throw new DatabaseError('Customer import tenant authority could not be locked.');
+  }
+}
+
 function commitIssue(sourceRow: number, code: string, message: string): ImportIssue {
   return {
     classification: 'ERROR',
@@ -230,7 +261,11 @@ function customerRowResult(row: {
   ) {
     throw new DatabaseError('Customer import row carries unknown classification.');
   }
-  if (row.plannedAction !== 'create' && row.plannedAction !== 'reject') {
+  if (
+    row.plannedAction !== 'create' &&
+    row.plannedAction !== 'update' &&
+    row.plannedAction !== 'reject'
+  ) {
     throw new DatabaseError('Customer import row carries unknown action.');
   }
   if (
@@ -275,7 +310,7 @@ async function summaryWithin(
     throw new DatabaseError('Customer import job carries unknown lifecycle status.');
   }
 
-  const [previewRows, statusCounts] = await Promise.all([
+  const [previewRows, statusActionCounts] = await Promise.all([
     tx.migrationImportRow.findMany({
       where: { tenantId: tenant, jobId },
       select: {
@@ -292,13 +327,19 @@ async function summaryWithin(
       take: SUMMARY_ROW_PREVIEW_LIMIT,
     }),
     tx.migrationImportRow.groupBy({
-      by: ['status'],
+      by: ['status', 'plannedAction'],
       where: { tenantId: tenant, jobId },
       _count: { _all: true },
     }),
   ]);
-  const count = (status: string) =>
-    statusCounts.find((entry) => entry.status === status)?._count._all ?? 0;
+  const count = (status: string, plannedAction?: string) =>
+    statusActionCounts
+      .filter(
+        (entry) =>
+          entry.status === status &&
+          (plannedAction === undefined || entry.plannedAction === plannedAction),
+      )
+      .reduce((total, entry) => total + entry._count._all, 0);
   const rows = previewRows.map(customerRowResult);
 
   return {
@@ -311,13 +352,14 @@ async function summaryWithin(
     status: job.status,
     mappingVersion: job.mappingVersion,
     mapping: mappingFromUnknown(job.mapping),
-    conflictPolicy: 'reject',
+    conflictPolicy: conflictPolicyFromUnknown(job.conflictPolicy),
     totalRows: job.totalRows,
     validRows: job.validRows,
     warningRows: job.warningRows,
     errorRows: job.errorRows,
     blockedRows: job.blockedRows,
-    created: count('committed'),
+    created: count('committed', 'create'),
+    updated: count('committed', 'update'),
     failed: count('failed'),
     rejected: count('rejected'),
     rows,
@@ -429,6 +471,7 @@ export async function createCustomerImportJob(
     throw new CustomerImportRefusedError('invalid-operation');
   }
 
+  const conflictPolicy = request.conflictPolicy ?? 'reject';
   const reviews = reviewCustomerSheet(request.sheet, request.mapping);
   const counts = summarizeImportReviews(reviews);
   const sourceRows = request.sheet.rows.slice(1);
@@ -445,6 +488,7 @@ export async function createCustomerImportJob(
     sourceFileName: request.sourceFileName,
     sourceSystem: request.sourceSystem,
     mapping: request.mapping,
+    conflictPolicy,
     rowFingerprints,
   });
   const tenant = tenantParam(scope);
@@ -482,7 +526,7 @@ export async function createCustomerImportJob(
           status: 'reviewed',
           mappingVersion: 1,
           mapping: jsonObject(request.mapping),
-          conflictPolicy: 'reject',
+          conflictPolicy,
           ...counts,
           createdAt: at,
           updatedAt: at,
@@ -528,7 +572,12 @@ export async function createCustomerImportJob(
           eventType: 'migration.customer.review-created',
           entityType: 'migration-import-job',
           entityId: jobId,
-          metadata: { format: request.format, sourceSha256: request.sourceSha256, ...counts },
+          metadata: {
+            format: request.format,
+            sourceSha256: request.sourceSha256,
+            conflictPolicy,
+            ...counts,
+          },
           occurredAt: at,
         },
       });
@@ -579,7 +628,7 @@ export async function dryRunCustomerImport(
   return withTenant(prisma, scope.tenantId, async (tx) => {
     const job = await tx.migrationImportJob.findFirst({
       where: { tenantId: tenant, id: jobId, domain: 'customers' },
-      select: { id: true, status: true },
+      select: { id: true, status: true, conflictPolicy: true },
     });
     if (job === null) throw new CustomerImportRefusedError('unknown-job');
     if (job.status !== 'reviewed') {
@@ -588,6 +637,7 @@ export async function dryRunCustomerImport(
       return existing;
     }
 
+    const conflictPolicy = conflictPolicyFromUnknown(job.conflictPolicy);
     const rows = await tx.migrationImportRow.findMany({
       where: { tenantId: tenant, jobId, status: 'pending', plannedAction: 'create' },
       orderBy: { sourceRow: 'asc' },
@@ -600,14 +650,20 @@ export async function dryRunCustomerImport(
           select: { id: true },
         });
         if (exists !== null) {
-          const issues = [...issuesFromUnknown(row.issues), conflictIssue(row.sourceRow)];
+          const issue =
+            conflictPolicy === 'update-existing-by-phone'
+              ? updatePlannedIssue(row.sourceRow)
+              : conflictIssue(row.sourceRow);
+          const issues = [...issuesFromUnknown(row.issues), issue];
           await tx.migrationImportRow.update({
             where: { id: row.id },
             data: {
               issues: jsonObject(issues),
               classification: classifyImportIssues(issues),
-              plannedAction: 'reject',
-              status: 'rejected',
+              plannedAction:
+                conflictPolicy === 'update-existing-by-phone' ? 'update' : 'reject',
+              status: conflictPolicy === 'update-existing-by-phone' ? 'pending' : 'rejected',
+              errorCode: null,
             },
           });
         }
@@ -648,7 +704,7 @@ export async function dryRunCustomerImport(
         eventType: 'migration.customer.dry-run',
         entityType: 'migration-import-job',
         entityId: jobId,
-        metadata: { ...counts, conflictPolicy: 'reject' },
+        metadata: { ...counts, conflictPolicy },
         occurredAt: at,
       },
     });
@@ -676,7 +732,7 @@ async function processPendingCustomerRow(
         tenantId: tenant,
         jobId,
         status: 'pending',
-        plannedAction: 'create',
+        plannedAction: { in: ['create', 'update'] },
       },
       data: { status: 'committing' },
     });
@@ -691,25 +747,61 @@ async function processPendingCustomerRow(
 
     await tx.$executeRawUnsafe('SAVEPOINT korvi_customer_import_row');
     try {
-      const customer = await createMerchantCustomerWithin(
-        tx,
-        tenant,
-        actor,
-        {
-          nameAr: canonical.nameAr,
-          nameEn: canonical.nameEn,
-          phone: canonical.phone,
-          email: canonical.email,
-          vatNumber: canonical.vatNumber,
-        },
-        at,
-        nextId,
-      );
+      const job = await tx.migrationImportJob.findFirst({
+        where: { tenantId: tenant, id: jobId, domain: 'customers' },
+        select: { conflictPolicy: true },
+      });
+      if (job === null) throw new CustomerImportRefusedError('unknown-job');
+      const conflictPolicy = conflictPolicyFromUnknown(job.conflictPolicy);
+
+      await lockTenantForCustomerImport(tx, tenant);
+      const existing =
+        canonical.phone === null
+          ? null
+          : await tx.customer.findFirst({
+              where: { tenantId: tenant, phone: canonical.phone },
+              select: { id: true },
+            });
+
+      const actualAction =
+        existing !== null && conflictPolicy === 'update-existing-by-phone' ? 'update' : 'create';
+      const customer =
+        actualAction === 'update'
+          ? await updateMerchantCustomerWithin(
+              tx,
+              tenant,
+              actor,
+              existing!.id,
+              {
+                nameAr: canonical.nameAr,
+                nameEn: canonical.nameEn,
+                phone: canonical.phone,
+                email: canonical.email,
+                vatNumber: canonical.vatNumber,
+              },
+              at,
+              nextId,
+            )
+          : await createMerchantCustomerWithin(
+              tx,
+              tenant,
+              actor,
+              {
+                nameAr: canonical.nameAr,
+                nameEn: canonical.nameEn,
+                phone: canonical.phone,
+                email: canonical.email,
+                vatNumber: canonical.vatNumber,
+              },
+              at,
+              nextId,
+            );
       await tx.$executeRawUnsafe('RELEASE SAVEPOINT korvi_customer_import_row');
       await tx.migrationImportRow.update({
         where: { id: row.id },
         data: {
           status: 'committed',
+          plannedAction: actualAction,
           targetEntityId: customer.id,
           errorCode: null,
           updatedAt: at,
@@ -797,7 +889,12 @@ export async function commitCustomerImport(
   while (true) {
     const ids = await withTenant(prisma, scope.tenantId, (tx) =>
       tx.migrationImportRow.findMany({
-        where: { tenantId: tenant, jobId, status: 'pending', plannedAction: 'create' },
+        where: {
+          tenantId: tenant,
+          jobId,
+          status: 'pending',
+          plannedAction: { in: ['create', 'update'] },
+        },
         select: { id: true },
         orderBy: { sourceRow: 'asc' },
         take: ROW_BATCH,
@@ -821,12 +918,18 @@ export async function commitCustomerImport(
 
     if (job.status !== 'completed') {
       const counts = await tx.migrationImportRow.groupBy({
-        by: ['status'],
+        by: ['status', 'plannedAction'],
         where: { tenantId: tenant, jobId },
         _count: { _all: true },
       });
-      const count = (status: string) =>
-        counts.find((entry) => entry.status === status)?._count._all ?? 0;
+      const count = (status: string, plannedAction?: string) =>
+        counts
+          .filter(
+            (entry) =>
+              entry.status === status &&
+              (plannedAction === undefined || entry.plannedAction === plannedAction),
+          )
+          .reduce((total, entry) => total + entry._count._all, 0);
       const at = clock();
       await clearSourceData(tx, tenant, jobId, null);
       await tx.migrationImportJob.update({
@@ -844,7 +947,8 @@ export async function commitCustomerImport(
           entityType: 'migration-import-job',
           entityId: jobId,
           metadata: {
-            created: count('committed'),
+            created: count('committed', 'create'),
+            updated: count('committed', 'update'),
             failed: count('failed'),
             rejected: count('rejected'),
           },
