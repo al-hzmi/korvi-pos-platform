@@ -334,5 +334,4 @@ describe('XLSX migration adapter', () => {
       record: { name: 'شركة ألف' },
     });
   });
-
 });
