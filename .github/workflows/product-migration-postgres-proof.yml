@@ -5,6 +5,7 @@ on:
     branches:
       - product/post-v1-migration-engine
     paths:
+      - packages/domain/src/migration/**
       - packages/database/src/migration/**
       - packages/database/src/__tests__/product-migration-isolation-live.test.ts
       - packages/database/src/__tests__/product-category-migration-isolation-live.test.ts
