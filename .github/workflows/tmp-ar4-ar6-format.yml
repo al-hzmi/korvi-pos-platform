@@ -1,0 +1,35 @@
+name: Temporary AR4 AR6 Formatter
+
+on:
+  push:
+    branches:
+      - integration/acquisition-ar4-ar6
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - run: npx prettier --write scripts/check-acquisition-handoff.mjs
+      - name: Commit formatter output and remove one-shot workflow
+        run: |
+          rm .github/workflows/tmp-ar4-ar6-format.yml
+          git config user.name "korvi-ci"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/check-acquisition-handoff.mjs .github/workflows/tmp-ar4-ar6-format.yml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore(format): acquisition handoff verifier"
+          git push origin HEAD:integration/acquisition-ar4-ar6
