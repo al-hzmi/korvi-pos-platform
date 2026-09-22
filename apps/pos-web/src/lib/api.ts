@@ -17,14 +17,20 @@ import type {
   CustomerMigrationInspection,
   CustomerMigrationRowPage,
   CustomerMigrationSummary,
+  SupplierMigrationInspection,
+  SupplierMigrationRowPage,
+  SupplierMigrationSummary,
   CreateCsvCategoryMigrationJobRequest,
   CreateCsvCustomerMigrationJobRequest,
+  CreateCsvSupplierMigrationJobRequest,
   CreateCsvProductMigrationJobRequest,
   CreateXlsxCategoryMigrationJobRequest,
   CreateXlsxCustomerMigrationJobRequest,
+  CreateXlsxSupplierMigrationJobRequest,
   CreateXlsxProductMigrationJobRequest,
   CsvCategoryMigrationSource,
   CsvCustomerMigrationSource,
+  CsvSupplierMigrationSource,
   CsvProductMigrationSource,
   DashboardSummary,
   CheckoutResponse,
@@ -70,6 +76,7 @@ import type {
   TerminalsResponse,
   XlsxCategoryMigrationSource,
   XlsxCustomerMigrationSource,
+  XlsxSupplierMigrationSource,
   XlsxProductMigrationSource,
 } from './api-types';
 
@@ -251,6 +258,33 @@ export interface ApiClient {
   ): Promise<CustomerMigrationRowPage>;
   dryRunCustomerMigration(jobId: string): Promise<CustomerMigrationSummary>;
   commitCustomerMigration(jobId: string, operationId: string): Promise<CustomerMigrationSummary>;
+
+  inspectSupplierMigrationCsv(
+    input: CsvSupplierMigrationSource,
+    options?: RequestOptions,
+  ): Promise<SupplierMigrationInspection>;
+  inspectSupplierMigrationXlsx(
+    input: XlsxSupplierMigrationSource,
+    options?: RequestOptions,
+  ): Promise<SupplierMigrationInspection>;
+  createSupplierMigrationCsvJob(
+    request: CreateCsvSupplierMigrationJobRequest,
+  ): Promise<SupplierMigrationSummary>;
+  createSupplierMigrationXlsxJob(
+    request: CreateXlsxSupplierMigrationJobRequest,
+  ): Promise<SupplierMigrationSummary>;
+  supplierMigrationJob(jobId: string, options?: RequestOptions): Promise<SupplierMigrationSummary>;
+  supplierMigrationRows(
+    jobId: string,
+    query?: {
+      readonly limit?: number;
+      readonly afterSourceRow?: number | null;
+      readonly problemsOnly?: boolean;
+    },
+    options?: RequestOptions,
+  ): Promise<SupplierMigrationRowPage>;
+  dryRunSupplierMigration(jobId: string): Promise<SupplierMigrationSummary>;
+  commitSupplierMigration(jobId: string, operationId: string): Promise<SupplierMigrationSummary>;
 
   inventoryBranches(
     query?: { readonly limit?: number; readonly cursor?: string },
@@ -807,6 +841,81 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     async commitCustomerMigration(jobId, operationId) {
       return retryableCommand<CustomerMigrationSummary>(
         `/v1/admin/migrations/customers/jobs/${encodeURIComponent(jobId)}/commit`,
+        { operationId },
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async inspectSupplierMigrationCsv(input, options) {
+      return (await call(
+        '/v1/admin/migrations/suppliers/inspect-csv',
+        json(input),
+        options,
+      )) as SupplierMigrationInspection;
+    },
+
+    async inspectSupplierMigrationXlsx(input, options) {
+      return (await call(
+        '/v1/admin/migrations/suppliers/inspect-xlsx',
+        json(input),
+        options,
+      )) as SupplierMigrationInspection;
+    },
+
+    async createSupplierMigrationCsvJob(request) {
+      return retryableCommand<SupplierMigrationSummary>(
+        '/v1/admin/migrations/suppliers/jobs',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async createSupplierMigrationXlsxJob(request) {
+      return retryableCommand<SupplierMigrationSummary>(
+        '/v1/admin/migrations/suppliers/jobs/xlsx',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async supplierMigrationJob(jobId, options) {
+      return (await call(
+        `/v1/admin/migrations/suppliers/jobs/${encodeURIComponent(jobId)}`,
+        { method: 'GET' },
+        options,
+      )) as SupplierMigrationSummary;
+    },
+
+    async supplierMigrationRows(jobId, query = {}, options) {
+      const search = new URLSearchParams();
+      if (query.limit !== undefined) search.set('limit', String(query.limit));
+      if (query.afterSourceRow !== undefined && query.afterSourceRow !== null) {
+        search.set('afterSourceRow', String(query.afterSourceRow));
+      }
+      if (query.problemsOnly !== undefined) {
+        search.set('problemsOnly', String(query.problemsOnly));
+      }
+      const suffix = search.toString();
+      return (await call(
+        `/v1/admin/migrations/suppliers/jobs/${encodeURIComponent(jobId)}/rows${
+          suffix === '' ? '' : `?${suffix}`
+        }`,
+        { method: 'GET' },
+        options,
+      )) as SupplierMigrationRowPage;
+    },
+
+    async dryRunSupplierMigration(jobId) {
+      return retryableCommand<SupplierMigrationSummary>(
+        `/v1/admin/migrations/suppliers/jobs/${encodeURIComponent(jobId)}/dry-run`,
+        {},
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async commitSupplierMigration(jobId, operationId) {
+      return retryableCommand<SupplierMigrationSummary>(
+        `/v1/admin/migrations/suppliers/jobs/${encodeURIComponent(jobId)}/commit`,
         { operationId },
         MIGRATION_COMMAND_TIMEOUT_MS,
       );
