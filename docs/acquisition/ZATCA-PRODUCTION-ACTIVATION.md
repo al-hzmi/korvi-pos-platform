@@ -1,6 +1,6 @@
 # Korvi Production ZATCA Activation Boundary
 
-Status: **AR-5 INTERNAL ENGINEERING PROOF IN PROGRESS — EXTERNAL PRODUCTION ACTIVATION REQUIRED**
+Status: **AR-5 INTERNAL ENGINEERING COMPLETE — EXTERNAL PRODUCTION ACTIVATION OPEN**
 
 This document defines the exact boundary between ZATCA engineering evidence that can be
 proved without merchant production credentials or paid HSM infrastructure and evidence that
@@ -66,3 +66,25 @@ After the internal proof set passes on one canonical acquisition lineage, Korvi 
 
 Korvi may not record **Production ZATCA CLOSED** until the HSM, merchant identity,
 production-CSID and real reporting/clearance evidence above exists.
+
+
+## Canonical internal proof checkpoint — 2026-09-22
+
+Canonical evidence SHA:
+
+`b9e063cb252ef0270756f52ba43d7562d644b2d5`
+
+Exact-head internal evidence:
+
+- CI `35785967302` / PR `35785973886` — PASS;
+- ZATCA 38 UBL Hash `35785967470` — PASS;
+- ZATCA 38 Official Validator Boundary `35785967291` — PASS;
+- ZATCA 39 C14N Native Crosscheck `35785967469` — PASS;
+- ZATCA 39 CSID PostgreSQL `35785967359` — PASS;
+- ZATCA 39 Sealing Cryptographic `35785967271` — PASS;
+- ZATCA 39 Official Public Validator Probe `35785967175` — PASS;
+- ZATCA 40 Submission PostgreSQL `35785967414` — PASS.
+
+This closes the internal engineering portion only. Azure HSM custody, merchant production
+identity, real Production CSID, reporting/clearance and production rotation/recovery remain
+external activation evidence.
