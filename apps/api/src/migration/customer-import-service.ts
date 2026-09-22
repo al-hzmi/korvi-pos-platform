@@ -24,6 +24,7 @@ import type {
 } from '@korvi/domain';
 import type {
   PrismaClient,
+  CustomerImportConflictPolicy,
   CustomerImportRefusal,
   CustomerImportRowPage,
   CustomerImportSummary,
@@ -53,6 +54,7 @@ export interface CsvCustomerSourceInput {
 export interface CreateCsvCustomerImportRequest extends CsvCustomerSourceInput {
   readonly operationId: string;
   readonly mapping: readonly CustomerColumnMapping[];
+  readonly conflictPolicy: CustomerImportConflictPolicy;
 }
 
 export interface XlsxCustomerSourceInput {
@@ -64,6 +66,7 @@ export interface XlsxCustomerSourceInput {
 export interface CreateXlsxCustomerImportRequest extends XlsxCustomerSourceInput {
   readonly operationId: string;
   readonly mapping: readonly CustomerColumnMapping[];
+  readonly conflictPolicy: CustomerImportConflictPolicy;
 }
 
 export interface CustomerSourceInspection {
@@ -269,6 +272,7 @@ export function createMerchantCustomerMigrationService(
             sourceSystem: request.sourceSystem,
             sheet: parsed.value.sheet,
             mapping: request.mapping,
+            conflictPolicy: request.conflictPolicy,
           },
         ),
       );
@@ -319,6 +323,7 @@ export function createMerchantCustomerMigrationService(
             sourceSystem: request.sourceSystem,
             sheet: parsed.value.sheet,
             mapping: request.mapping,
+            conflictPolicy: request.conflictPolicy,
           },
         ),
       );
