@@ -3,6 +3,8 @@ name: ZATCA 38 UBL Hash Proof
 on:
   push:
     branches:
+      - integration/acquisition-ar5-internal
+      - release/canonical-acquisition-v1
       - review/zatca-38-ubl-hash
       - strike/5c-costing-authority
     paths:
