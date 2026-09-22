@@ -5,3 +5,4 @@ export * from './products.js';
 export * from './categories.js';
 export * from './customers.js';
 export * from './suppliers.js';
+export * from './opening-inventory.js';
