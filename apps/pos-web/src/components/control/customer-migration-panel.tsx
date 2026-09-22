@@ -16,6 +16,7 @@ import type { JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
 import type {
   CsvCustomerMigrationSource,
+  CustomerMigrationConflictPolicy,
   CustomerMigrationInspection,
   CustomerMigrationMapping,
   CustomerMigrationRowResult,
@@ -94,6 +95,8 @@ export function CustomerMigrationPanel({
   const [file, setFile] = useState<File | null>(null);
   const [delimiter, setDelimiter] = useState<',' | ';' | '\t'>(',');
   const [sourceSystem, setSourceSystem] = useState('');
+  const [conflictPolicy, setConflictPolicy] =
+    useState<CustomerMigrationConflictPolicy>('reject');
   const [prepared, setPrepared] = useState<PreparedSource | null>(null);
   const [inspection, setInspection] = useState<CustomerMigrationInspection | null>(null);
   const [mapping, setMapping] = useState<readonly CustomerMigrationMapping[]>([]);
@@ -211,11 +214,13 @@ export function CustomerMigrationPanel({
               ...prepared.value,
               operationId,
               mapping,
+              conflictPolicy,
             })
           : await api.createCustomerMigrationXlsxJob({
               ...prepared.value,
               operationId,
               mapping,
+              conflictPolicy,
             });
       setJob(result);
       setPending(null);
@@ -244,7 +249,11 @@ export function CustomerMigrationPanel({
       const result = await api.dryRunCustomerMigration(job.id);
       setJob(result);
       setPending(null);
-      setNotice('اكتمل الفحص التجريبي باستخدام منطق التعارض الحقيقي دون إنشاء عملاء.');
+      setNotice(
+        result.conflictPolicy === 'update-existing-by-phone'
+          ? 'اكتمل الفحص التجريبي. تطابق الهاتف داخل نفس المنشأة سيُعامل كتحديث صريح، وسيُعاد التحقق عند الاعتماد.'
+          : 'اكتمل الفحص التجريبي باستخدام سياسة رفض تعارض الهاتف دون إنشاء عملاء.',
+      );
       onCommandLockChange(false);
       await loadProblems(result.id);
     } catch (error) {
@@ -398,6 +407,30 @@ export function CustomerMigrationPanel({
               className="h-touch rounded-md border border-input bg-background px-3"
             />
           </label>
+          <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+            سياسة تطابق رقم الجوال
+            <select
+              value={conflictPolicy}
+              disabled={commandLocked}
+              onChange={(event) => {
+                const value = event.target.value as CustomerMigrationConflictPolicy;
+                setConflictPolicy(value);
+                setJob(null);
+                setProblemRows([]);
+                setNotice(null);
+              }}
+              className="h-touch rounded-md border border-input bg-background px-3"
+            >
+              <option value="reject">رفض الصف عند وجود نفس الجوال</option>
+              <option value="update-existing-by-phone">
+                تحديث العميل الموجود عند تطابق الجوال
+              </option>
+            </select>
+            <span className="text-xs font-normal text-muted-foreground">
+              التحديث يعتمد على رقم الجوال الفريد داخل المنشأة فقط. لا يتم الربط بالاسم أو البريد أو
+              الرقم الضريبي، ولا يُرسل معرّف العميل الداخلي من الملف.
+            </span>
+          </label>
           {selectedFormat === 'csv' ? (
             <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
               فاصل CSV
@@ -550,7 +583,7 @@ export function CustomerMigrationPanel({
             <div>
               <h3 className="font-semibold text-foreground">نتيجة مهمة ترحيل العملاء</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                {job.id} · {job.status}
+                {job.id} · {job.status} · {job.conflictPolicy}
               </p>
             </div>
             <Button
@@ -562,7 +595,7 @@ export function CustomerMigrationPanel({
             </Button>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
             {[
               ['الإجمالي', job.totalRows],
               ['صالح', job.validRows],
@@ -570,6 +603,7 @@ export function CustomerMigrationPanel({
               ['خطأ', job.errorRows],
               ['محظور', job.blockedRows],
               ['أُنشئ', job.created],
+              ['حُدّث', job.updated],
               ['فشل', job.failed + job.rejected],
             ].map(([label, value]) => (
               <div key={String(label)} className="rounded-md border border-border bg-muted/30 p-3">
