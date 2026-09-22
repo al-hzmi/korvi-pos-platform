@@ -360,7 +360,13 @@ export function supplierMigrationProblemsCsv(rows: readonly SupplierMigrationRow
     if (row.issues.length === 0 && row.errorCode === null) continue;
     if (row.issues.length === 0) {
       lines.push(
-        [String(row.sourceRow), row.sourceIdentifier ?? '', '', row.errorCode ?? '', row.errorCode ?? '']
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          '',
+          row.errorCode ?? '',
+          row.errorCode ?? '',
+        ]
           .map(csvCell)
           .join(','),
       );
@@ -384,9 +390,7 @@ export function supplierMigrationProblemsCsv(rows: readonly SupplierMigrationRow
 }
 
 export const SUPPLIER_MIGRATION_TEMPLATE_CSV =
-  '\uFEFFاسم المورد\r\n' +
-  'شركة المورد الأولى\r\n' +
-  'مورد السوق المركزي\r\n';
+  '\uFEFFاسم المورد\r\n' + 'شركة المورد الأولى\r\n' + 'مورد السوق المركزي\r\n';
 
 export const CUSTOMER_MIGRATION_TEMPLATE_CSV =
   '\uFEFFاسم العميل,الاسم الانجليزي,رقم الجوال,البريد الإلكتروني,الرقم الضريبي\r\n' +
