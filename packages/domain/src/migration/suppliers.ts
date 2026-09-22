@@ -222,14 +222,7 @@ export function reviewSupplierSheet(
       } catch (error) {
         if (!(error instanceof PurchasingRequestError)) throw error;
         issues.push(
-          issue(
-            'ERROR',
-            'invalid-supplier-row',
-            error.message,
-            sourceRow,
-            nameColumn,
-            'name',
-          ),
+          issue('ERROR', 'invalid-supplier-row', error.message, sourceRow, nameColumn, 'name'),
         );
       }
     }
