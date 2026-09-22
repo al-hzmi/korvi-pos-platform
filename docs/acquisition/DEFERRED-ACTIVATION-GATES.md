@@ -6,7 +6,20 @@ The following items are intentionally not fabricated or purchased before they ar
 
 ## AR-4 Production Operations
 
-Engineering can prove DR mechanics, incident behavior, migration/runtime separation, fail-closed readiness, logs and rollback contracts without paid resources.
+Internal engineering evidence is complete on canonical SHA
+`48400d02a3990eecd6169933c207e282d9371084`.
+
+Verified without paid production resources:
+
+- PostgreSQL 17 restricted migration/runtime authority;
+- logical backup and isolated restore;
+- restored schema/RLS/application truth;
+- dependency-outage fail-closed readiness and recovery;
+- graceful drain;
+- deployment/rollback/monitoring/on-call contracts;
+- secret-free retained evidence.
+
+This is engineering evidence, not real production activation.
 
 External activation still requires:
 
@@ -37,7 +50,9 @@ Staging simulation is not valid production evidence and must never activate in p
 
 ## AR-6 Acquisition / Handoff
 
-Engineering package may be completed now.
+The engineering package is complete and mechanically checked on the canonical lineage.
+
+Transaction-level activation remains external.
 
 Transaction-level diligence still requires:
 
