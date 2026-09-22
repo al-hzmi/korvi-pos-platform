@@ -1,6 +1,7 @@
 import {
   PURCHASING_AUDIT_EVENTS,
   PURCHASING_IDEMPOTENCY_SCOPES,
+  assertSupplierName,
   newId,
   validateSupplierCreate,
   validateSupplierUpdate,
@@ -115,6 +116,51 @@ async function replaySupplier(
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
+
+/**
+ * Same supplier-create authority as the public purchasing command, but inside
+ * an already tenant-scoped transaction. Migration uses this so supplier truth
+ * and migration-row state commit atomically. Supplier names are deliberately
+ * not unique in Korvi; this helper therefore validates the real name contract
+ * but never invents a name-conflict rule.
+ *
+ * Intentionally not re-exported from the database package index.
+ */
+export async function createSupplierWithin(
+  tx: TransactionClient,
+  tenant: string,
+  actor: SupplierActor,
+  input: { readonly name: string },
+  at: Date,
+  nextId: () => string = newId,
+): Promise<SupplierRecord> {
+  const name = assertSupplierName(input.name);
+  const supplierId = nextId();
+  const created = await tx.supplier.create({
+    data: {
+      id: supplierId,
+      tenantId: tenant,
+      name,
+      isActive: true,
+      createdAt: at,
+      updatedAt: at,
+    },
+    select: { id: true, name: true, isActive: true, createdAt: true, updatedAt: true },
+  });
+
+  await appendPurchasingAudit(
+    tx,
+    tenant,
+    actor.userId,
+    null,
+    PURCHASING_AUDIT_EVENTS.supplierCreated,
+    'supplier',
+    supplierId,
+    { migration: true, name },
+    at,
+  );
+  return toRecord(created);
+}
 
 export async function createSupplier(
   prisma: PrismaClient,
