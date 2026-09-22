@@ -96,6 +96,7 @@ describe('staging database refusal before serving traffic', () => {
     expect(expected.tables).toContain('device_enrollments');
     expect(expected.tables).toContain('native_auth_challenges');
     expect(expected.tables).toContain('native_sessions');
+    expect(expected.tables).toContain('platform_admin_sessions');
     expect(expected.tables).toContain('zatca_csid_bindings');
     expect(expected.tables).toContain('zatca_seller_fiscal_profiles');
     expect(expected.tables).toContain('zatca_terminal_fiscal_chains');
