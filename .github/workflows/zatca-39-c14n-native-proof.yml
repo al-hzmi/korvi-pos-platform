@@ -3,6 +3,8 @@ name: ZATCA 39 C14N Native Crosscheck
 on:
   push:
     branches:
+      - integration/acquisition-ar5-internal
+      - release/canonical-acquisition-v1
       - review/zatca-39-csid-lifecycle
       - strike/5c-costing-authority
     paths:
