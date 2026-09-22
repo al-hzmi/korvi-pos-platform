@@ -118,6 +118,7 @@ async function build(role: RoleName): Promise<FastifyInstance> {
       priceMinor: '1250',
       vatBasisPoints: 1500,
       primaryBarcode: '6281000000012',
+      categoryId: null,
       trackInventory: true,
       isActive: true,
       createdAt: '2026-08-16T00:00:00.000Z',
