@@ -23,25 +23,25 @@ A buyer must evaluate the latest canonical SHA, not a feature branch or old RC.
 
 ## 2. Handoff map
 
-| Required package item | Authority / location | Current position |
-| --- | --- | --- |
-| Architecture package | `docs/governance/KORVI-ARCHITECTURE-MAP.md`, `docs/architecture/overview.md`, ADRs | Versioned repository authority |
-| Exact production deployment guide | `docs/operations/PRODUCTION-DEPLOYMENT-REFERENCE.md` | Engineering contract ready; provider activation external |
-| Environment inventory without values | Production deployment reference §4 | Names/classes only; no secret values |
-| Database migration guide | `scripts/deploy/production-migrate.sh`, production deployment reference §6 | Automated fail-closed contract |
-| Backup/restore guide | `docs/operations/DISASTER-RECOVERY.md` | Engineering rehearsal path exists; managed production evidence external |
-| Monitoring/alerting guide | Production deployment reference §8 + `docs/operations/INCIDENT-RESPONSE.md` | Internal surfaces defined; external routing evidence pending |
-| Incident runbook | `docs/operations/INCIDENT-RESPONSE.md` | Active baseline |
-| ZATCA operations guide | `docs/operations/ZATCA-PRODUCTION-OPERATIONS.md` | Internal path documented; production activation external |
-| Dependency inventory | root `package.json`, `package-lock.json`, workspace manifests | Lockfile is machine inventory |
-| Supply-chain status | `docs/governance/SUPPLY-CHAIN-REVALIDATION-2026-09-08.md`, CI audit/pin gates | CI-enforced; revalidate on final SHA |
-| Ownership/IP provenance | `docs/governance/KORVI-IP-LICENSING-PROVENANCE.md` | Repository facts recorded; legal assignment diligence remains |
-| Licensing position | same IP/licensing document | No root license detected; do not infer transfer rights |
-| Test evidence | Product Readiness Scorecard + release/acquisition program + Actions run artifacts | Exact-SHA evidence required |
-| CI evidence | GitHub Actions on canonical SHA | Exact run IDs recorded at checkpoints |
-| Release history | Git history, merged PRs, `docs/governance/RELEASE-CANDIDATE-2026-09-14.md` | Retained; no rewrite of old unsigned commits |
-| Deferred-items register | §5 below | Active |
-| Merchant onboarding/migration | `docs/handoff/MERCHANT-ONBOARDING-MIGRATION.md` | Engineering guide ready; real merchant evidence is AR-7 |
+| Required package item                | Authority / location                                                               | Current position                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Architecture package                 | `docs/governance/KORVI-ARCHITECTURE-MAP.md`, `docs/architecture/overview.md`, ADRs | Versioned repository authority                                          |
+| Exact production deployment guide    | `docs/operations/PRODUCTION-DEPLOYMENT-REFERENCE.md`                               | Engineering contract ready; provider activation external                |
+| Environment inventory without values | Production deployment reference §4                                                 | Names/classes only; no secret values                                    |
+| Database migration guide             | `scripts/deploy/production-migrate.sh`, production deployment reference §6         | Automated fail-closed contract                                          |
+| Backup/restore guide                 | `docs/operations/DISASTER-RECOVERY.md`                                             | Engineering rehearsal path exists; managed production evidence external |
+| Monitoring/alerting guide            | Production deployment reference §8 + `docs/operations/INCIDENT-RESPONSE.md`        | Internal surfaces defined; external routing evidence pending            |
+| Incident runbook                     | `docs/operations/INCIDENT-RESPONSE.md`                                             | Active baseline                                                         |
+| ZATCA operations guide               | `docs/operations/ZATCA-PRODUCTION-OPERATIONS.md`                                   | Internal path documented; production activation external                |
+| Dependency inventory                 | root `package.json`, `package-lock.json`, workspace manifests                      | Lockfile is machine inventory                                           |
+| Supply-chain status                  | `docs/governance/SUPPLY-CHAIN-REVALIDATION-2026-09-08.md`, CI audit/pin gates      | CI-enforced; revalidate on final SHA                                    |
+| Ownership/IP provenance              | `docs/governance/KORVI-IP-LICENSING-PROVENANCE.md`                                 | Repository facts recorded; legal assignment diligence remains           |
+| Licensing position                   | same IP/licensing document                                                         | No root license detected; do not infer transfer rights                  |
+| Test evidence                        | Product Readiness Scorecard + release/acquisition program + Actions run artifacts  | Exact-SHA evidence required                                             |
+| CI evidence                          | GitHub Actions on canonical SHA                                                    | Exact run IDs recorded at checkpoints                                   |
+| Release history                      | Git history, merged PRs, `docs/governance/RELEASE-CANDIDATE-2026-09-14.md`         | Retained; no rewrite of old unsigned commits                            |
+| Deferred-items register              | §5 below                                                                           | Active                                                                  |
+| Merchant onboarding/migration        | `docs/handoff/MERCHANT-ONBOARDING-MIGRATION.md`                                    | Engineering guide ready; real merchant evidence is AR-7                 |
 
 ## 3. Buyer verification sequence
 

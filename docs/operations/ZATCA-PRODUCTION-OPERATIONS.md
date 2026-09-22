@@ -90,6 +90,7 @@ ambiguity and reconciliation semantics. A network timeout is not proof of
 external failure and must not cause uncontrolled duplicate reporting.
 
 Operational handling:
+
 - preserve internal invoice/submission identifiers and request correlation;
 - classify accepted, rejected and ambiguous outcomes;
 - retry only through the durable submission authority;
@@ -101,6 +102,7 @@ Operational handling:
 ## 7. Monitoring and incident response
 
 Alert on:
+
 - repeated fiscalization/provider failures;
 - growing submission backlog;
 - ambiguous submissions older than the operational threshold;
@@ -115,6 +117,7 @@ provider/ZATCA procedures and never copy private material into support channels.
 ## 8. External activation gate
 
 AR-5 remains OPEN until real production evidence exists for:
+
 - merchant identity/credentials;
 - production certificate/CSID lifecycle;
 - protected non-exportable signing key custody and remote sign/verify;

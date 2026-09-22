@@ -23,6 +23,7 @@ Normal onboarding must use product authorities, not direct SQL:
 ## 2. Migration baseline
 
 The verified Migration Engine baseline covers supported CSV/XLSX flows for:
+
 - categories;
 - products and product/category mapping;
 - customers;
@@ -80,6 +81,7 @@ Never use file upload as a direct database write path.
 ## 5. Post-commit verification
 
 After each migration domain:
+
 - review created/updated/rejected counts;
 - export/store the safe error report when rows failed;
 - inspect representative records through Korvi UI/API, not raw SQL only;
@@ -90,6 +92,7 @@ After each migration domain:
 ## 6. Controlled pilot checklist
 
 AR-7 must use a real merchant and record actual evidence for:
+
 - onboarding/import;
 - branch/terminal provisioning;
 - operator sign-in and shift lifecycle;

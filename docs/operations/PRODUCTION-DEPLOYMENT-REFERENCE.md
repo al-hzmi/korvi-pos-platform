@@ -69,50 +69,50 @@ No values belong in this document.
 
 ### API runtime
 
-| Variable | Class | Production handling |
-| --- | --- | --- |
-| `NODE_ENV` | mode | exactly `production` |
-| `KORVI_ENVIRONMENT` | deployment marker | exactly `production` where deployment scripts require it |
-| `API_PORT` | runtime setting | platform-provided or explicit |
-| `LOG_LEVEL` | runtime setting | production-safe level |
-| `APP_ORIGINS` | security config | exact HTTPS browser origins |
-| `SESSION_TTL_HOURS` | auth config | bounded by config parser |
-| `AUTH_LOGIN_GLOBAL_LIMIT` | auth admission | bounded setting |
-| `AUTH_LOGIN_IDENTITY_LIMIT` | auth admission | bounded setting |
-| `AUTH_LOGIN_WINDOW_SECONDS` | auth admission | bounded setting |
-| `AUTH_LOGIN_MAX_CONCURRENT` | auth admission | bounded setting |
-| `AUTH_LOGIN_MAX_TRACKED_IDENTITIES` | auth admission | bounded setting |
-| `DATABASE_URL` | secret | restricted runtime DB credential |
-| `BOOTSTRAP_SIGNING_KEY` | secret | independent CSPRNG secret |
-| `METRICS_AUTH_TOKEN` | secret | independent machine-only scrape credential |
-| `OFFLINE_LEASE_SIGNING_SEED_B64` | secret | server-only Ed25519 seed |
-| `OFFLINE_LEASE_KEY_ID` | key identifier | rotation-aware identifier |
-| `OFFLINE_LEASE_TTL_HOURS` | policy | bounded offline lease lifetime |
-| `PLATFORM_ADMIN_ACCESS_KEY` | secret | configure with both Platform session fields or leave Platform surface fail-closed |
-| `PLATFORM_SESSION_SIGNING_KEY` | secret | independent from Platform access key |
-| `PLATFORM_ADMIN_ACTOR_REF` | actor identity | opaque operator/audit reference |
-| `PLATFORM_SESSION_TTL_HOURS` | policy | bounded Platform session lifetime |
+| Variable                            | Class             | Production handling                                                               |
+| ----------------------------------- | ----------------- | --------------------------------------------------------------------------------- |
+| `NODE_ENV`                          | mode              | exactly `production`                                                              |
+| `KORVI_ENVIRONMENT`                 | deployment marker | exactly `production` where deployment scripts require it                          |
+| `API_PORT`                          | runtime setting   | platform-provided or explicit                                                     |
+| `LOG_LEVEL`                         | runtime setting   | production-safe level                                                             |
+| `APP_ORIGINS`                       | security config   | exact HTTPS browser origins                                                       |
+| `SESSION_TTL_HOURS`                 | auth config       | bounded by config parser                                                          |
+| `AUTH_LOGIN_GLOBAL_LIMIT`           | auth admission    | bounded setting                                                                   |
+| `AUTH_LOGIN_IDENTITY_LIMIT`         | auth admission    | bounded setting                                                                   |
+| `AUTH_LOGIN_WINDOW_SECONDS`         | auth admission    | bounded setting                                                                   |
+| `AUTH_LOGIN_MAX_CONCURRENT`         | auth admission    | bounded setting                                                                   |
+| `AUTH_LOGIN_MAX_TRACKED_IDENTITIES` | auth admission    | bounded setting                                                                   |
+| `DATABASE_URL`                      | secret            | restricted runtime DB credential                                                  |
+| `BOOTSTRAP_SIGNING_KEY`             | secret            | independent CSPRNG secret                                                         |
+| `METRICS_AUTH_TOKEN`                | secret            | independent machine-only scrape credential                                        |
+| `OFFLINE_LEASE_SIGNING_SEED_B64`    | secret            | server-only Ed25519 seed                                                          |
+| `OFFLINE_LEASE_KEY_ID`              | key identifier    | rotation-aware identifier                                                         |
+| `OFFLINE_LEASE_TTL_HOURS`           | policy            | bounded offline lease lifetime                                                    |
+| `PLATFORM_ADMIN_ACCESS_KEY`         | secret            | configure with both Platform session fields or leave Platform surface fail-closed |
+| `PLATFORM_SESSION_SIGNING_KEY`      | secret            | independent from Platform access key                                              |
+| `PLATFORM_ADMIN_ACTOR_REF`          | actor identity    | opaque operator/audit reference                                                   |
+| `PLATFORM_SESSION_TTL_HOURS`        | policy            | bounded Platform session lifetime                                                 |
 
 ### Migration/pre-deploy process only
 
-| Variable | Class | Rule |
-| --- | --- | --- |
-| `MIGRATION_DATABASE_URL` | secret | never injected into API runtime |
+| Variable                     | Class                | Rule                                |
+| ---------------------------- | -------------------- | ----------------------------------- |
+| `MIGRATION_DATABASE_URL`     | secret               | never injected into API runtime     |
 | `PRODUCTION_RUNTIME_DB_ROLE` | authority identifier | canonical PostgreSQL role name only |
-| `NODE_ENV` | mode | `production` |
-| `KORVI_ENVIRONMENT` | marker | `production` |
+| `NODE_ENV`                   | mode                 | `production`                        |
+| `KORVI_ENVIRONMENT`          | marker               | `production`                        |
 
 ### Web build/runtime
 
-| Variable | Class | Rule |
-| --- | --- | --- |
-| `NODE_ENV` | mode | `production` |
+| Variable           | Class    | Rule                                                                              |
+| ------------------ | -------- | --------------------------------------------------------------------------------- |
+| `NODE_ENV`         | mode     | `production`                                                                      |
 | `KORVI_API_ORIGIN` | topology | exact API origin used by Next same-origin rewrite; never a database or secret URL |
 
 ### Installed cashier build/release
 
-| Variable | Class | Rule |
-| --- | --- | --- |
+| Variable                  | Class            | Rule                                                        |
+| ------------------------- | ---------------- | ----------------------------------------------------------- |
 | `KORVI_NATIVE_API_ORIGIN` | release topology | HTTPS production API origin for release-authorized packages |
 
 Windows/Android signing variables are release-pipeline secrets, not runtime
@@ -121,15 +121,15 @@ client proof workflows and must not be exposed to the application bundle.
 
 ### Production ZATCA provider
 
-| Variable | Class | Rule |
-| --- | --- | --- |
-| `AZURE_KEY_VAULT_NAME` | provider config | production signing vault/HSM name |
-| `AZURE_TENANT_ID` | provider identity | Azure tenant UUID |
-| `AZURE_CLIENT_ID` | provider identity | least-privilege application UUID |
-| `AZURE_CLIENT_SECRET` | secret | external secret manager only |
-| `ZATCA_TRUST_ANCHOR_SHA256_HEX` | trust config | approved comma-separated SHA-256 certificate anchors |
-| `ZATCA_FATOORA_VAULT_ACTIVE_KEY_ID` | key identifier | active encryption key id |
-| `ZATCA_FATOORA_VAULT_KEYS` | secret keyring | encrypted-credential AES-256 keyring; never log/store in DB |
+| Variable                            | Class             | Rule                                                        |
+| ----------------------------------- | ----------------- | ----------------------------------------------------------- |
+| `AZURE_KEY_VAULT_NAME`              | provider config   | production signing vault/HSM name                           |
+| `AZURE_TENANT_ID`                   | provider identity | Azure tenant UUID                                           |
+| `AZURE_CLIENT_ID`                   | provider identity | least-privilege application UUID                            |
+| `AZURE_CLIENT_SECRET`               | secret            | external secret manager only                                |
+| `ZATCA_TRUST_ANCHOR_SHA256_HEX`     | trust config      | approved comma-separated SHA-256 certificate anchors        |
+| `ZATCA_FATOORA_VAULT_ACTIVE_KEY_ID` | key identifier    | active encryption key id                                    |
+| `ZATCA_FATOORA_VAULT_KEYS`          | secret keyring    | encrypted-credential AES-256 keyring; never log/store in DB |
 
 ## 5. Build and deployment
 
@@ -169,6 +169,7 @@ compatible with the current forward schema. Database migrations are not rolled
 back by rewriting history.
 
 If schema/data recovery is required:
+
 1. isolate traffic;
 2. preserve evidence;
 3. restore into an isolated target using `DISASTER-RECOVERY.md`;
