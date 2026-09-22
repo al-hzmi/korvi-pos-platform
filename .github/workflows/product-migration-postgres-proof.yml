@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - product/post-v1-migration-engine
+      - product/post-v1-migration-engine-m6
     paths:
       - packages/domain/src/migration/**
       - packages/database/src/migration/**
