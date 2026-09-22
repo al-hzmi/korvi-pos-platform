@@ -3,6 +3,8 @@ name: ZATCA 40 Submission PostgreSQL Proof
 on:
   push:
     branches:
+      - integration/acquisition-ar5-internal
+      - release/canonical-acquisition-v1
       - review/zatca-40-submission-pipeline
   workflow_dispatch:
 
