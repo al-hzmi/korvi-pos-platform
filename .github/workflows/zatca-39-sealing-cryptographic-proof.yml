@@ -3,6 +3,8 @@ name: ZATCA 39 Sealing Cryptographic Proof
 on:
   push:
     branches:
+      - integration/acquisition-ar5-internal
+      - release/canonical-acquisition-v1
       - review/zatca-39-csid-lifecycle
     paths:
       - packages/domain/src/ports/zatca.ts
