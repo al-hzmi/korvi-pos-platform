@@ -568,6 +568,98 @@ export interface CreateXlsxSupplierMigrationJobRequest extends XlsxSupplierMigra
   readonly mapping: readonly SupplierMigrationMapping[];
 }
 
+export type OpeningInventoryMigrationTargetField = 'branchCode' | 'sku' | 'openingQuantity';
+
+export interface OpeningInventoryMigrationMapping {
+  readonly sourceColumn: number;
+  readonly targetField: OpeningInventoryMigrationTargetField | null;
+}
+
+export interface OpeningInventoryMigrationMappingSuggestion
+  extends OpeningInventoryMigrationMapping {
+  readonly sourceHeader: string;
+  readonly reason: 'exact-alias' | 'unmapped';
+}
+
+export interface OpeningInventoryMigrationInspection {
+  readonly sourceSha256: string;
+  readonly fileBytes: number;
+  readonly totalRows: number;
+  readonly header: readonly OpeningInventoryMigrationMappingSuggestion[];
+  readonly mappingIssues: readonly MigrationImportIssue[];
+  readonly previewRows: readonly {
+    readonly sourceRow: number;
+    readonly cells: readonly MigrationImportCell[];
+  }[];
+}
+
+export interface OpeningInventoryMigrationRowResult {
+  readonly sourceRow: number;
+  readonly sourceIdentifier: string | null;
+  readonly classification: 'VALID' | 'WARNING' | 'ERROR' | 'BLOCKED';
+  readonly plannedAction: 'create' | 'reject';
+  readonly status: 'pending' | 'committing' | 'rejected' | 'committed' | 'failed';
+  readonly targetEntityId: string | null;
+  readonly errorCode: string | null;
+  readonly issues: readonly MigrationImportIssue[];
+}
+
+export interface OpeningInventoryMigrationRowPage {
+  readonly rows: readonly OpeningInventoryMigrationRowResult[];
+  readonly nextAfterSourceRow: number | null;
+}
+
+export interface OpeningInventoryMigrationSummary {
+  readonly id: string;
+  readonly domain: 'opening-inventory';
+  readonly format: 'csv' | 'xlsx';
+  readonly sourceFileName: string | null;
+  readonly sourceSystem: string | null;
+  readonly sourceSha256: string;
+  readonly status: 'reviewed' | 'dry-run' | 'committing' | 'completed';
+  readonly mappingVersion: number;
+  readonly mapping: readonly OpeningInventoryMigrationMapping[];
+  readonly conflictPolicy: 'reject';
+  readonly totalRows: number;
+  readonly validRows: number;
+  readonly warningRows: number;
+  readonly errorRows: number;
+  readonly blockedRows: number;
+  readonly created: number;
+  readonly failed: number;
+  readonly rejected: number;
+  readonly rows: readonly OpeningInventoryMigrationRowResult[];
+  readonly rowsTruncated: boolean;
+  readonly createdAt: string;
+  readonly dryRunAt: string | null;
+  readonly commitAt: string | null;
+}
+
+export interface CsvOpeningInventoryMigrationSource {
+  readonly csvText: string;
+  readonly fileName: string | null;
+  readonly sourceSystem: string | null;
+  readonly delimiter: ',' | ';' | '\t';
+}
+
+export interface XlsxOpeningInventoryMigrationSource {
+  readonly xlsxBase64: string;
+  readonly fileName: string | null;
+  readonly sourceSystem: string | null;
+}
+
+export interface CreateCsvOpeningInventoryMigrationJobRequest
+  extends CsvOpeningInventoryMigrationSource {
+  readonly operationId: string;
+  readonly mapping: readonly OpeningInventoryMigrationMapping[];
+}
+
+export interface CreateXlsxOpeningInventoryMigrationJobRequest
+  extends XlsxOpeningInventoryMigrationSource {
+  readonly operationId: string;
+  readonly mapping: readonly OpeningInventoryMigrationMapping[];
+}
+
 export type OnboardingCheckKey =
   | 'tenant-active'
   | 'settings-present'
