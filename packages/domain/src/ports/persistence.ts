@@ -190,7 +190,14 @@ export interface GlobalCatalogItem {
 // Inventory
 // ---------------------------------------------------------------------------
 
-export type InventoryMovementKind = 'sale' | 'return' | 'adjustment' | 'receipt' | 'transfer';
+export type InventoryMovementKind =
+  | 'sale'
+  | 'return'
+  | 'adjustment'
+  | 'receipt'
+  | 'transfer'
+  | 'production-consumption'
+  | 'production-output';
 
 export interface InventoryBalance {
   readonly tenantId: TenantId;
