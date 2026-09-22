@@ -166,6 +166,37 @@ describe.skipIf(url === '')('opening inventory migration isolation, PostgreSQL l
     await client.end();
   });
 
+  it('runs under non-superuser non-bypass RLS runtime', async () => {
+    const role = await client.query<{ usesuper: boolean; rolbypassrls: boolean }>(
+      `SELECT u.usesuper, r.rolbypassrls
+         FROM pg_user u
+         JOIN pg_roles r ON r.rolname = u.usename
+        WHERE u.usename = current_user`,
+    );
+    expect(role.rows[0]).toEqual({ usesuper: false, rolbypassrls: false });
+
+    const tables = await client.query<{
+      relname: string;
+      relrowsecurity: boolean;
+      relforcerowsecurity: boolean;
+    }>(
+      `SELECT relname, relrowsecurity, relforcerowsecurity
+         FROM pg_class
+        WHERE relname IN (
+          'migration_import_jobs',
+          'migration_import_rows',
+          'inventory_balances',
+          'inventory_movements'
+        )
+        ORDER BY relname`,
+    );
+    expect(tables.rows).toHaveLength(4);
+    for (const table of tables.rows) {
+      expect(table.relrowsecurity, table.relname).toBe(true);
+      expect(table.relforcerowsecurity, table.relname).toBe(true);
+    }
+  });
+
   it('does not resolve foreign-tenant branch codes or SKUs', async () => {
     const scope = { tenantId: tenantId(A.tenant) };
     const branch = await dryRunOpeningInventoryImport(
