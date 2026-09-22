@@ -330,6 +330,28 @@ Source promotion:
 - Product Readiness Scorecard
 - this Decision Register
 
+### Verified M3 Customer Migration closure — end-to-end customer vertical + PostgreSQL isolation
+
+- branch: `product/post-v1-migration-engine`;
+- verified implementation SHA: `fffd2e7d870826428064a85d4e52973aa86ea465`;
+- status: **VERIFIED M3**;
+- standard PR CI: `35672537533` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- evidence: 197 test files / 2,349 tests passed; 28 files / 387 live-only tests skipped by the standard CI profile;
+- PostgreSQL security/isolation proof: workflow `35672535019` green on the same implementation lineage using a restricted non-superuser, non-BYPASSRLS runtime role; 4 live proof files / 18 tests passed, including 5 Customer Migration isolation tests;
+- supported canonical customer fields are exactly the current Korvi customer domain: required `nameAr`; optional `nameEn`, `phone`, `email`, `vatNumber`. No balances, loyalty, credit, addresses or other unsupported semantics were invented;
+- capability: bounded CSV/XLSX inspection, deterministic Arabic/English mapping and validation, source preview, reviewed tenant-scoped jobs/rows, dry run, explicit controlled commit, row-level results, audit/provenance, source-data minimization, idempotent retry, Arabic merchant UI, official customer template and formula-safe error export;
+- authority: inspection/job/dry-run require `settings.manage`; commit additionally requires `customer.write`. Tenant identity and source hash remain server/principal-derived;
+- conflict semantics follow the real database/domain model: phone uniqueness is tenant-scoped, checked during dry run and re-enforced by the authoritative customer writer during commit. Email and VAT number are not falsely treated as unique because the schema does not make them unique;
+- isolation evidence proves Tenant B phone conflicts do not leak into Tenant A, foreign customer import jobs are indistinguishable from unknown jobs, identical phone values may legitimately exist in different tenants, and a post-dry-run same-tenant phone race is refused at commit rather than trusting stale preview state;
+- gaps: M3 has no remaining implementation gap. Overall Customer Migration Readiness remains **IN PROGRESS** because M4 suppliers and M5 opening inventory remain open;
+- next action: **M4 Supplier Migration** using only the actual supplier create semantics currently supported by Korvi.
+
+Source promotion:
+- Capability Matrix
+- Roadmap
+- Product Readiness Scorecard
+- this Decision Register
+
 ---
 
 ## Register maintenance rule
