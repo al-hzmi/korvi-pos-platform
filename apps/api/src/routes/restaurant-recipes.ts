@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import type {
   MerchantRestaurantRecipeService,
+  RestaurantProductionServiceResult,
   RestaurantRecipeServiceResult,
 } from '../restaurant/recipe-service.js';
-import type { RestaurantRecipeRefusal } from '@korvi/database';
+import type { RestaurantProductionRefusal, RestaurantRecipeRefusal } from '@korvi/database';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { Guards } from '../auth/guards.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -12,6 +13,15 @@ const UUID = z.string().uuid();
 const POSITIVE_QUANTITY = z.string().regex(/^[1-9][0-9]{0,18}$/);
 const PARAMS = z.object({ productId: UUID }).strict();
 const COST_QUERY = z.object({ branchId: UUID }).strict();
+const PRODUCTION_BODY = z
+  .object({
+    operationId: UUID,
+    branchId: UUID,
+    recipeRevision: POSITIVE_QUANTITY,
+    batchCount: POSITIVE_QUANTITY,
+  })
+  .strict();
+
 const BODY = z
   .object({
     operationId: UUID,
@@ -45,6 +55,21 @@ const STATUS: Readonly<Record<RestaurantRecipeRefusal, number>> = {
   'operation-in-progress': 409,
 };
 
+const PRODUCTION_STATUS: Readonly<Record<RestaurantProductionRefusal, number>> = {
+  'restaurant-mode-required': 422,
+  'recipe-not-found': 404,
+  'stale-revision': 409,
+  'unknown-branch': 404,
+  'inactive-branch': 422,
+  'unknown-product': 404,
+  'inactive-product': 422,
+  'untracked-product': 422,
+  'invalid-quantity': 422,
+  'insufficient-stock': 409,
+  'idempotency-conflict': 409,
+  'operation-in-progress': 409,
+};
+
 function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefined {
   return request.auth;
 }
@@ -52,6 +77,18 @@ function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefine
 function respond<T>(reply: FastifyReply, result: RestaurantRecipeServiceResult<T>): FastifyReply {
   if (result.outcome === 'failure') {
     return reply.code(STATUS[result.reason]).send({
+      error: result.reason.replace(/-/g, '_'),
+    });
+  }
+  return reply.send(result.value);
+}
+
+function respondProduction<T>(
+  reply: FastifyReply,
+  result: RestaurantProductionServiceResult<T>,
+): FastifyReply {
+  if (result.outcome === 'failure') {
+    return reply.code(PRODUCTION_STATUS[result.reason]).send({
       error: result.reason.replace(/-/g, '_'),
     });
   }
@@ -102,6 +139,30 @@ export function registerRestaurantRecipeRoutes(
         return reply.code(404).send({ error: 'restaurant_recipe_cost_not_found' });
       }
       return respond(reply, result);
+    },
+  );
+
+  app.post(
+    '/v1/admin/restaurant/recipes/:productId/production',
+    {
+      preHandler: [
+        guards.requireSession,
+        guards.requirePermission('product.read'),
+        guards.requirePermission('inventory.adjust'),
+      ],
+    },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = PARAMS.safeParse(request.params);
+      const body = PRODUCTION_BODY.safeParse(request.body);
+      if (!params.success || !body.success) {
+        return reply.code(400).send({ error: 'invalid_body' });
+      }
+      return respondProduction(
+        reply,
+        await service.produce(principal, params.data.productId, body.data),
+      );
     },
   );
 

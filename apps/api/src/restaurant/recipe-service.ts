@@ -1,7 +1,9 @@
 import {
+  RestaurantProductionRefusedError,
   RestaurantRecipeRefusedError,
   readRestaurantRecipe,
   readRestaurantRecipeCost,
+  recordRestaurantRecipeProduction,
   setRestaurantRecipe,
 } from '@korvi/database';
 import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
@@ -9,6 +11,9 @@ import type {
   PrismaClient,
   RestaurantRecipeCost,
   RestaurantRecipeMutationResult,
+  RestaurantRecipeProductionRequest,
+  RestaurantRecipeProductionResult,
+  RestaurantProductionRefusal,
   RestaurantRecipeRecord,
   RestaurantRecipeRefusal,
   SetRestaurantRecipeRequest,
@@ -18,6 +23,10 @@ import type { AuthenticatedPrincipal, TenantScope } from '@korvi/domain';
 export type RestaurantRecipeServiceResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
   | { readonly outcome: 'failure'; readonly reason: RestaurantRecipeRefusal };
+
+export type RestaurantProductionServiceResult<T> =
+  | { readonly outcome: 'success'; readonly value: T }
+  | { readonly outcome: 'failure'; readonly reason: RestaurantProductionRefusal };
 
 export interface MerchantRestaurantRecipeService {
   detail(
@@ -34,6 +43,11 @@ export interface MerchantRestaurantRecipeService {
     branchId: string,
     productId: string,
   ): Promise<RestaurantRecipeServiceResult<RestaurantRecipeCost | null>>;
+  produce(
+    principal: AuthenticatedPrincipal,
+    productId: string,
+    request: RestaurantRecipeProductionRequest,
+  ): Promise<RestaurantProductionServiceResult<RestaurantRecipeProductionResult>>;
 }
 
 function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
@@ -45,6 +59,19 @@ async function attempt<T>(work: () => Promise<T>): Promise<RestaurantRecipeServi
     return { outcome: 'success', value: await work() };
   } catch (error) {
     if (error instanceof RestaurantRecipeRefusedError) {
+      return { outcome: 'failure', reason: error.detail };
+    }
+    throw error;
+  }
+}
+
+async function attemptProduction<T>(
+  work: () => Promise<T>,
+): Promise<RestaurantProductionServiceResult<T>> {
+  try {
+    return { outcome: 'success', value: await work() };
+  } catch (error) {
+    if (error instanceof RestaurantProductionRefusedError) {
       return { outcome: 'failure', reason: error.detail };
     }
     throw error;
@@ -77,6 +104,19 @@ export function createMerchantRestaurantRecipeService(
       requirePrincipalPermission(principal, 'inventory.cost.read');
       return attempt(() =>
         readRestaurantRecipeCost(prisma, scopeOf(principal), branchId, productId),
+      );
+    },
+    async produce(principal, productId, request) {
+      requirePrincipalPermission(principal, 'product.read');
+      requirePrincipalPermission(principal, 'inventory.adjust');
+      return attemptProduction(() =>
+        recordRestaurantRecipeProduction(
+          prisma,
+          scopeOf(principal),
+          { userId: principal.userId },
+          productId,
+          request,
+        ),
       );
     },
   };

@@ -117,6 +117,51 @@ function service(): MerchantRestaurantRecipeService {
         },
       };
     },
+    async produce(_principal, productId, request) {
+      calls.push('produce');
+      return {
+        outcome: 'success',
+        value: {
+          id: '018fb700-0000-7000-8000-0000000000f2',
+          branchId: request.branchId,
+          recipeId: RECIPE,
+          productId,
+          recipeRevision: request.recipeRevision,
+          batchCount: request.batchCount,
+          producedAt: '2026-09-22T12:00:00.000Z',
+          replayed: false,
+          outputCostStatus: 'known',
+          lines: [
+            {
+              id: '018fb700-0000-7000-8000-0000000000f3',
+              role: 'ingredient',
+              productId: INGREDIENT,
+              deltaQuantityScaled: '-250',
+              beforeQuantityScaled: '1000',
+              afterQuantityScaled: '750',
+              resultRevision: '2',
+              costKnownQuantityScaled: '250',
+              costUnknownQuantityScaled: '0',
+              costValueMinor: '100',
+              costProvenance: 'recorded',
+            },
+            {
+              id: '018fb700-0000-7000-8000-0000000000f4',
+              role: 'output',
+              productId,
+              deltaQuantityScaled: '1000',
+              beforeQuantityScaled: '0',
+              afterQuantityScaled: '1000',
+              resultRevision: '1',
+              costKnownQuantityScaled: '1000',
+              costUnknownQuantityScaled: '0',
+              costValueMinor: '100',
+              costProvenance: 'recorded',
+            },
+          ],
+        },
+      };
+    },
   };
 }
 
@@ -237,6 +282,83 @@ describe('restaurant recipe route authority', () => {
         revision: '99',
         costValueMinor: '1',
         ingredients: [{ productId: INGREDIENT, quantityScaled: '250' }],
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(calls).toEqual([]);
+  });
+});
+
+
+describe('restaurant production route authority', () => {
+  it('requires inventory.adjust and product.read for production', async () => {
+    const server = build(principal(['product.read']));
+    const response = await server.inject({
+      method: 'POST',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}/production`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        branchId: BRANCH,
+        recipeRevision: '1',
+        batchCount: '1',
+      },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it('accepts only bounded production intent and returns non-fiscal stock evidence', async () => {
+    const server = build(principal(['product.read', 'inventory.adjust']));
+    const response = await server.inject({
+      method: 'POST',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}/production`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        branchId: BRANCH,
+        recipeRevision: '1',
+        batchCount: '1',
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      productId: PRODUCT,
+      recipeId: RECIPE,
+      outputCostStatus: 'known',
+      lines: [
+        { role: 'ingredient', productId: INGREDIENT, deltaQuantityScaled: '-250' },
+        { role: 'output', productId: PRODUCT, deltaQuantityScaled: '1000' },
+      ],
+    });
+    expect(calls).toEqual(['produce']);
+    for (const forbidden of [
+      'priceMinor',
+      'vatBasisPoints',
+      'invoiceNumber',
+      'qrCodeBase64',
+      'ICV',
+      'PIH',
+    ]) {
+      expect(response.body).not.toContain(forbidden);
+    }
+  });
+
+  it('rejects client-supplied production authority and cost fields before service execution', async () => {
+    const server = build(principal(['product.read', 'inventory.adjust']));
+    const response = await server.inject({
+      method: 'POST',
+      url: `/v1/admin/restaurant/recipes/${PRODUCT}/production`,
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        branchId: BRANCH,
+        recipeRevision: '1',
+        batchCount: '1',
+        tenantId: TENANT,
+        ingredientProductId: INGREDIENT,
+        outputQuantityScaled: '999000',
+        costValueMinor: '1',
       },
     });
     expect(response.statusCode).toBe(400);

@@ -114,8 +114,10 @@ model Tenant {
   restaurantPreparationStations RestaurantPreparationStation[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
-  restaurantRecipes             RestaurantRecipe[]
-  restaurantRecipeIngredients   RestaurantRecipeIngredient[]
+  restaurantRecipes                 RestaurantRecipe[]
+  restaurantRecipeIngredients       RestaurantRecipeIngredient[]
+  restaurantRecipeProductions       RestaurantRecipeProduction[]
+  restaurantRecipeProductionLines   RestaurantRecipeProductionLine[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
   tenders                       Tender[]
@@ -170,6 +172,7 @@ model Branch {
   restaurantPreparationStations RestaurantPreparationStation[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
+  restaurantRecipeProductions    RestaurantRecipeProduction[]
   returns                  Return[]
   memberships              TenantMembership[]
 
@@ -323,6 +326,7 @@ model RestaurantRecipe {
   tenant      Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   product     Product                      @relation("RestaurantRecipeFinishedProduct", fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
   ingredients RestaurantRecipeIngredient[]
+  productions RestaurantRecipeProduction[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, productId])
@@ -346,6 +350,57 @@ model RestaurantRecipeIngredient {
   @@unique([tenantId, recipeId, ingredientProductId])
   @@index([tenantId, ingredientProductId])
   @@map("restaurant_recipe_ingredients")
+}
+
+model RestaurantRecipeProduction {
+  id             String   @id @db.Uuid
+  tenantId       String   @db.Uuid
+  branchId       String   @db.Uuid
+  recipeId       String   @db.Uuid
+  recipeRevision BigInt
+  batchCount     BigInt
+  operationId    String
+  requestHash    String
+  actorUserId    String   @db.Uuid
+  producedAt     DateTime
+  createdAt      DateTime @default(now())
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch           @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  recipe RestaurantRecipe @relation(fields: [tenantId, recipeId], references: [tenantId, id], onDelete: NoAction)
+  actor  User             @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+  lines  RestaurantRecipeProductionLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, branchId, producedAt])
+  @@index([tenantId, recipeId, producedAt])
+  @@map("restaurant_recipe_productions")
+}
+
+model RestaurantRecipeProductionLine {
+  id                        String @id @db.Uuid
+  tenantId                  String @db.Uuid
+  productionId              String @db.Uuid
+  productId                 String @db.Uuid
+  role                      String
+  deltaQuantityScaled       BigInt
+  beforeQuantityScaled      BigInt
+  afterQuantityScaled       BigInt
+  resultRevision            BigInt
+  costKnownQuantityScaled   BigInt
+  costUnknownQuantityScaled BigInt
+  costValueMinor            BigInt
+  costProvenance            String
+
+  tenant     Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  production RestaurantRecipeProduction @relation(fields: [tenantId, productionId], references: [tenantId, id], onDelete: Cascade)
+  product    Product                    @relation("RestaurantRecipeProductionProduct", fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, productionId, productId])
+  @@index([tenantId, productId])
+  @@map("restaurant_recipe_production_lines")
 }
 
 model RestaurantOrder {
@@ -452,7 +507,8 @@ model User {
   closedShifts  Shift[]            @relation("ShiftCloser")
   cashMovements    CashMovement[]
   sales            Sale[]
-  restaurantOrders RestaurantOrder[]
+  restaurantOrders           RestaurantOrder[]
+  restaurantRecipeProductions RestaurantRecipeProduction[]
   auditEvents      AuditEvent[]
   saleDiscounts SaleDiscount[]
   returns       Return[]
@@ -782,8 +838,9 @@ model Product {
   restaurantOrderLines          RestaurantOrderLine[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
-  restaurantRecipe              RestaurantRecipe?             @relation("RestaurantRecipeFinishedProduct")
-  restaurantRecipeIngredients   RestaurantRecipeIngredient[]   @relation("RestaurantRecipeIngredientProduct")
+  restaurantRecipe                RestaurantRecipe?                @relation("RestaurantRecipeFinishedProduct")
+  restaurantRecipeIngredients     RestaurantRecipeIngredient[]      @relation("RestaurantRecipeIngredientProduct")
+  restaurantRecipeProductionLines RestaurantRecipeProductionLine[]  @relation("RestaurantRecipeProductionProduct")
   returnLines                   ReturnLine[]
 
   @@unique([tenantId, sku])

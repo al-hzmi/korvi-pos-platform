@@ -260,13 +260,18 @@ export type {
   UpdatePreparationTaskStatusRequest,
 } from './restaurant/preparation.js';
 
-// Restaurant recipe/BOM authority. Flat recipes only in this slice; no cost or stock movement is implied.
+// Restaurant recipe/BOM configuration and production authority. Production reuses
+// the one inventory/cost ledger; it never creates a parallel restaurant stock truth.
 export {
   RestaurantRecipeRefusedError,
   readRestaurantRecipe,
   setRestaurantRecipe,
   readRestaurantRecipeCost,
 } from './restaurant/recipes.js';
+export {
+  RestaurantProductionRefusedError,
+  recordRestaurantRecipeProduction,
+} from './restaurant/production.js';
 export type {
   RestaurantRecipeRefusal,
   RestaurantRecipeActor,
@@ -277,6 +282,13 @@ export type {
   RestaurantRecipeIngredientCost,
   RestaurantRecipeCost,
 } from './restaurant/recipes.js';
+export type {
+  RestaurantProductionRefusal,
+  RestaurantProductionActor,
+  RestaurantRecipeProductionRequest,
+  RestaurantRecipeProductionLineResult,
+  RestaurantRecipeProductionResult,
+} from './restaurant/production.js';
 
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.

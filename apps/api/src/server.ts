@@ -115,7 +115,7 @@ export interface ServerDeps {
   readonly restaurantOrders?: MerchantRestaurantOrderService;
   /** Non-fiscal preparation-station configuration and routing authority. */
   readonly restaurantPreparation?: MerchantPreparationService;
-  /** Restaurant recipe/BOM configuration authority; does not itself move inventory. */
+  /** Restaurant recipe/BOM configuration plus governed batch-production inventory authority. */
   readonly restaurantRecipes?: MerchantRestaurantRecipeService;
   /** Merchant customer directory and mutation authority. */
   readonly customers?: MerchantCustomerService;
@@ -461,6 +461,7 @@ function lazyRestaurantRecipeService(config: ApiConfig): MerchantRestaurantRecip
     detail: (principal, productId) => resolve().detail(principal, productId),
     set: (principal, productId, request) => resolve().set(principal, productId, request),
     cost: (principal, branchId, productId) => resolve().cost(principal, branchId, productId),
+    produce: (principal, productId, request) => resolve().produce(principal, productId, request),
   };
 }
 
