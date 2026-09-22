@@ -299,5 +299,4 @@ describe('XLSX migration adapter', () => {
       },
     });
   });
-
 });
