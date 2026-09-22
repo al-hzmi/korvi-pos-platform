@@ -352,6 +352,29 @@ Source promotion:
 - Product Readiness Scorecard
 - this Decision Register
 
+
+### Verified M4 Supplier Migration closure — end-to-end supplier vertical + PostgreSQL isolation
+
+- branch: `product/post-v1-migration-engine`;
+- verified implementation SHA: `512c57fc86a61d72e152ae4c1e05d210b70901b3`;
+- status: **VERIFIED M4**;
+- standard PR CI: `35717607379` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- evidence: 199 test files / 2,362 tests passed; 29 files / 391 live-only tests skipped by the standard CI profile;
+- PostgreSQL security/isolation proof: workflow `35717603645` green on the same SHA using the restricted non-superuser, non-BYPASSRLS runtime role; 5 live proof files / 22 tests passed, including the supplier isolation suite;
+- supported canonical supplier model is exactly the current Korvi create authority: required `name` only. No phone, tax number, payment terms, credit, contact or other unsupported supplier semantics were invented;
+- capability: bounded CSV/XLSX inspection, deterministic mapping/validation, source preview, tenant-scoped reviewed jobs/rows, dry run, controlled commit through the authoritative supplier writer, idempotent retry, audit/provenance, source-data minimization, Arabic merchant UI, official template and formula-safe error export;
+- authority: inspection/job/dry-run require `settings.manage`; commit additionally requires `purchasing.manage`. Tenant identity and source hash remain server/principal-derived;
+- supplier names are not falsely treated as unique because the current schema permits legitimate duplicates. Formula-like input is blocked and raw control characters are rejected before text normalization;
+- isolation evidence proves foreign supplier migration jobs remain indistinguishable from unknown jobs and identical supplier names may legitimately exist across tenants without leaking foreign state;
+- gaps: M4 has no remaining implementation gap. Overall Customer Migration Readiness remains **IN PROGRESS** because M5 opening inventory remains open;
+- next action: **M5 Opening Inventory** with explicit opening-stock semantics, tenant-scoped business-key resolution and causal inventory-ledger evidence; never direct balance fabrication.
+
+Source promotion:
+- Capability Matrix
+- Roadmap
+- Product Readiness Scorecard
+- this Decision Register
+
 ---
 
 ## Register maintenance rule
