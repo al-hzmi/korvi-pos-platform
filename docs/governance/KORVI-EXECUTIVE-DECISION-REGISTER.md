@@ -516,3 +516,18 @@ AR-0, AR-1, AR-2 and AR-3 are therefore CLOSED. This is an integration/product
 closure only. Production Operations, production ZATCA, acquisition handoff and
 a real merchant production pilot remain open and may not be implied by this
 decision.
+
+
+## 2026-09-22 — AR-4 internal operations evidence and AR-6 engineering handoff are complete
+
+**Decision:** ACCEPTED WITH EXTERNAL ACTIVATION REMAINING.
+
+Canonical SHA `48400d02a3990eecd6169933c207e282d9371084` proves the provider-independent Production Operations work executable without paid production resources: CI, PostgreSQL restricted-role verification, logical backup/isolated restore with restored RLS/application proof, and dependency-outage/fail-closed-readiness/recovery/graceful-drain evidence.
+
+The repository also contains a mechanically checked acquisition handoff package covering deployment, environment names without values, rollback, monitoring/on-call, backup/restore, dependency/supply-chain status, ownership/IP/licensing position and explicit deferred activation gates.
+
+This does **not** change the rule that Production Proven requires real production infrastructure/evidence. AR-4 remains externally open for durable provider/HA/managed-backup/measured-RPO-RTO/real alert routing/secret-rotation evidence. AR-6 remains externally open for transaction/legal/account-transfer diligence.
+
+Production ZATCA and a real Merchant Pilot remain separate open gates.
+
+---
