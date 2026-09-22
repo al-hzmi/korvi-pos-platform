@@ -420,7 +420,7 @@ export interface CustomerMigrationRowResult {
   readonly sourceRow: number;
   readonly sourceIdentifier: string | null;
   readonly classification: 'VALID' | 'WARNING' | 'ERROR' | 'BLOCKED';
-  readonly plannedAction: 'create' | 'reject';
+  readonly plannedAction: 'create' | 'update' | 'reject';
   readonly status: 'pending' | 'committing' | 'rejected' | 'committed' | 'failed';
   readonly targetEntityId: string | null;
   readonly errorCode: string | null;
@@ -442,13 +442,14 @@ export interface CustomerMigrationSummary {
   readonly status: 'reviewed' | 'dry-run' | 'committing' | 'completed';
   readonly mappingVersion: number;
   readonly mapping: readonly CustomerMigrationMapping[];
-  readonly conflictPolicy: 'reject';
+  readonly conflictPolicy: CustomerMigrationConflictPolicy;
   readonly totalRows: number;
   readonly validRows: number;
   readonly warningRows: number;
   readonly errorRows: number;
   readonly blockedRows: number;
   readonly created: number;
+  readonly updated: number;
   readonly failed: number;
   readonly rejected: number;
   readonly rows: readonly CustomerMigrationRowResult[];
@@ -474,13 +475,13 @@ export interface XlsxCustomerMigrationSource {
 export interface CreateCsvCustomerMigrationJobRequest extends CsvCustomerMigrationSource {
   readonly operationId: string;
   readonly mapping: readonly CustomerMigrationMapping[];
-  readonly conflictPolicy: CustomerMigrationConflictPolicy;
+  readonly conflictPolicy?: CustomerMigrationConflictPolicy;
 }
 
 export interface CreateXlsxCustomerMigrationJobRequest extends XlsxCustomerMigrationSource {
   readonly operationId: string;
   readonly mapping: readonly CustomerMigrationMapping[];
-  readonly conflictPolicy: CustomerMigrationConflictPolicy;
+  readonly conflictPolicy?: CustomerMigrationConflictPolicy;
 }
 
 export type SupplierMigrationTargetField = 'name';
