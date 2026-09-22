@@ -3,6 +3,7 @@ import { newId } from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
+import { preparationReplacementPreservesFiredLines } from './preparation-policy.js';
 import type { TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
@@ -25,6 +26,7 @@ export type RestaurantOrderRefusal =
   | 'invalid-quantity'
   | 'unknown-line'
   | 'duplicate-line'
+  | 'preparation-started'
   | 'unknown-order'
   | 'order-not-open'
   | 'stale-revision'
@@ -677,6 +679,14 @@ export async function cancelRestaurantOrder(
       throw new RestaurantOrderRefusedError('stale-revision');
     }
 
+    const preparationStarted = await tx.restaurantPreparationTask.findFirst({
+      where: { tenantId: tenant, branchId: actor.branchId, orderId },
+      select: { id: true },
+    });
+    if (preparationStarted !== null) {
+      throw new RestaurantOrderRefusedError('preparation-started');
+    }
+
     const at = clock();
     const changed = await tx.restaurantOrder.updateMany({
       where: {
@@ -889,6 +899,15 @@ export async function replaceRestaurantOrderLines(
     }
     if (expected.toString() !== existing.revision) {
       throw new RestaurantOrderRefusedError('stale-revision');
+    }
+
+    const preparationTasks = await tx.restaurantPreparationTask.findMany({
+      where: { tenantId: tenant, branchId: actor.branchId, orderId },
+      select: { orderLineId: true },
+    });
+    const firedLineIds = new Set(preparationTasks.map((task) => task.orderLineId));
+    if (!preparationReplacementPreservesFiredLines(existing.lines, firedLineIds, normalizedLines)) {
+      throw new RestaurantOrderRefusedError('preparation-started');
     }
 
     const existingById = new Map(existing.lines.map((line) => [line.id, line]));

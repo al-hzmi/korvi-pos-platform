@@ -150,6 +150,69 @@ async function setInput(id, value) {
   assert.equal(changed, true, `Input #${id} was not available.`);
 }
 
+async function setInputByAriaLabel(label, value) {
+  const changed = await evaluate(`(() => {
+    const input = [...document.querySelectorAll('input')].find(
+      (candidate) => candidate.getAttribute('aria-label') === ${jsString(label)}
+    );
+    if (!(input instanceof HTMLInputElement)) return false;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(input, ${jsString(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.focus();
+    return true;
+  })()`);
+  assert.equal(changed, true, `Input with aria-label ${label} was not available.`);
+}
+
+async function setSelect(id, value) {
+  const changed = await evaluate(`(() => {
+    const select = document.getElementById(${jsString(id)});
+    if (!(select instanceof HTMLSelectElement)) return false;
+    select.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(select, ${jsString(value)});
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  assert.equal(changed, true, `Select #${id} was not available.`);
+}
+
+async function amountAfterLabel(label) {
+  const value = await evaluate(`(() => {
+    const label = [...document.querySelectorAll('dt')].find(
+      (candidate) => (candidate.textContent ?? '').trim() === ${jsString(label)}
+    );
+    const text = label?.nextElementSibling?.textContent ?? '';
+    const match = text.replace(/,/g, '').match(/-?\\d+(?:\\.\\d{1,2})?/);
+    return match?.[0] ?? null;
+  })()`);
+  assert.equal(typeof value, 'string', `Could not read amount after ${label}.`);
+  return value;
+}
+
+function majorToMinor(value) {
+  assert.match(value, /^-?\d+(?:\.\d{1,2})?$/);
+  const negative = value.startsWith('-');
+  const unsigned = negative ? value.slice(1) : value;
+  const [whole, fraction = ''] = unsigned.split('.');
+  const minor = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+  return negative ? -minor : minor;
+}
+
+function minorToMajor(value) {
+  const negative = value < 0n;
+  const magnitude = negative ? -value : value;
+  const whole = magnitude / 100n;
+  const fraction = (magnitude % 100n).toString().padStart(2, '0');
+  return `${negative ? '-' : ''}${whole.toString()}.${fraction}`;
+}
+
 async function pointForButton(text) {
   const point = await evaluate(`(() => {
     const wanted = ${jsString(text)};
@@ -238,6 +301,12 @@ async function capture(name) {
 
 try {
   await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 1280,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false, maxTouchPoints: 1 });
 
   const branches = await browserRequest('/v1/admin/inventory/branches?limit=50');
@@ -311,12 +380,6 @@ try {
     'cashier re-authenticated into the assigned branch/terminal and opened a real shift through the POS UI',
   );
 
-  await setInput('product-search', 'BROWSER-SKU-001');
-  await pressEnter();
-  await waitForText('صنف برهان المتصفح', 20_000);
-  await clickButton('صنف برهان المتصفح');
-  await setInput('cash-received', '100.00');
-
   let saleRequests = 0;
   cdp.on('Network.requestWillBeSent', (params) => {
     const request = params.request;
@@ -324,14 +387,55 @@ try {
       saleRequests += 1;
   });
 
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+
+  await clickButton('إلكتروني / متعدد');
+  const totalMajor = await amountAfterLabel('الإجمالي المستحق');
+  const totalMinor = majorToMinor(totalMajor);
+  await setInputByAriaLabel('مبلغ الدفعة الإلكترونية 1', minorToMajor(totalMinor));
+  await setInputByAriaLabel('مرجع الموافقة 1', 'AR2-ELECTRONIC-PROOF-001');
+
+  await clickButton('إتمام البيع');
+  await waitForText('تمّت العملية', 30_000);
+  await waitForText('مدى', 20_000);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(
+    saleRequests,
+    1,
+    'Full electronic checkout must emit exactly one POST /v1/sales request.',
+  );
+  record('actual Chrome cashier UI completed one full Mada electronic sale');
+
+  await clickButton('عملية بيع جديدة');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+  await clickButton('إلكتروني / متعدد');
+
+  const mixedTotalMajor = await amountAfterLabel('الإجمالي المستحق');
+  const mixedTotalMinor = majorToMinor(mixedTotalMajor);
+  assert.equal(mixedTotalMinor, totalMinor, 'Identical proof product changed total between sales.');
+  const cashTenderMinor = 100n;
+  const electronicTenderMinor = totalMinor - cashTenderMinor;
+  assert.ok(electronicTenderMinor > 0n, 'Proof item total must exceed the 1.00 SAR cash split.');
+
+  await setInput('cash-received', '1.00');
+  await setInputByAriaLabel('مبلغ الدفعة الإلكترونية 1', minorToMajor(electronicTenderMinor));
+  await setInputByAriaLabel('مرجع الموافقة 1', 'AR2-MIXED-PROOF-001');
+
   await clickButton('إتمام البيع');
   await waitForText('تمّت العملية', 30_000);
   await waitForText('فاتورة', 30_000);
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(
     saleRequests,
-    1,
-    'A successful cashier sale must emit exactly one POST /v1/sales request.',
+    2,
+    'Electronic and mixed checkout must each emit exactly one POST /v1/sales request.',
   );
 
   const receiptText = await evaluate(`document.body?.innerText ?? ''`);
@@ -339,32 +443,175 @@ try {
   assert.match(receiptText, /عملية بيع جديدة/u);
   record('actual Chrome cashier UI completed one sale and rendered the server-owned receipt');
 
+  const salesPage = await browserRequest('/v1/admin/sales?limit=10');
+  let proofSale = null;
+  let proofSaleDetail = null;
+  let electronicSale = null;
+  let electronicSaleDetail = null;
+  for (const sale of salesPage.items) {
+    if (sale.terminal?.id !== terminal.id || sale.status !== 'finalized') continue;
+    const detail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(sale.id)}`);
+    if (
+      detail.tenders.some(
+        (tender) => tender.kind === 'electronic' && tender.reference === 'AR2-ELECTRONIC-PROOF-001',
+      )
+    ) {
+      electronicSale = sale;
+      electronicSaleDetail = detail;
+    }
+    if (
+      detail.tenders.some(
+        (tender) => tender.kind === 'electronic' && tender.reference === 'AR2-MIXED-PROOF-001',
+      )
+    ) {
+      proofSale = sale;
+      proofSaleDetail = detail;
+    }
+  }
+
+  assert.ok(
+    electronicSale !== null && electronicSaleDetail !== null,
+    'Electronic proof sale missing from server truth.',
+  );
+  assert.ok(
+    proofSale !== null && proofSaleDetail !== null,
+    'Mixed-tender proof sale missing from server truth.',
+  );
+
+  const pureElectronicTender = electronicSaleDetail.tenders.find(
+    (tender) => tender.kind === 'electronic',
+  );
+  assert.equal(pureElectronicTender?.amountMinor, totalMinor.toString());
+  assert.equal(pureElectronicTender?.scheme, 'mada');
+  assert.equal(pureElectronicTender?.reference, 'AR2-ELECTRONIC-PROOF-001');
+
+  const cashTender = proofSaleDetail.tenders.find((tender) => tender.kind === 'cash');
+  const electronicTender = proofSaleDetail.tenders.find((tender) => tender.kind === 'electronic');
+  assert.equal(cashTender?.amountMinor, cashTenderMinor.toString());
+  assert.equal(electronicTender?.amountMinor, electronicTenderMinor.toString());
+  assert.equal(electronicTender?.scheme, 'mada');
+  assert.equal(electronicTender?.reference, 'AR2-MIXED-PROOF-001');
+  record('server truth preserved exact full-electronic and mixed tender composition');
+
   const afterBalance = await browserRequest(
     `/v1/admin/inventory/balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
   );
   const afterRow = afterBalance.rows.find((row) => row.sku === 'BROWSER-SKU-001');
-  assert.equal(afterRow?.quantityScaled, '10000');
+  assert.equal(afterRow?.quantityScaled, '9000');
 
   const afterCost = await browserRequest(
     `/v1/admin/inventory/cost-balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
   );
   const afterCostRow = afterCost.rows.find((row) => row.sku === 'BROWSER-SKU-001');
-  assert.equal(afterCostRow?.quantityScaled, '10000');
-  assert.equal(afterCostRow?.knownQuantityScaled, '10000');
+  assert.equal(afterCostRow?.quantityScaled, '9000');
+  assert.equal(afterCostRow?.knownQuantityScaled, '9000');
   assert.equal(afterCostRow?.unknownPositiveQuantityScaled, '0');
-  assert.equal(afterCostRow?.knownValueMinor, '5000');
+  assert.equal(afterCostRow?.knownValueMinor, '4500');
   record(
-    'server truth reconciles exactly after sale: stock 11→10 and known cost pool 55.00→50.00 SAR',
+    'server truth reconciles exactly after two sales: stock 11→9 and known cost pool 55.00→45.00 SAR',
+  );
+
+  await clickButton('عملية بيع جديدة');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
+  await clickButton('مرتجع / استرداد');
+  await waitForText('إنشاء مرتجع', 20_000);
+  await setInput('return-search', electronicSale.invoiceNumber ?? String(electronicSale.sequence));
+  await clickButton('بحث');
+  await clickButton(electronicSale.invoiceNumber ?? `#${String(electronicSale.sequence)}`);
+  await waitForText('المتبقي:', 20_000);
+  await setInputByAriaLabel('كمية إرجاع صنف برهان المتصفح', '1');
+  await setSelect('return-refund-kind', 'electronic');
+  await setSelect('return-refund-scheme', 'mada');
+  await setInput('return-refund-reference', 'AR2-REFUND-PROOF-001');
+
+  let returnRequests = 0;
+  let returnResponseStatus = null;
+  cdp.on('Network.requestWillBeSent', (params) => {
+    const request = params.request;
+    if (request?.method === 'POST' && new URL(request.url).pathname === '/v1/returns')
+      returnRequests += 1;
+  });
+  cdp.on('Network.responseReceived', (params) => {
+    if (new URL(params.response.url).pathname === '/v1/returns') {
+      returnResponseStatus = params.response.status;
+    }
+  });
+
+  await clickButton('اعتماد المرتجع');
+  try {
+    await waitForText('تم اعتماد المرتجع', 30_000);
+  } catch (error) {
+    const visibleText = String(await evaluate(`document.body?.innerText ?? ''`))
+      .replace(/\s+/g, ' ')
+      .slice(-1200);
+    throw new Error(
+      `Return UI did not reach success. POST count=${String(returnRequests)} HTTP=${String(returnResponseStatus)} visible=${visibleText}`,
+      { cause: error },
+    );
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(returnRequests, 1, 'Return UI must emit exactly one POST /v1/returns request.');
+
+  const returnedSaleDetail = await browserRequest(
+    `/v1/admin/sales/${encodeURIComponent(electronicSale.id)}`,
+  );
+  assert.equal(returnedSaleDetail.returns.length, 1);
+  assert.equal(returnedSaleDetail.returns[0]?.totalMinor, totalMinor.toString());
+
+  const restoredBalance = await browserRequest(
+    `/v1/admin/inventory/balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
+  );
+  const restoredRow = restoredBalance.rows.find((row) => row.sku === 'BROWSER-SKU-001');
+  assert.equal(restoredRow?.quantityScaled, '10000');
+  record(
+    'cashier UI executed a server-priced electronic return on the pure-electronic sale and inventory returned 9→10 units',
+  );
+
+  await clickButton('تم');
+  await clickButton('إغلاق الوردية');
+  await waitForText('إغلاق الوردية وتسوية الدرج', 20_000);
+  await setInput('shift-close-declared-cash', '101.00');
+
+  let closeRequests = 0;
+  cdp.on('Network.requestWillBeSent', (params) => {
+    const request = params.request;
+    if (request?.method === 'POST' && new URL(request.url).pathname === '/v1/shifts/close')
+      closeRequests += 1;
+  });
+
+  await clickButton('اعتماد العد وإغلاق الوردية');
+  await waitForText('أغلقت الوردية واعتمدت التسوية من الخادم.', 30_000);
+  await waitForText('الفارق (المعدود − المتوقع)', 20_000);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(
+    closeRequests,
+    1,
+    'Shift-close UI must emit exactly one POST /v1/shifts/close request.',
+  );
+
+  const currentShift = await browserRequest(
+    `/v1/shifts/current?terminalId=${encodeURIComponent(terminal.id)}`,
+  );
+  assert.equal(
+    currentShift.shift,
+    null,
+    'Closed shift must disappear from current-shift authority.',
+  );
+  record(
+    'cashier UI completed blind-count shift close; server reconciliation closed the authoritative shift',
   );
 
   const overflow = await evaluate(
     `document.documentElement.scrollWidth > document.documentElement.clientWidth + 1`,
   );
-  assert.equal(overflow, false, 'Cashier receipt has body-level horizontal overflow.');
-  await capture('cashier-sale-success');
+  assert.equal(overflow, false, 'Cashier commercial workflow has body-level horizontal overflow.');
+  await capture('cashier-commercial-workflows-success');
+
+  await clickButton('إنهاء والعودة');
+  await waitForText('افتح وردية', 20_000);
 
   record(
-    `Gate 20 browser sale proof completed for ${process.env.GITHUB_SHA ?? 'local-sha-unknown'}`,
+    `Gate 20 + AR-2 commercial browser proof completed for ${process.env.GITHUB_SHA ?? 'local-sha-unknown'}`,
   );
   await writeFile(`${artifactDirectory}/cashier-proof.txt`, `${evidence.join('\n')}\n`, {
     mode: 0o600,

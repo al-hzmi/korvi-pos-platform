@@ -19,6 +19,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantFloorRepository,
   memoryReturnRepository,
   memorySaleRepository,
   memoryShiftRepository,
@@ -91,6 +92,7 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
       tenants: memoryTenantRepository(business),
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
+      restaurantFloor: memoryRestaurantFloorRepository(),
       shifts: memoryShiftRepository(business),
       terminals: memoryTerminalRepository(business),
       checkout: createCheckoutService({

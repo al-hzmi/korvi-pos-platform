@@ -25,6 +25,7 @@ import type {
   Product,
   ProductRepository,
   ProductSearchQuery,
+  RestaurantFloorRepository,
   RecordReturnInput,
   RecordSaleInput,
   ReturnRecord,
@@ -104,6 +105,14 @@ export function memoryTenantRepository(store: MemoryBusinessStore): TenantReposi
  * Deliberately derived rather than stubbed: a test that asserts a hardcoded
  * total proves the assertion, not the aggregate.
  */
+export function memoryRestaurantFloorRepository(): RestaurantFloorRepository {
+  return {
+    findTableById: () => Promise.resolve(null),
+    listZonesForBranch: () => Promise.resolve([]),
+    listTablesForBranch: () => Promise.resolve([]),
+  };
+}
+
 export function memoryDashboardRepository(store: MemoryBusinessStore): DashboardRepository {
   return {
     summary: (scope, since) => {

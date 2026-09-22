@@ -7,7 +7,7 @@
  * 1000, exactly as they cross the wire (ADR-0002).
  */
 
-import type { PriceMode, RestaurantOrderType, Vertical } from '@korvi/domain';
+import type { PriceMode, RestaurantOrderType, TenderScheme, Vertical } from '@korvi/domain';
 
 export interface Principal {
   readonly user: { readonly id: string; readonly email: string; readonly displayName: string };
@@ -139,6 +139,79 @@ export interface RestaurantOrderReplaceLinesRequest {
   readonly operationId: string;
   readonly expectedRevision: string;
   readonly lines: readonly RestaurantOrderReplaceLine[];
+}
+
+export interface RestaurantOrderTransferTableRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly tableId: string;
+}
+
+export interface RestaurantOrderCancelRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly reason: string;
+}
+
+export interface RestaurantPreparationStation {
+  readonly id: string;
+  readonly branchId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly sortOrder: number;
+  readonly isActive: boolean;
+}
+
+export type RestaurantPreparationTaskStatus = 'queued' | 'preparing' | 'ready' | 'served';
+
+export interface RestaurantPreparationTask {
+  readonly id: string;
+  readonly branchId: string;
+  readonly stationId: string;
+  readonly orderId: string;
+  readonly orderLineId: string;
+  readonly productId: string;
+  readonly orderRevision: string;
+  readonly lineNumber: number;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly quantityScaled: string;
+  readonly preparationNote: string | null;
+  readonly preparationOptions: string | null;
+  readonly status: RestaurantPreparationTaskStatus;
+  readonly revision: string;
+  readonly queuedAt: string;
+  readonly startedAt: string | null;
+  readonly readyAt: string | null;
+  readonly servedAt: string | null;
+}
+
+export interface RestaurantPreparationFireRequest {
+  readonly operationId: string;
+  readonly expectedOrderRevision: string;
+}
+
+export interface RestaurantPreparationFireResult {
+  readonly orderId: string;
+  readonly orderRevision: string;
+  readonly alreadyFired: boolean;
+  readonly tasks: readonly RestaurantPreparationTask[];
+}
+
+export interface RestaurantPreparationFireMutation {
+  readonly value: RestaurantPreparationFireResult;
+  readonly replayed: boolean;
+}
+
+export interface RestaurantPreparationTaskUpdateRequest {
+  readonly operationId: string;
+  readonly expectedRevision: string;
+  readonly status: Exclude<RestaurantPreparationTaskStatus, 'queued'>;
+}
+
+export interface RestaurantPreparationTaskMutation {
+  readonly value: RestaurantPreparationTask;
+  readonly replayed: boolean;
 }
 
 export interface ProductSummary {
@@ -700,6 +773,155 @@ export interface ShiftSummary {
   readonly openedAt: string;
 }
 
+export interface ShiftReconciliationSummary {
+  readonly openingFloatMinor: string;
+  readonly cashSalesMinor: string;
+  readonly cashRefundsMinor: string;
+  readonly paidInMinor: string;
+  readonly paidOutMinor: string;
+  readonly expectedCashMinor: string;
+  readonly declaredCashMinor: string;
+  readonly varianceMinor: string;
+}
+
+export interface ShiftCloseRequest {
+  readonly operationId: string;
+  readonly terminalId: string;
+  readonly shiftId: string;
+  /** Physical blind count only. Expected cash and variance are server-derived. */
+  readonly declaredCashMinor: string;
+}
+
+export interface ShiftCloseSummary {
+  readonly shiftId: string;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly openedByUserId: string;
+  readonly closedByUserId: string | null;
+  readonly status: string;
+  readonly openedAt: string;
+  readonly closedAt: string | null;
+  readonly reconciliation: ShiftReconciliationSummary;
+}
+
+export interface ShiftCloseResponse {
+  readonly shift: ShiftCloseSummary;
+  readonly replayed: boolean;
+}
+
+export interface SaleLookupResult {
+  readonly saleId: string;
+  readonly invoiceNumber: string | null;
+  readonly sequence: number;
+  readonly issuedAt: string;
+  readonly currency: string;
+  readonly totalMinor: string;
+  readonly refundedTotalMinor: string;
+  readonly fullyReturned: boolean;
+}
+
+export interface ReturnableSaleLine {
+  readonly saleLineId: string;
+  readonly lineNumber: number;
+  readonly productId: string | null;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: string | null;
+  readonly vatBasisPoints: number;
+  readonly unitPriceMinor: string;
+  readonly soldQuantityScaled: string;
+  readonly returnedQuantityScaled: string;
+  readonly remainingQuantityScaled: string;
+  readonly grossMinor: string;
+  readonly lineDiscountMinor: string;
+  readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+}
+
+export interface ReturnableSale {
+  readonly saleId: string;
+  readonly invoiceNumber: string | null;
+  readonly issuedAt: string;
+  readonly currency: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+  readonly refundedTotalMinor: string;
+  readonly lines: readonly ReturnableSaleLine[];
+}
+
+export type RefundRequest =
+  | { readonly kind: 'cash' }
+  | {
+      readonly kind: 'electronic';
+      readonly scheme: TenderScheme;
+      readonly reference: string;
+    };
+
+export interface CreateReturnRequest {
+  readonly operationId: string;
+  readonly terminalId: string;
+  readonly saleId: string;
+  readonly reason?: string;
+  readonly refund: RefundRequest;
+  readonly lines: readonly {
+    readonly saleLineId: string;
+    readonly quantityScaled: string;
+  }[];
+}
+
+export interface ReturnSummaryLine {
+  readonly lineNumber: number;
+  readonly saleLineId: string;
+  readonly productId: string | null;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly quantityScaled: string;
+  readonly grossMinor: string;
+  readonly lineDiscountMinor: string;
+  readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+}
+
+export interface ReturnSummaryRefund {
+  readonly kind: string;
+  readonly scheme: string | null;
+  readonly amountMinor: string;
+  readonly reference: string | null;
+}
+
+export interface ReturnSummary {
+  readonly returnId: string;
+  readonly returnNumber: string;
+  readonly saleId: string;
+  readonly operationId: string;
+  readonly sequence: number;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly shiftId: string;
+  readonly currency: string;
+  readonly reason: string | null;
+  readonly grossMinor: string;
+  readonly lineDiscountMinor: string;
+  readonly basketDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+  readonly issuedAt: string;
+  readonly lines: readonly ReturnSummaryLine[];
+  readonly refund: ReturnSummaryRefund | null;
+}
+
+export interface CreateReturnResponse {
+  readonly return: ReturnSummary;
+  readonly replayed: boolean;
+}
+
 export interface SaleSummaryLine {
   readonly lineNumber: number;
   readonly productId: string | null;
@@ -710,6 +932,14 @@ export interface SaleSummaryLine {
   readonly netMinor: string;
   readonly vatMinor: string;
   readonly totalMinor: string;
+}
+
+export interface SaleSummaryTender {
+  readonly kind: string;
+  readonly scheme: string | null;
+  readonly amountMinor: string;
+  readonly changeMinor: string;
+  readonly reference: string | null;
 }
 
 export interface SaleSummary {
@@ -733,8 +963,13 @@ export interface SaleSummary {
   readonly netMinor: string;
   readonly vatMinor: string;
   readonly totalMinor: string;
+  /** Total of all tenders before change. Optional only for older local fixtures. */
+  readonly tenderedMinor?: string;
+  /** Cash portion only. Zero for an all-electronic settlement. */
   readonly cashReceivedMinor: string;
   readonly changeMinor: string;
+  /** Exact server-authored tender evidence; absent only on older local fixtures. */
+  readonly tenders?: readonly SaleSummaryTender[];
 }
 
 /**
@@ -769,7 +1004,21 @@ export interface CheckoutResponse {
   readonly replayed: boolean;
 }
 
-/** Exactly what a checkout may assert. Anything else is the server's business. */
+export type CheckoutTenderRequest =
+  | { readonly kind: 'cash'; readonly amountMinor: string }
+  | {
+      readonly kind: 'electronic';
+      readonly amountMinor: string;
+      readonly scheme: TenderScheme;
+      readonly reference: string;
+    };
+
+/**
+ * Exactly what a checkout may assert. Anything else is the server's business.
+ *
+ * Runtime validators enforce that exactly one payment shape is present:
+ * legacy cashReceivedMinor or the explicit tender list.
+ */
 export interface CheckoutRequest {
   readonly operationId: string;
   readonly terminalId: string;
@@ -779,7 +1028,8 @@ export interface CheckoutRequest {
   readonly tableId?: string;
   readonly restaurantOrderId?: string;
   readonly expectedRestaurantOrderRevision?: string;
-  readonly cashReceivedMinor: string;
+  readonly cashReceivedMinor?: string;
+  readonly tenders?: readonly CheckoutTenderRequest[];
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
 }
 

@@ -426,6 +426,7 @@ describe('restaurant order route authority', () => {
     ['table-not-applicable', 422, 'table_not_applicable'],
     ['unknown-line', 404, 'restaurant_order_line_not_found'],
     ['duplicate-line', 422, 'duplicate_restaurant_order_line'],
+    ['preparation-started', 409, 'restaurant_order_preparation_started'],
     ['stale-revision', 409, 'restaurant_order_stale'],
     ['idempotency-conflict', 409, 'idempotency_conflict'],
     ['unknown-order', 404, 'restaurant_order_not_found'],

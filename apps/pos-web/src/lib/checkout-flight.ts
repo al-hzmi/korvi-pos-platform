@@ -73,7 +73,27 @@ function freeze(intent: CheckoutIntent): CheckoutIntent {
     ...(intent.expectedRestaurantOrderRevision === undefined
       ? {}
       : { expectedRestaurantOrderRevision: intent.expectedRestaurantOrderRevision }),
-    cashReceivedMinor: intent.cashReceivedMinor,
+    ...(intent.cashReceivedMinor === undefined
+      ? {}
+      : { cashReceivedMinor: intent.cashReceivedMinor }),
+    ...(intent.tenders === undefined
+      ? {}
+      : {
+          tenders: Object.freeze(
+            intent.tenders.map((tender) =>
+              Object.freeze(
+                tender.kind === 'cash'
+                  ? { kind: 'cash' as const, amountMinor: tender.amountMinor }
+                  : {
+                      kind: 'electronic' as const,
+                      amountMinor: tender.amountMinor,
+                      scheme: tender.scheme,
+                      reference: tender.reference,
+                    },
+              ),
+            ),
+          ),
+        }),
     lines: Object.freeze(
       intent.lines.map((line) =>
         Object.freeze({ productId: line.productId, quantityScaled: line.quantityScaled }),

@@ -351,6 +351,10 @@ describe('the intent fingerprint', () => {
   const base = {
     branchId: A.branch,
     terminalId: A.terminal,
+    orderType: '',
+    tableId: '',
+    restaurantOrderId: '',
+    restaurantOrderRevision: '',
     lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
     tenders: [{ kind: 'cash', amountMinor: '5000', scheme: '', reference: '' }],
     basketDiscount: '',
@@ -515,6 +519,10 @@ describe('the canonical form cannot be forged', () => {
   const base = {
     branchId: A.branch,
     terminalId: A.terminal,
+    orderType: '',
+    tableId: '',
+    restaurantOrderId: '',
+    restaurantOrderRevision: '',
     lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
     basketDiscount: '',
   };

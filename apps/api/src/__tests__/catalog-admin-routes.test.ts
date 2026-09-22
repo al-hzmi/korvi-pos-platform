@@ -19,6 +19,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantFloorRepository,
   memoryReturnRepository,
   memorySaleRepository,
   memoryShiftRepository,
@@ -117,6 +118,7 @@ async function build(role: RoleName): Promise<FastifyInstance> {
       priceMinor: '1250',
       vatBasisPoints: 1500,
       primaryBarcode: '6281000000012',
+      categoryId: null,
       trackInventory: true,
       isActive: true,
       createdAt: '2026-08-16T00:00:00.000Z',
@@ -134,6 +136,7 @@ async function build(role: RoleName): Promise<FastifyInstance> {
       tenants: memoryTenantRepository(business),
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
+      restaurantFloor: memoryRestaurantFloorRepository(),
       shifts,
       terminals,
       checkout: createCheckoutService({

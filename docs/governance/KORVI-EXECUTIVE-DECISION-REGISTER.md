@@ -40,6 +40,19 @@ This register is a decision log and index. It does not replace the domain-specif
 
 ---
 
+## 2026-09-22 — Restaurant and Split Tender use one verified source lineage
+
+**Decision:** ACCEPTED.
+
+For Canonical Acquisition AR-2, Restaurant production/waste and cashier Split/Mixed/Electronic Tender are sourced from the verified combined head
+`95e9a76eda618860ed4f9e317b08c3be16659726`, which is 12 commits above the verified Restaurant foundation/waste lineage.
+
+The source cannot be merged blindly into the canonical release because the histories diverged materially. Integration is therefore capability-scoped and three-way: source-only files may be carried directly when the canonical side is unchanged since the merge-base; shared authority files must be reconciled against the canonical version.
+
+No source-branch CI result is sufficient to declare AR-2 closed. Canonical-target CI and browser/operator workflow proof remain mandatory.
+
+---
+
 ## 2026-09-22 — Canonical Acquisition Release is the sole release-integration authority
 
 **Decision:** ACCEPTED.

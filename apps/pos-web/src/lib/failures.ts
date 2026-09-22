@@ -170,9 +170,38 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'لا يمكن حفظ نفس سطر الطلب مرتين.',
     action: 'amend-cart',
   },
+  restaurant_order_preparation_started: {
+    message:
+      'بدأ تحضير هذا الطلب. لا يمكن تعديل أصنافه أو إلغاؤه من نقطة البيع حتى تتم معالجة المطبخ بأمان.',
+    action: 'blocking',
+  },
+  stale_order: {
+    message: 'تغيّرت نسخة الطلب قبل إرسالها للمطبخ. أعد تحميل الطلب ثم حاول مرة أخرى.',
+    action: 'blocking',
+  },
+  unrouted_lines: {
+    message: 'بعض أصناف الطلب غير مرتبطة بمحطة تحضير. أكمل إعداد توجيه المطبخ قبل الإرسال.',
+    action: 'blocking',
+  },
   table_occupied: {
     message: 'الطاولة مشغولة بطلب مفتوح آخر.',
     action: 'amend-cart',
+  },
+  unknown_station: {
+    message: 'محطة التحضير لم تعد متاحة لهذا الفرع. حدّث شاشة المطبخ.',
+    action: 'notice',
+  },
+  unknown_task: {
+    message: 'مهمة التحضير لم تعد موجودة. سيتم تحديث قائمة المحطة.',
+    action: 'notice',
+  },
+  stale_task: {
+    message: 'تغيّرت مهمة التحضير من جهاز آخر. سيتم تحديث قائمة المحطة قبل أي إجراء جديد.',
+    action: 'notice',
+  },
+  invalid_transition: {
+    message: 'حالة مهمة التحضير تغيّرت ولا يمكن تنفيذ هذه النقلة. حدّث القائمة.',
+    action: 'notice',
   },
 };
 

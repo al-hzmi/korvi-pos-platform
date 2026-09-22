@@ -104,6 +104,8 @@ function refusal(reply: FastifyReply, reason: RestaurantOrderRefusal) {
       return reply.code(404).send({ error: 'restaurant_order_line_not_found' });
     case 'duplicate-line':
       return reply.code(422).send({ error: 'duplicate_restaurant_order_line' });
+    case 'preparation-started':
+      return reply.code(409).send({ error: 'restaurant_order_preparation_started' });
     case 'unknown-order':
       return reply.code(404).send({ error: 'restaurant_order_not_found' });
     case 'order-not-open':

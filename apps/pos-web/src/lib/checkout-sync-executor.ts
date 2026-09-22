@@ -10,6 +10,55 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null;
 }
 
+const ELECTRONIC_SCHEMES = new Set(['mada', 'visa', 'mastercard', 'amex', 'apple-pay', 'other']);
+
+function isQueuedTender(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    typeof value.amountMinor !== 'string' ||
+    !POSITIVE_INTEGER.test(value.amountMinor)
+  ) {
+    return false;
+  }
+  if (value.kind === 'cash') {
+    return value.scheme === undefined && value.reference === undefined;
+  }
+  return (
+    value.kind === 'electronic' &&
+    typeof value.scheme === 'string' &&
+    ELECTRONIC_SCHEMES.has(value.scheme) &&
+    typeof value.reference === 'string' &&
+    value.reference.trim() !== '' &&
+    value.reference.length <= 64
+  );
+}
+
+function hasValidPayment(value: Readonly<Record<string, unknown>>): boolean {
+  const hasCash = value.cashReceivedMinor !== undefined;
+  const hasTenders = value.tenders !== undefined;
+  if (hasCash === hasTenders) return false;
+  if (hasCash) {
+    return typeof value.cashReceivedMinor === 'string' && INTEGER.test(value.cashReceivedMinor);
+  }
+  if (!Array.isArray(value.tenders) || value.tenders.length === 0 || value.tenders.length > 8) {
+    return false;
+  }
+  let cashCount = 0;
+  const approvals = new Set<string>();
+  for (const tender of value.tenders) {
+    if (!isQueuedTender(tender) || !isRecord(tender)) return false;
+    if (tender.kind === 'cash') {
+      cashCount += 1;
+      if (cashCount > 1) return false;
+      continue;
+    }
+    const key = `${String(tender.scheme)}:${String(tender.reference).trim()}`;
+    if (approvals.has(key)) return false;
+    approvals.add(key);
+  }
+  return true;
+}
+
 export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest {
   if (
     !isRecord(value) ||
@@ -37,8 +86,7 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
         typeof value.expectedRestaurantOrderRevision === 'string' &&
         POSITIVE_INTEGER.test(value.expectedRestaurantOrderRevision))
     ) ||
-    typeof value.cashReceivedMinor !== 'string' ||
-    !INTEGER.test(value.cashReceivedMinor) ||
+    !hasValidPayment(value) ||
     !Array.isArray(value.lines) ||
     value.lines.length === 0 ||
     value.lines.length > 200

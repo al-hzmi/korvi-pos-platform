@@ -11,6 +11,7 @@ import {
 } from '@korvi/domain';
 import type { ProductSummary } from './api-types';
 import type { CartLine } from './cart';
+import type { ElectronicTenderDraft, PaymentMode } from './payment-tenders';
 
 export const OFFLINE_DB_NAME = 'korvi-pos-offline';
 export const OFFLINE_DB_VERSION = 5;
@@ -56,6 +57,8 @@ export interface OfflineSaleScope {
 export interface OfflineSaleDraft {
   readonly lines: readonly CartLine[];
   readonly cash: string;
+  readonly paymentMode?: PaymentMode;
+  readonly electronicTenders?: readonly ElectronicTenderDraft[];
   readonly orderType?: RestaurantOrderType;
   readonly tableId?: string;
   readonly restaurantOrderId?: string;
@@ -225,11 +228,44 @@ function isOptionalRestaurantOrderType(value: unknown): value is RestaurantOrder
   return value === undefined || value === 'dine-in' || value === 'takeaway' || value === 'delivery';
 }
 
+function isOptionalPaymentMode(value: unknown): value is PaymentMode | undefined {
+  return value === undefined || value === 'cash' || value === 'mixed';
+}
+
+function isElectronicTenderDraft(value: unknown): value is ElectronicTenderDraft {
+  if (!isRecord(value)) return false;
+  return (
+    (value.scheme === 'mada' ||
+      value.scheme === 'visa' ||
+      value.scheme === 'mastercard' ||
+      value.scheme === 'amex' ||
+      value.scheme === 'apple-pay' ||
+      value.scheme === 'other') &&
+    typeof value.amount === 'string' &&
+    value.amount.length <= 32 &&
+    typeof value.reference === 'string' &&
+    value.reference.length <= 64
+  );
+}
+
+function isOptionalElectronicTenderDrafts(
+  value: unknown,
+): value is readonly ElectronicTenderDraft[] | undefined {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.length <= 7 && value.every(isElectronicTenderDraft))
+  );
+}
+
 export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
   if (!isRecord(value) || !Array.isArray(value.lines)) return false;
   return (
     value.lines.every(isCartLine) &&
     typeof value.cash === 'string' &&
+    isOptionalPaymentMode(value.paymentMode) &&
+    isOptionalElectronicTenderDrafts(value.electronicTenders) &&
+    (value.paymentMode !== 'mixed' ||
+      (Array.isArray(value.electronicTenders) && value.electronicTenders.length > 0)) &&
     isOptionalRestaurantOrderType(value.orderType) &&
     (value.tableId === undefined ||
       (typeof value.tableId === 'string' && isUuidV7(value.tableId))) &&

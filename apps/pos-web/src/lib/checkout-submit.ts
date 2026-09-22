@@ -3,7 +3,7 @@ import { outcomeFor } from './checkout-flight';
 import { describeFailure } from './failures';
 import { cartToRequestLines } from './cart';
 import type { RestaurantOrderType } from '@korvi/domain';
-import type { CheckoutResponse } from './api-types';
+import type { CheckoutResponse, CheckoutTenderRequest } from './api-types';
 import type { CartLine } from './cart';
 import type { CheckoutEvent } from './checkout';
 import type { CheckoutFlight, CheckoutIntent } from './checkout-flight';
@@ -25,7 +25,8 @@ export interface CheckoutSubmission {
   readonly restaurantOrderId?: string;
   readonly expectedRestaurantOrderRevision?: string;
   readonly lines: readonly CartLine[];
-  readonly cashReceivedMinor: string;
+  readonly cashReceivedMinor?: string;
+  readonly tenders?: readonly CheckoutTenderRequest[];
 }
 
 export interface CheckoutRunner {
@@ -64,7 +65,16 @@ export function runCheckout(
     ...(input.expectedRestaurantOrderRevision === undefined
       ? {}
       : { expectedRestaurantOrderRevision: input.expectedRestaurantOrderRevision }),
-    cashReceivedMinor: input.cashReceivedMinor,
+    ...(input.cashReceivedMinor === undefined
+      ? {}
+      : { cashReceivedMinor: input.cashReceivedMinor }),
+    ...(input.tenders === undefined
+      ? {}
+      : {
+          tenders: input.tenders.map((tender) =>
+            tender.kind === 'cash' ? { ...tender } : { ...tender, reference: tender.reference },
+          ),
+        }),
     lines: cartToRequestLines(input.lines),
   }));
   if (intent === null) return Promise.resolve();
