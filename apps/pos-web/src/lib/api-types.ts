@@ -240,7 +240,7 @@ export interface ProductMigrationRowResult {
   readonly sourceRow: number;
   readonly sourceIdentifier: string | null;
   readonly classification: 'VALID' | 'WARNING' | 'ERROR' | 'BLOCKED';
-  readonly plannedAction: 'create' | 'update' | 'reject';
+  readonly plannedAction: 'create' | 'reject';
   readonly status: 'pending' | 'committing' | 'rejected' | 'committed' | 'failed';
   readonly targetEntityId: string | null;
   readonly errorCode: string | null;
@@ -262,14 +262,13 @@ export interface ProductMigrationSummary {
   readonly status: 'reviewed' | 'dry-run' | 'committing' | 'completed';
   readonly mappingVersion: number;
   readonly mapping: readonly ProductMigrationMapping[];
-  readonly conflictPolicy: CustomerMigrationConflictPolicy;
+  readonly conflictPolicy: 'reject';
   readonly totalRows: number;
   readonly validRows: number;
   readonly warningRows: number;
   readonly errorRows: number;
   readonly blockedRows: number;
   readonly created: number;
-  readonly updated: number;
   readonly failed: number;
   readonly rejected: number;
   readonly rows: readonly ProductMigrationRowResult[];
