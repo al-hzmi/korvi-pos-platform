@@ -8,6 +8,8 @@ on:
       - product/post-v1-restaurant-production
       - product/post-v1-restaurant-waste
       - product/post-v1-restaurant-foundation
+      - integration/acquisition-ar2
+      - release/canonical-acquisition-v1
   workflow_dispatch:
 
 concurrency:
