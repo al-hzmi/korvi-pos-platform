@@ -102,8 +102,9 @@ jobs:
           npm run build -w @korvi/domain
           npm run build -w @korvi/database
 
-      # M2/M3/M4/M5 restricted-runtime closure proof: category/product-category, customer, supplier and
-      # opening-inventory isolation run under the same non-BYPASSRLS runtime.
+      # M2/M3/M4/M5/M6 restricted-runtime closure proof: category/product-category, customer,
+      # supplier, opening-inventory and explicit customer update-by-phone isolation under the same
+      # non-BYPASSRLS runtime.
       - name: Prove migration isolation as restricted runtime
         run: >-
           npx --no-install vitest run
