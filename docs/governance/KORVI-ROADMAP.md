@@ -385,3 +385,32 @@ Canonical integration checkpoint:
 Evidence:
 CI `35775341358` + PR CI `35775347600`, PostgreSQL Live `35775341360`,
 Chrome Commercial Proof `35775341446`.
+
+
+## AR-4 / AR-6 engineering checkpoint complete — 2026-09-22
+
+Canonical evidence SHA: `48400d02a3990eecd6169933c207e282d9371084`.
+
+Completed internally:
+
+- production-shaped deployment contract;
+- explicit engineering RPO/RTO targets;
+- PostgreSQL backup/isolated restore rehearsal with restored RLS/application proof;
+- dependency outage/recovery/graceful-drain proof;
+- monitoring/alerting/on-call policy;
+- rollback procedure;
+- environment inventory;
+- ownership/IP/licensing technical diligence record;
+- dependency/supply-chain handoff;
+- deferred external-activation register;
+- mechanically checked buyer/operator handoff package.
+
+Execution priority now:
+
+1. **AR-5 internal closure:** prove every Production-ZATCA component that does not require real paid HSM/customer credentials on the canonical lineage, while retaining production fail-closed.
+2. **AR-4 external activation:** defer only provider/HA/backups/measured RPO-RTO/real alerts/secrets evidence until production resources are legitimately activated.
+3. **AR-6 transaction activation:** keep legal chain-of-title/license/account/domain transfer as explicit diligence, not code claims.
+4. **AR-7 preparation:** prepare the exact real-merchant pilot evidence contract without claiming a synthetic pilot.
+5. **AR-8:** remains blocked until the applicable external gates are actually satisfied.
+
+No speculative feature work outranks these items.
