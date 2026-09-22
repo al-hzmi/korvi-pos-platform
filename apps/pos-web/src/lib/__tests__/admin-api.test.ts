@@ -169,6 +169,34 @@ describe('merchant administration API client', () => {
     expect(bodies.join(' ')).not.toMatch(/tenant|customerId|actor/);
   });
 
+  it('uses supplier migration endpoints without tenant or supplier id authority', async () => {
+    const wire = transport({ id: 'supplier-job', status: 'reviewed' });
+    const api = createApiClient(wire.fetch);
+    await api.inspectSupplierMigrationCsv({
+      csvText: 'اسم المورد\\nشركة ألف',
+      fileName: 'suppliers.csv',
+      sourceSystem: null,
+      delimiter: ',',
+    });
+    await api.createSupplierMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-0000000000f3',
+      csvText: 'اسم المورد\\nشركة ألف',
+      fileName: 'suppliers.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [{ sourceColumn: 0, targetField: 'name' }],
+    });
+    await api.commitSupplierMigration('supplier/job', '018fb700-0000-7000-8000-0000000000f4');
+
+    expect(wire.calls.map((call) => call.url)).toEqual([
+      '/v1/admin/migrations/suppliers/inspect-csv',
+      '/v1/admin/migrations/suppliers/jobs',
+      '/v1/admin/migrations/suppliers/jobs/supplier%2Fjob/commit',
+    ]);
+    const bodies = wire.calls.map((call) => String(call.init.body ?? ''));
+    expect(bodies.join(' ')).not.toMatch(/tenant|supplierId|actor|isActive/);
+  });
+
   it('reads bounded inventory branches without borrowing settings authority', async () => {
     const wire = transport({ rows: [], nextCursor: null });
     await createApiClient(wire.fetch).inventoryBranches({
