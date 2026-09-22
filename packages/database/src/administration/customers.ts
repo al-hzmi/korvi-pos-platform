@@ -494,6 +494,72 @@ export async function createMerchantCustomer(
   });
 }
 
+/**
+ * Authoritative customer update inside an already tenant-scoped transaction.
+ *
+ * Migration may resolve a deterministic business key (currently phone) to an
+ * internal customer id on the server, then call this writer. The id is never
+ * accepted from an import file/browser payload.
+ */
+export async function updateMerchantCustomerWithin(
+  tx: TransactionClient,
+  tenant: string,
+  actor: CustomerActor,
+  customerId: string,
+  request: Omit<CustomerUpdateRequest, 'operationId'>,
+  at: Date,
+  nextId: () => string = newId,
+): Promise<AdminCustomer> {
+  await lockTenant(tx, tenant);
+  const existing = await tx.customer.findFirst({
+    where: { tenantId: tenant, id: customerId },
+  });
+  if (existing === null) throw new CustomerAdminRefusedError('unknown-customer');
+
+  if (request.phone !== undefined && request.phone !== null && request.phone !== existing.phone) {
+    const conflict = await tx.customer.findFirst({
+      where: { tenantId: tenant, phone: request.phone, id: { not: customerId } },
+    });
+    if (conflict !== null) throw new CustomerAdminRefusedError('phone-taken');
+  }
+
+  const changed = await tx.customer.updateMany({
+    where: { tenantId: tenant, id: customerId },
+    data: {
+      ...(request.nameAr === undefined ? {} : { nameAr: request.nameAr }),
+      ...(request.nameEn === undefined ? {} : { nameEn: request.nameEn }),
+      ...(request.phone === undefined ? {} : { phone: request.phone }),
+      ...(request.email === undefined ? {} : { email: request.email }),
+      ...(request.vatNumber === undefined ? {} : { vatNumber: request.vatNumber }),
+      ...(request.isActive === undefined ? {} : { isActive: request.isActive }),
+      updatedAt: at,
+    },
+  });
+  if (changed.count !== 1) throw new CustomerAdminRefusedError('unknown-customer');
+
+  const row: CustomerRow | null = await tx.customer.findFirst({
+    where: { tenantId: tenant, id: customerId },
+  });
+  if (row === null) {
+    throw new DatabaseError('The customer just updated could not be read back.');
+  }
+  const customer = asCustomer(row);
+
+  await appendAudit(
+    tx,
+    tenant,
+    actor,
+    'customer.updated',
+    customerId,
+    {
+      fields: Object.keys(request).sort().join(','),
+    },
+    at,
+    nextId,
+  );
+  return customer;
+}
+
 export async function updateMerchantCustomer(
   prisma: PrismaClient,
   scope: TenantScope,
@@ -530,53 +596,19 @@ export async function updateMerchantCustomer(
       return { customer: reservation.replay, replayed: true };
     }
 
-    await lockTenant(tx, tenant);
-    const existing = await tx.customer.findFirst({
-      where: { tenantId: tenant, id: customerId },
-    });
-    if (existing === null) throw new CustomerAdminRefusedError('unknown-customer');
-
-    if (request.phone !== undefined && request.phone !== null && request.phone !== existing.phone) {
-      const conflict = await tx.customer.findFirst({
-        where: { tenantId: tenant, phone: request.phone, id: { not: customerId } },
-      });
-      if (conflict !== null) throw new CustomerAdminRefusedError('phone-taken');
-    }
-
     const at = clock();
-    const changed = await tx.customer.updateMany({
-      where: { tenantId: tenant, id: customerId },
-      data: {
+    const customer = await updateMerchantCustomerWithin(
+      tx,
+      tenant,
+      actor,
+      customerId,
+      {
         ...(request.nameAr === undefined ? {} : { nameAr: request.nameAr }),
         ...(request.nameEn === undefined ? {} : { nameEn: request.nameEn }),
         ...(request.phone === undefined ? {} : { phone: request.phone }),
         ...(request.email === undefined ? {} : { email: request.email }),
         ...(request.vatNumber === undefined ? {} : { vatNumber: request.vatNumber }),
         ...(request.isActive === undefined ? {} : { isActive: request.isActive }),
-        updatedAt: at,
-      },
-    });
-    if (changed.count !== 1) throw new CustomerAdminRefusedError('unknown-customer');
-
-    const row: CustomerRow | null = await tx.customer.findFirst({
-      where: { tenantId: tenant, id: customerId },
-    });
-    if (row === null) {
-      throw new DatabaseError('The customer just updated could not be read back.');
-    }
-    const customer = asCustomer(row);
-
-    await appendAudit(
-      tx,
-      tenant,
-      actor,
-      'customer.updated',
-      customerId,
-      {
-        fields: Object.keys(request)
-          .filter((key) => key !== 'operationId')
-          .sort()
-          .join(','),
       },
       at,
       nextId,
