@@ -104,7 +104,7 @@ jobs:
 
       # M2/M3/M4/M5/M6 restricted-runtime closure proof: category/product-category, customer,
       # supplier, opening-inventory and explicit customer update-by-phone isolation under the same
-      # non-BYPASSRLS runtime.
+      # non-BYPASSRLS runtime, including commit-time phone re-resolution and unmapped-field preservation.
       - name: Prove migration isolation as restricted runtime
         run: >-
           npx --no-install vitest run
