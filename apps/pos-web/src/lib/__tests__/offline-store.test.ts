@@ -216,3 +216,36 @@ describe('offline store validation', () => {
     expect(classifyIndexedDbError(new OfflineStoreError('corrupt', 'bad')).code).toBe('corrupt');
   });
 });
+
+
+describe('mixed tender durable draft validation', () => {
+  it('preserves cashier-entered electronic tender draft state without making it financial truth', () => {
+    const draft = {
+      lines: [
+        {
+          productId: PRODUCT.id,
+          sku: PRODUCT.sku,
+          nameAr: PRODUCT.nameAr,
+          nameEn: PRODUCT.nameEn,
+          productType: PRODUCT.productType,
+          unitLabel: PRODUCT.unitLabel,
+          unitPriceMinor: PRODUCT.priceMinor,
+          vatBasisPoints: PRODUCT.vatBasisPoints,
+          quantityScaled: '1000',
+        },
+      ],
+      cash: '5.00',
+      paymentMode: 'mixed',
+      electronicTenders: [{ scheme: 'mada', amount: '6.50', reference: 'approval-a' }],
+      priceMode: 'tax-inclusive',
+      updatedAt: '2026-09-22T12:00:00.000Z',
+    } as const;
+    expect(isOfflineSaleDraft(draft)).toBe(true);
+    expect(
+      isOfflineSaleDraft({
+        ...draft,
+        electronicTenders: [{ scheme: 'unknown', amount: '6.50', reference: 'approval-a' }],
+      }),
+    ).toBe(false);
+  });
+});

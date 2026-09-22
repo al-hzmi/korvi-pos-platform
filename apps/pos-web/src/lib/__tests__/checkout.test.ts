@@ -349,3 +349,69 @@ describe('what the screen locks', () => {
     expect(checkoutReducer(done, { type: 'new-sale' })).toEqual(initialCheckoutState);
   });
 });
+
+
+describe('mixed tender checkout flight', () => {
+  it('freezes and replays the exact tender composition after an ambiguous attempt', async () => {
+    const sent: CheckoutIntent[] = [];
+    const events: CheckoutEvent[] = [];
+    const flight = createCheckoutFlight();
+    let attempts = 0;
+    const api = {
+      checkout: async (intent: CheckoutIntent) => {
+        sent.push(intent);
+        attempts += 1;
+        if (attempts === 1) throw new ApiError(0, 'network', null);
+        return { sale: SALE, receipt: RECEIPT, replayed: true };
+      },
+    };
+    const input = {
+      terminalId: 'tm1',
+      lines: [MILK],
+      tenders: [
+        { kind: 'electronic' as const, amountMinor: '1300', scheme: 'mada' as const, reference: 'A1' },
+        { kind: 'cash' as const, amountMinor: '1000' },
+      ],
+    };
+
+    await runCheckout(api, flight, input, (event) => events.push(event), () => undefined, () => 'op-mixed');
+    expect(flight.outstanding()).toBe(true);
+    expect(flight.pending()?.cashReceivedMinor).toBeUndefined();
+    expect(flight.pending()?.tenders).toEqual(input.tenders);
+
+    await runCheckout(
+      api,
+      flight,
+      {
+        ...input,
+        tenders: [{ kind: 'cash' as const, amountMinor: '9999' }],
+      },
+      (event) => events.push(event),
+      () => undefined,
+      () => 'must-not-mint',
+    );
+
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    expect(sent[1]?.tenders).toEqual(input.tenders);
+    expect(events.at(-1)?.type).toBe('succeeded');
+  });
+
+  it('deep-freezes tender evidence held for retry', () => {
+    const flight = createCheckoutFlight();
+    const intent = flight.begin(() => ({
+      operationId: 'op-mixed',
+      terminalId: 'tm1',
+      tenders: [
+        { kind: 'electronic' as const, amountMinor: '2300', scheme: 'mada' as const, reference: 'A1' },
+      ],
+      lines: [{ productId: 'p-milk', quantityScaled: '2000' }],
+    }));
+    flight.settle('ambiguous');
+    const held = intent?.tenders?.[0] as { reference: string };
+    expect(() => {
+      held.reference = 'changed';
+    }).toThrow(TypeError);
+    expect(flight.pending()?.tenders?.[0]).toMatchObject({ reference: 'A1' });
+  });
+});

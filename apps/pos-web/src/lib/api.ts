@@ -539,7 +539,23 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             ...(request.expectedRestaurantOrderRevision === undefined
               ? {}
               : { expectedRestaurantOrderRevision: request.expectedRestaurantOrderRevision }),
-            cashReceivedMinor: request.cashReceivedMinor,
+            ...(request.cashReceivedMinor === undefined
+              ? {}
+              : { cashReceivedMinor: request.cashReceivedMinor }),
+            ...(request.tenders === undefined
+              ? {}
+              : {
+                  tenders: request.tenders.map((tender) =>
+                    tender.kind === 'cash'
+                      ? { kind: 'cash' as const, amountMinor: tender.amountMinor }
+                      : {
+                          kind: 'electronic' as const,
+                          amountMinor: tender.amountMinor,
+                          scheme: tender.scheme,
+                          reference: tender.reference,
+                        },
+                  ),
+                }),
             lines: request.lines.map((line) => ({
               productId: line.productId,
               quantityScaled: line.quantityScaled,
