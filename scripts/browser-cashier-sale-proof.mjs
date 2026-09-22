@@ -515,10 +515,7 @@ try {
   await waitForText('ابحث أو امسح الباركود', 20_000);
   await clickButton('مرتجع / استرداد');
   await waitForText('إنشاء مرتجع', 20_000);
-  await setInput(
-    'return-search',
-    electronicSale.invoiceNumber ?? String(electronicSale.sequence),
-  );
+  await setInput('return-search', electronicSale.invoiceNumber ?? String(electronicSale.sequence));
   await clickButton('بحث');
   await clickButton(electronicSale.invoiceNumber ?? `#${String(electronicSale.sequence)}`);
   await waitForText('المتبقي:', 20_000);
