@@ -8,6 +8,7 @@ on:
       - review/zatca-39-csid-lifecycle
       - strike/product-routing-p0
     paths:
+      - docs/acquisition/ZATCA-PRODUCTION-ACTIVATION.md
       - 'packages/database/prisma/**'
       - 'packages/database/src/**'
       - 'packages/domain/src/zatca/**'
