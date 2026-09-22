@@ -152,5 +152,4 @@ describe('merchant migration presentation helpers', () => {
     expect(csv).toContain('"\'=CMD"');
     expect(csv).toContain('"\'+existing"');
   });
-
 });
