@@ -121,117 +121,117 @@ export function ShiftCloseControl({
       aria-label="إغلاق الوردية وتسوية الدرج"
     >
       <CardSurface className="my-auto flex w-full max-w-xl flex-col gap-3 border-border p-4 shadow-lg sm:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">إغلاق الوردية وتسوية الدرج</p>
-          <p className="text-xs text-muted-foreground">
-            عدّ النقد فعلياً أولاً. المتوقع والفارق لا يظهران إلا بعد اعتماد العد.
-          </p>
-        </div>
-        {result === null ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={pending !== null || submitting}
-            onClick={cancel}
-          >
-            إلغاء
-          </Button>
-        ) : null}
-      </div>
-
-      {result === null ? (
-        <>
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            النقد الفعلي في الدرج — SAR
-            <input
-              id="shift-close-declared-cash"
-              className="h-touch rounded-md border border-input bg-background px-3 text-end text-base text-foreground"
-              inputMode="decimal"
-              value={declaredCash}
-              disabled={submitting || pending !== null}
-              autoFocus
-              onChange={(event) => setDeclaredCash(event.target.value)}
-            />
-          </label>
-
-          {message === null ? null : (
-            <StatusNote tone={pending === null ? 'danger' : 'warning'} live>
-              {message}
-            </StatusNote>
-          )}
-
-          <div className="flex justify-end">
-            {pending === null ? (
-              <Button type="button" loading={submitting} onClick={submit}>
-                اعتماد العد وإغلاق الوردية
-              </Button>
-            ) : (
-              <Button type="button" loading={submitting} onClick={() => execute(pending)}>
-                إعادة نفس عملية الإغلاق
-              </Button>
-            )}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">إغلاق الوردية وتسوية الدرج</p>
+            <p className="text-xs text-muted-foreground">
+              عدّ النقد فعلياً أولاً. المتوقع والفارق لا يظهران إلا بعد اعتماد العد.
+            </p>
           </div>
-        </>
-      ) : (
-        <>
-          <StatusNote tone="success" live>
-            أغلقت الوردية واعتمدت التسوية من الخادم.
-          </StatusNote>
-          <dl className="grid grid-cols-2 gap-2 text-sm">
-            <div className="rounded-md bg-muted/50 p-2">
-              <dt className="text-xs text-muted-foreground">رصيد البداية</dt>
-              <dd className="mt-1">
-                <Amount value={result.shift.reconciliation.openingFloatMinor} />
-              </dd>
-            </div>
-            <div className="rounded-md bg-muted/50 p-2">
-              <dt className="text-xs text-muted-foreground">المبيعات النقدية</dt>
-              <dd className="mt-1">
-                <Amount value={result.shift.reconciliation.cashSalesMinor} />
-              </dd>
-            </div>
-            <div className="rounded-md bg-muted/50 p-2">
-              <dt className="text-xs text-muted-foreground">المرتجعات النقدية</dt>
-              <dd className="mt-1">
-                <Amount value={result.shift.reconciliation.cashRefundsMinor} />
-              </dd>
-            </div>
-            <div className="rounded-md bg-muted/50 p-2">
-              <dt className="text-xs text-muted-foreground">إيداع / سحب يدوي</dt>
-              <dd className="mt-1">
-                <Amount value={result.shift.reconciliation.paidInMinor} />
-                <span className="mx-1 text-muted-foreground">/</span>
-                <Amount value={result.shift.reconciliation.paidOutMinor} />
-              </dd>
-            </div>
-            <div className="rounded-md bg-muted/50 p-2">
-              <dt className="text-xs text-muted-foreground">المتوقع</dt>
-              <dd className="mt-1 font-semibold">
-                <Amount value={result.shift.reconciliation.expectedCashMinor} />
-              </dd>
-            </div>
-            <div className="rounded-md bg-muted/50 p-2">
-              <dt className="text-xs text-muted-foreground">المعدود</dt>
-              <dd className="mt-1 font-semibold">
-                <Amount value={result.shift.reconciliation.declaredCashMinor} />
-              </dd>
-            </div>
-            <div className="col-span-2 rounded-md border border-border p-2">
-              <dt className="text-xs text-muted-foreground">الفارق (المعدود − المتوقع)</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Amount value={result.shift.reconciliation.varianceMinor} />
-              </dd>
-            </div>
-          </dl>
-          <div className="flex justify-end">
-            <Button type="button" onClick={finish}>
-              إنهاء والعودة
+          {result === null ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending !== null || submitting}
+              onClick={cancel}
+            >
+              إلغاء
             </Button>
-          </div>
-        </>
-      )}
+          ) : null}
+        </div>
+
+        {result === null ? (
+          <>
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              النقد الفعلي في الدرج — SAR
+              <input
+                id="shift-close-declared-cash"
+                className="h-touch rounded-md border border-input bg-background px-3 text-end text-base text-foreground"
+                inputMode="decimal"
+                value={declaredCash}
+                disabled={submitting || pending !== null}
+                autoFocus
+                onChange={(event) => setDeclaredCash(event.target.value)}
+              />
+            </label>
+
+            {message === null ? null : (
+              <StatusNote tone={pending === null ? 'danger' : 'warning'} live>
+                {message}
+              </StatusNote>
+            )}
+
+            <div className="flex justify-end">
+              {pending === null ? (
+                <Button type="button" loading={submitting} onClick={submit}>
+                  اعتماد العد وإغلاق الوردية
+                </Button>
+              ) : (
+                <Button type="button" loading={submitting} onClick={() => execute(pending)}>
+                  إعادة نفس عملية الإغلاق
+                </Button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <StatusNote tone="success" live>
+              أغلقت الوردية واعتمدت التسوية من الخادم.
+            </StatusNote>
+            <dl className="grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-md bg-muted/50 p-2">
+                <dt className="text-xs text-muted-foreground">رصيد البداية</dt>
+                <dd className="mt-1">
+                  <Amount value={result.shift.reconciliation.openingFloatMinor} />
+                </dd>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <dt className="text-xs text-muted-foreground">المبيعات النقدية</dt>
+                <dd className="mt-1">
+                  <Amount value={result.shift.reconciliation.cashSalesMinor} />
+                </dd>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <dt className="text-xs text-muted-foreground">المرتجعات النقدية</dt>
+                <dd className="mt-1">
+                  <Amount value={result.shift.reconciliation.cashRefundsMinor} />
+                </dd>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <dt className="text-xs text-muted-foreground">إيداع / سحب يدوي</dt>
+                <dd className="mt-1">
+                  <Amount value={result.shift.reconciliation.paidInMinor} />
+                  <span className="mx-1 text-muted-foreground">/</span>
+                  <Amount value={result.shift.reconciliation.paidOutMinor} />
+                </dd>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <dt className="text-xs text-muted-foreground">المتوقع</dt>
+                <dd className="mt-1 font-semibold">
+                  <Amount value={result.shift.reconciliation.expectedCashMinor} />
+                </dd>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <dt className="text-xs text-muted-foreground">المعدود</dt>
+                <dd className="mt-1 font-semibold">
+                  <Amount value={result.shift.reconciliation.declaredCashMinor} />
+                </dd>
+              </div>
+              <div className="col-span-2 rounded-md border border-border p-2">
+                <dt className="text-xs text-muted-foreground">الفارق (المعدود − المتوقع)</dt>
+                <dd className="mt-1 text-lg font-semibold">
+                  <Amount value={result.shift.reconciliation.varianceMinor} />
+                </dd>
+              </div>
+            </dl>
+            <div className="flex justify-end">
+              <Button type="button" onClick={finish}>
+                إنهاء والعودة
+              </Button>
+            </div>
+          </>
+        )}
       </CardSurface>
     </div>
   );
