@@ -3,6 +3,8 @@ name: ZATCA 38 Official Validator Boundary Proof
 on:
   push:
     branches:
+      - integration/acquisition-ar5-internal
+      - release/canonical-acquisition-v1
       - review/zatca-38-official-boundary
       - strike/5c-costing-authority
     paths:
