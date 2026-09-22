@@ -17,6 +17,7 @@ on:
       - scripts/zatca-39-c14n-crosscheck.mjs
       - scripts/zatca-39-native-c14n.c
       - .github/workflows/zatca-39-c14n-native-proof.yml
+      - docs/acquisition/ZATCA-PRODUCTION-ACTIVATION.md
   workflow_dispatch:
 
 concurrency:
