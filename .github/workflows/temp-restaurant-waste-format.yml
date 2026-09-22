@@ -1,0 +1,44 @@
+name: Temporary Restaurant Waste Formatter
+
+on:
+  push:
+    branches:
+      - product/post-v1-restaurant-waste
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+
+      - name: Format waste slice
+        run: npx --no-install prettier --write apps/api/src/restaurant/waste-service.ts packages/database/src/index.ts packages/database/src/restaurant/waste.ts
+
+      - name: Commit exact formatter output
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/src/restaurant/waste-service.ts packages/database/src/index.ts packages/database/src/restaurant/waste.ts
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'style(restaurant): apply exact waste formatting'
+          git push origin HEAD:product/post-v1-restaurant-waste
