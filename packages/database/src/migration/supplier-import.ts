@@ -176,7 +176,6 @@ function canonicalFromUnknown(value: unknown): CanonicalSupplierImportRow {
   return { name: row.name };
 }
 
-
 function commitIssue(sourceRow: number, code: string, message: string): ImportIssue {
   return {
     classification: 'ERROR',
@@ -478,7 +477,7 @@ export async function createSupplierImportJob(
               jobId,
               sourceRow: review.sourceRow,
               rowFingerprint: rowFingerprints[absoluteIndex]!,
-              sourceIdentifier: review.record?.phone ?? review.record?.name ?? null,
+              sourceIdentifier: review.record?.name ?? null,
               sourceData: jsonObject(sourceRows[absoluteIndex] ?? []),
               ...(review.record === null ? {} : { canonicalData: jsonObject(review.record) }),
               issues: jsonObject(review.issues),
