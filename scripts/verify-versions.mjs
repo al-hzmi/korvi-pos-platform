@@ -31,8 +31,7 @@ const ALLOWED_BEHIND = {
     'Post-V1 parallel product-development baseline (2026-09-20): retain the exact 2.11.4 installed-client toolchain already proven on the current lineage; upgrade to 2.11.5 only in a dedicated installed-client dependency-maintenance change, not inside Restaurant or Migration feature work.',
   eslint:
     'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
-  next:
-    'Post-V1 parallel product-development baseline (2026-09-22): retain the exact 16.3.5 Next.js runtime already verified on the active Restaurant lineage; upgrade to 16.3.6 only in dedicated dependency-maintenance work, not inside split-payment feature work.',
+  next: 'Post-V1 parallel product-development baseline (2026-09-22): retain the exact 16.3.5 Next.js runtime already verified on the active Restaurant lineage; upgrade to 16.3.6 only in dedicated dependency-maintenance work, not inside split-payment feature work.',
   'typescript-eslint':
     'Post-V1 parallel product-development baseline (2026-09-22): retain the exact 8.70.0 lint/type-analysis baseline already verified on the active Restaurant/Migration lineage; upgrade to 8.70.1 only in dedicated dependency-maintenance work, not inside Restaurant production inventory work.',
   prettier:
