@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 const UUID = z.string().uuid();
 const TARGET_FIELD = z.enum(['nameAr', 'nameEn', 'phone', 'email', 'vatNumber']);
 const DELIMITER = z.enum([',', ';', '\t']);
+const CONFLICT_POLICY = z.enum(['reject', 'update-existing-by-phone']);
 const SOURCE = z
   .object({
     csvText: z.string().min(1).max(MAX_CUSTOMER_IMPORT_BYTES),
@@ -28,6 +29,7 @@ const XLSX_SOURCE = z
   .strict();
 const CREATE_JOB = SOURCE.extend({
   operationId: UUID,
+  conflictPolicy: CONFLICT_POLICY.optional().default('reject'),
   mapping: z
     .array(
       z
@@ -41,6 +43,7 @@ const CREATE_JOB = SOURCE.extend({
 }).strict();
 const CREATE_XLSX_JOB = XLSX_SOURCE.extend({
   operationId: UUID,
+  conflictPolicy: CONFLICT_POLICY.optional().default('reject'),
   mapping: z
     .array(
       z
