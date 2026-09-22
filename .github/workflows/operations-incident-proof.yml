@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - review/operations-50-production-readiness
+      - release/acquisition-ops-handoff
+      - release/canonical-acquisition-v1
   workflow_dispatch:
 
 concurrency:
