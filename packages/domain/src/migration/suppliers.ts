@@ -32,7 +32,8 @@ const ALIASES: readonly string[] = [
   'اسم الشركة',
 ];
 
-const ALIAS_KEYS = new Set(ALIASES.map((alias) => normalizeHeaderKey(alias)));
+const ALIAS_TO_FIELD = new Map<string, SupplierImportField>();
+for (const alias of ALIASES) ALIAS_TO_FIELD.set(normalizeHeaderKey(alias), 'name');
 
 function issue(
   classification: 'WARNING' | 'ERROR' | 'BLOCKED',
@@ -82,19 +83,15 @@ export function suggestSupplierMappings(
     try {
       const raw = rawCell(cell);
       const sourceHeader = raw.value ?? '';
-      const targetField: SupplierImportField | null = ALIAS_KEYS.has(
-        normalizeHeaderKey(sourceHeader),
-      )
-        ? 'name'
-        : null;
+      const targetField = ALIAS_TO_FIELD.get(normalizeHeaderKey(sourceHeader)) ?? null;
       return {
         sourceColumn,
         sourceHeader,
         targetField,
         reason: targetField === null ? 'unmapped' : 'exact-alias',
-      };
+      } as const;
     } catch {
-      return { sourceColumn, sourceHeader: '', targetField: null, reason: 'unmapped' };
+      return { sourceColumn, sourceHeader: '', targetField: null, reason: 'unmapped' } as const;
     }
   });
 }
