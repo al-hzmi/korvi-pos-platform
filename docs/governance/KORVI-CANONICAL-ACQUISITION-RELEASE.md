@@ -91,7 +91,7 @@ Repository evidence wins for implementation truth.
 ## 5. Immediate execution order
 
 ### AR-0 — Canonical branch and source-of-truth consolidation
-Status: **IN PROGRESS**
+Status: **CLOSED — 2026-09-22**
 
 - canonical integration branch exists;
 - enumerate current Retail/Product, Restaurant, Migration and Security heads;
@@ -100,7 +100,7 @@ Status: **IN PROGRESS**
 - stop treating RC7, product branches and security branches as interchangeable release truth.
 
 ### AR-1 — Security integration
-Status: **ADOPTED / P0**
+Status: **CLOSED — 2026-09-22**
 
 Integrate the verified Platform Admin revocable-session authority from the security lineage.
 
@@ -114,7 +114,7 @@ Required behavior:
 Must include regression and PostgreSQL/runtime proof appropriate to the implementation.
 
 ### AR-2 — Sellable POS workflow completion
-Status: **ADOPTED / P0**
+Status: **CLOSED — 2026-09-22**
 
 Close the gap between backend capability and operator product workflow:
 
@@ -139,7 +139,7 @@ Each workflow requires:
 - regression coverage.
 
 ### AR-3 — Canonical product integration
-Status: **ADOPTED / P0**
+Status: **CLOSED — 2026-09-22**
 
 Consolidate the newest verified:
 
@@ -338,3 +338,44 @@ Live source verification supersedes the earlier split-payment candidate assessme
 The source branch is evidence and provenance, not release truth. AR-2 closes only
 after the reconciled canonical-target SHA is green and browser/operator proof is
 recorded.
+
+
+## 12. AR-0 through AR-3 canonical closure — 2026-09-22
+
+The first canonical acquisition integration phase is CLOSED on the official release lineage.
+
+Canonical merge:
+- branch: `release/canonical-acquisition-v1`;
+- merge SHA: `941b512bdb82be8a4d52113a77def365b81cd4e4`;
+- integration PR: #64;
+- merge method: reviewed PR merge; no force update and no history overwrite.
+
+Exact canonical-SHA evidence:
+- CI push `35775341358`: PASS;
+- CI PR `35775347600`: PASS;
+- PostgreSQL 17 restricted-role/migration/RLS/full verification `35775341360`: PASS;
+- actual Chrome/PostgreSQL commercial workflow proof `35775341446`: PASS.
+
+AR-1 evidence on the same lineage includes durable `platform_admin_sessions`
+authority, FORCE-RLS control-plane policy, logout revocation and server-side live
+session validation. Focused route regression proves a captured Platform cookie
+becomes unusable after logout while a separate valid Platform session remains
+valid. Session activity additionally requires an unrevoked row whose
+`expiresAt` is later than server time; the browser cookie is not the authority.
+
+AR-2 actual-browser proof on the same lineage records:
+- one full Mada electronic sale;
+- exact mixed cash + Mada tender composition;
+- server-owned receipt truth;
+- two sales reducing stock `11→9` and known cost `55.00→45.00 SAR`;
+- a server-priced electronic return restoring stock `9→10`;
+- blind-count shift close with server reconciliation closing the authoritative shift.
+
+AR-3 therefore has one real lineage containing the verified Migration M2-M6
+baseline, Platform Admin revocation, Retail/core authorities, Restaurant
+preparation/recipe/production/waste capabilities, and the commercial POS
+workflow UX above.
+
+This closure does **not** close Production Operations, production ZATCA, the
+acquisition/handoff package, or a real Merchant Pilot. Those remain AR-4 through
+AR-7 and continue immediately.
