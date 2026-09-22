@@ -8,6 +8,9 @@ import type {
   SupplierMigrationMapping,
   SupplierMigrationRowResult,
   SupplierMigrationTargetField,
+  OpeningInventoryMigrationMapping,
+  OpeningInventoryMigrationRowResult,
+  OpeningInventoryMigrationTargetField,
   MigrationImportCell,
   ProductMigrationMapping,
   ProductMigrationRowResult,
@@ -67,6 +70,17 @@ export const SUPPLIER_MIGRATION_FIELD_LABELS: Readonly<
   Record<SupplierMigrationTargetField, string>
 > = {
   name: 'اسم المورد',
+};
+
+export const OPENING_INVENTORY_MIGRATION_REQUIRED_FIELDS: readonly OpeningInventoryMigrationTargetField[] =
+  ['branchCode', 'sku', 'openingQuantity'];
+
+export const OPENING_INVENTORY_MIGRATION_FIELD_LABELS: Readonly<
+  Record<OpeningInventoryMigrationTargetField, string>
+> = {
+  branchCode: 'كود الفرع',
+  sku: 'رقم الصنف / SKU',
+  openingQuantity: 'الكمية الافتتاحية',
 };
 
 export interface MigrationMappingProblem {
@@ -222,6 +236,48 @@ export function supplierMigrationMappingProblems(
   return problems;
 }
 
+export function openingInventoryMigrationMappingProblems(
+  mappings: readonly OpeningInventoryMigrationMapping[],
+): readonly MigrationMappingProblem[] {
+  const problems: MigrationMappingProblem[] = [];
+  const sources = new Set<number>();
+  const targets = new Set<OpeningInventoryMigrationTargetField>();
+
+  for (const mapping of mappings) {
+    if (sources.has(mapping.sourceColumn)) {
+      problems.push({
+        code: 'duplicate-source',
+        message: 'عمود المصدر رقم ' + String(mapping.sourceColumn + 1) + ' مربوط أكثر من مرة.',
+      });
+    }
+    sources.add(mapping.sourceColumn);
+    if (mapping.targetField === null) continue;
+    if (targets.has(mapping.targetField)) {
+      problems.push({
+        code: 'duplicate-target',
+        message:
+          'حقل «' +
+          OPENING_INVENTORY_MIGRATION_FIELD_LABELS[mapping.targetField] +
+          '» مربوط بأكثر من عمود.',
+      });
+    }
+    targets.add(mapping.targetField);
+  }
+
+  for (const field of OPENING_INVENTORY_MIGRATION_REQUIRED_FIELDS) {
+    if (!targets.has(field)) {
+      problems.push({
+        code: 'required-unmapped',
+        message:
+          'الحقل الإلزامي «' +
+          OPENING_INVENTORY_MIGRATION_FIELD_LABELS[field] +
+          '» غير مربوط.',
+      });
+    }
+  }
+  return problems;
+}
+
 export function migrationCellText(cell: MigrationImportCell): string {
   switch (cell.kind) {
     case 'blank':
@@ -354,6 +410,49 @@ export function customerMigrationProblemsCsv(rows: readonly CustomerMigrationRow
 }
 
 export function supplierMigrationProblemsCsv(rows: readonly SupplierMigrationRowResult[]): string {
+  const header = ['ROW', 'SOURCE IDENTIFIER', 'FIELD', 'ERROR', 'REASON'];
+  const lines = [header.map(csvCell).join(',')];
+  for (const row of rows) {
+    if (row.issues.length === 0 && row.errorCode === null) continue;
+    if (row.issues.length === 0) {
+      lines.push(
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          '',
+          row.errorCode ?? '',
+          row.errorCode ?? '',
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+      continue;
+    }
+    for (const issue of row.issues) {
+      lines.push(
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          issue.targetField ?? '',
+          issue.code,
+          issue.message,
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+    }
+  }
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
+}
+
+export const OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV =
+  '\uFEFFكود الفرع,رقم الصنف,الكمية الافتتاحية\r\n' +
+  'MAIN,SKU-001,12\r\n' +
+  'MAIN,SKU-WEIGHT,12.500\r\n';
+
+export function openingInventoryMigrationProblemsCsv(
+  rows: readonly OpeningInventoryMigrationRowResult[],
+): string {
   const header = ['ROW', 'SOURCE IDENTIFIER', 'FIELD', 'ERROR', 'REASON'];
   const lines = [header.map(csvCell).join(',')];
   for (const row of rows) {
