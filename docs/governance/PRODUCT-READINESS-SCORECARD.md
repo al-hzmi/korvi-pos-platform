@@ -331,3 +331,29 @@ The acquisition program remains **IN PROGRESS** because AR-4 Production
 Operations, AR-5 production ZATCA, AR-6 acquisition/handoff completion and AR-7
 real Merchant Pilot remain open. **Production Proven remains NOT YET
 EVIDENCE-BACKED.**
+
+
+## Canonical Acquisition AR-4 / AR-6 engineering overlay — 2026-09-22
+
+Canonical evidence SHA:
+`48400d02a3990eecd6169933c207e282d9371084`.
+
+Exact evidence:
+
+- CI `35783723534` / `35783727656` — PASS;
+- PostgreSQL 17 live/full `35783723616` — PASS;
+- Chrome commercial workflow `35783723516` — PASS;
+- Incident outage/recovery `35783723572` — PASS;
+- DR logical-backup/isolated-restore `35783723489` — PASS;
+- Android installed proof `35783727722` — PASS.
+
+Supplemental acquisition status:
+
+- AR-4 internal engineering operations package — **COMPLETE**;
+- AR-4 real production activation evidence — **OPEN**;
+- AR-6 engineering/buyer handoff package — **COMPLETE**;
+- AR-6 transaction/legal/account-transfer activation — **OPEN**.
+
+The historical `88 / 100` score is intentionally unchanged. Gate 50 remains OPEN because engineering rehearsal is not a substitute for real production infrastructure, real external observability/alert routing or controlled field validation.
+
+**Production Proven remains NOT YET EVIDENCE-BACKED.**
