@@ -72,7 +72,7 @@ function rawCell(cell: ImportCell | undefined): {
   return {
     value,
     formula: false,
-    controlCharacter: hasAsciiControlCharacter(value),
+    controlCharacter: value !== null && hasAsciiControlCharacter(value),
   };
 }
 
