@@ -268,3 +268,35 @@ opportunities are:
 No direct SQL fixture, fake stock, weakened permission, fabricated browser
 claim, skipped regulatory requirement or temporary production bypass may be
 used to earn score.
+
+
+---
+
+## Canonical Acquisition Release — supplemental P0 readiness gate (2026-09-22)
+
+Current state: **IN PROGRESS**
+
+This gate is separate from historical arithmetic and does not silently rewrite prior verified scores.
+
+A final acquisition release requires evidence on one canonical release lineage for:
+
+- latest verified Product/Retail integration;
+- latest verified Restaurant integration;
+- Migration baseline through M6;
+- revocable Platform Admin sessions;
+- Electronic/Mixed Tender operator workflows;
+- Return/Refund operator workflows;
+- Shift Close/Cash Reconciliation operator workflows;
+- production operations evidence;
+- production ZATCA operational closure;
+- acquisition-grade handoff/ownership documentation;
+- controlled real merchant production pilot.
+
+Current terminology rule:
+
+- **Production Proven:** NOT YET EVIDENCE-BACKED.
+- **Canonical Acquisition Release:** IN PROGRESS.
+
+Backend authority alone does not close a user-workflow gate.
+Staging alone does not close a production-proof gate.
+A synthetic test tenant does not close the merchant-production-pilot gate.
