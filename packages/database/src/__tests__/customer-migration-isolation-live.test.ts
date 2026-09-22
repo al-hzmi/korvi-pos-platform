@@ -86,6 +86,7 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
     phone: string;
     nameAr: string;
     conflictPolicy?: 'reject' | 'update-existing-by-phone';
+    mapping?: readonly { readonly sourceColumn: number; readonly targetField: string }[];
   }): Promise<void> {
     await asTenant(input.tenant, async () => {
       await client.query(
@@ -93,8 +94,8 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
           ("id","tenantId","actorUserId","domain","format","sourceSha256",
            "createOperationId","createRequestHash","status","mappingVersion","mapping",
            "conflictPolicy","totalRows","validRows","warningRows","errorRows","blockedRows","updatedAt")
-         VALUES ($1,$2,$3,'customers','csv',$4,$5,$6,'reviewed',1,'[]'::jsonb,
-                 $7,1,1,0,0,0,now())`,
+         VALUES ($1,$2,$3,'customers','csv',$4,$5,$6,'reviewed',1,$7::jsonb,
+                 $8,1,1,0,0,0,now())`,
         [
           input.job,
           input.tenant,
@@ -102,6 +103,7 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
           input.sourceHash,
           input.job,
           input.requestHash,
+          JSON.stringify(input.mapping ?? []),
           input.conflictPolicy ?? 'reject',
         ],
       );
@@ -347,7 +349,7 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
       await client.query(
         `INSERT INTO "customers"
           ("id","tenantId","nameAr","nameEn","phone","email","vatNumber","isActive","updatedAt")
-         VALUES ($1,$2,'الاسم القديم',NULL,$3,NULL,NULL,true,now())`,
+         VALUES ($1,$2,'الاسم القديم',NULL,$3,'keep@example.test',NULL,true,now())`,
         [customer, A.tenant, phone],
       );
     });
@@ -362,6 +364,10 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
       phone,
       nameAr: 'الاسم الجديد',
       conflictPolicy: 'update-existing-by-phone',
+      mapping: [
+        { sourceColumn: 0, targetField: 'nameAr' },
+        { sourceColumn: 1, targetField: 'phone' },
+      ],
     });
 
     const dry = await dryRunCustomerImport(
@@ -394,12 +400,14 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
     expect(replay).toEqual(first);
 
     const rows = await asTenant(A.tenant, async () =>
-      client.query<{ id: string; nameAr: string }>(
-        'SELECT "id","nameAr" FROM "customers" WHERE "tenantId" = $1 AND "phone" = $2',
+      client.query<{ id: string; nameAr: string; email: string | null }>(
+        'SELECT "id","nameAr","email" FROM "customers" WHERE "tenantId" = $1 AND "phone" = $2',
         [A.tenant, phone],
       ),
     );
-    expect(rows.rows).toEqual([{ id: customer, nameAr: 'الاسم الجديد' }]);
+    expect(rows.rows).toEqual([
+      { id: customer, nameAr: 'الاسم الجديد', email: 'keep@example.test' },
+    ]);
   });
 
   it('re-resolves update-by-phone at commit when a same-tenant phone appears after dry-run', async () => {
@@ -420,6 +428,10 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
       phone,
       nameAr: 'قيمة الاستيراد',
       conflictPolicy: 'update-existing-by-phone',
+      mapping: [
+        { sourceColumn: 0, targetField: 'nameAr' },
+        { sourceColumn: 1, targetField: 'phone' },
+      ],
     });
     const dry = await dryRunCustomerImport(
       prisma,
