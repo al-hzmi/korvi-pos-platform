@@ -363,3 +363,25 @@ Execution order:
 Parallel lanes are allowed where isolated. External-only gates must not stop executable integration, UX, security or handoff work.
 
 Do not open new speculative capabilities while an executable P0 acquisition-release gap remains.
+
+
+---
+
+## Canonical Acquisition execution status — 2026-09-22
+
+- **AR-0 — CLOSED:** canonical source matrix resolved; no blind merge.
+- **AR-1 — CLOSED:** durable Platform Admin server-side session revocation is on the canonical lineage.
+- **AR-2 — CLOSED:** Electronic/Mixed Tender, Return/Refund and Shift Close/Cash Reconciliation are integrated and browser-proven.
+- **AR-3 — CLOSED:** Retail/core + Restaurant + Migration M2-M6 + Security + commercial workflows now share one canonical release lineage.
+- **AR-4 — ACTIVE NEXT:** execute production-shaped DR/incident/health/rollback evidence that can be proved without paid resources; retain true production infrastructure/monitoring/RPO/RTO evidence as an external activation boundary where necessary.
+- **AR-5 — OPEN / EXTERNAL ACTIVATION POSSIBLE:** production ZATCA remains fail-closed; no simulation or staging credential may close this gate.
+- **AR-6 — ACTIVE IN PARALLEL:** acquisition/handoff package, environment inventory, deployment/migration/backup/monitoring/ZATCA runbooks, dependency/supply-chain/licensing/IP provenance and release evidence.
+- **AR-7 — OPEN / HUMAN-EXTERNAL:** only actual merchant evidence may close the production pilot.
+- **AR-8 — NOT STARTED:** final acquisition release requires one exact release SHA plus the evidence package.
+
+Canonical integration checkpoint:
+`release/canonical-acquisition-v1@941b512bdb82be8a4d52113a77def365b81cd4e4`.
+
+Evidence:
+CI `35775341358` + PR CI `35775347600`, PostgreSQL Live `35775341360`,
+Chrome Commercial Proof `35775341446`.
