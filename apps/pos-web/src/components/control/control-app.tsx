@@ -149,6 +149,7 @@ function Section({
           api={api}
           canCommit={hasPermission(principal, 'product.write')}
           canCustomerCommit={hasPermission(principal, 'customer.write')}
+          canSupplierCommit={hasPermission(principal, 'purchasing.manage')}
           onCommandLockChange={onCommandLockChange}
         />
       );
