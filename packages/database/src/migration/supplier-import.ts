@@ -645,7 +645,7 @@ async function processPendingSupplierRow(
       const supplier = await createSupplierWithin(
         tx,
         tenant,
-        actor,
+        { tenantId: tenant, userId: actor.userId },
         { name: canonical.name },
         at,
         nextId,
