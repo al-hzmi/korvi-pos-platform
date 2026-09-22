@@ -6,8 +6,10 @@ import { Button, CardSurface } from '@korvi/ui';
 import { TopBar } from './top-bar';
 import { ProductPanel } from './product-panel';
 import { CartPanel } from './cart-panel';
+import { CashierReturnWorkflow } from './cashier-return-workflow';
 import { CheckoutPanel } from './checkout-panel';
 import { SaleReceipt } from './sale-receipt';
+import { ShiftCloseControl } from './shift-close-control';
 import { PreparationTicketControl } from './preparation-ticket-control';
 import { RestaurantOrderTypeControl } from './restaurant-order-type-control';
 import { RestaurantOpenOrdersControl } from './restaurant-open-orders-control';
@@ -188,6 +190,7 @@ export function CashierScreen({
   const [pendingRestaurantOrderCommand, setPendingRestaurantOrderCommand] =
     useState<PendingRestaurantOrderCommand | null>(null);
   const [restaurantOrderNotice, setRestaurantOrderNotice] = useState<string | null>(null);
+  const [operatorCommandLocked, setOperatorCommandLocked] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const cashInput = useRef<HTMLInputElement>(null);
@@ -283,7 +286,8 @@ export function CashierScreen({
     intentLocked(checkout.state) ||
     durabilityLoading ||
     restaurantOrderContextBlocked ||
-    restaurantOrderCommandStatus !== 'idle';
+    restaurantOrderCommandStatus !== 'idle' ||
+    operatorCommandLocked;
   const outstanding = checkout.state.attemptOutstanding;
 
   const focusSearch = useCallback(() => {
@@ -868,8 +872,8 @@ export function CashierScreen({
         cashierName={principal.user.displayName}
         controlCentreHref={authorizedControlHref}
         terminal={terminal}
-        busy={checkout.state.phase === 'submitting'}
-        signOutBlocked={signOutBlocked(checkout.state)}
+        busy={checkout.state.phase === 'submitting' || operatorCommandLocked}
+        signOutBlocked={signOutBlocked(checkout.state) || operatorCommandLocked}
         onSignOut={onSignOut}
       />
 
@@ -898,6 +902,27 @@ export function CashierScreen({
               الصفحة.
             </StatusNote>
           ) : null}
+          <div className="mb-3 flex flex-wrap gap-2">
+            <CashierReturnWorkflow
+              api={api}
+              terminalId={terminal.id}
+              canRefund={principal.permissions.includes('sale.refund')}
+              disabled={locked}
+              onCommandLockChange={setOperatorCommandLocked}
+              onExpired={onExpired}
+              onShiftChanged={onShiftChanged}
+            />
+            <ShiftCloseControl
+              api={api}
+              terminalId={terminal.id}
+              shift={shift}
+              canClose={principal.permissions.includes('shift.close')}
+              disabled={locked}
+              onCommandLockChange={setOperatorCommandLocked}
+              onExpired={onExpired}
+              onClosed={onShiftChanged}
+            />
+          </div>
           <ProductPanel
             term={search.term}
             state={search.state}
