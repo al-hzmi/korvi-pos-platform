@@ -33,6 +33,8 @@ const ALLOWED_BEHIND = {
     'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
   prettier:
     'Commercial V1 RC freeze directive (2026-09-18): keep the verified 3.9.7 formatter baseline until post-RC to avoid unrelated repository-wide formatting churn.',
+  next:
+    'Canonical Acquisition Release freeze (2026-09-22): retain the exact 16.3.5 baseline already proven on the canonical lineage; evaluate 16.3.6 in a dedicated dependency-maintenance change rather than coupling framework churn to AR-1 security integration.',
   typescript: 'ADR-0007: typescript-eslint declares `typescript <6.1.0`.',
   'typescript-eslint':
     'Post-V1 parallel product-development baseline (2026-09-21): retain the verified 8.70.0 lint/parser toolchain during Migration M2/M3 work; upgrade to 8.70.1 only in a dedicated dependency-maintenance change, not inside a migration vertical slice.',
