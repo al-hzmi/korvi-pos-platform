@@ -672,18 +672,14 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
     expect(betweenTenantTables.length).toBeGreaterThanOrEqual(30);
 
     for (const row of betweenTenantTables) {
-      expect(
-        row.childColumns,
-        `${row.conname} does not carry tenantId on ${row.child}`,
-      ).toContain('tenantId');
+      expect(row.childColumns, `${row.conname} does not carry tenantId on ${row.child}`).toContain(
+        'tenantId',
+      );
       expect(
         row.parentColumns,
         `${row.conname} does not reference tenantId on ${row.parent}`,
       ).toContain('tenantId');
-      expect(
-        row.childColumns.length,
-        `${row.conname} is not composite`,
-      ).toBeGreaterThanOrEqual(2);
+      expect(row.childColumns.length, `${row.conname} is not composite`).toBeGreaterThanOrEqual(2);
       expect(row.parentColumns).toHaveLength(row.childColumns.length);
     }
   });
