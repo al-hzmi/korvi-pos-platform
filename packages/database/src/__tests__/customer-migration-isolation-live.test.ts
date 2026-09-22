@@ -247,8 +247,20 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
 
   it('commits the same phone independently in Tenant A and replays idempotently', async () => {
     const scope = { tenantId: tenantId(A.tenant) };
-    const first = await commitCustomerImport(prisma, scope, { userId: A.user }, A.job, A.commit);
-    const replay = await commitCustomerImport(prisma, scope, { userId: A.user }, A.job, A.commit);
+    const first = await commitCustomerImport(
+      prisma,
+      scope,
+      { userId: A.user },
+      A.job,
+      A.commit,
+    );
+    const replay = await commitCustomerImport(
+      prisma,
+      scope,
+      { userId: A.user },
+      A.job,
+      A.commit,
+    );
     expect(first.status).toBe('completed');
     expect(first.created).toBe(1);
     expect(replay).toEqual(first);
