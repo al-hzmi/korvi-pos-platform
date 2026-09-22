@@ -244,7 +244,9 @@ export function SupplierMigrationPanel({
       const result = await api.dryRunSupplierMigration(job.id);
       setJob(result);
       setPending(null);
-      setNotice('اكتمل الفحص التجريبي دون إنشاء موردين. أسماء الموردين المتطابقة مسموحة وفق نموذج Korvi.');
+      setNotice(
+        'اكتمل الفحص التجريبي دون إنشاء موردين. أسماء الموردين المتطابقة مسموحة وفق نموذج Korvi.',
+      );
       onCommandLockChange(false);
       await loadProblems(result.id);
     } catch (error) {
