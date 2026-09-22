@@ -360,6 +360,146 @@ describe('the API client', () => {
     });
   });
 
+  it('posts a return without client-authored monetary truth', async () => {
+    const saleId = '018f4000-0000-7000-8000-000000000201';
+    const saleLineId = '018f4000-0000-7000-8000-000000000202';
+    const terminalId = '018f4000-0000-7000-8000-000000000203';
+    const transport = stub([
+      ok({
+        sales: [
+          {
+            saleId,
+            invoiceNumber: 'INV-1',
+            sequence: 1,
+            issuedAt: '2026-09-22T18:00:00.000Z',
+            currency: 'SAR',
+            totalMinor: '1000',
+            refundedTotalMinor: '0',
+            fullyReturned: false,
+          },
+        ],
+        limit: 10,
+      }),
+      ok({
+        sale: {
+          saleId,
+          invoiceNumber: 'INV-1',
+          issuedAt: '2026-09-22T18:00:00.000Z',
+          currency: 'SAR',
+          netMinor: '870',
+          vatMinor: '130',
+          totalMinor: '1000',
+          refundedTotalMinor: '0',
+          lines: [],
+        },
+      }),
+      ok({
+        return: {
+          returnId: '018f4000-0000-7000-8000-000000000204',
+          returnNumber: 'RET-1',
+          saleId,
+          operationId: '018f4000-0000-7000-8000-000000000205',
+          sequence: 1,
+          branchId: '018f4000-0000-7000-8000-000000000206',
+          terminalId,
+          shiftId: '018f4000-0000-7000-8000-000000000207',
+          currency: 'SAR',
+          reason: 'تالف',
+          grossMinor: '1000',
+          lineDiscountMinor: '0',
+          basketDiscountMinor: '0',
+          netMinor: '870',
+          vatMinor: '130',
+          totalMinor: '1000',
+          issuedAt: '2026-09-22T18:10:00.000Z',
+          lines: [],
+          refund: { kind: 'cash', scheme: null, amountMinor: '1000', reference: null },
+        },
+        replayed: false,
+      }),
+    ]);
+    const api = createApiClient(transport.fetch);
+
+    await api.saleLookup('INV-1');
+    await api.returnableSale(saleId);
+    await api.createReturn({
+      operationId: '018f4000-0000-7000-8000-000000000205',
+      terminalId,
+      saleId,
+      reason: '  تالف  ',
+      refund: { kind: 'cash' },
+      lines: [{ saleLineId, quantityScaled: '1000' }],
+    });
+
+    expect(transport.calls.map((call) => call.url)).toEqual([
+      '/v1/sales/lookup?q=INV-1&limit=10',
+      `/v1/sales/${saleId}/returnable`,
+      '/v1/returns',
+    ]);
+    const body = bodyOf(transport.calls[2]!.init);
+    expect(body).toEqual({
+      operationId: '018f4000-0000-7000-8000-000000000205',
+      terminalId,
+      saleId,
+      reason: 'تالف',
+      refund: { kind: 'cash' },
+      lines: [{ saleLineId, quantityScaled: '1000' }],
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /refundTotal|totalMinor|netMinor|vatMinor|shiftId|branchId|expectedCash|variance/i,
+    );
+  });
+
+  it('closes a shift with only the blind physical count as client monetary input', async () => {
+    const terminalId = '018f5000-0000-7000-8000-000000000201';
+    const shiftId = '018f5000-0000-7000-8000-000000000202';
+    const transport = stub([
+      ok({
+        shift: {
+          shiftId,
+          branchId: '018f5000-0000-7000-8000-000000000203',
+          terminalId,
+          openedByUserId: '018f5000-0000-7000-8000-000000000204',
+          closedByUserId: '018f5000-0000-7000-8000-000000000204',
+          status: 'closed',
+          openedAt: '2026-09-22T08:00:00.000Z',
+          closedAt: '2026-09-22T18:00:00.000Z',
+          reconciliation: {
+            openingFloatMinor: '10000',
+            cashSalesMinor: '50000',
+            cashRefundsMinor: '5000',
+            paidInMinor: '0',
+            paidOutMinor: '0',
+            expectedCashMinor: '55000',
+            declaredCashMinor: '54900',
+            varianceMinor: '-100',
+          },
+        },
+        replayed: false,
+      }),
+    ]);
+    const api = createApiClient(transport.fetch);
+
+    await api.closeShift({
+      operationId: '018f5000-0000-7000-8000-000000000205',
+      terminalId,
+      shiftId,
+      declaredCashMinor: '54900',
+    });
+
+    expect(transport.calls[0]!.url).toBe('/v1/shifts/close');
+    const body = bodyOf(transport.calls[0]!.init);
+    expect(body).toEqual({
+      operationId: '018f5000-0000-7000-8000-000000000205',
+      terminalId,
+      shiftId,
+      declaredCashMinor: '54900',
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /expectedCashMinor|varianceMinor|cashSalesMinor|cashRefundsMinor|paidInMinor|paidOutMinor/,
+    );
+  });
+
   it('reads a null shift as no open shift', async () => {
     const transport = stub([ok({ shift: null })]);
     const shift = await createApiClient(transport.fetch).currentShift(
