@@ -140,6 +140,7 @@ export function ShiftCloseControl({
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             النقد الفعلي في الدرج — SAR
             <input
+              id="shift-close-declared-cash"
               className="h-touch rounded-md border border-input bg-background px-3 text-end text-base text-foreground"
               inputMode="decimal"
               value={declaredCash}
