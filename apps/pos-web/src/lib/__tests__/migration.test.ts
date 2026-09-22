@@ -3,12 +3,15 @@ import {
   CATEGORY_MIGRATION_TEMPLATE_CSV,
   CUSTOMER_MIGRATION_TEMPLATE_CSV,
   SUPPLIER_MIGRATION_TEMPLATE_CSV,
+  OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV,
   categoryMigrationMappingProblems,
   categoryMigrationProblemsCsv,
   customerMigrationMappingProblems,
   customerMigrationProblemsCsv,
   supplierMigrationMappingProblems,
   supplierMigrationProblemsCsv,
+  openingInventoryMigrationMappingProblems,
+  openingInventoryMigrationProblemsCsv,
   migrationCellText,
   migrationMappingProblems,
   PRODUCT_MIGRATION_TEMPLATE_CSV,
@@ -18,6 +21,7 @@ import type {
   CategoryMigrationRowResult,
   CustomerMigrationRowResult,
   SupplierMigrationRowResult,
+  OpeningInventoryMigrationRowResult,
   ProductMigrationRowResult,
 } from '../api-types';
 
@@ -190,4 +194,47 @@ describe('merchant migration presentation helpers', () => {
     expect(csv).toContain('"\'=CMD"');
     expect(csv).toContain('"\'+invalid"');
   });
+
+  it('ships opening inventory business-key mapping, Arabic template and formula-safe error export', () => {
+    expect(
+      openingInventoryMigrationMappingProblems([
+        { sourceColumn: 0, targetField: 'branchCode' },
+        { sourceColumn: 1, targetField: 'sku' },
+      ]),
+    ).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]),
+    );
+    expect(OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV).toContain('كود الفرع');
+    expect(OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV).toContain('رقم الصنف');
+    expect(OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV).toContain('الكمية الافتتاحية');
+    expect(OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV).not.toMatch(
+      /branchId|productId|categoryId|cost|تكلفة|قيمة/,
+    );
+
+    const rows: readonly OpeningInventoryMigrationRowResult[] = [
+      {
+        sourceRow: 12,
+        sourceIdentifier: '=CMD',
+        classification: 'ERROR',
+        plannedAction: 'reject',
+        status: 'rejected',
+        targetEntityId: null,
+        errorCode: null,
+        issues: [
+          {
+            classification: 'ERROR',
+            code: 'opening-stock-not-pristine',
+            message: '+existing-stock',
+            row: 12,
+            sourceColumn: null,
+            targetField: 'sku',
+          },
+        ],
+      },
+    ];
+    const csv = openingInventoryMigrationProblemsCsv(rows);
+    expect(csv).toContain('"\'=CMD"');
+    expect(csv).toContain('"\'+existing-stock"');
+  });
+
 });
