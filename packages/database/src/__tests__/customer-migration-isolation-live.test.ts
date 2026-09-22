@@ -85,6 +85,7 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
     rowHash: string;
     phone: string;
     nameAr: string;
+    conflictPolicy?: 'reject' | 'update-existing-by-phone';
   }): Promise<void> {
     await asTenant(input.tenant, async () => {
       await client.query(
@@ -93,8 +94,16 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
            "createOperationId","createRequestHash","status","mappingVersion","mapping",
            "conflictPolicy","totalRows","validRows","warningRows","errorRows","blockedRows","updatedAt")
          VALUES ($1,$2,$3,'customers','csv',$4,$5,$6,'reviewed',1,'[]'::jsonb,
-                 'reject',1,1,0,0,0,now())`,
-        [input.job, input.tenant, input.user, input.sourceHash, input.job, input.requestHash],
+                 $7,1,1,0,0,0,now())`,
+        [
+          input.job,
+          input.tenant,
+          input.user,
+          input.sourceHash,
+          input.job,
+          input.requestHash,
+          input.conflictPolicy ?? 'reject',
+        ],
       );
       await client.query(
         `INSERT INTO "migration_import_rows"
@@ -326,4 +335,129 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
       issues: expect.arrayContaining([expect.objectContaining({ code: 'phone-conflict' })]),
     });
   });
+
+  it('updates the same-tenant customer by phone without accepting an internal id', async () => {
+    const customer = '018fbc00-0000-7000-8000-0000000000d1';
+    const job = '018fbc00-0000-7000-8000-0000000000d2';
+    const row = '018fbc00-0000-7000-8000-0000000000d3';
+    const operation = '018fbc00-0000-7000-8000-0000000000d4';
+    const phone = '0501112233';
+
+    await asTenant(A.tenant, async () => {
+      await client.query(
+        `INSERT INTO "customers"
+          ("id","tenantId","nameAr","nameEn","phone","email","vatNumber","isActive","updatedAt")
+         VALUES ($1,$2,'الاسم القديم',NULL,$3,NULL,NULL,true,now())`,
+        [customer, A.tenant, phone],
+      );
+    });
+    await seedJob({
+      tenant: A.tenant,
+      user: A.user,
+      job,
+      row,
+      sourceHash: 'a'.repeat(64),
+      requestHash: 'b'.repeat(64),
+      rowHash: 'c'.repeat(64),
+      phone,
+      nameAr: 'الاسم الجديد',
+      conflictPolicy: 'update-existing-by-phone',
+    });
+
+    const dry = await dryRunCustomerImport(
+      prisma,
+      { tenantId: tenantId(A.tenant) },
+      { userId: A.user },
+      job,
+    );
+    expect(dry.conflictPolicy).toBe('update-existing-by-phone');
+    expect(dry.errorRows).toBe(0);
+    expect(dry.warningRows).toBe(1);
+    const preview = await readCustomerImportRows(
+      prisma,
+      { tenantId: tenantId(A.tenant) },
+      job,
+      { limit: 20, afterSourceRow: null, problemsOnly: true },
+    );
+    expect(preview?.rows[0]).toMatchObject({
+      plannedAction: 'update',
+      status: 'pending',
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'phone-match-update-planned' }),
+      ]),
+    });
+
+    const scope = { tenantId: tenantId(A.tenant) };
+    const first = await commitCustomerImport(prisma, scope, { userId: A.user }, job, operation);
+    const replay = await commitCustomerImport(prisma, scope, { userId: A.user }, job, operation);
+    expect(first.created).toBe(0);
+    expect(first.updated).toBe(1);
+    expect(replay).toEqual(first);
+
+    const rows = await asTenant(A.tenant, async () =>
+      client.query<{ id: string; nameAr: string }>(
+        'SELECT "id","nameAr" FROM "customers" WHERE "tenantId" = $1 AND "phone" = $2',
+        [A.tenant, phone],
+      ),
+    );
+    expect(rows.rows).toEqual([{ id: customer, nameAr: 'الاسم الجديد' }]);
+  });
+
+  it('re-resolves update-by-phone at commit when a same-tenant phone appears after dry-run', async () => {
+    const customer = '018fbc00-0000-7000-8000-0000000000e1';
+    const job = '018fbc00-0000-7000-8000-0000000000e2';
+    const row = '018fbc00-0000-7000-8000-0000000000e3';
+    const operation = '018fbc00-0000-7000-8000-0000000000e4';
+    const phone = '0504445566';
+
+    await seedJob({
+      tenant: A.tenant,
+      user: A.user,
+      job,
+      row,
+      sourceHash: 'd'.repeat(64),
+      requestHash: 'e'.repeat(64),
+      rowHash: 'f'.repeat(64),
+      phone,
+      nameAr: 'قيمة الاستيراد',
+      conflictPolicy: 'update-existing-by-phone',
+    });
+    const dry = await dryRunCustomerImport(
+      prisma,
+      { tenantId: tenantId(A.tenant) },
+      { userId: A.user },
+      job,
+    );
+    expect(dry.errorRows).toBe(0);
+    expect(dry.rows[0]).toMatchObject({ plannedAction: 'create' });
+
+    await asTenant(A.tenant, async () => {
+      await client.query(
+        `INSERT INTO "customers"
+          ("id","tenantId","nameAr","nameEn","phone","email","vatNumber","isActive","updatedAt")
+         VALUES ($1,$2,'وصل بعد الفحص',NULL,$3,NULL,NULL,true,now())`,
+        [customer, A.tenant, phone],
+      );
+    });
+
+    const committed = await commitCustomerImport(
+      prisma,
+      { tenantId: tenantId(A.tenant) },
+      { userId: A.user },
+      job,
+      operation,
+    );
+    expect(committed.created).toBe(0);
+    expect(committed.updated).toBe(1);
+    expect(committed.failed).toBe(0);
+
+    const rows = await asTenant(A.tenant, async () =>
+      client.query<{ id: string; nameAr: string }>(
+        'SELECT "id","nameAr" FROM "customers" WHERE "tenantId" = $1 AND "phone" = $2',
+        [A.tenant, phone],
+      ),
+    );
+    expect(rows.rows).toEqual([{ id: customer, nameAr: 'قيمة الاستيراد' }]);
+  });
+
 });
