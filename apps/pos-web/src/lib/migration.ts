@@ -5,6 +5,9 @@ import type {
   CustomerMigrationMapping,
   CustomerMigrationRowResult,
   CustomerMigrationTargetField,
+  SupplierMigrationMapping,
+  SupplierMigrationRowResult,
+  SupplierMigrationTargetField,
   MigrationImportCell,
   ProductMigrationMapping,
   ProductMigrationRowResult,
@@ -56,6 +59,14 @@ export const CUSTOMER_MIGRATION_FIELD_LABELS: Readonly<
   phone: 'رقم الجوال',
   email: 'البريد الإلكتروني',
   vatNumber: 'الرقم الضريبي',
+};
+
+export const SUPPLIER_MIGRATION_REQUIRED_FIELDS: readonly SupplierMigrationTargetField[] = ['name'];
+
+export const SUPPLIER_MIGRATION_FIELD_LABELS: Readonly<
+  Record<SupplierMigrationTargetField, string>
+> = {
+  name: 'اسم المورد',
 };
 
 export interface MigrationMappingProblem {
@@ -168,6 +179,43 @@ export function customerMigrationMappingProblems(
       problems.push({
         code: 'required-unmapped',
         message: 'الحقل الإلزامي «' + CUSTOMER_MIGRATION_FIELD_LABELS[field] + '» غير مربوط.',
+      });
+    }
+  }
+  return problems;
+}
+
+export function supplierMigrationMappingProblems(
+  mappings: readonly SupplierMigrationMapping[],
+): readonly MigrationMappingProblem[] {
+  const problems: MigrationMappingProblem[] = [];
+  const sources = new Set<number>();
+  const targets = new Set<SupplierMigrationTargetField>();
+
+  for (const mapping of mappings) {
+    if (sources.has(mapping.sourceColumn)) {
+      problems.push({
+        code: 'duplicate-source',
+        message: 'عمود المصدر رقم ' + String(mapping.sourceColumn + 1) + ' مربوط أكثر من مرة.',
+      });
+    }
+    sources.add(mapping.sourceColumn);
+    if (mapping.targetField === null) continue;
+    if (targets.has(mapping.targetField)) {
+      problems.push({
+        code: 'duplicate-target',
+        message:
+          'حقل «' + SUPPLIER_MIGRATION_FIELD_LABELS[mapping.targetField] + '» مربوط بأكثر من عمود.',
+      });
+    }
+    targets.add(mapping.targetField);
+  }
+
+  for (const field of SUPPLIER_MIGRATION_REQUIRED_FIELDS) {
+    if (!targets.has(field)) {
+      problems.push({
+        code: 'required-unmapped',
+        message: 'الحقل الإلزامي «' + SUPPLIER_MIGRATION_FIELD_LABELS[field] + '» غير مربوط.',
       });
     }
   }
@@ -304,6 +352,41 @@ export function customerMigrationProblemsCsv(rows: readonly CustomerMigrationRow
   }
   return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
+
+export function supplierMigrationProblemsCsv(rows: readonly SupplierMigrationRowResult[]): string {
+  const header = ['ROW', 'SOURCE IDENTIFIER', 'FIELD', 'ERROR', 'REASON'];
+  const lines = [header.map(csvCell).join(',')];
+  for (const row of rows) {
+    if (row.issues.length === 0 && row.errorCode === null) continue;
+    if (row.issues.length === 0) {
+      lines.push(
+        [String(row.sourceRow), row.sourceIdentifier ?? '', '', row.errorCode ?? '', row.errorCode ?? '']
+          .map(csvCell)
+          .join(','),
+      );
+      continue;
+    }
+    for (const issue of row.issues) {
+      lines.push(
+        [
+          String(row.sourceRow),
+          row.sourceIdentifier ?? '',
+          issue.targetField ?? '',
+          issue.code,
+          issue.message,
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+    }
+  }
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
+}
+
+export const SUPPLIER_MIGRATION_TEMPLATE_CSV =
+  '\uFEFFاسم المورد\r\n' +
+  'شركة المورد الأولى\r\n' +
+  'مورد السوق المركزي\r\n';
 
 export const CUSTOMER_MIGRATION_TEMPLATE_CSV =
   '\uFEFFاسم العميل,الاسم الانجليزي,رقم الجوال,البريد الإلكتروني,الرقم الضريبي\r\n' +
