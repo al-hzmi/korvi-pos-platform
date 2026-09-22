@@ -387,10 +387,7 @@ try {
   assert.ok(electronicTenderMinor > 0n, 'Proof item total must exceed the 1.00 SAR cash split.');
 
   await setInput('cash-received', '1.00');
-  await setInputByAriaLabel(
-    'مبلغ الدفعة الإلكترونية 1',
-    minorToMajor(electronicTenderMinor),
-  );
+  await setInputByAriaLabel('مبلغ الدفعة الإلكترونية 1', minorToMajor(electronicTenderMinor));
   await setInputByAriaLabel('مرجع الموافقة 1', 'AR2-MIXED-PROOF-001');
 
   let saleRequests = 0;
@@ -419,19 +416,22 @@ try {
   const proofSale = salesPage.items.find(
     (sale) => sale.terminal?.id === terminal.id && sale.status === 'finalized',
   );
-  assert.ok(proofSale !== undefined, 'Mixed-tender proof sale was not visible in server sales truth.');
+  assert.ok(
+    proofSale !== undefined,
+    'Mixed-tender proof sale was not visible in server sales truth.',
+  );
   const proofSaleDetail = await browserRequest(
     `/v1/admin/sales/${encodeURIComponent(proofSale.id)}`,
   );
   const cashTender = proofSaleDetail.tenders.find((tender) => tender.kind === 'cash');
-  const electronicTender = proofSaleDetail.tenders.find(
-    (tender) => tender.kind === 'electronic',
-  );
+  const electronicTender = proofSaleDetail.tenders.find((tender) => tender.kind === 'electronic');
   assert.equal(cashTender?.amountMinor, cashTenderMinor.toString());
   assert.equal(electronicTender?.amountMinor, electronicTenderMinor.toString());
   assert.equal(electronicTender?.scheme, 'mada');
   assert.equal(electronicTender?.reference, 'AR2-MIXED-PROOF-001');
-  record('server truth preserved the exact cash + Mada mixed tender composition from the cashier UI');
+  record(
+    'server truth preserved the exact cash + Mada mixed tender composition from the cashier UI',
+  );
 
   const afterBalance = await browserRequest(
     `/v1/admin/inventory/balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
@@ -505,12 +505,20 @@ try {
   await waitForText('أغلقت الوردية واعتمدت التسوية من الخادم.', 30_000);
   await waitForText('الفارق (المعدود − المتوقع)', 20_000);
   await new Promise((resolve) => setTimeout(resolve, 300));
-  assert.equal(closeRequests, 1, 'Shift-close UI must emit exactly one POST /v1/shifts/close request.');
+  assert.equal(
+    closeRequests,
+    1,
+    'Shift-close UI must emit exactly one POST /v1/shifts/close request.',
+  );
 
   const currentShift = await browserRequest(
     `/v1/shifts/current?terminalId=${encodeURIComponent(terminal.id)}`,
   );
-  assert.equal(currentShift.shift, null, 'Closed shift must disappear from current-shift authority.');
+  assert.equal(
+    currentShift.shift,
+    null,
+    'Closed shift must disappear from current-shift authority.',
+  );
   record(
     'cashier UI completed blind-count shift close; server reconciliation closed the authoritative shift',
   );
