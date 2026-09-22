@@ -30,7 +30,9 @@ import { createMerchantCategoryMigrationService } from './migration/category-imp
 import { createMerchantCustomerMigrationService } from './migration/customer-import-service.js';
 import { createMerchantProductMigrationService } from './migration/product-import-service.js';
 import { createMerchantSupplierMigrationService } from './migration/supplier-import-service.js';
-import { createMerchantOpeningInventoryMigrationService } from './migration/opening-inventory-import-service.js';
+import {
+  createMerchantOpeningInventoryMigrationService,
+} from './migration/opening-inventory-import-service.js';
 import { createPlatformAuth } from './platform/auth.js';
 import { registerPlatformDeviceRoutes } from './platform/device-routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
@@ -75,7 +77,9 @@ import type { MerchantCategoryMigrationService } from './migration/category-impo
 import type { MerchantCustomerMigrationService } from './migration/customer-import-service.js';
 import type { MerchantProductMigrationService } from './migration/product-import-service.js';
 import type { MerchantSupplierMigrationService } from './migration/supplier-import-service.js';
-import type { MerchantOpeningInventoryMigrationService } from './migration/opening-inventory-import-service.js';
+import type {
+  MerchantOpeningInventoryMigrationService,
+} from './migration/opening-inventory-import-service.js';
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
@@ -479,7 +483,9 @@ function lazySupplierMigrationService(config: ApiConfig): MerchantSupplierMigrat
   };
 }
 
-function lazyOpeningInventoryMigrationService(config: ApiConfig): MerchantOpeningInventoryMigrationService {
+function lazyOpeningInventoryMigrationService(
+  config: ApiConfig,
+): MerchantOpeningInventoryMigrationService {
   let built: MerchantOpeningInventoryMigrationService | null = null;
   const resolve = (): MerchantOpeningInventoryMigrationService => {
     if (built !== null) return built;
