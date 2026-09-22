@@ -86,6 +86,12 @@ if ! node scripts/check-acquisition-handoff.mjs; then
   report "acquisition handoff contract drift"
 fi
 
+# AR-7/AR-8 preparation must remain fail-closed: final acquisition
+# eligibility is manual, exact-SHA bound and rejects synthetic/staging evidence.
+if ! node scripts/check-acquisition-final-gate-contract.mjs; then
+  report "acquisition final-gate contract drift"
+fi
+
 # One-shot dependency refresh workflows are privileged, write-enabled release
 # tools. They must never survive the exact refresh they were created for.
 if compgen -G '.github/workflows/refresh-*-lock.yml' >/dev/null; then

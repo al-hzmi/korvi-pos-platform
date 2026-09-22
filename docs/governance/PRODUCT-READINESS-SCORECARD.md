@@ -357,3 +357,18 @@ Supplemental acquisition status:
 The historical `88 / 100` score is intentionally unchanged. Gate 50 remains OPEN because engineering rehearsal is not a substitute for real production infrastructure, real external observability/alert routing or controlled field validation.
 
 **Production Proven remains NOT YET EVIDENCE-BACKED.**
+
+
+## Canonical Acquisition AR-5 internal / AR-7-AR-8 preparation overlay — 2026-09-22
+
+Canonical internal-ZATCA SHA:
+`b9e063cb252ef0270756f52ba43d7562d644b2d5`.
+
+AR-5 provider-independent/internal proof is complete. External production HSM, merchant
+identity, Production CSID and real reporting/clearance remain open.
+
+AR-7 runbook and AR-8 fail-closed evidence contract are prepared, but **no real merchant pilot
+and no final acquisition evidence manifest exist yet**.
+
+The historical `88 / 100` score is unchanged. Gate 50 and the Canonical Acquisition Release
+remain open. **Production Proven remains NOT YET EVIDENCE-BACKED.**

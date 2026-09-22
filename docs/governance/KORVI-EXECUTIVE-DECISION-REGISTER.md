@@ -1,3 +1,23 @@
+## 2026-09-22 — Final acquisition gate is exact-SHA, manual and externally evidenced
+
+**Decision:** ACCEPTED.
+
+After canonical internal ZATCA proof on
+`b9e063cb252ef0270756f52ba43d7562d644b2d5`, the remaining acquisition frontier is external.
+
+AR-7 must use a real merchant in production. AR-8 must not infer closure from staging,
+synthetic tenants, CI, internal DR or internal ZATCA simulations.
+
+The final acquisition gate is therefore manual, exact-SHA bound and requires a committed
+evidence manifest covering real Production Operations, real Production ZATCA activation,
+transaction handoff and the real Merchant Pilot. Automated gate success validates manifest
+structure/consistency only; human reviewers must authenticate the referenced external evidence
+before governance records final release closure.
+
+No final evidence manifest is created by preparation work.
+
+---
+
 # KORVI — Executive Decision Register
 
 Status: **LIVING EXECUTIVE SOURCE OF TRUTH**

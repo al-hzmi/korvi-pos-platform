@@ -1,3 +1,20 @@
+## AR-7 / AR-8 external execution frontier — 2026-09-22
+
+All currently executable internal acquisition work through AR-6 and the internal portion of
+AR-5 is complete on the canonical lineage.
+
+Next legitimate actions are external/human, not speculative product development:
+
+1. activate real production infrastructure and capture AR-4 external evidence;
+2. activate real production HSM/ZATCA identity and capture AR-5 external evidence;
+3. complete transaction/legal/account-transfer diligence for AR-6;
+4. execute `docs/acquisition/MERCHANT-PILOT-RUNBOOK.md` with a real merchant;
+5. commit the reviewed evidence manifest on the exact candidate SHA and run the manual
+   Acquisition Final Gate;
+6. only after reviewer validation may governance close AR-7/AR-8.
+
+No synthetic tenant, staging dry run or internal demo may substitute for these actions.
+
 # KORVI POS — Execution Roadmap
 
 Status: **ACTIVE SEQUENCING DOCUMENT**

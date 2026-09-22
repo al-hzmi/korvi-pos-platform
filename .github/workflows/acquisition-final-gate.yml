@@ -1,0 +1,35 @@
+name: Acquisition Final Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_manifest_path:
+        description: Committed path to the reviewed final acquisition evidence manifest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-final-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact selected commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify final-gate contract
+        run: node scripts/check-acquisition-final-gate-contract.mjs
+
+      - name: Validate exact-SHA external evidence manifest
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/verify-acquisition-final-gate.mjs "${{ inputs.evidence_manifest_path }}"
