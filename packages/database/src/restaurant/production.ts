@@ -178,7 +178,7 @@ async function reserve(
   operationId: string,
   requestHash: string,
 ): Promise<RestaurantRecipeProductionResult | null> {
-  const inserted = await tx.$queryRaw<{ id: string }[]> `
+  const inserted = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO "idempotency_keys"
       ("id","tenantId","scope","operationId","status","requestHash")
     VALUES (
