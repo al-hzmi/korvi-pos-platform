@@ -241,16 +241,19 @@ describe('control centre first paint', () => {
         api: idleApi,
         canCommit: true,
         canCustomerCommit: true,
+        canSupplierCommit: true,
         onCommandLockChange: () => undefined,
       }),
     );
     expect(markup).toContain('استيراد المنتجات');
     expect(markup).toContain('استيراد الفئات');
     expect(markup).toContain('استيراد العملاء');
+    expect(markup).toContain('استيراد الموردين');
     expect(markup).toContain('فحص الملف');
     expect(markup).toContain('قالب المنتجات CSV');
     expect(markup).toContain('قالب الفئات CSV');
     expect(markup).toContain('قالب العملاء CSV');
+    expect(markup).toContain('قالب الموردين CSV');
     expect(markup).not.toContain('نتيجة مهمة الترحيل');
     expect(markup).not.toContain('اعتماد الاستيراد');
   });
