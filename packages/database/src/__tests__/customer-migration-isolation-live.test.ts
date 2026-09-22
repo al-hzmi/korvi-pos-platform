@@ -373,12 +373,11 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
     expect(dry.conflictPolicy).toBe('update-existing-by-phone');
     expect(dry.errorRows).toBe(0);
     expect(dry.warningRows).toBe(1);
-    const preview = await readCustomerImportRows(
-      prisma,
-      { tenantId: tenantId(A.tenant) },
-      job,
-      { limit: 20, afterSourceRow: null, problemsOnly: true },
-    );
+    const preview = await readCustomerImportRows(prisma, { tenantId: tenantId(A.tenant) }, job, {
+      limit: 20,
+      afterSourceRow: null,
+      problemsOnly: true,
+    });
     expect(preview?.rows[0]).toMatchObject({
       plannedAction: 'update',
       status: 'pending',
@@ -459,5 +458,4 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
     );
     expect(rows.rows).toEqual([{ id: customer, nameAr: 'قيمة الاستيراد' }]);
   });
-
 });

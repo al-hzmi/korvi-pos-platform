@@ -337,5 +337,4 @@ describe('customer migration HTTP authority', () => {
       expect(calls).toEqual([]);
     }
   });
-
 });

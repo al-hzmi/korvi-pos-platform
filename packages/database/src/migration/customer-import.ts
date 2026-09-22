@@ -660,8 +660,7 @@ export async function dryRunCustomerImport(
             data: {
               issues: jsonObject(issues),
               classification: classifyImportIssues(issues),
-              plannedAction:
-                conflictPolicy === 'update-existing-by-phone' ? 'update' : 'reject',
+              plannedAction: conflictPolicy === 'update-existing-by-phone' ? 'update' : 'reject',
               status: conflictPolicy === 'update-existing-by-phone' ? 'pending' : 'rejected',
               errorCode: null,
             },

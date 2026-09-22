@@ -95,8 +95,7 @@ export function CustomerMigrationPanel({
   const [file, setFile] = useState<File | null>(null);
   const [delimiter, setDelimiter] = useState<',' | ';' | '\t'>(',');
   const [sourceSystem, setSourceSystem] = useState('');
-  const [conflictPolicy, setConflictPolicy] =
-    useState<CustomerMigrationConflictPolicy>('reject');
+  const [conflictPolicy, setConflictPolicy] = useState<CustomerMigrationConflictPolicy>('reject');
   const [prepared, setPrepared] = useState<PreparedSource | null>(null);
   const [inspection, setInspection] = useState<CustomerMigrationInspection | null>(null);
   const [mapping, setMapping] = useState<readonly CustomerMigrationMapping[]>([]);
