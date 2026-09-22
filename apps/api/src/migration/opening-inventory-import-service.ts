@@ -354,7 +354,7 @@ export function createMerchantOpeningInventoryMigrationService(
 
     async commit(principal, jobId, operationId) {
       requirePrincipalPermission(principal, 'settings.manage');
-      requirePrincipalPermission(principal, 'purchasing.manage');
+      requirePrincipalPermission(principal, 'inventory.adjust');
       return databaseAttempt(() =>
         commitOpeningInventoryImport(
           prisma,
