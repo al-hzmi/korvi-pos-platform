@@ -290,6 +290,4 @@ describe('customer migration HTTP authority', () => {
     expect(committed.json()).toMatchObject({ id: JOB, status: 'completed', created: 1 });
     expect(calls).toEqual([{ method: 'commit', value: { jobId: JOB, operationId: OP } }]);
   });
-
-
 });
