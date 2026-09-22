@@ -472,6 +472,12 @@ export async function createCustomerImportJob(
   }
 
   const conflictPolicy = request.conflictPolicy ?? 'reject';
+  if (
+    conflictPolicy === 'update-existing-by-phone' &&
+    !request.mapping.some((entry) => entry.targetField === 'phone')
+  ) {
+    throw new CustomerImportRefusedError('invalid-operation');
+  }
   const reviews = reviewCustomerSheet(request.sheet, request.mapping);
   const counts = summarizeImportReviews(reviews);
   const sourceRows = request.sheet.rows.slice(1);
@@ -748,10 +754,15 @@ async function processPendingCustomerRow(
     try {
       const job = await tx.migrationImportJob.findFirst({
         where: { tenantId: tenant, id: jobId, domain: 'customers' },
-        select: { conflictPolicy: true },
+        select: { conflictPolicy: true, mapping: true },
       });
       if (job === null) throw new CustomerImportRefusedError('unknown-job');
       const conflictPolicy = conflictPolicyFromUnknown(job.conflictPolicy);
+      const mappedFields = new Set(
+        mappingFromUnknown(job.mapping)
+          .map((entry) => entry.targetField)
+          .filter((field): field is CustomerImportField => field !== null),
+      );
 
       await lockTenantForCustomerImport(tx, tenant);
       const existing =
@@ -772,11 +783,11 @@ async function processPendingCustomerRow(
               actor,
               existing!.id,
               {
-                nameAr: canonical.nameAr,
-                nameEn: canonical.nameEn,
-                phone: canonical.phone,
-                email: canonical.email,
-                vatNumber: canonical.vatNumber,
+                ...(mappedFields.has('nameAr') ? { nameAr: canonical.nameAr } : {}),
+                ...(mappedFields.has('nameEn') ? { nameEn: canonical.nameEn } : {}),
+                ...(mappedFields.has('phone') ? { phone: canonical.phone } : {}),
+                ...(mappedFields.has('email') ? { email: canonical.email } : {}),
+                ...(mappedFields.has('vatNumber') ? { vatNumber: canonical.vatNumber } : {}),
               },
               at,
               nextId,
