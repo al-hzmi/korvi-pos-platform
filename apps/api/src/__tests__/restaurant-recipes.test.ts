@@ -289,7 +289,6 @@ describe('restaurant recipe route authority', () => {
   });
 });
 
-
 describe('restaurant production route authority', () => {
   it('requires inventory.adjust and product.read for production', async () => {
     const server = build(principal(['product.read']));

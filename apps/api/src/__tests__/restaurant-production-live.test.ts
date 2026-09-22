@@ -181,30 +181,18 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
       });
     });
 
-    await setRestaurantRecipe(
-      prisma,
-      scope,
-      actor,
-      A.finished,
-      {
-        operationId: newId(),
-        expectedRevision: null,
-        yieldQuantityScaled: '1000',
-        ingredients: [{ productId: A.ingredient, quantityScaled: '250' }],
-      },
-    );
-    await setRestaurantRecipe(
-      prisma,
-      scope,
-      actor,
-      A.finishedUnknown,
-      {
-        operationId: newId(),
-        expectedRevision: null,
-        yieldQuantityScaled: '1000',
-        ingredients: [{ productId: A.ingredientUnknown, quantityScaled: '250' }],
-      },
-    );
+    await setRestaurantRecipe(prisma, scope, actor, A.finished, {
+      operationId: newId(),
+      expectedRevision: null,
+      yieldQuantityScaled: '1000',
+      ingredients: [{ productId: A.ingredient, quantityScaled: '250' }],
+    });
+    await setRestaurantRecipe(prisma, scope, actor, A.finishedUnknown, {
+      operationId: newId(),
+      expectedRevision: null,
+      yieldQuantityScaled: '1000',
+      ingredients: [{ productId: A.ingredientUnknown, quantityScaled: '250' }],
+    });
   }, 120_000);
 
   afterAll(async () => {
@@ -345,18 +333,12 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
     await seedBalance(A.ingredientUnknown, 1_000n, 0n, 0n);
     await seedBalance(A.finishedUnknown, 0n, 0n, 0n);
 
-    const result = await recordRestaurantRecipeProduction(
-      prisma,
-      scope,
-      actor,
-      A.finishedUnknown,
-      {
-        operationId: newId(),
-        branchId: A.branch,
-        recipeRevision: '1',
-        batchCount: '1',
-      },
-    );
+    const result = await recordRestaurantRecipeProduction(prisma, scope, actor, A.finishedUnknown, {
+      operationId: newId(),
+      branchId: A.branch,
+      recipeRevision: '1',
+      batchCount: '1',
+    });
     expect(result.outputCostStatus).toBe('unknown');
     expect(result.lines.at(-1)).toMatchObject({
       role: 'output',

@@ -1,10 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  StockRequestError,
-  addKnownCostValue,
-  assertQuantityShape,
-  newId,
-} from '@korvi/domain';
+import { StockRequestError, addKnownCostValue, assertQuantityShape, newId } from '@korvi/domain';
 import { InsufficientStockError, StockOperationRefusedError } from '../errors.js';
 import {
   lockBalances,
