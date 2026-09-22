@@ -180,15 +180,18 @@ describe.skipIf(url === '')('opening inventory migration isolation, PostgreSQL l
       relrowsecurity: boolean;
       relforcerowsecurity: boolean;
     }>(
-      `SELECT relname, relrowsecurity, relforcerowsecurity
-         FROM pg_class
-        WHERE relname IN (
-          'migration_import_jobs',
-          'migration_import_rows',
-          'inventory_balances',
-          'inventory_movements'
-        )
-        ORDER BY relname`,
+      `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND c.relname IN (
+            'migration_import_jobs',
+            'migration_import_rows',
+            'inventory_balances',
+            'inventory_movements'
+          )
+        ORDER BY c.relname`,
     );
     expect(tables.rows).toHaveLength(4);
     for (const table of tables.rows) {
