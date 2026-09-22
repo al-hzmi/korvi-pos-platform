@@ -680,7 +680,10 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
         row.parentColumns,
         `${row.conname} does not reference tenantId on ${row.parent}`,
       ).toContain('tenantId');
-      expect(row.childColumns.length, `${row.conname} is not composite`).toBeGreaterThanOrEqual(2);
+      expect(
+        row.childColumns.length,
+        `${row.conname} is not composite`,
+      ).toBeGreaterThanOrEqual(2);
       expect(row.parentColumns).toHaveLength(row.childColumns.length);
     }
   });
