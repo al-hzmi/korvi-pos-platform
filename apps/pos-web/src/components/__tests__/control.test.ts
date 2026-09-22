@@ -242,6 +242,7 @@ describe('control centre first paint', () => {
         canCommit: true,
         canCustomerCommit: true,
         canSupplierCommit: true,
+        canOpeningInventoryCommit: true,
         onCommandLockChange: () => undefined,
       }),
     );
@@ -249,11 +250,13 @@ describe('control centre first paint', () => {
     expect(markup).toContain('استيراد الفئات');
     expect(markup).toContain('استيراد العملاء');
     expect(markup).toContain('استيراد الموردين');
+    expect(markup).toContain('استيراد الرصيد الافتتاحي');
     expect(markup).toContain('فحص الملف');
     expect(markup).toContain('قالب المنتجات CSV');
     expect(markup).toContain('قالب الفئات CSV');
     expect(markup).toContain('قالب العملاء CSV');
     expect(markup).toContain('قالب الموردين CSV');
+    expect(markup).toContain('قالب الرصيد الافتتاحي CSV');
     expect(markup).not.toContain('نتيجة مهمة الترحيل');
     expect(markup).not.toContain('اعتماد الاستيراد');
   });
