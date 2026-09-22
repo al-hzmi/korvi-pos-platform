@@ -290,6 +290,20 @@ export type {
   RestaurantRecipeProductionResult,
 } from './restaurant/production.js';
 
+export {
+  RestaurantWasteRefusedError,
+  recordRestaurantWaste,
+} from './restaurant/waste.js';
+export type {
+  RestaurantWasteReason,
+  RestaurantWasteRefusal,
+  RestaurantWasteActor,
+  RestaurantWasteLineRequest,
+  RestaurantWasteRequest,
+  RestaurantWasteLineResult,
+  RestaurantWasteResult,
+} from './restaurant/waste.js';
+
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.
 export {

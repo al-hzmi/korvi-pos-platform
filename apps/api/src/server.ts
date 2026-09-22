@@ -36,6 +36,7 @@ import { createMerchantPurchasingService } from './purchasing/service.js';
 import { createMerchantRestaurantOrderService } from './restaurant/order-service.js';
 import { createMerchantPreparationService } from './restaurant/preparation-service.js';
 import { createMerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
+import { createMerchantRestaurantWasteService } from './restaurant/waste-service.js';
 import { createReturnService } from './returns/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -50,6 +51,7 @@ import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerRestaurantPreparationRoutes } from './routes/restaurant-preparation.js';
 import { registerRestaurantRecipeRoutes } from './routes/restaurant-recipes.js';
+import { registerRestaurantWasteRoutes } from './routes/restaurant-waste.js';
 import { registerSalesReadRoutes } from './routes/sales-read.js';
 import { registerZatcaRoutes } from './routes/zatca.js';
 import { registerOperationalObservability } from './runtime/observability.js';
@@ -71,6 +73,7 @@ import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
 import type { MerchantPreparationService } from './restaurant/preparation-service.js';
 import type { MerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
+import type { MerchantRestaurantWasteService } from './restaurant/waste-service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { MerchantZatcaService } from './zatca/merchant-service.js';
@@ -117,6 +120,8 @@ export interface ServerDeps {
   readonly restaurantPreparation?: MerchantPreparationService;
   /** Restaurant recipe/BOM configuration plus governed batch-production inventory authority. */
   readonly restaurantRecipes?: MerchantRestaurantRecipeService;
+  /** Explicit waste/spoilage stock-loss authority; separate from generic inventory adjustments. */
+  readonly restaurantWaste?: MerchantRestaurantWasteService;
   /** Merchant customer directory and mutation authority. */
   readonly customers?: MerchantCustomerService;
   /** Read-only merchant sales history and financial reports, authorized by report.read. */
@@ -465,6 +470,20 @@ function lazyRestaurantRecipeService(config: ApiConfig): MerchantRestaurantRecip
   };
 }
 
+function lazyRestaurantWasteService(config: ApiConfig): MerchantRestaurantWasteService {
+  let built: MerchantRestaurantWasteService | null = null;
+  const resolve = (): MerchantRestaurantWasteService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantWasteService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    record: (principal, request) => resolve().record(principal, request),
+  };
+}
+
 function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
   let built: MerchantCustomerService | null = null;
 
@@ -624,6 +643,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerRestaurantRecipeRoutes(app, {
     service: deps.restaurantRecipes ?? lazyRestaurantRecipeService(config),
+    guards,
+  });
+  registerRestaurantWasteRoutes(app, {
+    service: deps.restaurantWaste ?? lazyRestaurantWasteService(config),
     guards,
   });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });

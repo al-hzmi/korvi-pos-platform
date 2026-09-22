@@ -118,6 +118,8 @@ model Tenant {
   restaurantRecipeIngredients       RestaurantRecipeIngredient[]
   restaurantRecipeProductions       RestaurantRecipeProduction[]
   restaurantRecipeProductionLines   RestaurantRecipeProductionLine[]
+  restaurantWastes                  RestaurantWaste[]
+  restaurantWasteLines              RestaurantWasteLine[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
   tenders                       Tender[]
@@ -173,6 +175,7 @@ model Branch {
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
   restaurantRecipeProductions    RestaurantRecipeProduction[]
+  restaurantWastes               RestaurantWaste[]
   returns                  Return[]
   memberships              TenantMembership[]
 
@@ -403,6 +406,54 @@ model RestaurantRecipeProductionLine {
   @@map("restaurant_recipe_production_lines")
 }
 
+model RestaurantWaste {
+  id          String   @id @db.Uuid
+  tenantId    String   @db.Uuid
+  branchId    String   @db.Uuid
+  reasonType  String
+  note        String?
+  operationId String
+  requestHash String
+  actorUserId String   @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch                @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  actor  User                  @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+  lines  RestaurantWasteLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, branchId, occurredAt])
+  @@index([tenantId, reasonType, occurredAt])
+  @@map("restaurant_wastes")
+}
+
+model RestaurantWasteLine {
+  id                        String @id @db.Uuid
+  tenantId                  String @db.Uuid
+  wasteId                   String @db.Uuid
+  productId                 String @db.Uuid
+  quantityScaled            BigInt
+  beforeQuantityScaled      BigInt
+  afterQuantityScaled       BigInt
+  resultRevision            BigInt
+  costKnownQuantityScaled   BigInt
+  costUnknownQuantityScaled BigInt
+  costValueMinor            BigInt
+  costProvenance            String
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  waste   RestaurantWaste @relation(fields: [tenantId, wasteId], references: [tenantId, id], onDelete: Cascade)
+  product Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, wasteId, productId])
+  @@index([tenantId, productId])
+  @@map("restaurant_waste_lines")
+}
+
 model RestaurantOrder {
   id         String  @id @db.Uuid
   tenantId   String  @db.Uuid
@@ -509,6 +560,7 @@ model User {
   sales            Sale[]
   restaurantOrders           RestaurantOrder[]
   restaurantRecipeProductions RestaurantRecipeProduction[]
+  restaurantWastes            RestaurantWaste[]
   auditEvents      AuditEvent[]
   saleDiscounts SaleDiscount[]
   returns       Return[]
@@ -841,6 +893,7 @@ model Product {
   restaurantRecipe                RestaurantRecipe?                @relation("RestaurantRecipeFinishedProduct")
   restaurantRecipeIngredients     RestaurantRecipeIngredient[]      @relation("RestaurantRecipeIngredientProduct")
   restaurantRecipeProductionLines RestaurantRecipeProductionLine[]  @relation("RestaurantRecipeProductionProduct")
+  restaurantWasteLines            RestaurantWasteLine[]
   returnLines                   ReturnLine[]
 
   @@unique([tenantId, sku])
