@@ -33,7 +33,7 @@ describe('the opening grid', () => {
 
     await search.run('');
 
-    expect(queries).toEqual([{ limit: 20 }]);
+    expect(queries).toEqual([{ limit: 50 }]);
     expect(states.at(-1)).toMatchObject({ status: 'ready', results: [MILK, RICE], term: '' });
   });
 
@@ -50,7 +50,7 @@ describe('the opening grid', () => {
     );
 
     await search.run('حليب');
-    expect(queries).toEqual([{ q: 'حليب', limit: 20 }]);
+    expect(queries).toEqual([{ q: 'حليب', limit: 50 }]);
   });
 
   it('goes back to the catalogue when the box is cleared', async () => {

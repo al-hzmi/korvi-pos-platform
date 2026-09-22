@@ -8,7 +8,13 @@ import { CashierScreen } from '../components/cashier-screen';
 import { SaleReceipt } from '../components/sale-receipt';
 import { FOREIGN_SHIFT } from '../lib/shift';
 import type { ApiClient } from '../lib/api';
-import type { Principal, SaleSummary, ShiftSummary, TerminalSummary } from '../lib/api-types';
+import type {
+  FiscalReceipt,
+  Principal,
+  SaleSummary,
+  ShiftSummary,
+  TerminalSummary,
+} from '../lib/api-types';
 
 /**
  * Every screen, rendered.
@@ -82,6 +88,23 @@ const SALE: SaleSummary = {
 };
 
 const noop = (): void => undefined;
+
+const SIMULATION_RECEIPT: FiscalReceipt = {
+  invoiceId: 'invoice-sim-1',
+  invoiceNumber: SALE.invoiceNumber,
+  issuedAt: SALE.issuedAt,
+  currency: SALE.currency,
+  sellerName: 'متجر تجريبي',
+  vatRegistrationNumber: '300000000000003',
+  lines: [],
+  netMinor: SALE.netMinor,
+  vatMinor: SALE.vatMinor,
+  totalMinor: SALE.totalMinor,
+  invoiceHashBase64: 'simulation-hash',
+  qrCodeBase64: 'simulation-artifact',
+  fiscalizationMode: 'simulation',
+  disclaimer: 'SIMULATION / NOT FOR TAX USE',
+};
 
 describe('login', () => {
   const markup = renderToStaticMarkup(
@@ -159,13 +182,14 @@ describe('the cashier workspace', () => {
     expect(markup).toContain('وردية مفتوحة');
   });
 
-  it('gives branch context without printing an internal identifier at a customer', () => {
-    expect(markup).toContain('الفرع الحالي');
+  it('gives terminal context without printing an internal branch identifier at a customer', () => {
+    expect(markup).toContain('نقطة البيع الحالية');
+    expect(markup).toContain('صندوق ١');
     expect(markup).not.toContain(BRANCH.slice(0, 8));
   });
 
   it('shows a zero total rather than nothing', () => {
-    expect(markup).toContain('المطلوب');
+    expect(markup).toContain('الإجمالي المستحق');
     expect(markup).toContain('0.00');
   });
 });
@@ -210,7 +234,7 @@ describe('the states a cashier cannot sell out of', () => {
 
 describe('the completed sale', () => {
   const markup = renderToStaticMarkup(
-    createElement(SaleReceipt, { sale: SALE, replayed: false, onNewSale: noop }),
+    createElement(SaleReceipt, { sale: SALE, receipt: null, replayed: false, onNewSale: noop }),
   );
 
   it('shows the server’s invoice number and figures, not the cart’s', () => {
@@ -231,8 +255,22 @@ describe('the completed sale', () => {
 
   it('says when a response was a replay rather than a new sale', () => {
     const replayed = renderToStaticMarkup(
-      createElement(SaleReceipt, { sale: SALE, replayed: true, onNewSale: noop }),
+      createElement(SaleReceipt, { sale: SALE, receipt: null, replayed: true, onNewSale: noop }),
     );
     expect(replayed).toContain('مسجّلة مسبقاً');
+  });
+
+  it('marks a staging simulation receipt as non-tax evidence', () => {
+    const simulation = renderToStaticMarkup(
+      createElement(SaleReceipt, {
+        sale: SALE,
+        receipt: SIMULATION_RECEIPT,
+        replayed: false,
+        onNewSale: noop,
+      }),
+    );
+    expect(simulation).toContain('SIMULATION / NOT FOR TAX USE');
+    expect(simulation).toContain('غير صالح للاستخدام الضريبي');
+    expect(simulation).not.toContain('الفاتورة مختومة');
   });
 });

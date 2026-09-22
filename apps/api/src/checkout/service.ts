@@ -18,9 +18,17 @@ import {
 import {
   InsufficientStockError,
   OperationAlreadyRecordedError,
+  RestaurantOrderRefusedError,
   ShiftUnusableError,
 } from '@korvi/database';
+import type { RestaurantOrderDetail } from '@korvi/database';
 import { fingerprintIntent } from './fingerprint.js';
+import { buildCheckoutReceipt } from './receipt.js';
+import type { CheckoutReceipt } from './receipt.js';
+import type {
+  CheckoutFiscalizationArtifact,
+  CheckoutFiscalizationPort,
+} from '../zatca/fiscalize-checkout.js';
 import type {
   AuditRepository,
   AuthenticatedPrincipal,
@@ -28,10 +36,12 @@ import type {
   Discount,
   Currency,
   IdempotencyRepository,
+  InvoiceRecord,
   InventoryMovementInput,
   InventoryRepository,
   PriceMode,
-  Product,
+  RestaurantOrderType,
+  RestaurantFloorRepository,
   ProductRepository,
   SaleDiscountRecord,
   SaleRecord,
@@ -71,7 +81,17 @@ export type CheckoutFailureReason =
   | 'idempotency-conflict'
   | 'duplicate-line'
   | 'shift-invalid'
-  | 'tenant-misconfigured';
+  | 'tenant-misconfigured'
+  | 'order-type-required'
+  | 'order-type-not-applicable'
+  | 'table-required'
+  | 'table-unavailable'
+  | 'table-not-applicable'
+  | 'restaurant-order-not-found'
+  | 'restaurant-order-not-open'
+  | 'restaurant-order-stale'
+  | 'restaurant-order-mismatch'
+  | 'restaurant-order-incomplete';
 
 export interface CheckoutFailure {
   readonly outcome: 'failure';
@@ -103,6 +123,9 @@ export interface SaleSummaryTender {
 export interface SaleSummary {
   readonly saleId: string;
   readonly operationId: string;
+  readonly orderType: RestaurantOrderType | null;
+  readonly tableId: string | null;
+  readonly restaurantOrderId: string | null;
   readonly sequence: number;
   readonly invoiceNumber: string;
   readonly issuedAt: string;
@@ -135,6 +158,8 @@ export interface CheckoutSuccess {
   /** True when this request replayed an operation id that already completed. */
   readonly replayed: boolean;
   readonly sale: SaleSummary;
+  /** Null only when fiscalization is deliberately absent in isolated tests. */
+  readonly receipt: CheckoutReceipt | null;
 }
 
 export type CheckoutResult = CheckoutSuccess | CheckoutFailure;
@@ -180,6 +205,17 @@ export interface CheckoutInput {
   readonly principal: AuthenticatedPrincipal;
   readonly operationId: string;
   readonly terminalId: string;
+  /**
+   * Optional immutable precondition used by delayed/offline replay. The client
+   * does not choose a shift: the server still derives the current open shift
+   * and merely refuses if it is no longer the one under which the intent was captured.
+   */
+  readonly expectedShiftId?: string | undefined;
+  /** Operational restaurant context. Required only for restaurant tenants. */
+  readonly orderType?: RestaurantOrderType | undefined;
+  readonly tableId?: string | undefined;
+  readonly restaurantOrderId?: string | undefined;
+  readonly expectedRestaurantOrderRevision?: string | undefined;
   readonly lines: readonly CheckoutLineInput[];
   /**
    * The cash-only shape the production till sends today.
@@ -199,8 +235,19 @@ export interface CheckoutDeps {
   readonly inventory: InventoryRepository;
   readonly shifts: ShiftRepository;
   readonly sales: SaleRepository;
+  /** Required only for dine-in table validation. */
+  readonly restaurantFloor?: RestaurantFloorRepository;
+  /** Pre-flight read; the sale repository re-proves the same snapshot under lock. */
+  readonly restaurantOrders?: {
+    read(
+      scope: TenantScope,
+      branchId: string,
+      orderId: string,
+    ): Promise<RestaurantOrderDetail | null>;
+  };
   readonly idempotency: IdempotencyRepository;
   readonly audit: AuditRepository;
+  readonly fiscalization?: CheckoutFiscalizationPort;
   readonly now?: () => Date;
   readonly newId?: () => string;
   readonly onAuditError?: (error: unknown) => void;
@@ -258,6 +305,44 @@ function toTenderLine(tender: CheckoutTenderInput, currency: Currency): TenderLi
       };
 }
 
+function fingerprintCheckoutIntent(
+  input: CheckoutInput,
+  payment: readonly CheckoutTenderInput[],
+  branchId: string,
+): string {
+  return fingerprintIntent({
+    branchId,
+    terminalId: input.terminalId,
+    orderType: input.orderType ?? '',
+    tableId: input.tableId ?? '',
+    restaurantOrderId: input.restaurantOrderId ?? '',
+    restaurantOrderRevision: input.expectedRestaurantOrderRevision ?? '',
+    lines: input.lines.map((line) => ({
+      productId: line.productId,
+      quantityScaled: line.quantityScaled,
+      discount: describeDiscount(line.discount),
+    })),
+    tenders: payment.map((tender) => ({
+      kind: tender.kind,
+      amountMinor: tender.amountMinor,
+      scheme: tender.kind === 'electronic' ? tender.scheme : '',
+      reference: tender.kind === 'electronic' ? tender.reference : '',
+    })),
+    basketDiscount: describeDiscount(input.basketDiscount),
+  });
+}
+
+interface CheckoutProductSnapshot {
+  readonly id: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly priceMinor: string;
+  readonly vatBasisPoints: number;
+  readonly trackInventory: boolean;
+}
+
 const IDEMPOTENCY_SCOPE = 'checkout';
 
 function fail(reason: CheckoutFailureReason, detail?: string): CheckoutFailure {
@@ -270,6 +355,9 @@ function summarise(sale: SaleRecord, invoiceNumber: string, cashierName: string)
   return {
     saleId: sale.id,
     operationId: sale.operationId,
+    orderType: sale.orderType ?? null,
+    tableId: sale.tableId ?? null,
+    restaurantOrderId: sale.restaurantOrderId ?? null,
     sequence: sale.sequence,
     invoiceNumber,
     issuedAt: sale.issuedAt,
@@ -337,17 +425,33 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
     }
     const existing = await deps.sales.findByOperationId(scope, input.operationId);
     if (existing === null) {
-      // Reserved but no sale: the competitor rolled back after all, or the
-      // reservation belongs to something other than a completed checkout.
-      // Refusing is the only safe answer — retrying could double-charge.
+      // Reservation and checkout sale commit in one database transaction. A
+      // reserved operation with no sale is therefore unsafe to reinterpret.
+      return fail('idempotency-conflict');
+    }
+    if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
       return fail('idempotency-conflict');
     }
     const invoice = await deps.sales.invoiceForSale(scope, existing.id);
+    if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
+    const fiscalArtifact = await fiscalize(scope, existing, invoice);
     return {
       outcome: 'success',
       replayed: true,
-      sale: summarise(existing, invoice?.invoiceNumber ?? '', displayName),
+      sale: summarise(existing, invoice.invoiceNumber, displayName),
+      receipt:
+        fiscalArtifact === null ? null : buildCheckoutReceipt(existing, invoice, fiscalArtifact),
     };
+  }
+
+  async function fiscalize(
+    scope: TenantScope,
+    sale: SaleRecord,
+    invoice: InvoiceRecord,
+  ): Promise<CheckoutFiscalizationArtifact | null> {
+    if (deps.fiscalization === undefined) return null;
+    const artifact = await deps.fiscalization.fiscalize(scope, sale, invoice);
+    return artifact ?? null;
   }
 
   return {
@@ -366,85 +470,187 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         seen.add(line.productId);
       }
 
+      const payment = normalizePayment(input);
+      if (typeof payment === 'string') return fail(payment);
+
+      /*
+       * Resolve committed idempotency before consulting today's shift. After a
+       * long outage the first request may have committed while its response was
+       * lost, and that shift can be closed by the time the exact command is
+       * replayed. A completed sale must remain discoverable rather than being
+       * turned into a false no-open-shift refusal.
+       */
+      const reserved = await deps.idempotency.find(scope, IDEMPOTENCY_SCOPE, input.operationId);
+      if (reserved !== null) {
+        const existing = await deps.sales.findByOperationId(scope, input.operationId);
+        if (existing === null) return fail('idempotency-conflict');
+        if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
+          return fail('idempotency-conflict');
+        }
+        const replayHash = fingerprintCheckoutIntent(input, payment, existing.branchId);
+        if (reserved.requestHash !== replayHash) return fail('idempotency-conflict');
+        const invoice = await deps.sales.invoiceForSale(scope, existing.id);
+        if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
+        const fiscalArtifact = await fiscalize(scope, existing, invoice);
+        return {
+          outcome: 'success',
+          replayed: true,
+          sale: summarise(existing, invoice.invoiceNumber, input.principal.displayName),
+          receipt:
+            fiscalArtifact === null
+              ? null
+              : buildCheckoutReceipt(existing, invoice, fiscalArtifact),
+        };
+      }
+
       const shift = await deps.shifts.findOpenForTerminal(scope, input.terminalId);
       if (shift === null) return fail('no-open-shift');
       // The drawer belongs to one cashier. Ringing into somebody else's shift
       // makes their variance unanswerable at close.
       if (shift.userId !== input.principal.userId) return fail('shift-invalid');
-      // A principal pinned to a branch may not transact through a till in
-      // another one.
+      // Delayed cash stays pinned to the shift that existed when the cashier
+      // accepted it. Never move old cash into a replacement shift merely
+      // because the physical terminal is the same.
+      if (input.expectedShiftId !== undefined && shift.id !== input.expectedShiftId) {
+        return fail('shift-invalid');
+      }
       if (input.principal.branchId !== null && input.principal.branchId !== shift.branchId) {
         return fail('shift-invalid');
       }
 
-      const payment = normalizePayment(input);
-      if (typeof payment === 'string') return fail(payment);
-
-      const intentHash = fingerprintIntent({
-        branchId: shift.branchId,
-        terminalId: input.terminalId,
-        lines: input.lines.map((line) => ({
-          productId: line.productId,
-          quantityScaled: line.quantityScaled,
-          discount: describeDiscount(line.discount),
-        })),
-        tenders: payment.map((tender) => ({
-          kind: tender.kind,
-          amountMinor: tender.amountMinor,
-          scheme: tender.kind === 'electronic' ? tender.scheme : '',
-          reference: tender.kind === 'electronic' ? tender.reference : '',
-        })),
-        basketDiscount: describeDiscount(input.basketDiscount),
-      });
-
-      // Replay, before anything is computed or written.
-      const reserved = await deps.idempotency.find(scope, IDEMPOTENCY_SCOPE, input.operationId);
-      if (reserved !== null) {
-        // The same key with a different basket is not a retry. Answering it
-        // with the earlier sale would quietly drop a transaction the cashier
-        // believes they rang up.
-        if (reserved.requestHash !== intentHash) return fail('idempotency-conflict');
-        const existing = await deps.sales.findByOperationId(scope, input.operationId);
-        if (existing !== null) {
-          const invoice = await deps.sales.invoiceForSale(scope, existing.id);
-          return {
-            outcome: 'success',
-            replayed: true,
-            sale: summarise(existing, invoice?.invoiceNumber ?? '', input.principal.displayName),
-          };
-        }
-      }
+      const intentHash = fingerprintCheckoutIntent(input, payment, shift.branchId);
 
       const tenant = await deps.tenants.current(scope);
       const settings = await deps.tenants.settings(scope);
       if (tenant === null || settings === null) {
         return fail('tenant-misconfigured', 'إعدادات المنشأة غير مكتملة.');
       }
-
-      // Prices come from here and nowhere else.
-      const loaded: { product: Product; scaled: bigint }[] = [];
-      for (const line of input.lines) {
-        const product = await deps.products.findById(scope, line.productId);
-        if (product === null) return fail('unknown-product');
-        if (!product.isActive) return fail('product-unavailable');
-
-        let scaled: bigint;
-        try {
-          scaled = quantity(BigInt(line.quantityScaled));
-        } catch {
-          return fail('invalid-quantity');
-        }
-        if (scaled <= 0n) return fail('invalid-quantity');
-        // A unit product cannot be sold in thirds. The scale is 1000, so a
-        // whole unit is a multiple of it.
-        if (product.productType === 'unit' && scaled % 1_000n !== 0n) {
-          return fail('invalid-quantity');
-        }
-        loaded.push({ product, scaled });
+      const hasRestaurantOrder = input.restaurantOrderId !== undefined;
+      if (hasRestaurantOrder !== (input.expectedRestaurantOrderRevision !== undefined)) {
+        return fail('restaurant-order-mismatch');
       }
 
-      // Stock, before the money is touched. Selling what is not there is a
-      // decision the merchant makes in settings, not one the till makes.
+      let restaurantOrder: RestaurantOrderDetail | null = null;
+      if (hasRestaurantOrder) {
+        if (settings.vertical !== 'restaurant' || deps.restaurantOrders === undefined) {
+          return fail('restaurant-order-mismatch');
+        }
+        restaurantOrder = await deps.restaurantOrders.read(
+          scope,
+          shift.branchId,
+          input.restaurantOrderId as string,
+        );
+        if (restaurantOrder === null) return fail('restaurant-order-not-found');
+        if (restaurantOrder.status !== 'open') return fail('restaurant-order-not-open');
+        if (restaurantOrder.revision !== input.expectedRestaurantOrderRevision) {
+          return fail('restaurant-order-stale');
+        }
+        if (
+          input.orderType !== restaurantOrder.orderType ||
+          (input.tableId ?? null) !== restaurantOrder.tableId
+        ) {
+          return fail('restaurant-order-mismatch');
+        }
+        if (
+          input.basketDiscount !== undefined ||
+          input.lines.some((line) => line.discount !== undefined)
+        ) {
+          return fail('invalid-discount');
+        }
+        if (
+          input.lines.length !== restaurantOrder.lines.length ||
+          input.lines.some((line, index) => {
+            const snapshot = restaurantOrder?.lines[index];
+            return (
+              snapshot === undefined ||
+              snapshot.productId !== line.productId ||
+              snapshot.quantityScaled !== line.quantityScaled
+            );
+          })
+        ) {
+          return fail('restaurant-order-mismatch');
+        }
+        if (restaurantOrder.lines.some((line) => line.trackInventory === null)) {
+          return fail('restaurant-order-incomplete');
+        }
+      } else {
+        if (settings.vertical === 'restaurant' && input.orderType === undefined) {
+          return fail('order-type-required');
+        }
+        if (settings.vertical !== 'restaurant') {
+          if (input.orderType !== undefined || input.tableId !== undefined) {
+            return fail('order-type-not-applicable');
+          }
+        } else if (input.orderType === 'dine-in') {
+          if (input.tableId === undefined) return fail('table-required');
+          const table =
+            deps.restaurantFloor === undefined
+              ? null
+              : await deps.restaurantFloor.findTableById(scope, input.tableId);
+          if (table === null || !table.isActive || table.branchId !== shift.branchId) {
+            return fail('table-unavailable');
+          }
+        } else if (input.tableId !== undefined) {
+          return fail('table-not-applicable');
+        }
+      }
+
+      // Direct sales use current catalogue truth. Open-order settlement uses
+      // the server-authored snapshot captured when the order was opened.
+      const loaded: { product: CheckoutProductSnapshot; scaled: bigint }[] = [];
+      if (restaurantOrder !== null) {
+        for (const line of restaurantOrder.lines) {
+          if (line.trackInventory === null) return fail('restaurant-order-incomplete');
+          loaded.push({
+            product: {
+              id: line.productId,
+              sku: line.sku,
+              nameAr: line.nameAr,
+              nameEn: line.nameEn,
+              productType: line.productType,
+              priceMinor: line.unitPriceMinor,
+              vatBasisPoints: line.vatBasisPoints,
+              trackInventory: line.trackInventory,
+            },
+            scaled: BigInt(line.quantityScaled),
+          });
+        }
+      } else {
+        for (const line of input.lines) {
+          const product = await deps.products.findById(scope, line.productId);
+          if (product === null) return fail('unknown-product');
+          if (!product.isActive) return fail('product-unavailable');
+
+          let scaled: bigint;
+          try {
+            scaled = quantity(BigInt(line.quantityScaled));
+          } catch {
+            return fail('invalid-quantity');
+          }
+          if (scaled <= 0n) return fail('invalid-quantity');
+          // A unit product cannot be sold in thirds. The scale is 1000, so a
+          // whole unit is a multiple of it.
+          if (product.productType === 'unit' && scaled % 1_000n !== 0n) {
+            return fail('invalid-quantity');
+          }
+          loaded.push({
+            product: {
+              id: product.id,
+              sku: product.sku,
+              nameAr: product.nameAr,
+              nameEn: product.nameEn,
+              productType: product.productType,
+              priceMinor: product.priceMinor,
+              vatBasisPoints: Number(product.vatBasisPoints),
+              trackInventory: product.trackInventory,
+            },
+            scaled,
+          });
+        }
+      }
+
+      // Stock is still checked immediately before money moves. An order can sit
+      // open while another operation consumes inventory.
       if (!settings.allowNegativeStock) {
         for (const entry of loaded) {
           if (!entry.product.trackInventory) continue;
@@ -455,8 +661,11 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       }
 
       const currency: Currency = 'SAR';
+      if (restaurantOrder !== null && restaurantOrder.currency !== currency) {
+        return fail('restaurant-order-mismatch');
+      }
       const cart = {
-        priceMode: settings.priceMode as PriceMode,
+        priceMode: (restaurantOrder?.priceMode ?? settings.priceMode) as PriceMode,
         currency,
         lines: loaded.map((entry, index): CartLineInput => {
           const requested = input.lines[index]?.discount;
@@ -617,8 +826,11 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             shiftId: shift.id,
             userId: input.principal.userId,
             customerId: null,
+            restaurantOrderId: restaurantOrder?.id ?? null,
             operationId: input.operationId,
             status: 'finalized',
+            orderType: restaurantOrder?.orderType ?? input.orderType ?? null,
+            tableId: restaurantOrder?.tableId ?? input.tableId ?? null,
             priceMode: cart.priceMode,
             currency,
             grossMinor: priced.gross.minor.toString(),
@@ -713,6 +925,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                   occurredAt: issuedAt,
                 }
               : null,
+          ...(restaurantOrder === null
+            ? {}
+            : {
+                restaurantOrderSettlement: {
+                  orderId: restaurantOrder.id,
+                  expectedRevision: restaurantOrder.revision,
+                },
+              }),
           idempotency: {
             id: newId(),
             scope: IDEMPOTENCY_SCOPE,
@@ -726,6 +946,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         // transaction back; none of them reaches the client as a driver error.
         if (error instanceof InsufficientStockError) return fail('insufficient-stock');
         if (error instanceof ShiftUnusableError) return fail('shift-invalid');
+        if (error instanceof RestaurantOrderRefusedError) {
+          if (error.detail === 'unknown-order') return fail('restaurant-order-not-found');
+          if (error.detail === 'order-not-open') return fail('restaurant-order-not-open');
+          if (error.detail === 'stale-revision') return fail('restaurant-order-stale');
+          return fail('restaurant-order-mismatch');
+        }
         if (error instanceof OperationAlreadyRecordedError) {
           // A competing transaction owned this operation id and has now
           // committed — ON CONFLICT DO NOTHING waited for it. Read what it
@@ -737,6 +963,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       }
 
       const invoice = await deps.sales.invoiceForSale(scope, recorded.id);
+      if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
 
       // Outside the transaction, and its failure does not undo the sale: the
       // money has moved and the receipt is printed by the time this runs.
@@ -751,6 +978,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           entityId: recorded.id,
           metadata: {
             sequence: recorded.sequence,
+            orderType: recorded.orderType ?? null,
+            tableId: recorded.tableId ?? null,
+            restaurantOrderId: recorded.restaurantOrderId ?? null,
             total: moneyToMajorString(priced.total),
             lines: recorded.lines.length,
             // Money given away and money taken by something other than cash
@@ -800,10 +1030,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         onAuditError(error);
       }
 
+      const fiscalArtifact = await fiscalize(scope, recorded, invoice);
+
       return {
         outcome: 'success',
         replayed: false,
-        sale: summarise(recorded, invoice?.invoiceNumber ?? '', input.principal.displayName),
+        sale: summarise(recorded, invoice.invoiceNumber, input.principal.displayName),
+        receipt:
+          fiscalArtifact === null ? null : buildCheckoutReceipt(recorded, invoice, fiscalArtifact),
       };
     },
   };

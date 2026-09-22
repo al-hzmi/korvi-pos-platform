@@ -5,56 +5,217 @@ Purpose: prevent accepted capabilities from disappearing while keeping implement
 
 Legend: `A` Accepted, `AR` Architected, `I` Implemented, `T` Tested, `PR` Production Ready, `RC` Regulatory Compliant, `—` not yet claimed.
 
+Important: a row may carry `I/T` while still being incomplete as a sellable workflow. Caveats in the status cell are authoritative. `PR` is only claimed after all mandatory gates pass.
+
+## A. Financial / transaction truth
+
 | Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
 |---|---:|---:|---|---|---|
 | Integer-money/VAT/allocation core | B0 | C0 | A/AR/I/T | `@korvi/domain` | Financial, Test |
 | UUIDv7 deterministic identifiers | B0 | C0 | A/AR/I/T | Domain | Data Integrity, Offline |
-| Tenant isolation + RLS | B0 | C0 | A/AR/I/T | Database/Security | Security, Live DB |
-| Auth/RBAC/session authority | B0 | C0 | A/AR/I/T | API/Domain | Security |
-| Product read/search/browse | B0 | C1 | A/AR/I/T | POS/API | Performance, UX |
-| Unit + weighted quantity | B0 | C0 | A/AR/I/T | Domain/POS | Financial, Test |
 | Pricing/discount authority | B0 | C0 | A/AR/I/T | Domain/API | Financial, Security |
-| Tender composition/cash-only change | B0 | C0 | A/AR/I/T | Domain/API | Financial |
+| Tender composition/cash-only change | B0 | C0 | A/AR/I/T; product UX still needs broader electronic/split-flow proof | Domain/API/POS | Financial, UX |
 | Checkout/finalized sale | B0 | C0 | A/AR/I/T | API/Database | Financial, Live DB |
-| Arabic thermal printing foundation | B0 | C1 | A/AR/I/T, production profile coverage incomplete | Printing | Device, Arabic, Production |
-| Cash shift open | B0 | C0 | A/AR/I/T | API/Database | Financial, Live DB |
-| Cash settlement foundation | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Live DB |
-| Returns/refunds against original sale | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Live DB |
+| Immutable sale/invoice snapshots | B0 | C0 | A/AR/I/T | Domain/DB | Financial, Data Integrity |
+| Original-sale returns/refunds | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Live DB |
+| No-receipt return / exchange | B1 | C0 | A; distinct authority not yet claimed implemented | Returns/Risk | Financial, Security, Audit |
+| Shift open/lifecycle | B0 | C0 | A/AR/I/T | API/Database | Financial, Live DB |
 | Manual pay-in/pay-out | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Security, Live DB |
-| Blind shift close/reconciliation | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Live DB |
-| Control dashboard foundation | B0 | C1 | A/AR/I/T | POS/API | Security, Performance |
-| SaaS tenant provisioning/lifecycle | B0 | C0 | A/AR/I/T; no control-plane transport or UI yet, so not PR | Control Plane | Security, Data Integrity, Production |
-| Subscription/plan entitlement foundation | B0 | C1 | A/AR/I/T; stable plan identity, immutable assignments, deterministic fail-closed evaluator, account state, RLS/idempotency/rollback/concurrency live DB proof; no billing provider or universal enforcement, not PR | Control Plane | Security, Commercial |
-| Onboarding/settings administration | B0 | C1 | A/AR/I/T; evidence-derived readiness, authenticated readiness API and guided onboarding UI established through 4D; no fake persisted completion state; not PR | Control Plane/POS | Security, UX |
-| User/membership administration UI/API | B0 | C0 | A/AR/I/T for authority and administration UI through 4B; 4D adds signed one-time initial-owner credential bootstrap with replay/concurrency/rollback proof, but general staff invitation/recovery remains outstanding; not PR | Control Plane/Auth | Security, Audit |
-| Branch/terminal administration | B0 | C1 | A/AR/I/T for authority and administration UI through 4B; onboarding readiness consumes live active branch/terminal truth through 4D; not yet PR | Control Plane | Security, Operations |
-| Product write/catalogue management | B0 | C1 | A/AR/I/T for the minimal audited onboarding product bootstrap authority through 4D; full catalogue management remains deferred | Inventory/Catalogue | Audit, UX |
-| Stock ledger/adjustments | B0 | C0 | A; inventory foundation partially exists | Inventory/DB | Data Integrity, Live DB |
-| Transfers/counting | B1 | C1 | A | Inventory | Data Integrity |
-| Suppliers/PO/receiving | B1 | C1 | A | Purchasing | Data Integrity, Audit |
-| Costing foundation | B1 | C0 | A | Inventory/Domain | Financial |
-| Offline transaction continuity | B0 | C0/C1 | A/AR foundation; not PR | Offline/Device | Offline, Security, Data Integrity |
-| Device continuity/recovery | B2 | C1 | A | Device Continuity | Offline, Security, Production |
+| Blind close/reconciliation | B0 | C0 | A/AR/I/T | Domain/API/DB | Financial, Live DB |
+| Historical product/price/tax truth | B0 | C0 | A/AR/I/T | Domain/DB | Financial, Returns |
+| Unknown-cost provenance | B0/B1 | C0 | A/AR/I/T | Costing | Financial, Data Integrity |
+
+## B. Security / tenancy / SaaS control plane
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Tenant isolation + FORCE-RLS | B0 | C0 | A/AR/I/T | Database/Security | Security, Live DB |
+| Auth/RBAC/session authority | B0 | C0 | A/AR/I/T | API/Domain | Security |
+| Audit trail / privileged-action audit | B0 | C0/C1 | A/AR/I/T foundation | API/DB | Security, Audit |
+| SaaS tenant provisioning/lifecycle | B0 | C0 | A/AR/I/T authority; operator workflow is being completed in Product P0 | Control Plane | Security, Data Integrity, Production |
+| Platform Admin tenant search/overview | B0 | C1 | A; active Product P0 branch contains real platform routes/surfaces, final release proof pending | Platform | Security, UX, Production |
+| Platform Admin create tenant/business | B0 | C0/C1 | A; end-to-end supported operator flow must be proven, DB/manual-only creation is insufficient | Platform | Security, Audit, E2E |
+| Platform Admin plan/entitlement assignment | B0 | C1 | A/AR/I/T foundation; final operator flow/enforcement proof pending | Control Plane | Security, Commercial |
+| Platform Admin owner bootstrap/invitation | B0 | C0 | A/AR/I/T one-time initial-owner bootstrap foundation; complete UI/operator lifecycle and recovery boundaries remain open | Control Plane/Auth | Security, Audit, E2E |
+| Platform Admin activate/suspend/reactivate | B0 | C0/C1 | A/AR/I/T lifecycle authority; final UI/E2E proof pending | Control Plane | Security, Audit |
+| Platform Admin ZATCA/health visibility | B0/B1 | C1 | A; must expose status without secrets | Platform/Compliance | Security, UX |
+| Merchant settings administration | B0 | C1 | A/AR/I/T foundation | Merchant Admin | Security, UX |
+| Branch administration | B0 | C1 | A/AR/I/T foundation | Merchant Admin | Security, Operations |
+| Terminal/register/device administration | B0 | C1 | A/AR/I/T foundation | Merchant Admin | Security, Device |
+| User/membership administration | B0 | C0 | A/AR/I/T authority/UI foundation; general invitation/recovery still incomplete | Auth/Admin | Security, Audit |
+| Role/permission administration | B0 | C0 | A/AR/I/T foundation | Auth/Admin | Security, Negative tests |
+| Subscription/plan entitlement foundation | B0 | C1 | A/AR/I/T; billing provider/manual commercial operation separate | Control Plane | Commercial, Security |
+| Grace/suspension/expiry behavior | B0 | C0/C1 | A/AR foundation; complete commercial enforcement proof required | Control Plane | Commercial, Security |
+| Guided merchant onboarding/readiness | B0 | C1 | A/AR/I/T foundation | Control Plane/POS | Security, UX |
+| End-to-end customer provisioning dry run | B0 | C1 | A; must prove Platform Admin → tenant → owner → branch → terminal → merchant login → cashier | Platform/Onboarding | E2E, Security, UX |
+
+## C. Installed Korvi / Offline / Device continuity
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Windows installed application | B0 | C1 | A; official installed release artifact and real-device proof not yet claimed | Client/Device | Installed App, Offline, Security, Device |
+| Android installed application | B0 | C1 | A; official installed release artifact and real-device proof not yet claimed | Client/Device | Installed App, Offline, Security, Device |
+| Full-shift WAN-offline cashier operation | B0 | C0/C1 | A/AR/I/T foundations and browser proof exist; 8–12h installed-client proof still required | Offline/POS | Offline, Installed App, Financial |
+| Offline application shell/assets | B0 | C1 | A/AR/I/T via Service Worker/browser proof; installed bundle proof pending | Offline/Client | Offline, Installed App |
+| Durable local catalogue/search | B0 | C1 | A/AR/I/T browser/IndexedDB foundation; installed-client persistence proof pending | Offline/Catalogue | Offline, Data Integrity |
+| Durable sale draft state | B0 | C1 | A/AR/I/T foundation | Offline/POS | Offline, Recovery |
+| Durable ordered transaction queue | B0 | C0/C1 | A/AR/I/T | Offline | Offline, Financial |
+| Sync retry/backoff/fencing/idempotency | B0 | C0/C1 | A/AR/I/T | Offline/API | Offline, Financial |
+| Offline conflict/reconciliation workflow | B0 | C0/C1 | A/AR/I/T core proof; product UX requires final installed-client verification | Offline/POS | Offline, UX |
+| End-of-day reconnect synchronization | B0 | C0/C1 | A; must prove full-shift backlog sync with no loss/duplication/reordering | Offline/API | Offline, Live DB |
+| Multi-terminal offline coordination policy | B0/B1 | C0/C1 | A; exact strategy must be architected and proved per operation | Offline/Inventory | Offline, Data Integrity |
+| Device continuity / authorized recovery | B1/B2 | C1 | A; full workflow not yet claimed implemented | Device Continuity | Offline, Security, Production |
+| Signed/versioned app update + rollback safety | B0 | C1 | A; not yet claimed | Client/Release | Security, Production |
+| Local corruption/schema-version refusal | B0 | C0/C1 | A/AR/I/T foundation in offline stores | Offline | Data Integrity, Security |
+| Barcode scanner integration | B0 | C1 | A/I foundation through POS input; real installed hardware profiles required | Device/POS | Device, UX |
+| Thermal printer integration | B0 | C1 | A/AR/I/T Arabic production-byte foundation; real installed-device profiles remain | Printing/Client | Device, Arabic, Production |
+| Cash drawer integration where supported | B1 | C1 | A; real hardware profile not yet claimed | Device | Device, Production |
+
+## D. Retail / grocery / catalogue / cashier parity
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Product read/search/browse | B0 | C1 | A/AR/I/T | POS/API | Performance, UX |
+| Product write/catalogue management | B0 | C1 | A/AR/I/T minimal onboarding authority; full catalogue management incomplete | Catalogue | Audit, UX |
+| Multiple barcodes | B1 | C1 | A/AR/I/T schema/foundation | Catalogue | Data Integrity, UX |
+| Unit + weighted quantity | B0 | C0 | A/AR/I/T | Domain/POS | Financial, Test |
+| Physical scale workflow/integration | B1 | C1 | A; not yet claimed implemented | Device/Retail | Device, UX, Financial |
+| Packaging/unit/carton hierarchy | B1 | C1 | A; not yet claimed complete | Catalogue/Retail | Data Integrity, UX |
+| Retail/wholesale/customer price lists | B1 | C0 | A; pricing core exists, complete price-list product not yet claimed | Pricing | Financial, UX |
+| Coupons/vouchers | B1 | C0 | A; promotion engine dependency | Promotions | Financial, Explainability |
+| Deterministic promotion engine | B1 | C0 | A/AR principles; full implementation not yet claimed | Domain/Promotions | Financial, Explainability |
+| Label/price lookup/printing | B1 | C1 | A; not yet claimed complete | Retail/Printing | Device, UX |
+| Batch/lot/expiry | B1 | C1 | A; not yet claimed implemented | Inventory/Retail | Data Integrity, UX |
+| High-volume grocery performance | B1 | C1 | A; representative catalogue/load proof required | POS/API/DB | Performance |
+| Retail/grocery specialized UX | B1 | C1 | A; cashier foundation exists but full vertical parity not yet claimed | POS | UX, Performance, Device |
+
+## E. Inventory / purchasing / costing
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Stock ledger/balances | B0 | C0 | A/AR/I/T | Inventory/DB | Data Integrity, Live DB |
+| Adjustments | B0 | C0 | A/AR/I/T | Inventory | Data Integrity, Audit |
+| Absolute counts + stale revision protection | B0 | C0 | A/AR/I/T | Inventory | Data Integrity, Concurrency |
+| Branch transfers | B1 | C1 | A/AR/I/T | Inventory | Data Integrity, UX |
+| Inventory operational UX | B0/B1 | C1 | A/AR/I/T; independent/Human Gate still required for closure | POS/Inventory | UX, Security, Performance |
+| Supplier management | B1 | C1 | A/AR/I/T basic supplier identity; rich commercial/contact/terms model incomplete | Purchasing | Audit, UX |
+| Purchase orders | B1 | C1 | A/AR/I/T | Purchasing | Data Integrity, Audit |
+| Partial/concurrent receiving | B1 | C1 | A/AR/I/T | Purchasing | Data Integrity, Live DB |
+| MOQ/order multiples | B1 | C1 | A; accepted, complete product enforcement not yet claimed | Purchasing | Data Integrity, UX |
+| Costing foundation | B1 | C0 | A/AR/I/T | Costing/Domain | Financial, Live DB |
+| Purchasing/costing operational UX | B1 | C1 | A/AR/I/T; independent/Human Gate remains | POS/Purchasing | UX, Security |
+| Warehouses/locations independent of branches | B1/B2 | C1 | A; not yet claimed implemented | Inventory | Data Integrity, UX |
+| Reorder foundation | B1/B2 | C1 | A; later feeds Explainable Reorder | Inventory/Intelligence | Data Integrity, Explainability |
+
+## F. Customers / loyalty / promotions
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Customer profile/search/create/edit | B1 | C2 | A/AR/I/T basic product/API/UI evidence exists | CRM | Security, Privacy, UX |
+| Customer sales history | B1 | C2 | A/AR/I/T recent-sales foundation | CRM/Reports | Privacy, UX |
+| Customer analytics/branch behavior | B1 | C2 | A; not yet claimed complete | CRM/Analytics | Data Integrity |
+| Customer tags/segments | B1 | C2 | A; not yet claimed | CRM | Privacy, UX |
+| Customer credit/balance | B1 | C0 | A; explicit financial ledger required before implementation claim | CRM/Finance | Financial, Audit |
+| Loyalty ledger/rewards | B1 | C0/C1 | A; not yet claimed implemented | Loyalty/Domain | Financial, Data Integrity |
+| Gift card / merchant wallet | B1/B2 | C0 | A; only as explicit financial ledger | Loyalty/Finance | Financial, Security |
+
+## G. Restaurant / cafe
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Restaurant/menu/categories foundation | B1 | C1 | A; vertical setting exists, real restaurant domain not yet claimed | Restaurant | UX, Data Integrity |
+| Modifiers/options | B1 | C0/C1 | A; not yet claimed | Restaurant/Pricing | Financial, UX |
+| Dine-in/takeaway/delivery modes | B1 | C1 | A; not yet claimed | Restaurant | UX, Data Integrity |
+| Tables/zones/order ownership | B1 | C1 | A; not yet claimed | Restaurant | Operational, UX |
+| Courses/notes | B1 | C1 | A; not yet claimed | Restaurant | UX |
+| Split/merge bills/orders | B1 | C0/C1 | A; must be architected against transaction authority | Restaurant/Transaction | Financial, Data Integrity |
+| Kitchen routing/KDS | B1 | C1 | A; not yet claimed implemented | Restaurant/KDS | Operational, Offline |
+| Waiter/server application | B1 | C1 | A; not yet claimed | Restaurant/Client | UX, Offline |
+| Customer/order-status display | B1/B2 | C2 | A; not yet claimed | Restaurant/Display | UX |
+| Self-service kiosk | B1/B2 | C1 | A; not yet claimed | Restaurant/Kiosk | UX, Security |
+| QR table menu/order/pay | B1/B2 | C0/C1 | A; not yet claimed | Restaurant/Payments | Security, Financial |
+| Online ordering | B1 | C1 | A; not yet claimed | Omnichannel/Restaurant | Integration, Idempotency |
+| Recipes/ingredients/consumption | B1 | C0/C1 | A; must use one stock/cost truth | Restaurant/Inventory | Data Integrity, Financial |
+| Waste/spoilage | B1 | C1 | A; not yet claimed | Restaurant/Inventory | Data Integrity, Audit |
+
+## H. Payments / omnichannel / integrations
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| PSP/payment adapters | B1 | C0 | A; tender domain exists, direct provider adapters not yet claimed | Integrations/Payments | Security, Financial |
+| Electronic tender UX | B0/B1 | C0/C1 | A; backend tender foundation stronger than current cashier UX | POS/Payments | Financial, UX |
+| Split/mixed tender UX | B1 | C0 | A; domain support exists, full cashier product proof pending | POS/Payments | Financial, UX |
+| Ecommerce adapters | B1 | C1 | A; not yet claimed | Integrations | Idempotency, Operations |
+| Delivery-platform adapters | B1 | C1 | A; not yet claimed | Integrations | Idempotency, Operations |
+| Salla/Zid-style integration seams | B1/B2 | C1 | A; not yet claimed | Integrations | Security, Idempotency |
+| Webhooks/events | B1/B2 | C1 | A/AR boundary only | Events/Integrations | Security, Idempotency |
+| External identity/mapping | B1/B2 | C1 | A; required for integrations/supply | Integrations | Data Integrity |
+| POS→future ERP/accounting event export | B2 | C0 | A/AR boundary only | Events/Integration | Financial, Data Integrity |
+
+## I. Reporting / intelligence / Korvi Advantage
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Sales/returns/net/VAT reports | B0/B1 | C1 | A/AR/I/T real report foundation | Reports | Data Integrity, Performance |
+| Product/category/branch/cashier analysis | B1 | C1/C2 | A; partial report foundation, full breadth not yet claimed | Analytics | Data Integrity |
+| Inventory/purchasing/cost reports | B1 | C1 | A; foundations exist, full reporting product not yet claimed | Analytics | Data Integrity |
+| Profitability Intelligence | B2 | C1 | A; cost/report foundations exist, strategic engine not yet claimed | Intelligence | Financial, Explainability |
+| Command Center / Attention Center | B2 | C1 | A/AR principles; dashboard foundation exists, evidence/action engine not yet claimed | Intelligence | Evidence, Audit |
+| Guardian / Watchdog anomaly detection | B2 | C1 | A/AR principles; not yet claimed implemented | Intelligence/Risk | Explainability, Privacy |
+| Migration Engine / customer data onboarding | B0/B1 | C0/C1 | ADOPTED P0; M0 VERIFIED; Product M1 VERIFIED on `2442de56`; M2 VERIFIED on `9ce8afc54c4336111f4489a4fb03b651bc9fe6c3`; M3 VERIFIED on `fffd2e7d870826428064a85d4e52973aa86ea465`; M4 Supplier Migration VERIFIED on `512c57fc86a61d72e152ae4c1e05d210b70901b3`; M5 Opening Inventory VERIFIED on `0fad77ff837fe4677c67bd74cab50be384bda068`; **M6 Customer update-by-phone VERIFIED** on `f8b1c0bd253b7668b3da370c307cfa5dcf269857`. CI `35724243049`: 201 test files / 2,375 tests passed, 30 files / 397 live-only tests skipped. Restricted-runtime PostgreSQL/RLS proof `35724243105`: 6 files / 28 tests passed. M6 is opt-in and phone-keyed only: default reject remains intact; no client customer UUID authority or guessed matching; commit re-resolves inside the tenant under lock, reuses the authoritative update writer, preserves unmapped fields and records create/update separately. Other migration domains retain their verified reject/create semantics. **CUSTOMER MIGRATION READINESS VERIFIED**; M7 DEFERRED to real customer demand. | Migration/Onboarding | Data Integrity, Security, Tenant Isolation, Idempotency, Audit, Reconciliation |
+| Product Knowledge / national catalogue | B2 | C1 | A; shared-catalogue concept accepted, production knowledge layer not yet claimed | Product Knowledge | Provenance, Governance |
+| Explainable Reorder | B2 | C1 | A; not yet claimed implemented | Intelligence/Inventory | Explainability, Data Integrity |
+| Expiry Intelligence | B2 | C1 | A; batch/expiry dependency not yet implemented | Intelligence/Inventory | Evidence, Data Integrity |
+| Branch Rebalancing recommendations | B2 | C1 | A; transfer execution exists, recommendation engine not yet claimed | Intelligence/Inventory | Evidence, Data Integrity |
+| Pricing Assistant | B2 | C0/C1 | A; recommendation only, not price authority; not yet claimed implemented | Intelligence/Pricing | Financial, Explainability |
+| Liquid Cashier continuity | B2 | C1 | A; offline foundations exist, full authorized device-recovery workflow not yet claimed | Device Continuity | Offline, Security |
+| Safe Operational Recovery | B2 | C1 | A/AR doctrine; full productized recovery workflow not yet claimed | Operations | Security, Data Integrity |
+
+## J. Compliance / design / production / commercial operation
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
 | ZATCA Phase 1 invoice/QR facts | B0 | C0 | A/AR/I/T foundation | Compliance/Printing | ZATCA |
-| ZATCA Phase 2 end-to-end | B0 | C0 | A; **RC not claimed** | Compliance | Full ZATCA Gate |
-| Retail/grocery vertical UX | B1 | C1 | A | POS | UX, Performance, Device |
-| Restaurant/menu/modifiers foundation | B1 | C1 | A | Restaurant | UX, Data Integrity |
-| KDS/kitchen routing | B1 | C1 | A | Restaurant | Operational, Offline |
-| Customer management | B1 | C2 | A; basic permissions exist | CRM | Security, Privacy |
-| Loyalty ledger | B1 | C0/C1 | A | Loyalty/Domain | Financial, Data Integrity |
-| Promotion engine | B1 | C0 | A/AR principles | Domain | Financial, Explainability |
-| No-receipt return | B1 | C0 | A; distinct from original-sale return | Returns/Risk | Financial, Security, Audit |
-| PSP/payment adapters | B1 | C0 | A | Integrations | Security, Financial |
-| Ecommerce/delivery adapters | B1 | C1 | A | Integrations | Idempotency, Offline, Operations |
-| Analytics/reporting | B1 | C1/C2 | A; dashboard foundation exists | Analytics | Data Integrity, Performance |
-| Command Center alerts | B2 | C1 | A/AR principles | Intelligence | Evidence, Audit |
-| Guardian anomaly detection | B2 | C1 | A/AR principles | Intelligence/Risk | Explainability, Privacy |
-| Migration engine | B2 | C1 | A | Migration | Data Integrity, Reconciliation |
-| Product Knowledge Layer/national catalogue | B2 | C1 | A; global catalogue exception exists | Product Knowledge | Provenance, Governance |
-| Supply-network identity/mapping seams | B2 | C1 | A | Supply | Security, Integration |
-| B2B supply ordering/network | B3 | C1/C2 | A; functionally late | Supply | Commercial, Integration |
-| Future POS→ERP event export | B2 | C0 | A/AR boundary only | Events/Integration | Financial, Data Integrity |
+| ZATCA Phase 2 issuance/reporting chain | B0 | C0 | A/AR/I/T substantial exact-head evidence on release lineage; RC claim remains governed by final gate | Compliance | Full ZATCA Gate |
+| Arabic/RTL commercial design system | B0 | C1 | A/I foundation; Product P0 visual completion active, final exact-head proof required | UI/POS | UX, Accessibility |
+| Desktop/tablet/mobile responsiveness | B0 | C1 | A; visual evidence exists on intermediate heads, final exact-head proof required | UI/POS | UX, Visual Truth |
+| Route/deep-link/back-forward continuity | B0 | C1 | A; Product P0 active | POS/Navigation | UX |
+| Production operations | B0 | C0/C1 | A; real paid production resources/domain may be intentionally deferred by executive decision, but PR cannot be claimed without actual evidence | Operations | Production |
+| Backup + real restore / RPO/RTO | B0 | C0 | A; proof exists for release engineering DR pieces, final production-environment evidence remains required | Operations/DB | Production, Data Integrity |
+| Monitoring/alerts/on-call/incident process | B0 | C1 | A; final production evidence required | Operations | Production |
+| Commercial plans/allowances/expiry | B0 | C1 | A/AR/I/T foundation; final commercial flow/enforcement still requires closure | Control Plane | Commercial |
+| Structured support + audited access | B0/B1 | C1 | A; basic support-note foundation exists, full support runbook/process required | Operations/Platform | Security, Audit |
+| Human accountant acceptance | B0 release acceptance | C0 | A; executive scheduling may defer to launch/first-customer window, but cannot be silently marked passed | Acceptance | Human Gate |
+| Systems-expert acceptance | B0 release acceptance | C0/C1 | A; executive scheduling may defer to launch/first-customer window, but cannot be silently marked passed | Acceptance | Human Gate |
+| Controlled first-customer pilot | B0 | C1 | A; intentionally later than product/staging completion | Operations | Production, Field Validation |
+
+## K. Supply network / frontier
+
+| Capability | Business | Criticality | Current evidence/status | Primary owner/domain | Mandatory gates |
+|---|---:|---:|---|---|---|
+| Supplier-network identity/mapping seams | B2 | C1 | A; merchant supplier model exists, network identity not yet claimed | Supply | Security, Integration |
+| B2B supply ordering/network | B3 | C1/C2 | A; intentionally late, not yet claimed | Supply | Commercial, Integration |
 
 ## Definition-of-done rule
 
-Every new row moved to `I` must identify code ownership and tests. Every move to `PR` must identify all release gates passed. Every move to `RC` must cite the regulatory gate evidence. A roadmap deferment changes schedule, not acceptance.
+Every move to `I` must identify code ownership and implementation evidence. Every move to `T` must identify the required automated/live evidence. Every move to `PR` must identify all applicable release gates and installed-client/field evidence when relevant. Every move to `RC` must cite regulatory gate evidence.
+
+For user-visible operational capabilities, backend authority alone is not enough: the supported end-to-end human workflow must also exist.
+
+For installed/offline claims, a PWA/browser proof alone is not enough once the official commercial client is defined as Windows/Android Installed Korvi; real installed-client proof is required.
+
+A roadmap deferment changes schedule, not acceptance. It does not erase the row.
+
+
+## Canonical Acquisition AR-2 overlay — 2026-09-22
+
+Restaurant and cashier tender evidence is being consolidated from verified source
+`95e9a76eda618860ed4f9e317b08c3be16659726` into the canonical acquisition
+lineage. This source already proves Restaurant preparation/KDS, recipe production,
+waste/spoilage and explicit Split/Mixed/Electronic Tender client behavior on its
+own lineage.
+
+Those capabilities are **not promoted to canonical VERIFIED status by this note**.
+Their status advances only after the reconciled canonical-target SHA passes CI
+and the required real operator/browser proof. Backend capability and sellable UX
+remain separate evidence dimensions.

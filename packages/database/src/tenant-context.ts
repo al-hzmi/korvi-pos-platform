@@ -1,3 +1,4 @@
+import { normalizeControlPlaneActor } from '@korvi/domain';
 import { TenantContextError } from './errors.js';
 import type { PrismaClient } from './client.js';
 
@@ -59,6 +60,30 @@ export async function withTenant<T>(
     // Parameterised: set_config is a function call, so the value is bound
     // rather than concatenated into the statement.
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, TRUE)`;
+    return work(tx);
+  });
+}
+
+/**
+ * Run a trusted SaaS control-plane read transaction.
+ *
+ * This is deliberately narrower than a tenant or superuser context: the
+ * database migration opens only SELECT on the `tenants` table when this
+ * transaction-local actor is present. Child tables keep their ordinary tenant
+ * RLS and must be read by subsequently entering that tenant with `withTenant`.
+ * The actor is normalized here so an empty or unbounded marker can never open
+ * the control-plane policy.
+ */
+export async function withControlPlane<T>(
+  prisma: PrismaClient,
+  controlPlaneActorRef: string,
+  work: (tx: TransactionClient) => Promise<T>,
+): Promise<T> {
+  const actor = normalizeControlPlaneActor(controlPlaneActorRef);
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', '', TRUE)`;
+    await tx.$executeRaw`SELECT set_config('app.login_tenant_slug', '', TRUE)`;
+    await tx.$executeRaw`SELECT set_config('app.control_plane_actor', ${actor}, TRUE)`;
     return work(tx);
   });
 }
