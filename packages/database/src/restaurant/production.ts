@@ -88,15 +88,6 @@ interface LockedRecipe {
   }[];
 }
 
-function uniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'P2002'
-  );
-}
-
 function positiveInteger(value: string): bigint {
   if (!/^[1-9][0-9]{0,18}$/u.test(value)) {
     throw new RestaurantProductionRefusedError('invalid-quantity');
@@ -187,21 +178,20 @@ async function reserve(
   operationId: string,
   requestHash: string,
 ): Promise<RestaurantRecipeProductionResult | null> {
-  try {
-    await tx.idempotencyKey.create({
-      data: {
-        id: newId(),
-        tenantId: tenant,
-        scope: PRODUCTION_SCOPE,
-        operationId,
-        status: 'reserved',
-        requestHash,
-      },
-    });
-    return null;
-  } catch (error) {
-    if (!uniqueViolation(error)) throw error;
-  }
+  const inserted = await tx.$queryRaw<{ id: string }[]> `
+    INSERT INTO "idempotency_keys"
+      ("id","tenantId","scope","operationId","status","requestHash")
+    VALUES (
+      ${newId()}::uuid,
+      ${tenant}::uuid,
+      ${PRODUCTION_SCOPE},
+      ${operationId},
+      'reserved',
+      ${requestHash}
+    )
+    ON CONFLICT ("tenantId","scope","operationId") DO NOTHING
+    RETURNING "id"`;
+  if (inserted.length > 0) return null;
 
   const existing = await tx.idempotencyKey.findFirst({
     where: { tenantId: tenant, scope: PRODUCTION_SCOPE, operationId },

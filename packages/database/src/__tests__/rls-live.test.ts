@@ -653,13 +653,13 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
                   FROM unnest(c.conkey) WITH ORDINALITY AS key(attnum, ord)
                   JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = key.attnum
                  ORDER BY key.ord
-              ) AS "childColumns",
+              )::text[] AS "childColumns",
               ARRAY(
                 SELECT a.attname
                   FROM unnest(c.confkey) WITH ORDINALITY AS key(attnum, ord)
                   JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = key.attnum
                  ORDER BY key.ord
-              ) AS "parentColumns"
+              )::text[] AS "parentColumns"
          FROM pg_constraint c
          JOIN pg_class ch ON ch.oid = c.conrelid
          JOIN pg_class pa ON pa.oid = c.confrelid
