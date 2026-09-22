@@ -3,6 +3,8 @@ name: ZATCA 38 UBL Hash Proof
 on:
   push:
     branches:
+      - integration/acquisition-ar5-internal
+      - release/canonical-acquisition-v1
       - review/zatca-38-ubl-hash
       - strike/5c-costing-authority
     paths:
@@ -11,6 +13,7 @@ on:
       - packages/domain/src/index.ts
       - scripts/zatca-38-c14n-proof.mjs
       - .github/workflows/zatca-38-ubl-hash-proof.yml
+      - docs/acquisition/ZATCA-PRODUCTION-ACTIVATION.md
   workflow_dispatch:
 
 permissions:

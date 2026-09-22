@@ -3,9 +3,12 @@ name: ZATCA 39 CSID PostgreSQL Proof
 on:
   push:
     branches:
+      - integration/acquisition-ar5-internal
+      - release/canonical-acquisition-v1
       - review/zatca-39-csid-lifecycle
       - strike/product-routing-p0
     paths:
+      - docs/acquisition/ZATCA-PRODUCTION-ACTIVATION.md
       - 'packages/database/prisma/**'
       - 'packages/database/src/**'
       - 'packages/domain/src/zatca/**'
