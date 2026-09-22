@@ -397,6 +397,31 @@ Source promotion:
 - Product Readiness Scorecard
 - this Decision Register
 
+### Verified M6 customer conflict/update closure — explicit tenant-scoped phone authority
+
+- branch: `product/post-v1-migration-engine-m6`;
+- verified implementation/proof SHA: `f8b1c0bd253b7668b3da370c307cfa5dcf269857`;
+- status: **VERIFIED M6**;
+- standard CI: `35724243049` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- evidence: 201 test files / 2,375 tests passed; 30 files / 397 live-only tests skipped by the standard CI profile;
+- PostgreSQL security/isolation proof: workflow `35724243105` green on the same SHA using the restricted non-superuser, non-BYPASSRLS runtime role; 6 live proof files / 28 tests passed;
+- M6 adds exactly one currently justified explicit strategy: Customer `update-existing-by-phone`. Default behavior remains `reject`; opting into update requires the phone field to be mapped;
+- files/browser payloads never receive customer UUID authority. Unsupported strategies and request-controlled `customerId` are refused at the strict HTTP boundary;
+- dry run resolves phone only within the authenticated tenant and marks an existing same-tenant match as a planned update. A same phone in another tenant is not a match and is not disclosed;
+- commit never trusts the dry-run target id. It re-resolves the tenant-scoped phone under tenant locking, then either updates the authoritative same-tenant customer or creates when no same-tenant match exists;
+- update execution reuses Korvi's authoritative transactional customer writer and changes only fields actually mapped in the source. Unmapped optional fields are preserved rather than silently erased;
+- explicit update-by-phone jobs carry their strategy in the idempotency fingerprint, while legacy/default reject jobs preserve the pre-M6 fingerprint for safe retry compatibility;
+- merchant UI exposes the strategy as an explicit opt-in and reports created and updated results separately;
+- no Product, Category, Supplier or other migration update/merge semantics are implied by M6. Those domains retain their previously verified behavior until a deterministic business key plus authoritative update path is proven;
+- **CUSTOMER MIGRATION READINESS remains VERIFIED**. M6 strengthens conflict handling but does not change the established P0 baseline denominator;
+- next action: **M7 DEFERRED** — system-specific source adapters only when real customer demand supplies an actual system and mapping contract.
+
+Source promotion:
+- Capability Matrix
+- Roadmap
+- Product Readiness Scorecard
+- this Decision Register
+
 ---
 
 ## Register maintenance rule
