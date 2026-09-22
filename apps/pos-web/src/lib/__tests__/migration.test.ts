@@ -201,9 +201,7 @@ describe('merchant migration presentation helpers', () => {
         { sourceColumn: 0, targetField: 'branchCode' },
         { sourceColumn: 1, targetField: 'sku' },
       ]),
-    ).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]),
-    );
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]));
     expect(OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV).toContain('كود الفرع');
     expect(OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV).toContain('رقم الصنف');
     expect(OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV).toContain('الكمية الافتتاحية');
@@ -236,5 +234,4 @@ describe('merchant migration presentation helpers', () => {
     expect(csv).toContain('"\'=CMD"');
     expect(csv).toContain('"\'+existing-stock"');
   });
-
 });

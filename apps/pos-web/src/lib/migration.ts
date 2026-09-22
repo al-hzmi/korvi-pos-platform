@@ -269,9 +269,7 @@ export function openingInventoryMigrationMappingProblems(
       problems.push({
         code: 'required-unmapped',
         message:
-          'الحقل الإلزامي «' +
-          OPENING_INVENTORY_MIGRATION_FIELD_LABELS[field] +
-          '» غير مربوط.',
+          'الحقل الإلزامي «' + OPENING_INVENTORY_MIGRATION_FIELD_LABELS[field] + '» غير مربوط.',
       });
     }
   }

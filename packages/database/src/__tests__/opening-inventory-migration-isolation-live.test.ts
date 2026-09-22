@@ -174,12 +174,7 @@ describe.skipIf(url === '')('opening inventory migration isolation, PostgreSQL l
       { userId: A.user },
       A.branchLeakJob,
     );
-    const sku = await dryRunOpeningInventoryImport(
-      prisma,
-      scope,
-      { userId: A.user },
-      A.skuLeakJob,
-    );
+    const sku = await dryRunOpeningInventoryImport(prisma, scope, { userId: A.user }, A.skuLeakJob);
     expect(branch.errorRows).toBe(1);
     expect(sku.errorRows).toBe(1);
 
@@ -200,14 +195,7 @@ describe.skipIf(url === '')('opening inventory migration isolation, PostgreSQL l
   it('writes one causal movement with UNKNOWN cost and replays idempotently', async () => {
     const scope = { tenantId: tenantId(A.tenant) };
     expect(
-      (
-        await dryRunOpeningInventoryImport(
-          prisma,
-          scope,
-          { userId: A.user },
-          A.validJob,
-        )
-      ).errorRows,
+      (await dryRunOpeningInventoryImport(prisma, scope, { userId: A.user }, A.validJob)).errorRows,
     ).toBe(0);
 
     const first = await commitOpeningInventoryImport(
@@ -273,14 +261,7 @@ describe.skipIf(url === '')('opening inventory migration isolation, PostgreSQL l
   it('rechecks pristine stock at commit after a successful dry-run', async () => {
     const scope = { tenantId: tenantId(A.tenant) };
     expect(
-      (
-        await dryRunOpeningInventoryImport(
-          prisma,
-          scope,
-          { userId: A.user },
-          A.raceJob,
-        )
-      ).errorRows,
+      (await dryRunOpeningInventoryImport(prisma, scope, { userId: A.user }, A.raceJob)).errorRows,
     ).toBe(0);
 
     await asTenant(A.tenant, async () => {

@@ -575,8 +575,7 @@ export interface OpeningInventoryMigrationMapping {
   readonly targetField: OpeningInventoryMigrationTargetField | null;
 }
 
-export interface OpeningInventoryMigrationMappingSuggestion
-  extends OpeningInventoryMigrationMapping {
+export interface OpeningInventoryMigrationMappingSuggestion extends OpeningInventoryMigrationMapping {
   readonly sourceHeader: string;
   readonly reason: 'exact-alias' | 'unmapped';
 }
@@ -648,14 +647,12 @@ export interface XlsxOpeningInventoryMigrationSource {
   readonly sourceSystem: string | null;
 }
 
-export interface CreateCsvOpeningInventoryMigrationJobRequest
-  extends CsvOpeningInventoryMigrationSource {
+export interface CreateCsvOpeningInventoryMigrationJobRequest extends CsvOpeningInventoryMigrationSource {
   readonly operationId: string;
   readonly mapping: readonly OpeningInventoryMigrationMapping[];
 }
 
-export interface CreateXlsxOpeningInventoryMigrationJobRequest
-  extends XlsxOpeningInventoryMigrationSource {
+export interface CreateXlsxOpeningInventoryMigrationJobRequest extends XlsxOpeningInventoryMigrationSource {
   readonly operationId: string;
   readonly mapping: readonly OpeningInventoryMigrationMapping[];
 }

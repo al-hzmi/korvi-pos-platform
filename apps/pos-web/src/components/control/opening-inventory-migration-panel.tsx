@@ -25,7 +25,9 @@ import type {
 } from '../../lib/api-types';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const ALL_FIELDS = Object.keys(OPENING_INVENTORY_MIGRATION_FIELD_LABELS) as OpeningInventoryMigrationTargetField[];
+const ALL_FIELDS = Object.keys(
+  OPENING_INVENTORY_MIGRATION_FIELD_LABELS,
+) as OpeningInventoryMigrationTargetField[];
 
 type PreparedSource =
   | { readonly format: 'csv'; readonly value: CsvOpeningInventoryMigrationSource }
@@ -106,7 +108,10 @@ export function OpeningInventoryMigrationPanel({
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const mappingProblems = useMemo(() => openingInventoryMigrationMappingProblems(mapping), [mapping]);
+  const mappingProblems = useMemo(
+    () => openingInventoryMigrationMappingProblems(mapping),
+    [mapping],
+  );
   const selectedFormat = file === null ? null : fileFormat(file);
   const commandLocked =
     disabled || busy === 'create' || busy === 'dry-run' || busy === 'commit' || pending !== null;
@@ -272,7 +277,9 @@ export function OpeningInventoryMigrationPanel({
       const result = await api.commitOpeningInventoryMigration(job.id, operationId);
       setJob(result);
       setPending(null);
-      setNotice('اكتمل الاستيراد. كُتبت حركات رصيد افتتاحي سببية بتكلفة غير معروفة؛ النتائج أدناه هي الحقيقة المسجلة للخادم.');
+      setNotice(
+        'اكتمل الاستيراد. كُتبت حركات رصيد افتتاحي سببية بتكلفة غير معروفة؛ النتائج أدناه هي الحقيقة المسجلة للخادم.',
+      );
       onCommandLockChange(false);
       await loadProblems(result.id);
     } catch (error) {
@@ -319,7 +326,10 @@ export function OpeningInventoryMigrationPanel({
         after = page.nextAfterSourceRow;
         if (pageNumber === 199) throw new Error('Too many migration error pages.');
       }
-      downloadText('korvi-opening-inventory-import-errors.csv', openingInventoryMigrationProblemsCsv(rows));
+      downloadText(
+        'korvi-opening-inventory-import-errors.csv',
+        openingInventoryMigrationProblemsCsv(rows),
+      );
       setNotice('تم تجهيز ملف الأخطاء من النتائج المسجلة للخادم.');
     } catch (error) {
       setFailure(errorMessage(error));
@@ -335,14 +345,18 @@ export function OpeningInventoryMigrationPanel({
           <div>
             <h2 className="text-base font-semibold text-foreground">استيراد الرصيد الافتتاحي</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              الملف يمر بالفحص والربط والمعاينة والفحص التجريبي قبل أي حركة مخزون فعلية. الربط يعتمد على كود الفرع وSKU فقط، والتكلفة تبقى غير معروفة.
+              الملف يمر بالفحص والربط والمعاينة والفحص التجريبي قبل أي حركة مخزون فعلية. الربط يعتمد
+              على كود الفرع وSKU فقط، والتكلفة تبقى غير معروفة.
             </p>
           </div>
           <Button
             variant="outline"
             disabled={commandLocked}
             onClick={() =>
-              downloadText('korvi-opening-inventory-template.csv', OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV)
+              downloadText(
+                'korvi-opening-inventory-template.csv',
+                OPENING_INVENTORY_MIGRATION_TEMPLATE_CSV,
+              )
             }
           >
             قالب الرصيد الافتتاحي CSV
@@ -467,7 +481,8 @@ export function OpeningInventoryMigrationPanel({
                           }
                           disabled={commandLocked}
                           onChange={(event) => {
-                            const value = event.target.value as OpeningInventoryMigrationTargetField | '';
+                            const value = event.target.value as
+                              OpeningInventoryMigrationTargetField | '';
                             setMapping((current) =>
                               current.map((item) =>
                                 item.sourceColumn === column.sourceColumn
