@@ -87,7 +87,11 @@ for (const pattern of [
   /\bsk_live_[A-Za-z0-9]+\b/,
   /\bAKIA[0-9A-Z]{16}\b/,
 ]) {
-  assert.doesNotMatch(combinedDocs, pattern, 'acquisition handoff must not contain secret material');
+  assert.doesNotMatch(
+    combinedDocs,
+    pattern,
+    'acquisition handoff must not contain secret material',
+  );
 }
 
 console.log(
