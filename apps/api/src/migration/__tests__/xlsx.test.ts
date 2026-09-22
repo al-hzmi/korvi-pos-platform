@@ -2,8 +2,10 @@ import { deflateRawSync } from 'node:zlib';
 import {
   reviewCustomerSheet,
   reviewProductSheet,
+  reviewSupplierSheet,
   suggestCustomerMappings,
   suggestProductMappings,
+  suggestSupplierMappings,
 } from '@korvi/domain';
 import { describe, expect, it } from 'vitest';
 import { parseXlsxDocument, XlsxParseError } from '../xlsx.js';
@@ -299,4 +301,38 @@ describe('XLSX migration adapter', () => {
       },
     });
   });
+
+  it('carries Arabic supplier names from XLSX into the supplier canonical review', () => {
+    const supplierSharedStrings = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<si><t>اسم المورد</t></si><si><t>شركة ألف</t></si>' +
+        '</sst>',
+    );
+    const supplierSheet = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1" t="s"><v>0</v></c></row>' +
+        '<row r="2"><c r="A2" t="s"><v>1</v></c></row>' +
+        '</sheetData></worksheet>',
+    );
+    const document = parseXlsxDocument(
+      storedZip([
+        { name: 'xl/workbook.xml', data: workbook },
+        { name: 'xl/_rels/workbook.xml.rels', data: workbookRels },
+        { name: 'xl/sharedStrings.xml', data: supplierSharedStrings },
+        { name: 'xl/worksheets/sheet1.xml', data: supplierSheet },
+      ]),
+    );
+    const parsed = document.sheets[0]!;
+    const mapping = suggestSupplierMappings(parsed.rows[0]!).map((entry) => ({
+      sourceColumn: entry.sourceColumn,
+      targetField: entry.targetField,
+    }));
+    expect(reviewSupplierSheet(parsed, mapping)[0]).toMatchObject({
+      classification: 'VALID',
+      record: { name: 'شركة ألف' },
+    });
+  });
+
 });
