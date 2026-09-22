@@ -3,9 +3,11 @@ import {
   reviewCustomerSheet,
   reviewProductSheet,
   reviewSupplierSheet,
+  reviewOpeningInventorySheet,
   suggestCustomerMappings,
   suggestProductMappings,
   suggestSupplierMappings,
+  suggestOpeningInventoryMappings,
 } from '@korvi/domain';
 import { describe, expect, it } from 'vitest';
 import { parseXlsxDocument, XlsxParseError } from '../xlsx.js';
@@ -334,4 +336,44 @@ describe('XLSX migration adapter', () => {
       record: { name: 'شركة ألف' },
     });
   });
+
+  it('carries opening inventory business keys and quantity from XLSX into canonical review', () => {
+    const openingStrings = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<si><t>كود الفرع</t></si><si><t>رقم الصنف</t></si>' +
+        '<si><t>الكمية الافتتاحية</t></si><si><t>MAIN</t></si>' +
+        '<si><t>SKU-OPEN</t></si><si><t>12.500</t></si></sst>',
+    );
+    const openingSheet = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c>' +
+        '<c r="C1" t="s"><v>2</v></c></row>' +
+        '<row r="2"><c r="A2" t="s"><v>3</v></c><c r="B2" t="s"><v>4</v></c>' +
+        '<c r="C2" t="s"><v>5</v></c></row></sheetData></worksheet>',
+    );
+    const document = parseXlsxDocument(
+      storedZip([
+        { name: 'xl/workbook.xml', data: workbook },
+        { name: 'xl/_rels/workbook.xml.rels', data: workbookRels },
+        { name: 'xl/sharedStrings.xml', data: openingStrings },
+        { name: 'xl/worksheets/sheet1.xml', data: openingSheet },
+      ]),
+    );
+    const parsed = document.sheets[0]!;
+    const mapping = suggestOpeningInventoryMappings(parsed.rows[0]!).map((entry) => ({
+      sourceColumn: entry.sourceColumn,
+      targetField: entry.targetField,
+    }));
+    expect(reviewOpeningInventorySheet(parsed, mapping)[0]).toMatchObject({
+      classification: 'VALID',
+      record: {
+        branchCode: 'MAIN',
+        sku: 'SKU-OPEN',
+        quantityScaled: '12500',
+      },
+    });
+  });
+
 });
