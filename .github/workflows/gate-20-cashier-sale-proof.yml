@@ -6,6 +6,8 @@ on:
       - review/gate20-cashier-sale-browser
       - review/operations-50-production-readiness
       - strike/5c-costing-authority
+      - integration/acquisition-ar2
+      - release/canonical-acquisition-v1
   workflow_dispatch:
 
 concurrency:
