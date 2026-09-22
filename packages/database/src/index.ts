@@ -334,6 +334,26 @@ export type {
   SupplierImportRowPage,
 } from './migration/supplier-import.js';
 
+// Customer Migration Engine — M5 opening inventory orchestration. Source files
+// carry business keys only; commit derives tenant-scoped branch/product identity
+// and posts explicit causal opening-stock movements with UNKNOWN cost.
+export {
+  OpeningInventoryImportRefusedError,
+  createOpeningInventoryImportJob,
+  readOpeningInventoryImportJob,
+  readOpeningInventoryImportRows,
+  dryRunOpeningInventoryImport,
+  commitOpeningInventoryImport,
+} from './migration/opening-inventory.js';
+export type {
+  OpeningInventoryImportRefusal,
+  OpeningInventoryImportActor,
+  CreateOpeningInventoryImportJobRequest,
+  OpeningInventoryImportRowResult,
+  OpeningInventoryImportSummary,
+  OpeningInventoryImportRowPage,
+} from './migration/opening-inventory.js';
+
 // Commercial plan/entitlement control-plane foundation (Strike 4C).
 // No merchant HTTP authority and no billing-provider semantics live here.
 export {
