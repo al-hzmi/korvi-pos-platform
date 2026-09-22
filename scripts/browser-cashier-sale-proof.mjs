@@ -301,6 +301,12 @@ async function capture(name) {
 
 try {
   await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 1280,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false, maxTouchPoints: 1 });
 
   const branches = await browserRequest('/v1/admin/inventory/branches?limit=50');
@@ -440,6 +446,7 @@ try {
   const salesPage = await browserRequest('/v1/admin/sales?limit=10');
   let proofSale = null;
   let proofSaleDetail = null;
+  let electronicSale = null;
   let electronicSaleDetail = null;
   for (const sale of salesPage.items) {
     if (sale.terminal?.id !== terminal.id || sale.status !== 'finalized') continue;
@@ -449,6 +456,7 @@ try {
         (tender) => tender.kind === 'electronic' && tender.reference === 'AR2-ELECTRONIC-PROOF-001',
       )
     ) {
+      electronicSale = sale;
       electronicSaleDetail = detail;
     }
     if (
@@ -461,7 +469,10 @@ try {
     }
   }
 
-  assert.ok(electronicSaleDetail !== null, 'Electronic proof sale missing from server truth.');
+  assert.ok(
+    electronicSale !== null && electronicSaleDetail !== null,
+    'Electronic proof sale missing from server truth.',
+  );
   assert.ok(
     proofSale !== null && proofSaleDetail !== null,
     'Mixed-tender proof sale missing from server truth.',
@@ -504,9 +515,12 @@ try {
   await waitForText('ابحث أو امسح الباركود', 20_000);
   await clickButton('مرتجع / استرداد');
   await waitForText('إنشاء مرتجع', 20_000);
-  await setInput('return-search', proofSale.invoiceNumber ?? String(proofSale.sequence));
+  await setInput(
+    'return-search',
+    electronicSale.invoiceNumber ?? String(electronicSale.sequence),
+  );
   await clickButton('بحث');
-  await clickButton(proofSale.invoiceNumber ?? `#${String(proofSale.sequence)}`);
+  await clickButton(electronicSale.invoiceNumber ?? `#${String(electronicSale.sequence)}`);
   await waitForText('المتبقي:', 20_000);
   await setInputByAriaLabel('كمية إرجاع صنف برهان المتصفح', '1');
   await setSelect('return-refund-kind', 'electronic');
@@ -514,19 +528,35 @@ try {
   await setInput('return-refund-reference', 'AR2-REFUND-PROOF-001');
 
   let returnRequests = 0;
+  let returnResponseStatus = null;
   cdp.on('Network.requestWillBeSent', (params) => {
     const request = params.request;
     if (request?.method === 'POST' && new URL(request.url).pathname === '/v1/returns')
       returnRequests += 1;
   });
+  cdp.on('Network.responseReceived', (params) => {
+    if (new URL(params.response.url).pathname === '/v1/returns') {
+      returnResponseStatus = params.response.status;
+    }
+  });
 
   await clickButton('اعتماد المرتجع');
-  await waitForText('تم اعتماد المرتجع', 30_000);
+  try {
+    await waitForText('تم اعتماد المرتجع', 30_000);
+  } catch (error) {
+    const visibleText = String(await evaluate(`document.body?.innerText ?? ''`))
+      .replace(/\s+/g, ' ')
+      .slice(-1200);
+    throw new Error(
+      `Return UI did not reach success. POST count=${String(returnRequests)} HTTP=${String(returnResponseStatus)} visible=${visibleText}`,
+      { cause: error },
+    );
+  }
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(returnRequests, 1, 'Return UI must emit exactly one POST /v1/returns request.');
 
   const returnedSaleDetail = await browserRequest(
-    `/v1/admin/sales/${encodeURIComponent(proofSale.id)}`,
+    `/v1/admin/sales/${encodeURIComponent(electronicSale.id)}`,
   );
   assert.equal(returnedSaleDetail.returns.length, 1);
   assert.equal(returnedSaleDetail.returns[0]?.totalMinor, totalMinor.toString());
@@ -536,7 +566,9 @@ try {
   );
   const restoredRow = restoredBalance.rows.find((row) => row.sku === 'BROWSER-SKU-001');
   assert.equal(restoredRow?.quantityScaled, '10000');
-  record('cashier UI executed a server-priced return and inventory returned 9→10 units');
+  record(
+    'cashier UI executed a server-priced electronic return on the pure-electronic sale and inventory returned 9→10 units',
+  );
 
   await clickButton('تم');
   await clickButton('إغلاق الوردية');
