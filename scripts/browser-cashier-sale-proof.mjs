@@ -374,6 +374,13 @@ try {
     'cashier re-authenticated into the assigned branch/terminal and opened a real shift through the POS UI',
   );
 
+  let saleRequests = 0;
+  cdp.on('Network.requestWillBeSent', (params) => {
+    const request = params.request;
+    if (request?.method === 'POST' && new URL(request.url).pathname === '/v1/sales')
+      saleRequests += 1;
+  });
+
   await setInput('product-search', 'BROWSER-SKU-001');
   await pressEnter();
   await waitForText('صنف برهان المتصفح', 20_000);
@@ -382,6 +389,31 @@ try {
   await clickButton('إلكتروني / متعدد');
   const totalMajor = await amountAfterLabel('الإجمالي المستحق');
   const totalMinor = majorToMinor(totalMajor);
+  await setInputByAriaLabel('مبلغ الدفعة الإلكترونية 1', minorToMajor(totalMinor));
+  await setInputByAriaLabel('مرجع الموافقة 1', 'AR2-ELECTRONIC-PROOF-001');
+
+  await clickButton('إتمام البيع');
+  await waitForText('تمّت العملية', 30_000);
+  await waitForText('مدى', 20_000);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(
+    saleRequests,
+    1,
+    'Full electronic checkout must emit exactly one POST /v1/sales request.',
+  );
+  record('actual Chrome cashier UI completed one full Mada electronic sale');
+
+  await clickButton('عملية بيع جديدة');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+  await clickButton('إلكتروني / متعدد');
+
+  const mixedTotalMajor = await amountAfterLabel('الإجمالي المستحق');
+  const mixedTotalMinor = majorToMinor(mixedTotalMajor);
+  assert.equal(mixedTotalMinor, totalMinor, 'Identical proof product changed total between sales.');
   const cashTenderMinor = 100n;
   const electronicTenderMinor = totalMinor - cashTenderMinor;
   assert.ok(electronicTenderMinor > 0n, 'Proof item total must exceed the 1.00 SAR cash split.');
@@ -390,21 +422,14 @@ try {
   await setInputByAriaLabel('مبلغ الدفعة الإلكترونية 1', minorToMajor(electronicTenderMinor));
   await setInputByAriaLabel('مرجع الموافقة 1', 'AR2-MIXED-PROOF-001');
 
-  let saleRequests = 0;
-  cdp.on('Network.requestWillBeSent', (params) => {
-    const request = params.request;
-    if (request?.method === 'POST' && new URL(request.url).pathname === '/v1/sales')
-      saleRequests += 1;
-  });
-
   await clickButton('إتمام البيع');
   await waitForText('تمّت العملية', 30_000);
   await waitForText('فاتورة', 30_000);
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(
     saleRequests,
-    1,
-    'A successful cashier sale must emit exactly one POST /v1/sales request.',
+    2,
+    'Electronic and mixed checkout must each emit exactly one POST /v1/sales request.',
   );
 
   const receiptText = await evaluate(`document.body?.innerText ?? ''`);
@@ -413,42 +438,67 @@ try {
   record('actual Chrome cashier UI completed one sale and rendered the server-owned receipt');
 
   const salesPage = await browserRequest('/v1/admin/sales?limit=10');
-  const proofSale = salesPage.items.find(
-    (sale) => sale.terminal?.id === terminal.id && sale.status === 'finalized',
-  );
+  let proofSale = null;
+  let proofSaleDetail = null;
+  let electronicSaleDetail = null;
+  for (const sale of salesPage.items) {
+    if (sale.terminal?.id !== terminal.id || sale.status !== 'finalized') continue;
+    const detail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(sale.id)}`);
+    if (
+      detail.tenders.some(
+        (tender) =>
+          tender.kind === 'electronic' && tender.reference === 'AR2-ELECTRONIC-PROOF-001',
+      )
+    ) {
+      electronicSaleDetail = detail;
+    }
+    if (
+      detail.tenders.some(
+        (tender) => tender.kind === 'electronic' && tender.reference === 'AR2-MIXED-PROOF-001',
+      )
+    ) {
+      proofSale = sale;
+      proofSaleDetail = detail;
+    }
+  }
+
+  assert.ok(electronicSaleDetail !== null, 'Electronic proof sale missing from server truth.');
   assert.ok(
-    proofSale !== undefined,
-    'Mixed-tender proof sale was not visible in server sales truth.',
+    proofSale !== null && proofSaleDetail !== null,
+    'Mixed-tender proof sale missing from server truth.',
   );
-  const proofSaleDetail = await browserRequest(
-    `/v1/admin/sales/${encodeURIComponent(proofSale.id)}`,
+
+  const pureElectronicTender = electronicSaleDetail.tenders.find(
+    (tender) => tender.kind === 'electronic',
   );
+  assert.equal(pureElectronicTender?.amountMinor, totalMinor.toString());
+  assert.equal(pureElectronicTender?.scheme, 'mada');
+  assert.equal(pureElectronicTender?.reference, 'AR2-ELECTRONIC-PROOF-001');
+
   const cashTender = proofSaleDetail.tenders.find((tender) => tender.kind === 'cash');
   const electronicTender = proofSaleDetail.tenders.find((tender) => tender.kind === 'electronic');
   assert.equal(cashTender?.amountMinor, cashTenderMinor.toString());
   assert.equal(electronicTender?.amountMinor, electronicTenderMinor.toString());
   assert.equal(electronicTender?.scheme, 'mada');
   assert.equal(electronicTender?.reference, 'AR2-MIXED-PROOF-001');
-  record(
-    'server truth preserved the exact cash + Mada mixed tender composition from the cashier UI',
-  );
+  record('server truth preserved exact full-electronic and mixed tender composition');
 
   const afterBalance = await browserRequest(
     `/v1/admin/inventory/balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
   );
   const afterRow = afterBalance.rows.find((row) => row.sku === 'BROWSER-SKU-001');
-  assert.equal(afterRow?.quantityScaled, '10000');
+  assert.equal(afterRow?.quantityScaled, '9000');
 
   const afterCost = await browserRequest(
     `/v1/admin/inventory/cost-balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
   );
   const afterCostRow = afterCost.rows.find((row) => row.sku === 'BROWSER-SKU-001');
-  assert.equal(afterCostRow?.quantityScaled, '10000');
-  assert.equal(afterCostRow?.knownQuantityScaled, '10000');
+  assert.equal(afterCostRow?.quantityScaled, '9000');
+  assert.equal(afterCostRow?.knownQuantityScaled, '9000');
   assert.equal(afterCostRow?.unknownPositiveQuantityScaled, '0');
-  assert.equal(afterCostRow?.knownValueMinor, '5000');
+  assert.equal(afterCostRow?.knownValueMinor, '4500');
   record(
-    'server truth reconciles exactly after sale: stock 11→10 and known cost pool 55.00→50.00 SAR',
+    'server truth reconciles exactly after two sales: stock 11→9 and known cost pool 55.00→45.00 SAR',
   );
 
   await clickButton('عملية بيع جديدة');
@@ -486,8 +536,8 @@ try {
     `/v1/admin/inventory/balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
   );
   const restoredRow = restoredBalance.rows.find((row) => row.sku === 'BROWSER-SKU-001');
-  assert.equal(restoredRow?.quantityScaled, '11000');
-  record('cashier UI executed a server-priced return and inventory returned 10→11 units');
+  assert.equal(restoredRow?.quantityScaled, '10000');
+  record('cashier UI executed a server-priced return and inventory returned 9→10 units');
 
   await clickButton('تم');
   await clickButton('إغلاق الوردية');
