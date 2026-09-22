@@ -1,22 +1,23 @@
 # Korvi Acquisition / Buyer Handoff Package
 
-Status: **AR-6 ENGINEERING PACKAGE — IN PROGRESS**
+Status: **AR-6 ENGINEERING PACKAGE — COMPLETE; TRANSACTION ACTIVATION OPEN**
 
 Canonical acquisition branch:
 
 `release/canonical-acquisition-v1`
 
-AR-0 through AR-3 canonical governance checkpoint:
+Canonical AR-4/AR-6 engineering checkpoint:
 
-`a575da1777f0c5b3ef6c836872c62c88780cf4ec`
+`48400d02a3990eecd6169933c207e282d9371084`
 
-Exact-head evidence on that checkpoint:
+Exact canonical evidence:
 
-- CI push `35775961151` / `35775913150` — PASS;
-- PostgreSQL 17 restricted-role/full verification `35775913087` — PASS;
-- Chrome commercial workflow proof `35775913094` — PASS;
-- Installed Cashier Windows proof `35775917528` — PASS;
-- Installed Cashier Android proof `35775917445` — PASS.
+- CI push `35783723534` / PR `35783727656` — PASS;
+- PostgreSQL 17 restricted-role/full verification `35783723616` — PASS;
+- Chrome commercial workflow proof `35783723516` — PASS;
+- Incident dependency-outage/recovery proof `35783723572` — PASS;
+- DR logical-backup/isolated-restore proof `35783723489` — PASS;
+- Installed Cashier Android proof `35783727722` — PASS.
 
 This package is an engineering/acquisition handoff. It is not a claim that Production Operations, Production ZATCA or a real Merchant Pilot are already complete.
 
@@ -134,11 +135,11 @@ Onboarding/provisioning must use Platform Admin and merchant authorities, not di
 
 See `docs/acquisition/DEFERRED-ACTIVATION-GATES.md`.
 
-Primary open acquisition gates after AR-3:
+Primary open acquisition gates after the AR-4/AR-6 engineering checkpoint:
 
-- AR-4 Production Operations external evidence;
+- AR-4 external Production Operations activation/evidence;
 - AR-5 Production ZATCA;
-- AR-6 final transaction/legal/account-transfer diligence after engineering package;
+- AR-6 transaction/legal/account-transfer diligence;
 - AR-7 real Merchant Pilot;
 - AR-8 final acquisition release gate.
 
