@@ -146,12 +146,9 @@ function issuesFromUnknown(value: unknown): ImportIssue[] {
 }
 
 function mappingFromUnknown(value: unknown): OpeningInventoryColumnMapping[] {
-  if (!Array.isArray(value)) throw new DatabaseError('Opening inventory import mapping is corrupt.');
-  const fields = new Set<OpeningInventoryImportField>([
-    'branchCode',
-    'sku',
-    'openingQuantity',
-  ]);
+  if (!Array.isArray(value))
+    throw new DatabaseError('Opening inventory import mapping is corrupt.');
+  const fields = new Set<OpeningInventoryImportField>(['branchCode', 'sku', 'openingQuantity']);
   return value.map((entry) => {
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
       throw new DatabaseError('Opening inventory import mapping is corrupt.');
@@ -212,7 +209,10 @@ class OpeningInventoryRowRefusedError extends Error {
   }
 }
 
-function openingIssue(sourceRow: number, code: OpeningInventoryRowRefusedError['detail']): ImportIssue {
+function openingIssue(
+  sourceRow: number,
+  code: OpeningInventoryRowRefusedError['detail'],
+): ImportIssue {
   const messages: Readonly<Record<OpeningInventoryRowRefusedError['detail'], string>> = {
     'unknown-branch': 'The branch code does not exist in this merchant.',
     'inactive-branch': 'The branch is inactive.',
@@ -229,8 +229,12 @@ function openingIssue(sourceRow: number, code: OpeningInventoryRowRefusedError['
     message: messages[code],
     row: sourceRow,
     sourceColumn: null,
-    targetField: code.startsWith('unknown-branch') || code === 'inactive-branch' ? 'branchCode' :
-      code === 'invalid-quantity-shape' ? 'openingQuantity' : 'sku',
+    targetField:
+      code.startsWith('unknown-branch') || code === 'inactive-branch'
+        ? 'branchCode'
+        : code === 'invalid-quantity-shape'
+          ? 'openingQuantity'
+          : 'sku',
   };
 }
 
@@ -531,7 +535,8 @@ export async function createOpeningInventoryImportJob(
           throw new OpeningInventoryImportRefusedError('idempotency-conflict');
         }
         const replay = await summaryWithin(tx, tenant, existing.id);
-        if (replay === null) throw new DatabaseError('Opening inventory import replay disappeared.');
+        if (replay === null)
+          throw new DatabaseError('Opening inventory import replay disappeared.');
         return replay;
       }
 
@@ -571,7 +576,10 @@ export async function createOpeningInventoryImportJob(
               jobId,
               sourceRow: review.sourceRow,
               rowFingerprint: rowFingerprints[absoluteIndex]!,
-              sourceIdentifier: review.record === null ? null : review.record.branchCode + ' / ' + review.record.sku,
+              sourceIdentifier:
+                review.record === null
+                  ? null
+                  : review.record.branchCode + ' / ' + review.record.sku,
               sourceData: jsonObject(sourceRows[absoluteIndex] ?? []),
               ...(review.record === null ? {} : { canonicalData: jsonObject(review.record) }),
               issues: jsonObject(review.issues),
@@ -603,7 +611,8 @@ export async function createOpeningInventoryImportJob(
       });
 
       const result = await summaryWithin(tx, tenant, jobId);
-      if (result === null) throw new DatabaseError('Opening inventory import job could not be read back.');
+      if (result === null)
+        throw new DatabaseError('Opening inventory import job could not be read back.');
       return result;
     });
   } catch (error) {
@@ -621,7 +630,8 @@ export async function createOpeningInventoryImportJob(
         throw new OpeningInventoryImportRefusedError('idempotency-conflict');
       }
       const replay = await summaryWithin(tx, tenant, existing.id);
-      if (replay === null) throw new DatabaseError('Opening inventory import replay could not be read.');
+      if (replay === null)
+        throw new DatabaseError('Opening inventory import replay could not be read.');
       return replay;
     });
   }
@@ -665,15 +675,13 @@ export async function dryRunOpeningInventoryImport(
       const canonical = canonicalFromUnknown(row.canonicalData);
       try {
         const identity = await resolveOpeningIdentityWithin(tx, tenant, canonical);
-        await assertPristineOpeningBalanceWithin(
-          tx,
-          tenant,
-          identity.branchId,
-          identity.productId,
-        );
+        await assertPristineOpeningBalanceWithin(tx, tenant, identity.branchId, identity.productId);
       } catch (error) {
         if (!(error instanceof OpeningInventoryRowRefusedError)) throw error;
-        const issues = [...issuesFromUnknown(row.issues), openingIssue(row.sourceRow, error.detail)];
+        const issues = [
+          ...issuesFromUnknown(row.issues),
+          openingIssue(row.sourceRow, error.detail),
+        ];
         await tx.migrationImportRow.update({
           where: { id: row.id },
           data: {

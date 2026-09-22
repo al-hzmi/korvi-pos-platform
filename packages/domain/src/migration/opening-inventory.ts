@@ -1,11 +1,5 @@
-import {
-  MerchantAdminError,
-  normalizeAdminCode,
-} from '../administration/merchant-admin.js';
-import {
-  ProductBootstrapError,
-  normalizeProductSku,
-} from '../catalog/product-bootstrap.js';
+import { MerchantAdminError, normalizeAdminCode } from '../administration/merchant-admin.js';
+import { ProductBootstrapError, normalizeProductSku } from '../catalog/product-bootstrap.js';
 import { InvalidAmountError } from '../errors.js';
 import { quantityFromDecimalString } from '../quantity/quantity.js';
 import {
@@ -45,14 +39,7 @@ const REQUIRED_FIELDS = new Set<OpeningInventoryImportField>([
 ]);
 
 const ALIASES: Readonly<Record<OpeningInventoryImportField, readonly string[]>> = {
-  branchCode: [
-    'branch',
-    'branch code',
-    'store code',
-    'كود الفرع',
-    'رمز الفرع',
-    'الفرع',
-  ],
+  branchCode: ['branch', 'branch code', 'store code', 'كود الفرع', 'رمز الفرع', 'الفرع'],
   sku: ['sku', 'item code', 'item no', 'item number', 'رقم الصنف', 'كود الصنف', 'رمز الصنف'],
   openingQuantity: [
     'opening quantity',
@@ -265,7 +252,9 @@ export function reviewOpeningInventorySheet(
         const skuRaw = sku.value ?? '';
         const openingRaw = opening.value ?? '';
         if ([branchRaw, skuRaw, openingRaw].some((value) => value.trim() === '')) {
-          throw new ImportNormalizationError('One or more required opening inventory fields are blank.');
+          throw new ImportNormalizationError(
+            'One or more required opening inventory fields are blank.',
+          );
         }
 
         const branchCode = normalizeAdminCode(branchRaw);

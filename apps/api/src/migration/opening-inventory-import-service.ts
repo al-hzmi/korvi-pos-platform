@@ -209,7 +209,9 @@ function parseXlsxSource(input: XlsxOpeningInventorySourceInput): OpeningInvento
   }
 }
 
-async function databaseAttempt<T>(work: () => Promise<T>): Promise<OpeningInventoryMigrationResult<T>> {
+async function databaseAttempt<T>(
+  work: () => Promise<T>,
+): Promise<OpeningInventoryMigrationResult<T>> {
   try {
     return { outcome: 'success', value: await work() };
   } catch (error) {
@@ -326,7 +328,9 @@ export function createMerchantOpeningInventoryMigrationService(
 
     async readJob(principal, jobId) {
       requirePrincipalPermission(principal, 'settings.manage');
-      return databaseAttempt(() => readOpeningInventoryImportJob(prisma, scopeOf(principal), jobId));
+      return databaseAttempt(() =>
+        readOpeningInventoryImportJob(prisma, scopeOf(principal), jobId),
+      );
     },
 
     async rows(principal, jobId, options) {
@@ -339,7 +343,12 @@ export function createMerchantOpeningInventoryMigrationService(
     async dryRun(principal, jobId) {
       requirePrincipalPermission(principal, 'settings.manage');
       return databaseAttempt(() =>
-        dryRunOpeningInventoryImport(prisma, scopeOf(principal), { userId: principal.userId }, jobId),
+        dryRunOpeningInventoryImport(
+          prisma,
+          scopeOf(principal),
+          { userId: principal.userId },
+          jobId,
+        ),
       );
     },
 
