@@ -230,7 +230,13 @@ export function CashierReturnWorkflow({
   }
 
   return (
-    <CardSurface className="mb-3 flex flex-col gap-3 border-border p-3">
+    <div
+      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-background/80 p-4 backdrop-blur-sm sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="إنشاء مرتجع"
+    >
+      <CardSurface className="my-auto flex w-full max-w-3xl flex-col gap-3 border-border p-4 shadow-lg sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold">إنشاء مرتجع</p>
@@ -480,6 +486,7 @@ export function CashierReturnWorkflow({
           ) : null}
         </>
       )}
-    </CardSurface>
+      </CardSurface>
+    </div>
   );
 }
