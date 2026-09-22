@@ -212,12 +212,11 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
       B.job,
     );
     expect(b.errorRows).toBe(1);
-    const bRows = await readCustomerImportRows(
-      prisma,
-      { tenantId: tenantId(B.tenant) },
-      B.job,
-      { limit: 20, afterSourceRow: null, problemsOnly: true },
-    );
+    const bRows = await readCustomerImportRows(prisma, { tenantId: tenantId(B.tenant) }, B.job, {
+      limit: 20,
+      afterSourceRow: null,
+      problemsOnly: true,
+    });
     expect(bRows?.rows[0]).toMatchObject({
       sourceIdentifier: PHONE,
       classification: 'ERROR',
@@ -247,20 +246,8 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
 
   it('commits the same phone independently in Tenant A and replays idempotently', async () => {
     const scope = { tenantId: tenantId(A.tenant) };
-    const first = await commitCustomerImport(
-      prisma,
-      scope,
-      { userId: A.user },
-      A.job,
-      A.commit,
-    );
-    const replay = await commitCustomerImport(
-      prisma,
-      scope,
-      { userId: A.user },
-      A.job,
-      A.commit,
-    );
+    const first = await commitCustomerImport(prisma, scope, { userId: A.user }, A.job, A.commit);
+    const replay = await commitCustomerImport(prisma, scope, { userId: A.user }, A.job, A.commit);
     expect(first.status).toBe('completed');
     expect(first.created).toBe(1);
     expect(replay).toEqual(first);
@@ -328,12 +315,11 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
     expect(committed.created).toBe(0);
     expect(committed.failed).toBe(1);
 
-    const rows = await readCustomerImportRows(
-      prisma,
-      { tenantId: tenantId(A.tenant) },
-      job,
-      { limit: 20, afterSourceRow: null, problemsOnly: true },
-    );
+    const rows = await readCustomerImportRows(prisma, { tenantId: tenantId(A.tenant) }, job, {
+      limit: 20,
+      afterSourceRow: null,
+      problemsOnly: true,
+    });
     expect(rows?.rows[0]).toMatchObject({
       status: 'failed',
       errorCode: 'phone-taken',
