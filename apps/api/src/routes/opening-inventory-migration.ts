@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { MAX_OPENING_INVENTORY_IMPORT_BYTES } from '../migration/openingInventory-import-service.js';
+import { MAX_OPENING_INVENTORY_IMPORT_BYTES } from '../migration/opening-inventory-import-service.js';
 import type {
   MerchantOpeningInventoryMigrationService,
   OpeningInventoryMigrationFailureReason,
-} from '../migration/openingInventory-import-service.js';
+} from '../migration/opening-inventory-import-service.js';
 import type { Guards } from '../auth/guards.js';
 import type { AuthenticatedPrincipal } from '@korvi/domain';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
