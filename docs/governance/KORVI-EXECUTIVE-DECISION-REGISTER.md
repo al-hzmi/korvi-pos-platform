@@ -40,6 +40,18 @@ This register is a decision log and index. It does not replace the domain-specif
 
 ---
 
+## 2026-09-22 — Canonical Acquisition Release is the sole release-integration authority
+
+**Decision:** ACCEPTED.
+
+Korvi release work is governed by `release/canonical-acquisition-v1`. Migration, Restaurant, Security, Retail and commercial POS workflow work are not release truth merely because they exist on another branch. Integration must be evidence-based, PR-oriented, non-force, and capability-scoped where histories have diverged.
+
+For AR-0, Migration M2-M6 is already an ancestor of the canonical lineage and must not be replayed. Platform Admin revocation is selected as a focused port from the verified security lineage. Split/Mixed Tender and separate Product Experience heads remain candidates until canonical CI/browser evidence proves them.
+
+Production ZATCA remains fail-closed; external credentials/infrastructure and a real Merchant Pilot are evidence gates, not reasons to fabricate closure.
+
+---
+
 ## 2026-09-15 — Installed Korvi is an official product requirement
 
 **Decision:** ACCEPTED.

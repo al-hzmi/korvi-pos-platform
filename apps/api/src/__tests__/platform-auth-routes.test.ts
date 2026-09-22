@@ -1,9 +1,11 @@
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPlatformAuth } from '../platform/auth.js';
+import { createGuards } from '../auth/guards.js';
 import { registerPlatformRoutes } from '../platform/routes.js';
 import { loadConfig } from '../config.js';
 import type { PlatformActor, PlatformService } from '../platform/service.js';
+import type { AuthService } from '../auth/service.js';
 import type { FastifyInstance } from 'fastify';
 
 const ACCESS_KEY = 'a'.repeat(40);
@@ -50,27 +52,32 @@ afterEach(async () => {
 });
 
 describe('platform auth', () => {
-  it('uses an independent signed short-lived session and rejects tampering or expiry', () => {
+  it('fails closed if production Platform administration is configured without durable revocation authority', () => {
+    const production = { ...config(), isProduction: true } as ReturnType<typeof config>;
+    expect(() => createPlatformAuth(production)).toThrow(/durable session store/i);
+  });
+
+  it('uses an independent signed short-lived session and rejects tampering or expiry', async () => {
     const auth = createPlatformAuth(config());
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     expect(principal).not.toBeNull();
     expect(auth.authenticateAccessKey(`${ACCESS_KEY}x`)).toBeNull();
 
     const now = new Date('2026-09-14T10:00:00.000Z');
-    const token = auth.issueSession(principal!, now);
+    const token = await auth.issueSession(principal!, now);
     expect(
-      auth.verifySession(token, new Date('2026-09-14T10:59:59.000Z'))?.controlPlaneActorRef,
+      (await auth.verifySession(token, new Date('2026-09-14T10:59:59.000Z')))?.controlPlaneActorRef,
     ).toBe(ACTOR);
-    expect(auth.verifySession(token, new Date('2026-09-14T11:00:00.000Z'))).toBeNull();
+    expect(await auth.verifySession(token, new Date('2026-09-14T11:00:00.000Z'))).toBeNull();
 
     const tampered = `${token.slice(0, -1)}${token.endsWith('a') ? 'b' : 'a'}`;
-    expect(auth.verifySession(tampered, new Date('2026-09-14T10:30:00.000Z'))).toBeNull();
-    expect(() =>
+    expect(await auth.verifySession(tampered, new Date('2026-09-14T10:30:00.000Z'))).toBeNull();
+    await expect(
       auth.issueSession({
         ...principal!,
         controlPlaneActorRef: 'platform:other-operator',
       }),
-    ).toThrow(/does not match configuration/i);
+    ).rejects.toThrow(/does not match configuration/i);
   });
 });
 
@@ -153,6 +160,62 @@ describe('platform routes', () => {
     expect(authorityInjection.json()).toEqual({ error: 'invalid_body' });
   });
 
+  it('revokes a logged-out Platform session without killing a different live session', async () => {
+    const auth = createPlatformAuth(config());
+    app = Fastify({ logger: false });
+    registerPlatformRoutes(app, { auth, service: recordingService() });
+    await app.ready();
+
+    const firstLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      payload: { accessKey: ACCESS_KEY },
+    });
+    const secondLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      payload: { accessKey: ACCESS_KEY },
+    });
+    expect(firstLogin.statusCode).toBe(200);
+    expect(secondLogin.statusCode).toBe(200);
+
+    const firstCookie = String(firstLogin.headers['set-cookie']).split(';', 1)[0];
+    const stolenCookie = String(secondLogin.headers['set-cookie']).split(';', 1)[0];
+
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/platform/session',
+          headers: { cookie: stolenCookie },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    const logout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: { cookie: stolenCookie },
+    });
+    expect(logout.statusCode).toBe(204);
+    expect(String(logout.headers['set-cookie'])).toContain('Max-Age=0');
+
+    const replay = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/session',
+      headers: { cookie: stolenCookie },
+    });
+    expect(replay.statusCode).toBe(401);
+    expect(replay.json()).toEqual({ error: 'platform_unauthenticated' });
+
+    const otherSession = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/session',
+      headers: { cookie: firstCookie },
+    });
+    expect(otherSession.statusCode).toBe(200);
+  });
+
   it('keeps operational provisioning behind Platform authority and server-derived actor identity', async () => {
     let calls = 0;
     let seenActor: string | undefined;
@@ -205,7 +268,7 @@ describe('platform routes', () => {
 
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     if (principal === null) throw new Error('test platform credential was rejected');
-    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+    const cookie = `korvi_platform_session=${await auth.issueSession(principal)}`;
 
     const injectedAuthority = await app.inject({
       method: 'POST',
@@ -260,5 +323,117 @@ describe('platform routes', () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ error: 'platform_unauthenticated' });
     expect(String(response.headers['set-cookie'])).toContain('Max-Age=0');
+  });
+
+  it('revokes a platform cookie durably on logout instead of only clearing the browser copy', async () => {
+    const auth = createPlatformAuth(config());
+    app = Fastify({ logger: false });
+    registerPlatformRoutes(app, {
+      auth,
+      service: recordingService(),
+    });
+    await app.ready();
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/session',
+      payload: { accessKey: ACCESS_KEY },
+    });
+    expect(login.statusCode).toBe(200);
+    const cookie = String(login.headers['set-cookie']).split(';', 1)[0];
+
+    const before = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/tenants',
+      headers: { cookie },
+    });
+    expect(before.statusCode).toBe(200);
+
+    const logout = await app.inject({
+      method: 'POST',
+      url: '/v1/platform/logout',
+      headers: { cookie },
+    });
+    expect(logout.statusCode).toBe(204);
+    expect(String(logout.headers['set-cookie'])).toContain('Max-Age=0');
+
+    const replay = await app.inject({
+      method: 'GET',
+      url: '/v1/platform/tenants',
+      headers: { cookie },
+    });
+    expect(replay.statusCode).toBe(401);
+    expect(replay.json()).toEqual({ error: 'platform_unauthenticated' });
+  });
+  it('keeps the platform cookie realm behind Origin even when a request carries a KorviNative header', async () => {
+    let calls = 0;
+    const cfg = config();
+    const auth = createPlatformAuth(cfg);
+    const merchantAuth: AuthService = {
+      login: async () => ({ outcome: 'failure', reason: 'unknown-tenant' }),
+      authenticate: async () => ({ outcome: 'failure', reason: 'unknown-session' }),
+      logout: async () => false,
+      logoutAll: async () => 0,
+    };
+
+    app = Fastify({ logger: false });
+    app.addHook('onRequest', createGuards(merchantAuth, cfg).enforceOrigin);
+    registerPlatformRoutes(app, {
+      auth,
+      service: recordingService(),
+      operationalBootstrap: async (_actor, _tenantId, input) => {
+        calls += 1;
+        return {
+          branch: {
+            id: '018fb000-0000-7000-8000-0000000000b1',
+            code: input.branch.code,
+            nameAr: input.branch.nameAr,
+            nameEn: input.branch.nameEn ?? null,
+            isActive: true,
+          },
+          terminal: {
+            id: '018fb000-0000-7000-8000-0000000000c1',
+            branchId: '018fb000-0000-7000-8000-0000000000b1',
+            code: input.terminal.code,
+            label: input.terminal.label,
+            isActive: true,
+          },
+          replayed: false,
+        };
+      },
+    });
+    await app.ready();
+
+    const principal = auth.authenticateAccessKey(ACCESS_KEY);
+    if (principal === null) throw new Error('test platform credential was rejected');
+    const cookie = `korvi_platform_session=${await auth.issueSession(principal)}`;
+    const payload = {
+      operationId: 'op-origin-boundary-1',
+      branch: { code: 'BR-01', nameAr: 'الفرع الرئيسي', nameEn: null },
+      terminal: { code: 'POS-01', label: 'الكاشير الرئيسي' },
+    };
+
+    const foreign = await app.inject({
+      method: 'POST',
+      url: `/v1/platform/tenants/${TENANT_ID}/operational-bootstrap`,
+      headers: {
+        cookie,
+        origin: 'https://evil.example',
+        authorization: 'KorviNative attacker-controlled',
+      },
+      payload,
+    });
+    expect(foreign.statusCode).toBe(403);
+    expect(foreign.json()).toEqual({ error: 'forbidden' });
+    expect(calls).toBe(0);
+
+    const legitimate = await app.inject({
+      method: 'POST',
+      url: `/v1/platform/tenants/${TENANT_ID}/operational-bootstrap`,
+      headers: { cookie, origin: 'http://localhost:3000' },
+      payload,
+    });
+    expect(legitimate.statusCode).toBe(201);
+    expect(calls).toBe(1);
   });
 });

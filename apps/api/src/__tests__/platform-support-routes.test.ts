@@ -25,13 +25,13 @@ function config() {
   });
 }
 
-function sessionCookie() {
+async function sessionCookie() {
   const auth = createPlatformAuth(config());
   const principal = auth.authenticateAccessKey(ACCESS_KEY);
   if (principal === null) throw new Error('test platform credential was rejected');
   return {
     auth,
-    cookie: `korvi_platform_session=${auth.issueSession(principal)}`,
+    cookie: `korvi_platform_session=${await auth.issueSession(principal)}`,
   };
 }
 
@@ -67,7 +67,7 @@ afterEach(async () => {
 
 describe('platform support routes', () => {
   it('requires the independent platform session and derives the actor from it', async () => {
-    const { auth, cookie } = sessionCookie();
+    const { auth, cookie } = await sessionCookie();
     let seenActor: PlatformSupportActor | undefined;
     app = Fastify({ logger: false });
     registerPlatformSupportRoutes(app, {
@@ -106,7 +106,7 @@ describe('platform support routes', () => {
   });
 
   it('rejects caller-supplied actor authority and creates with an idempotency operation', async () => {
-    const { auth, cookie } = sessionCookie();
+    const { auth, cookie } = await sessionCookie();
     let seenActor: PlatformSupportActor | undefined;
     app = Fastify({ logger: false });
     registerPlatformSupportRoutes(app, {
@@ -150,7 +150,7 @@ describe('platform support routes', () => {
   });
 
   it('uses 200 for an exact replay and 409 for conflicting idempotency intent', async () => {
-    const { auth, cookie } = sessionCookie();
+    const { auth, cookie } = await sessionCookie();
     let conflict = false;
     app = Fastify({ logger: false });
     registerPlatformSupportRoutes(app, {
@@ -185,7 +185,7 @@ describe('platform support routes', () => {
   });
 
   it('fails closed for unknown tenants and malformed paging or note bodies', async () => {
-    const { auth, cookie } = sessionCookie();
+    const { auth, cookie } = await sessionCookie();
     app = Fastify({ logger: false });
     registerPlatformSupportRoutes(app, {
       auth,

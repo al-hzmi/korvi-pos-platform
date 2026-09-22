@@ -12,6 +12,12 @@ Current evidence-backed progress: **88 / 100** (`44 / 50` gates closed)
 > POS production target. It is not permission to ship. Critical release gates
 > can block production even when the numeric score is high.
 
+## Canonical acquisition overlay — 2026-09-22
+
+The numeric v1 denominator is preserved, but it does not override the Canonical Acquisition Release gates. In particular, the historical CLOSED session-invalidation gate does not by itself prove Platform Admin stolen-session invalidation on the canonical release SHA. AR-1 requires server-side revocation evidence on that lineage.
+
+Likewise, a separate Product/Restaurant/Workflow branch does not change this score or acquisition readiness until its capability is integrated and proven on the canonical lineage.
+
 ## 1. Why this document exists
 
 The previously reported `58 / 100` was an accepted historical baseline, not a

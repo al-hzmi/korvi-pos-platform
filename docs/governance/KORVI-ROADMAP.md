@@ -3,6 +3,20 @@
 Status: **ACTIVE SEQUENCING DOCUMENT**
 Rule: roadmap can sequence/defer accepted capabilities; it cannot delete or downgrade them.
 
+## Canonical Acquisition Release override — 2026-09-22
+
+The highest active execution priority is now `KORVI-CANONICAL-ACQUISITION-RELEASE.md`.
+
+Immediate order:
+
+1. AR-0 evidence matrix and capability selection.
+2. AR-1 Platform Admin server-side session revocation on the canonical lineage.
+3. AR-2 sellable POS workflows, reusing verified existing implementation before writing replacements.
+4. AR-3 one-product consolidation.
+5. AR-4/AR-6 production operations proof and acquisition handoff work in parallel where safe.
+
+Separate branch heads are candidates, not release truth. No speculative feature expansion outranks an executable acquisition-release P0 gap.
+
 ## Executive completion policy — 2026-09-15
 
 The current objective is to finish the **sellable Korvi V1 product experience** first, while preserving the full Master Product Vision in the Directive/Matrix.

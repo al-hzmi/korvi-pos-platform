@@ -62,9 +62,10 @@ export function createGuards(
     // A malformed/invalid KorviNative attempt is still kept in the native realm
     // by requireSession below, so adding this prefix can never fall back to a
     // valid browser cookie as a CSRF bypass.
+    const platformCookieRealm = request.url.startsWith('/v1/platform/');
     if (
       request.url.startsWith('/v1/native-auth/') ||
-      nativeRealmAttempted(request.headers.authorization)
+      (!platformCookieRealm && nativeRealmAttempted(request.headers.authorization))
     ) {
       return;
     }

@@ -283,3 +283,34 @@ Nothing in the acquisition push may weaken:
 - production ZATCA fail-closed behavior.
 
 No score, deadline or acquisition target justifies bypassing these rules.
+
+
+## 9. AR-0 integration matrix — 2026-09-22
+
+Repository comparison is authoritative for this checkpoint.
+
+| Capability | Candidate/source | Evidence observed | Canonical disposition |
+| --- | --- | --- | --- |
+| Migration M2-M6 | `fb0d39c0b2b516cdbdb8590281a784a165a41827` | Canonical is 4 commits ahead and this SHA is its merge-base ancestor; CI `35724936239` succeeded | **ALREADY PRESENT** — do not replay or merge |
+| Platform Admin server-side revocation | Security lineage `0015d7c46c3044790a5dfa814894f5ab4f44f370`; focused authority commits `a7f7fc3c`, `cee01671`, `075dc5fd`, `ebf952b4`, `90163b99`, `f0587195` plus hardening/tests through the security head | Security-head CI `35424686058` and PostgreSQL proof `35424686044` succeeded | **SELECTED FOR AR-1 FOCUSED PORT** — no blind 62-commit branch merge |
+| Latest verified Restaurant foundation/waste | `73d46d095422f58be5f23027d00746ed8115e074` | CI `35746589569` succeeded | **VERIFIED SOURCE CANDIDATE** for subsequent canonical Restaurant integration |
+| Split/Mixed/Electronic tender UX | Functional commit `4d3ae99438ada59a6f3c1d7f7ef2bfc50e4d1463`; formatted head `e6e21ee64315e60f5cbe405cceca804462a88f4a` | Existing implementation confirmed, but feature/formatter-lineage CI runs failed and final formatter head has no independent green CI | **IMPLEMENTATION CANDIDATE ONLY** — reconcile and prove on canonical before adoption |
+| Latest Product/Retail review branches | `57758041e7cc7970f41aa92144a1dfe7b2e50a2e`, `c877c979e0cf98c13fa7ef8f411b07fe7ebd7a21`, `67c761c26c5ca5131817c4e73a7c6b7e92bd7b9d` | All inspected heads have failing CI | **NOT SELECTED** — current canonical Retail remains authority until a newer candidate is proven |
+
+AR-0 remains open for the later Restaurant/AR-2 integration checkpoint; Migration and the AR-1 source selection are resolved without duplication.
+
+## 10. AR-1 focused integration checkpoint
+
+The Platform Admin port is capability-scoped. It imports the durable PostgreSQL session authority and migration, signed session ID binding, server-side active/revoked/expired checks, logout revocation, production fail-closed behavior when durable revocation authority is unavailable, and regression coverage. Later canonical server/database work is preserved by patching only the required wiring points.
+
+Required acceptance on the canonical-release lineage:
+
+- logout makes a captured cookie unusable;
+- an explicitly revoked session is rejected;
+- an expired session is rejected;
+- a separate valid session remains valid;
+- Platform Admin permissions/actor authority remain server-owned;
+- control-plane RLS assertions include the Platform Admin session policy;
+- Full Verify/CI must pass on the integration SHA and again after canonical merge.
+
+Source-branch success is provenance only; AR-1 is not CLOSED until the canonical release SHA carries and proves the behavior.
