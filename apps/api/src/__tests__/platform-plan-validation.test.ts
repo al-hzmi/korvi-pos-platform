@@ -52,7 +52,7 @@ describe('platform plan validation', () => {
     const auth = createPlatformAuth(config());
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     if (principal === null) throw new Error('test platform credential was rejected');
-    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+    const cookie = `korvi_platform_session=${await auth.issueSession(principal)}`;
 
     app = Fastify({ logger: false });
     registerPlatformRoutes(app, { auth, service });

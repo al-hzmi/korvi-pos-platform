@@ -101,7 +101,7 @@ describe('platform device enrollment routes', () => {
 
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     if (principal === null) throw new Error('test platform credential was rejected');
-    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+    const cookie = `korvi_platform_session=${await auth.issueSession(principal)}`;
 
     const actorInjection = await app.inject({
       method: 'POST',
@@ -182,7 +182,7 @@ describe('platform device enrollment routes', () => {
 
     const principal = auth.authenticateAccessKey(ACCESS_KEY);
     if (principal === null) throw new Error('test platform credential was rejected');
-    const cookie = `korvi_platform_session=${auth.issueSession(principal)}`;
+    const cookie = `korvi_platform_session=${await auth.issueSession(principal)}`;
 
     const revoked = await app.inject({
       method: 'POST',
@@ -218,7 +218,7 @@ describe('platform device enrollment routes', () => {
     const response = await app.inject({
       method: 'POST',
       url: `/v1/platform/tenants/${TENANT_ID}/device-enrollments`,
-      headers: { cookie: `korvi_platform_session=${auth.issueSession(principal)}` },
+      headers: { cookie: `korvi_platform_session=${await auth.issueSession(principal)}` },
       payload: {
         operationId: 'enroll-device-2',
         terminalId: TERMINAL_ID,
