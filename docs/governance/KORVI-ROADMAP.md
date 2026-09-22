@@ -192,10 +192,11 @@ Verified checkpoints:
 - automated evidence: 188 test files passed / 2,291 tests passed; 24 files and 369 live-only tests skipped by the normal CI profile.
 - installed-client evidence on the same SHA: Windows and Android proof workflows green.
 - fiscal boundary preserved: customer fiscal receipt remains separate from non-fiscal preparation output; routing payload contains no price/VAT/invoice/QR/ICV/PIH semantics.
+- `dc224a951774b0b44edd87141535ee7a08698d74`: governed recipe production / ingredient consumption VERIFIED on isolated branch `product/post-v1-restaurant-production`. CI `35731689033` is green end-to-end (192 test files / 2,344 tests passed; 25 files / 376 tests skipped by the standard profile). PostgreSQL proof `35731689046` is green under restricted runtime/migrator separation: 33 runtime-live files discovered, restaurant production live proof 7/7 passed, migration rehearsals and rollback harness passed, and final PostgreSQL-backed full verify passed (193 files / 2,345 tests; 24 files / 375 skipped). The authority records a causal production document, reuses the one inventory/cost ledger, carries exact known ingredient value into finished stock only when fully known, preserves UNKNOWN otherwise, enforces FORCE-RLS/composite tenant FKs, stale-recipe protection, retry safety and atomic rollback.
 
 Immediate next action:
 
-**Course sequencing / safe post-fire delta semantics → split/merge and split-payment restaurant workflows → recipe/BOM + ingredient consumption**, continuing from the verified KDS core without weakening financial, inventory or fiscal boundaries.
+**Waste/spoilage authority → split/merge and split-payment restaurant workflows → course sequencing / safe post-fire delta semantics**, continuing from the verified recipe production + KDS foundations without weakening financial, inventory or fiscal boundaries. Waste/spoilage must reuse the same stock/cost truth and may not become an ungoverned adjustment shortcut.
 
 ### Stage 7 — Payments / Omnichannel / Integrations
 

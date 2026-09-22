@@ -291,6 +291,21 @@ Source promotion:
 - fiscal boundary: recipe/KDS APIs remain operational and do not create sales, VAT invoices, fiscal QR, ICV or PIH semantics;
 - open gap / next action: ingredient consumption/production inventory movements, waste/spoilage, then remaining split/merge/payment and course/delta semantics.
 
+
+### Verified follow-on checkpoint — Recipe production / ingredient consumption
+
+- branch: `product/post-v1-restaurant-production`;
+- implementation/proof SHA: `dc224a951774b0b44edd87141535ee7a08698d74`;
+- capability: governed batch production that consumes recipe ingredients and creates finished stock through Korvi's existing inventory/cost authority;
+- status: **VERIFIED production/consumption authority / Restaurant Phase 2 IN PROGRESS**;
+- standard CI evidence: `35731689033` GREEN through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests; 192 test files / 2,344 tests passed, 25 files / 376 live-only tests skipped by the standard profile;
+- PostgreSQL/RLS evidence: `35731689046` GREEN with restricted migrator/runtime separation, migrations + FORCE-RLS/composite tenant-key proof, 33 runtime-live files discovered, `restaurant-production-live.test.ts` 7/7 passed, migration rehearsals + rollback fault harness green, and final PostgreSQL-backed verify 193 files / 2,345 tests passed;
+- inventory invariant: production creates no second restaurant stock store. Ingredient outflows use `inventory_movements` / `inventory_balances`; finished output uses the same authority and costing ledger;
+- costing invariant: exact known consumed ingredient value is carried into finished stock only when every consumed quantity has known basis. Any unknown consumed cost keeps the output cost UNKNOWN rather than fabricating margin/value;
+- concurrency/integrity: operation is revision-bound, idempotent, retry-safe, auditable, atomic, tenant-scoped, refuses physical over-consumption even where ordinary sale oversell is enabled, and rolls back document/ledger/cost/idempotency together on late failure;
+- fiscal boundary: production is operational inventory truth only; it does not create sales, tenders, VAT invoices, fiscal QR, ICV or PIH authority;
+- remaining gap / exact next action: **Waste/Spoilage authority** using the same stock/cost/audit truth, followed by remaining split/merge/payment and course/delta semantics.
+
 ---
 
 ## Register maintenance rule
