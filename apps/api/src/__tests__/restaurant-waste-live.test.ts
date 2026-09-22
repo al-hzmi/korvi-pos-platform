@@ -1,13 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { tenantId as brandTenantId } from '@korvi/domain';
-import {
-  RestaurantWasteRefusedError,
-  createPrismaClient,
-  recordRestaurantWaste,
-  withTenant,
-} from '@korvi/database';
-import type { PrismaClient } from '@korvi/database';
+import { createPrismaClient, recordRestaurantWaste, withTenant } from '@korvi/database';
+import type { PrismaClient, RestaurantWasteRefusedError } from '@korvi/database';
 import type { TenantScope } from '@korvi/domain';
 
 const url = process.env['KORVI_TEST_DATABASE_URL'] ?? '';
