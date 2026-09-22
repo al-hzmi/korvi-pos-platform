@@ -238,9 +238,11 @@ Category M2 is now **VERIFIED**:
 - category CSV/XLSX mapping/preview/dry-run/controlled commit, Arabic merchant workflow, official category template and formula-safe error export are verified;
 - product imports accept `categoryNameAr` only; server-side dry-run and commit re-resolve that name inside the authenticated tenant and derive `categoryId` internally. Missing/inactive categories are row-level errors; categories are never auto-created during product import; client-controlled category UUID authority and cross-tenant category binding/leakage are rejected.
 
-This still does **not** make Customer Migration Readiness GREEN. **M3 Customer Migration is IN PROGRESS**; M4 suppliers and M5 opening inventory remain open.
+M3 Customer Migration is now **VERIFIED** on `product/post-v1-migration-engine@fffd2e7d870826428064a85d4e52973aa86ea465`. PR CI `35672537533` is green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests with 197 test files / 2,349 tests passed and 28 files / 387 live-only tests skipped. Restricted-runtime PostgreSQL proof `35672535019` is green with 4 files / 18 tests passed, including the 5-test customer isolation suite. The verified customer slice covers the actual customer domain only: `nameAr`, `nameEn`, `phone`, `email`, and `vatNumber`; phone uniqueness is tenant-scoped and re-enforced at commit.
 
-Current next action: **M3 customers, then M4 suppliers and M5 opening inventory without weakening the verified M1/M2 pipeline**.
+This still does **not** make Customer Migration Readiness GREEN. M4 suppliers and M5 opening inventory remain open.
+
+Current next action: **M4 Supplier Migration, then M5 opening inventory, without weakening the verified M1/M2/M3 pipeline**.
 
 ## 6. What must happen next
 
