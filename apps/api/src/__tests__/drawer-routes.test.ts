@@ -19,6 +19,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantFloorRepository,
   memoryReturnRepository,
   memorySaleRepository,
   memoryShiftRepository,
