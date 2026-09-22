@@ -194,10 +194,13 @@ describe.skipIf(url === '')('customer migration tenant isolation, PostgreSQL liv
       relrowsecurity: boolean;
       relforcerowsecurity: boolean;
     }>(
-      `SELECT relname, relrowsecurity, relforcerowsecurity
-         FROM pg_class
-        WHERE relname IN ('customers','migration_import_jobs','migration_import_rows')
-        ORDER BY relname`,
+      `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND c.relname IN ('customers','migration_import_jobs','migration_import_rows')
+        ORDER BY c.relname`,
     );
     expect(tables.rows).toHaveLength(3);
     for (const table of tables.rows) {

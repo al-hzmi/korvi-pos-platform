@@ -79,6 +79,13 @@ if ! node scripts/check-production-operations-gate50-contract.mjs; then
   report "Gate 50 production-operations evidence contract drift"
 fi
 
+# Acquisition handoff is a release artifact, not prose outside the gate. Keep
+# deployment/RPO/RTO/monitoring/env/IP/deferred-activation documentation present,
+# secret-free and mechanically tied to the operations proof workflows.
+if ! node scripts/check-acquisition-handoff.mjs; then
+  report "acquisition handoff contract drift"
+fi
+
 # One-shot dependency refresh workflows are privileged, write-enabled release
 # tools. They must never survive the exact refresh they were created for.
 if compgen -G '.github/workflows/refresh-*-lock.yml' >/dev/null; then
