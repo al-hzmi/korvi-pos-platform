@@ -154,8 +154,8 @@ Milestone sequence:
   - Restricted-runtime PostgreSQL proof: workflow `35630229494` green on `b593ffc534744097140789302e0f649b23ac2be2`; the later M2 closure delta contains only CI-baseline/test-fixture changes and no production migration authority changes.
   - Verified category vertical slice: deterministic Arabic/English mapping, bounded CSV/XLSX inspection/preview, formula/control-character refusal, tenant-scoped reviewed jobs/rows, dry run, reject-only existing-category conflict handling, explicit create-only commit through category bootstrap authority, idempotency, audit/provenance, source-data minimization, Arabic-first merchant workflow, official category template and formula-safe error export.
   - Verified product→category authority: files/browser may provide only `categoryNameAr`; dry-run and commit independently resolve the name inside the authenticated tenant, never accept `categoryId` from client-controlled input, never auto-create a missing category, reject missing/inactive categories row-by-row, and do not disclose or bind a category from another tenant.
-- **M3 — IN PROGRESS:** customers.
-- **M4:** suppliers.
+- **M3 — VERIFIED** on `product/post-v1-migration-engine@fffd2e7d870826428064a85d4e52973aa86ea465`: Customer Migration is end-to-end for the actual Korvi customer fields (`nameAr`, `nameEn`, `phone`, `email`, `vatNumber`) with CSV/XLSX mapping, preview, dry run, controlled authoritative commit, audit/idempotency/provenance, Arabic merchant UI/template/error export and restricted-runtime PostgreSQL tenant-isolation/race proof. PR CI `35672537533`: 197 test files / 2,349 tests passed; PostgreSQL proof `35672535019`: 4 files / 18 tests passed.
+- **M4 — IN PROGRESS:** suppliers. The current supplier authority supports only a required supplier `name` on create and server-authored active state; no contact, tax, payment-term or invented supplier fields may be introduced by migration.
 - **M5:** opening inventory through explicit opening-stock semantics, never direct balance fabrication.
 - **M6:** richer explicit conflict/update strategies.
 - **M7:** system-specific adapters only from real customer demand.
