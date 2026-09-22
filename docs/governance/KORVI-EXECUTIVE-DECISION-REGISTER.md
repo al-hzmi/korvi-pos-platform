@@ -375,6 +375,28 @@ Source promotion:
 - Product Readiness Scorecard
 - this Decision Register
 
+### Verified M5 Opening Inventory closure — causal opening stock + PostgreSQL isolation
+
+- branch: `product/post-v1-migration-engine`;
+- verified implementation SHA: `0fad77ff837fe4677c67bd74cab50be384bda068`;
+- status: **VERIFIED M5**;
+- standard CI: `35720975124` green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests;
+- evidence: 201 test files / 2,374 tests passed; 30 files / 395 live-only tests skipped by the standard CI profile;
+- PostgreSQL security/isolation proof: workflow `35720975187` green on the same SHA using the restricted non-superuser, non-BYPASSRLS runtime role; 6 live proof files / 26 tests passed;
+- supported canonical opening-inventory model is business-key only: `branchCode`, `sku`, `openingQuantity`. Client/file payloads cannot assert tenant identity, branch/product UUIDs, source hash or cost/value authority;
+- dry run and commit independently resolve branch code and SKU inside the authenticated tenant. Foreign-tenant branch/SKU facts remain non-resolving, and commit requires `settings.manage + inventory.adjust` at the HTTP/service authority boundary;
+- commit rechecks pristine opening state under inventory locks after dry run, then writes one causal `migration-opening-stock` movement through the existing inventory/cost ledger. It does not fabricate `inventory_balances`, fake purchases/sales or invent opening cost;
+- positive opening quantity without explicit value authority is recorded with UNKNOWN cost provenance/value, preserving future cost-bootstrap truth;
+- capability includes bounded CSV/XLSX inspection, deterministic Arabic/English mapping/validation, source preview, controlled commit, idempotent retry, audit/provenance, source-data minimization, Arabic merchant UI, official template and formula-safe error export;
+- gaps: M5 has no remaining baseline implementation gap. **CUSTOMER MIGRATION READINESS is VERIFIED** for the adopted P0 baseline;
+- next action: **M6 ADOPTED** — add richer explicit conflict/update strategies only where existing Korvi domain authority and deterministic tenant-scoped business keys make the update unambiguous. M7 remains DEFERRED to real customer demand.
+
+Source promotion:
+- Capability Matrix
+- Roadmap
+- Product Readiness Scorecard
+- this Decision Register
+
 ---
 
 ## Register maintenance rule

@@ -190,7 +190,7 @@ evidence required by that gate.
 
 This is a newly adopted P0 onboarding gate and is tracked separately from the historical 50-gate arithmetic above until the scorecard denominator is explicitly revised. Therefore M0 progress does **not** silently change the canonical `88 / 100` release score.
 
-Current state: **IN PROGRESS**
+Current state: **VERIFIED**
 
 Verified foundation:
 
@@ -242,9 +242,11 @@ M3 Customer Migration is now **VERIFIED** on `product/post-v1-migration-engine@f
 
 M4 Supplier Migration is now **VERIFIED** on `product/post-v1-migration-engine@512c57fc86a61d72e152ae4c1e05d210b70901b3`. PR CI `35717607379` is green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests with 199 test files / 2,362 tests passed and 29 files / 391 live-only tests skipped. Restricted-runtime PostgreSQL proof `35717603645` is green with 5 files / 22 tests passed. The supplier slice uses only the actual supported required `name`, preserves legitimate duplicate-name semantics, blocks formula authority and raw control characters, and includes CSV/XLSX mapping, preview, dry run, controlled authoritative commit, idempotency/audit/provenance, Arabic UI/template/error export and tenant-isolation proof.
 
-This still does **not** make Customer Migration Readiness GREEN. M5 opening inventory remains open.
+M5 Opening Inventory is now **VERIFIED** on `product/post-v1-migration-engine@0fad77ff837fe4677c67bd74cab50be384bda068`. Full CI `35720975124` is green through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests with 201 test files / 2,374 tests passed and 30 files / 395 live-only tests skipped. Restricted-runtime PostgreSQL/RLS proof `35720975187` is green with 6 files / 26 tests passed. The verified slice accepts only `branchCode`, `sku` and `openingQuantity` as business input; server-side dry run and commit independently resolve tenant-scoped identities, commit requires `inventory.adjust`, rechecks pristine stock under locks, writes one causal `migration-opening-stock` movement and records opening cost as UNKNOWN unless separate authoritative value semantics exist.
 
-Current next action: **M5 Opening Inventory with explicit opening-stock ledger semantics, without direct balance fabrication and without weakening the verified M1/M2/M3/M4 pipeline**.
+**Customer Migration Readiness is now VERIFIED for the adopted baseline.** Products, categories/product mapping, customers, suppliers and opening inventory have supported CSV/XLSX mapping, validation, preview, dry run, controlled commit, row-level errors, audit/provenance, tenant isolation and idempotency. M6/M7 remain enhancement work and do not reopen this baseline gate.
+
+Current migration next action: **M6 ADOPTED — richer explicit conflict/update strategies only where an existing authoritative update path and deterministic tenant-scoped business key make the target unambiguous.**
 
 ## 6. What must happen next
 
