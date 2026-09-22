@@ -488,7 +488,7 @@ export async function createCustomerImportJob(
     sourceFileName: request.sourceFileName,
     sourceSystem: request.sourceSystem,
     mapping: request.mapping,
-    conflictPolicy,
+    ...(conflictPolicy === 'reject' ? {} : { conflictPolicy }),
     rowFingerprints,
   });
   const tenant = tenantParam(scope);
