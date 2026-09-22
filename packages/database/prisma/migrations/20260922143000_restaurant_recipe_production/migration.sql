@@ -4,6 +4,25 @@
 
 BEGIN;
 
+-- Production is part of the same causal stock ledger. Extend the existing
+-- closed movement vocabulary rather than bypassing its database constraint.
+ALTER TABLE "inventory_movements"
+  DROP CONSTRAINT "inventory_movements_kind";
+
+ALTER TABLE "inventory_movements"
+  ADD CONSTRAINT "inventory_movements_kind"
+  CHECK (
+    "kind" IN (
+      'sale',
+      'return',
+      'adjustment',
+      'receipt',
+      'transfer',
+      'production-consumption',
+      'production-output'
+    )
+  );
+
 CREATE TABLE "restaurant_recipe_productions" (
   "id" UUID PRIMARY KEY,
   "tenantId" UUID NOT NULL,
