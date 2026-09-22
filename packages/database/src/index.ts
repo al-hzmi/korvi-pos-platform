@@ -294,9 +294,9 @@ export type {
   CategoryImportRowPage,
 } from './migration/category-import.js';
 
-// Customer Migration Engine — M3 customer directory orchestration. Create-only
-// import reuses the authoritative tenant-scoped customer writer and rejects
-// phone conflicts rather than inventing merge/update semantics.
+// Customer Migration Engine — M3 baseline + M6 explicit customer conflict strategy.
+// Default remains reject. M6 may update only by the deterministic tenant-scoped
+// phone business key and still reuses the authoritative customer writer.
 export {
   CustomerImportRefusedError,
   createCustomerImportJob,
@@ -306,6 +306,7 @@ export {
   commitCustomerImport,
 } from './migration/customer-import.js';
 export type {
+  CustomerImportConflictPolicy,
   CustomerImportRefusal,
   CustomerImportActor,
   CreateCustomerImportJobRequest,
