@@ -269,6 +269,7 @@ export function CashierReturnWorkflow({
         <>
           <div className="flex gap-2">
             <input
+              id="return-search"
               className="h-touch min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
               value={query}
               disabled={submitting || pending !== null}
@@ -394,6 +395,7 @@ export function CashierReturnWorkflow({
                 <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                   طريقة الاسترداد
                   <select
+                    id="return-refund-kind"
                     className="h-touch rounded-md border border-input bg-background px-3 text-sm text-foreground"
                     value={refundKind}
                     disabled={submitting || pending !== null}
@@ -410,6 +412,7 @@ export function CashierReturnWorkflow({
                   <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                     الشبكة
                     <select
+                      id="return-refund-scheme"
                       className="h-touch rounded-md border border-input bg-background px-3 text-sm text-foreground"
                       value={scheme}
                       disabled={submitting || pending !== null}
@@ -430,6 +433,7 @@ export function CashierReturnWorkflow({
                 <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                   مرجع الاسترداد من جهاز/مزود الدفع
                   <input
+                    id="return-refund-reference"
                     className="h-touch rounded-md border border-input bg-background px-3 text-sm text-foreground"
                     value={reference}
                     maxLength={64}
