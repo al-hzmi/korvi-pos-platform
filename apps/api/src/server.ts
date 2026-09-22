@@ -30,6 +30,7 @@ import { createMerchantCategoryMigrationService } from './migration/category-imp
 import { createMerchantCustomerMigrationService } from './migration/customer-import-service.js';
 import { createMerchantProductMigrationService } from './migration/product-import-service.js';
 import { createMerchantSupplierMigrationService } from './migration/supplier-import-service.js';
+import { createMerchantOpeningInventoryMigrationService } from './migration/opening-inventory-import-service.js';
 import { createPlatformAuth } from './platform/auth.js';
 import { registerPlatformDeviceRoutes } from './platform/device-routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
@@ -52,6 +53,7 @@ import { registerCategoryMigrationRoutes } from './routes/category-migration.js'
 import { registerCustomerMigrationRoutes } from './routes/customer-migration.js';
 import { registerProductMigrationRoutes } from './routes/product-migration.js';
 import { registerSupplierMigrationRoutes } from './routes/supplier-migration.js';
+import { registerOpeningInventoryMigrationRoutes } from './routes/opening-inventory-migration.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerSalesReadRoutes } from './routes/sales-read.js';
@@ -73,6 +75,7 @@ import type { MerchantCategoryMigrationService } from './migration/category-impo
 import type { MerchantCustomerMigrationService } from './migration/customer-import-service.js';
 import type { MerchantProductMigrationService } from './migration/product-import-service.js';
 import type { MerchantSupplierMigrationService } from './migration/supplier-import-service.js';
+import type { MerchantOpeningInventoryMigrationService } from './migration/opening-inventory-import-service.js';
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
@@ -125,6 +128,8 @@ export interface ServerDeps {
   readonly customerMigration?: MerchantCustomerMigrationService;
   /** Supplier M4 migration orchestration; supplier create semantics are name-only. */
   readonly supplierMigration?: MerchantSupplierMigrationService;
+  /** M5 opening inventory; business keys only, explicit causal opening-stock authority. */
+  readonly openingInventoryMigration?: MerchantOpeningInventoryMigrationService;
   /** Operational restaurant open-order authority; non-fiscal until checkout. */
   readonly restaurantOrders?: MerchantRestaurantOrderService;
   /** Merchant customer directory and mutation authority. */
@@ -474,6 +479,27 @@ function lazySupplierMigrationService(config: ApiConfig): MerchantSupplierMigrat
   };
 }
 
+function lazyOpeningInventoryMigrationService(config: ApiConfig): MerchantOpeningInventoryMigrationService {
+  let built: MerchantOpeningInventoryMigrationService | null = null;
+  const resolve = (): MerchantOpeningInventoryMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantOpeningInventoryMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
 function lazyProductMigrationService(config: ApiConfig): MerchantProductMigrationService {
   let built: MerchantProductMigrationService | null = null;
   const resolve = (): MerchantProductMigrationService => {
@@ -705,6 +731,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerSupplierMigrationRoutes(app, {
     service: deps.supplierMigration ?? lazySupplierMigrationService(config),
+    guards,
+  });
+  registerOpeningInventoryMigrationRoutes(app, {
+    service: deps.openingInventoryMigration ?? lazyOpeningInventoryMigrationService(config),
     guards,
   });
   registerCustomerRoutes(app, {

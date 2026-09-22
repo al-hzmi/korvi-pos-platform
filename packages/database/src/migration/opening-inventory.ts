@@ -195,17 +195,6 @@ function canonicalFromUnknown(value: unknown): CanonicalOpeningInventoryImportRo
   };
 }
 
-function commitIssue(sourceRow: number, code: string, message: string): ImportIssue {
-  return {
-    classification: 'ERROR',
-    code,
-    message,
-    row: sourceRow,
-    sourceColumn: null,
-    targetField: null,
-  };
-}
-
 class OpeningInventoryRowRefusedError extends Error {
   public override readonly name = 'OpeningInventoryRowRefusedError';
 
