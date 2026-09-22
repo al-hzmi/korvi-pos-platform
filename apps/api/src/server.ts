@@ -60,6 +60,9 @@ import { registerSupplierMigrationRoutes } from './routes/supplier-migration.js'
 import { registerOpeningInventoryMigrationRoutes } from './routes/opening-inventory-migration.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
+import { registerRestaurantPreparationRoutes } from './routes/restaurant-preparation.js';
+import { registerRestaurantRecipeRoutes } from './routes/restaurant-recipes.js';
+import { registerRestaurantWasteRoutes } from './routes/restaurant-waste.js';
 import { registerSalesReadRoutes } from './routes/sales-read.js';
 import { registerZatcaRoutes } from './routes/zatca.js';
 import { registerOperationalObservability } from './runtime/observability.js';
