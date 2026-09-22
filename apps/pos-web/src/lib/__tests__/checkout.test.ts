@@ -350,7 +350,6 @@ describe('what the screen locks', () => {
   });
 });
 
-
 describe('mixed tender checkout flight', () => {
   it('freezes and replays the exact tender composition after an ambiguous attempt', async () => {
     const sent: CheckoutIntent[] = [];
@@ -369,12 +368,24 @@ describe('mixed tender checkout flight', () => {
       terminalId: 'tm1',
       lines: [MILK],
       tenders: [
-        { kind: 'electronic' as const, amountMinor: '1300', scheme: 'mada' as const, reference: 'A1' },
+        {
+          kind: 'electronic' as const,
+          amountMinor: '1300',
+          scheme: 'mada' as const,
+          reference: 'A1',
+        },
         { kind: 'cash' as const, amountMinor: '1000' },
       ],
     };
 
-    await runCheckout(api, flight, input, (event) => events.push(event), () => undefined, () => 'op-mixed');
+    await runCheckout(
+      api,
+      flight,
+      input,
+      (event) => events.push(event),
+      () => undefined,
+      () => 'op-mixed',
+    );
     expect(flight.outstanding()).toBe(true);
     expect(flight.pending()?.cashReceivedMinor).toBeUndefined();
     expect(flight.pending()?.tenders).toEqual(input.tenders);
@@ -403,7 +414,12 @@ describe('mixed tender checkout flight', () => {
       operationId: 'op-mixed',
       terminalId: 'tm1',
       tenders: [
-        { kind: 'electronic' as const, amountMinor: '2300', scheme: 'mada' as const, reference: 'A1' },
+        {
+          kind: 'electronic' as const,
+          amountMinor: '2300',
+          scheme: 'mada' as const,
+          reference: 'A1',
+        },
       ],
       lines: [{ productId: 'p-milk', quantityScaled: '2000' }],
     }));

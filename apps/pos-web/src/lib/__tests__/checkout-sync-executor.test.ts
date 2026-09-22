@@ -150,7 +150,6 @@ describe('checkout queue executor', () => {
   });
 });
 
-
 describe('mixed tender queue validation', () => {
   const MIXED_PAYLOAD = {
     operationId: OPERATION_ID,
@@ -165,9 +164,7 @@ describe('mixed tender queue validation', () => {
 
   it('accepts an exact replayable tender list and rejects ambiguous payment shapes', () => {
     expect(isCheckoutQueuePayload(MIXED_PAYLOAD)).toBe(true);
-    expect(
-      isCheckoutQueuePayload({ ...MIXED_PAYLOAD, cashReceivedMinor: '500' }),
-    ).toBe(false);
+    expect(isCheckoutQueuePayload({ ...MIXED_PAYLOAD, cashReceivedMinor: '500' })).toBe(false);
     expect(
       isCheckoutQueuePayload({
         ...MIXED_PAYLOAD,
@@ -186,9 +183,9 @@ describe('mixed tender queue validation', () => {
       replayed: true,
     });
     const executor = createCheckoutSyncExecutor(apiWithCheckout(checkout));
-    await expect(
-      executor.execute({ ...OPERATION, payload: MIXED_PAYLOAD }),
-    ).resolves.toEqual({ outcome: 'settled' });
+    await expect(executor.execute({ ...OPERATION, payload: MIXED_PAYLOAD })).resolves.toEqual({
+      outcome: 'settled',
+    });
     expect(checkout).toHaveBeenCalledWith(MIXED_PAYLOAD);
   });
 });

@@ -159,9 +159,7 @@ export function CheckoutPanel({
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={
-                  paymentFrozen || electronicTenders.length >= MAX_ELECTRONIC_TENDERS
-                }
+                disabled={paymentFrozen || electronicTenders.length >= MAX_ELECTRONIC_TENDERS}
                 onClick={onAddElectronicTender}
               >
                 إضافة دفعة

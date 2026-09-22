@@ -13,7 +13,11 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 const ELECTRONIC_SCHEMES = new Set(['mada', 'visa', 'mastercard', 'amex', 'apple-pay', 'other']);
 
 function isQueuedTender(value: unknown): boolean {
-  if (!isRecord(value) || typeof value.amountMinor !== 'string' || !POSITIVE_INTEGER.test(value.amountMinor)) {
+  if (
+    !isRecord(value) ||
+    typeof value.amountMinor !== 'string' ||
+    !POSITIVE_INTEGER.test(value.amountMinor)
+  ) {
     return false;
   }
   if (value.kind === 'cash') {

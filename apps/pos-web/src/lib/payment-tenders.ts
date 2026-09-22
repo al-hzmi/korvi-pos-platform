@@ -27,12 +27,7 @@ export function emptyElectronicTender(): ElectronicTenderDraft {
   return { scheme: 'mada', amount: '', reference: '' };
 }
 
-function invalid(
-  total: bigint,
-  cash: bigint,
-  electronic: bigint,
-  message: string,
-): PaymentPlan {
+function invalid(total: bigint, cash: bigint, electronic: bigint, message: string): PaymentPlan {
   const tendered = cash + electronic;
   return {
     valid: false,

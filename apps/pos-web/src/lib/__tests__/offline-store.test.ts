@@ -217,7 +217,6 @@ describe('offline store validation', () => {
   });
 });
 
-
 describe('mixed tender durable draft validation', () => {
   it('preserves cashier-entered electronic tender draft state without making it financial truth', () => {
     const draft = {

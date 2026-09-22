@@ -96,7 +96,6 @@ describe('offline checkout ownership transfer', () => {
   });
 });
 
-
 describe('offline mixed tender ownership', () => {
   it('queues the exact tender list under the same immutable operation id', () => {
     const mixed = {
@@ -104,7 +103,12 @@ describe('offline mixed tender ownership', () => {
       terminalId: TERMINAL_ID,
       expectedShiftId: SHIFT_ID,
       tenders: [
-        { kind: 'electronic' as const, amountMinor: '650', scheme: 'mada' as const, reference: 'A-1' },
+        {
+          kind: 'electronic' as const,
+          amountMinor: '650',
+          scheme: 'mada' as const,
+          reference: 'A-1',
+        },
         { kind: 'cash' as const, amountMinor: '500' },
       ],
       lines: [{ productId: PRODUCT_ID, quantityScaled: '1000' }],

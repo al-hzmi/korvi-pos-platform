@@ -453,8 +453,8 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
-          setPaymentMode('cash');
-          setElectronicTenders([emptyElectronicTender()]);
+    setPaymentMode('cash');
+    setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
     setTableId(null);
     resetRestaurantWorkspace();
@@ -748,8 +748,8 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
-          setPaymentMode('cash');
-          setElectronicTenders([emptyElectronicTender()]);
+    setPaymentMode('cash');
+    setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
     setTableId(null);
     resetRestaurantWorkspace();
