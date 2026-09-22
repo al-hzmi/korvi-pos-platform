@@ -154,7 +154,7 @@ into the same release lineage.
 No separate branch may be advertised as containing the real product after this gate closes.
 
 ### AR-4 — Production Operations Proof
-Status: **ADOPTED / P0 — EVIDENCE REQUIRED**
+Status: **INTERNAL ENGINEERING EVIDENCE COMPLETE — EXTERNAL PRODUCTION ACTIVATION OPEN**
 
 Close with actual evidence, not documentation-only claims:
 
@@ -188,7 +188,7 @@ Required final evidence:
 If production credentials, customer identity or paid infrastructure are legitimately required, record the gate as BLOCKED BY EXTERNAL ACTIVATION rather than faking closure.
 
 ### AR-6 — Acquisition / Handoff Package
-Status: **ADOPTED / P0**
+Status: **ENGINEERING HANDOFF PACKAGE COMPLETE — TRANSACTION ACTIVATION OPEN**
 
 Prepare a buyer/operator-grade package containing at least:
 
@@ -379,3 +379,44 @@ workflow UX above.
 This closure does **not** close Production Operations, production ZATCA, the
 acquisition/handoff package, or a real Merchant Pilot. Those remain AR-4 through
 AR-7 and continue immediately.
+
+
+## 13. AR-4 / AR-6 engineering checkpoint — 2026-09-22
+
+Canonical engineering evidence SHA:
+
+`48400d02a3990eecd6169933c207e282d9371084`
+
+Exact canonical evidence:
+
+- CI push `35783723534` — PASS;
+- CI pull-request verification `35783727656` — PASS;
+- PostgreSQL 17 restricted-role/full verification `35783723616` — PASS;
+- actual Chrome commercial workflow proof `35783723516` — PASS;
+- dependency-outage / fail-closed readiness / recovery / bounded shutdown proof `35783723572` — PASS;
+- PostgreSQL logical backup / isolated restore / restored RLS / restored application verification `35783723489` — PASS;
+- Installed Cashier Android proof `35783727722` — PASS.
+
+AR-4 provider-independent engineering work is complete on the canonical lineage:
+production-shaped deployment architecture, migration/runtime database authority separation,
+health/readiness/metrics contract, explicit engineering targets of **RPO ≤ 15 minutes**
+and **RTO ≤ 60 minutes**, logical backup and isolated PostgreSQL 17 restore rehearsal,
+restored schema/RLS/application proof, dependency-outage recovery evidence,
+monitoring/alerting/on-call policy, release/rollback procedure and DR runbook.
+
+This does **not** close real Production Operations evidence. Durable production provider,
+HA/failover, managed backups/retention, measured production-equivalent RPO/RTO,
+real alert delivery, bound on-call contacts, production DNS/TLS and secret-management
+rotation remain external activation gates. Production Proven remains unclaimed.
+
+AR-6 buyer/operator engineering handoff is complete in-repository: architecture,
+deployment/rollback, environment inventory without values, migration, backup/restore,
+monitoring/incident, ZATCA boundary, dependency/supply-chain, ownership/IP limitations,
+licensing position, evidence references, deferred items and merchant migration baseline.
+
+AR-6 transaction-level activation remains external: IP assignment/license instrument,
+contributor chain-of-title confirmation where applicable, third-party legal license review,
+credential/account/domain transfer, and repository-owner branch protection/ruleset activation.
+
+Remaining canonical blockers: AR-4 external production activation, AR-5 real production
+ZATCA activation, AR-6 transaction activation, AR-7 real Merchant Pilot, and AR-8.
