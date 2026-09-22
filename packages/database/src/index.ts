@@ -314,6 +314,26 @@ export type {
   CustomerImportRowPage,
 } from './migration/customer-import.js';
 
+// Customer Migration Engine — Supplier M4 orchestration. Supplier import uses
+// the real purchasing supplier authority and deliberately carries only the
+// currently supported create field: name.
+export {
+  SupplierImportRefusedError,
+  createSupplierImportJob,
+  readSupplierImportJob,
+  readSupplierImportRows,
+  dryRunSupplierImport,
+  commitSupplierImport,
+} from './migration/supplier-import.js';
+export type {
+  SupplierImportRefusal,
+  SupplierImportActor,
+  CreateSupplierImportJobRequest,
+  SupplierImportRowResult,
+  SupplierImportSummary,
+  SupplierImportRowPage,
+} from './migration/supplier-import.js';
+
 // Commercial plan/entitlement control-plane foundation (Strike 4C).
 // No merchant HTTP authority and no billing-provider semantics live here.
 export {
