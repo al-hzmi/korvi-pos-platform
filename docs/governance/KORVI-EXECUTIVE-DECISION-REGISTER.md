@@ -427,3 +427,45 @@ Source promotion:
 ## Register maintenance rule
 
 When a later executive decision supersedes one above, do not silently edit history. Add a new dated entry marked **SUPERSEDES** and update the affected authoritative source document.
+
+
+---
+
+## 2026-09-22 — Canonical Acquisition Release becomes P0
+
+**Decision:** ACCEPTED.
+
+Korvi will prioritize a single canonical acquisition/release lineage over additional speculative feature expansion.
+
+Canonical integration branch:
+
+- `release/canonical-acquisition-v1`
+- baseline: `fb0d39c0b2b516cdbdb8590281a784a165a41827`
+
+The adopted P0 program is defined in:
+
+- `docs/governance/KORVI-CANONICAL-ACQUISITION-RELEASE.md`
+
+Required closure areas:
+
+- unify verified Retail/Product, Restaurant, Migration and Security work into one release lineage;
+- integrate revocable Platform Admin server-side sessions;
+- complete Electronic/Mixed Tender UI;
+- complete Return/Refund UI;
+- complete Shift Close and Cash Reconciliation UI;
+- prove production operations rather than relying on staging evidence;
+- close real production ZATCA provider/operations when external activation is available;
+- create acquisition-grade deployment/handoff/ownership documentation;
+- run a controlled real merchant production pilot;
+- finish with one exact canonical release SHA and evidence package.
+
+Until production operations, production ZATCA and a real merchant pilot are evidence-backed, Korvi must not be described as **Production Proven**.
+
+The program permits parallel isolated workstreams, but no force-push, silent overwrite, blind merge or weakening of Korvi financial/inventory/tax/security invariants is allowed.
+
+Source promotion:
+
+- Canonical Acquisition Release Program
+- Roadmap
+- Product Readiness Scorecard
+- Executive Decision Register
