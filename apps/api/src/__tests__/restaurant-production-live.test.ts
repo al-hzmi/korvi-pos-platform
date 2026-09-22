@@ -20,6 +20,9 @@ const A = {
   ingredient: '01994f00-0000-7000-8000-0000000000a4',
   finishedUnknown: '01994f00-0000-7000-8000-0000000000a5',
   ingredientUnknown: '01994f00-0000-7000-8000-0000000000a6',
+  finishedOverflow: '01994f00-0000-7000-8000-0000000000a7',
+  ingredientOverflowA: '01994f00-0000-7000-8000-0000000000a8',
+  ingredientOverflowB: '01994f00-0000-7000-8000-0000000000a9',
 } as const;
 
 const B = {
@@ -29,6 +32,7 @@ const B = {
 
 describe.skipIf(url === '')('restaurant recipe production inventory authority, live', () => {
   let prisma: PrismaClient;
+  let second: PrismaClient;
   const scope: TenantScope = { tenantId: brandTenantId(A.tenant) };
   const actor = { userId: A.user };
 
@@ -93,6 +97,8 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
 
   beforeAll(async () => {
     prisma = createPrismaClient(url);
+    second = createPrismaClient(url);
+    await second.$queryRaw`SELECT 1`;
     await removeTenant(A.tenant);
     await removeTenant(B.tenant);
 
@@ -138,6 +144,9 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
         [A.ingredient, 'MILK', 'weighted'],
         [A.finishedUnknown, 'SOUP', 'unit'],
         [A.ingredientUnknown, 'BROTH', 'weighted'],
+        [A.finishedOverflow, 'OVERFLOW-OUTPUT', 'unit'],
+        [A.ingredientOverflowA, 'OVERFLOW-A', 'weighted'],
+        [A.ingredientOverflowB, 'OVERFLOW-B', 'weighted'],
       ] as const) {
         await tx.product.create({
           data: {
@@ -192,12 +201,22 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
       yieldQuantityScaled: '1000',
       ingredients: [{ productId: A.ingredientUnknown, quantityScaled: '250' }],
     });
+    await setRestaurantRecipe(prisma, scope, actor, A.finishedOverflow, {
+      operationId: newId(),
+      expectedRevision: null,
+      yieldQuantityScaled: '1000',
+      ingredients: [
+        { productId: A.ingredientOverflowA, quantityScaled: '1000' },
+        { productId: A.ingredientOverflowB, quantityScaled: '1000' },
+      ],
+    });
   }, 120_000);
 
   afterAll(async () => {
     await removeTenant(A.tenant);
     await removeTenant(B.tenant);
     await prisma.$disconnect();
+    await second.$disconnect();
   });
 
   it('runs production tables under FORCE RLS with a restricted runtime role', async () => {
@@ -326,6 +345,134 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
       }),
     );
     expect(movementCount).toBe(2);
+  });
+
+  it('serializes concurrent duplicate submissions into one production and one replay', async () => {
+    await seedBalance(A.ingredient, 1_000n, 1_000n, 400n);
+    await seedBalance(A.finished, 0n, 0n, 0n);
+    const operationId = newId();
+    const request = {
+      operationId,
+      branchId: A.branch,
+      recipeRevision: '1',
+      batchCount: '1',
+    };
+
+    const [left, right] = await Promise.all([
+      recordRestaurantRecipeProduction(prisma, scope, actor, A.finished, request),
+      recordRestaurantRecipeProduction(second, scope, actor, A.finished, request),
+    ]);
+
+    expect(left.id).toBe(right.id);
+    expect([left.replayed, right.replayed].sort()).toEqual([false, true]);
+    const facts = await withTenant(prisma, A.tenant, async (tx) => ({
+      productions: await tx.restaurantRecipeProduction.count({
+        where: { tenantId: A.tenant, operationId },
+      }),
+      movements: await tx.inventoryMovement.count({
+        where: {
+          tenantId: A.tenant,
+          sourceType: 'restaurant-recipe-production',
+          sourceId: left.id,
+        },
+      }),
+      ingredient: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.ingredient,
+          },
+        },
+      }),
+      output: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.finished,
+          },
+        },
+      }),
+    }));
+    expect(facts.productions).toBe(1);
+    expect(facts.movements).toBe(2);
+    expect(facts.ingredient?.quantityScaled).toBe(750n);
+    expect(facts.output?.quantityScaled).toBe(1_000n);
+  });
+
+  it('rolls back document, movements, balances, valuation, audit and idempotency after a late costing failure', async () => {
+    const hugeValue = 5_000_000_000_000_000_000n;
+    await seedBalance(A.ingredientOverflowA, 1_000n, 1_000n, hugeValue);
+    await seedBalance(A.ingredientOverflowB, 1_000n, 1_000n, hugeValue);
+    await seedBalance(A.finishedOverflow, 0n, 0n, 0n);
+    const operationId = newId();
+
+    const before = await withTenant(prisma, A.tenant, async (tx) => ({
+      productions: await tx.restaurantRecipeProduction.count({}),
+      movements: await tx.inventoryMovement.count({}),
+      valuations: await tx.inventoryValuationEvent.count({}),
+      audits: await tx.auditEvent.count({
+        where: { tenantId: A.tenant, eventType: 'restaurant.recipe.production.recorded' },
+      }),
+    }));
+
+    await expect(
+      recordRestaurantRecipeProduction(prisma, scope, actor, A.finishedOverflow, {
+        operationId,
+        branchId: A.branch,
+        recipeRevision: '1',
+        batchCount: '1',
+      }),
+    ).rejects.toThrow('exceeds PostgreSQL BIGINT storage');
+
+    const after = await withTenant(prisma, A.tenant, async (tx) => ({
+      productions: await tx.restaurantRecipeProduction.count({}),
+      movements: await tx.inventoryMovement.count({}),
+      valuations: await tx.inventoryValuationEvent.count({}),
+      audits: await tx.auditEvent.count({
+        where: { tenantId: A.tenant, eventType: 'restaurant.recipe.production.recorded' },
+      }),
+      idempotency: await tx.idempotencyKey.count({
+        where: { tenantId: A.tenant, scope: 'restaurant.recipe.production', operationId },
+      }),
+      ingredientA: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.ingredientOverflowA,
+          },
+        },
+      }),
+      ingredientB: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.ingredientOverflowB,
+          },
+        },
+      }),
+      output: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.finishedOverflow,
+          },
+        },
+      }),
+    }));
+
+    expect(after.productions).toBe(before.productions);
+    expect(after.movements).toBe(before.movements);
+    expect(after.valuations).toBe(before.valuations);
+    expect(after.audits).toBe(before.audits);
+    expect(after.idempotency).toBe(0);
+    expect(after.ingredientA?.quantityScaled).toBe(1_000n);
+    expect(after.ingredientB?.quantityScaled).toBe(1_000n);
+    expect(after.output?.quantityScaled).toBe(0n);
   });
 
   it('keeps produced cost UNKNOWN when any consumed ingredient cost is unknown', async () => {
