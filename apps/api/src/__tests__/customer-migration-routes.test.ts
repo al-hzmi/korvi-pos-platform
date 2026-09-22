@@ -71,6 +71,7 @@ const summary: CustomerImportSummary = {
   errorRows: 0,
   blockedRows: 0,
   created: 0,
+  updated: 0,
   failed: 0,
   rejected: 0,
   rows: [],
@@ -290,4 +291,51 @@ describe('customer migration HTTP authority', () => {
     expect(committed.json()).toMatchObject({ id: JOB, status: 'completed', created: 1 });
     expect(calls).toEqual([{ method: 'commit', value: { jobId: JOB, operationId: OP } }]);
   });
+
+  it('accepts only the explicit update-by-phone strategy and never customerId authority', async () => {
+    const server = build(principal(['settings.manage']));
+    const allowed = await server.inject({
+      method: 'POST',
+      url: '/v1/admin/migrations/customers/jobs',
+      headers: { cookie: COOKIE, origin: ORIGIN },
+      payload: {
+        operationId: OP,
+        csvText: 'اسم العميل,رقم الجوال\\nشركة ألف,0500000000',
+        mapping: [
+          { sourceColumn: 0, targetField: 'nameAr' },
+          { sourceColumn: 1, targetField: 'phone' },
+        ],
+        conflictPolicy: 'update-existing-by-phone',
+      },
+    });
+    expect(allowed.statusCode).toBe(201);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.value).toMatchObject({
+      conflictPolicy: 'update-existing-by-phone',
+    });
+
+    for (const forged of [
+      { conflictPolicy: 'update-by-name' },
+      { customerId: '018fb700-0000-7000-8000-0000000000ff' },
+    ]) {
+      calls = [];
+      const response = await server.inject({
+        method: 'POST',
+        url: '/v1/admin/migrations/customers/jobs',
+        headers: { cookie: COOKIE, origin: ORIGIN },
+        payload: {
+          operationId: '018fb700-0000-7000-8000-0000000000d1',
+          csvText: 'اسم العميل,رقم الجوال\\nشركة ألف,0500000000',
+          mapping: [
+            { sourceColumn: 0, targetField: 'nameAr' },
+            { sourceColumn: 1, targetField: 'phone' },
+          ],
+          ...forged,
+        },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(calls).toEqual([]);
+    }
+  });
+
 });
