@@ -2,13 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { newId, tenantId as brandTenantId } from '@korvi/domain';
 import {
-  RestaurantProductionRefusedError,
   createPrismaClient,
   recordRestaurantRecipeProduction,
   setRestaurantRecipe,
   withTenant,
 } from '@korvi/database';
-import type { PrismaClient } from '@korvi/database';
+import type { PrismaClient, RestaurantProductionRefusedError } from '@korvi/database';
 import type { TenantScope } from '@korvi/domain';
 
 const url = process.env['KORVI_TEST_DATABASE_URL'] ?? '';
