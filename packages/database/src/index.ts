@@ -236,6 +236,77 @@ export type {
   RestaurantOrderMutationResult,
 } from './restaurant/orders.js';
 
+// Restaurant preparation station/routing authority. Operational and non-fiscal.
+export {
+  RestaurantPreparationRefusedError,
+  listPreparationStations,
+  createPreparationStation,
+  listPreparationRoutes,
+  setProductPreparationRoutes,
+  routeRestaurantOrderForPreparation,
+  fireRestaurantOrderForPreparation,
+  listPreparationTasks,
+  updatePreparationTaskStatus,
+} from './restaurant/preparation.js';
+export type {
+  RestaurantPreparationRefusal,
+  RestaurantPreparationActor,
+  PreparationStation,
+  PreparationRoute,
+  CreatePreparationStationRequest,
+  SetProductPreparationRoutesRequest,
+  PreparationMutationResult,
+  PreparationRoutingLine,
+  PreparationRoutingGroup,
+  PreparationRoutingPlan,
+  PreparationTaskStatus,
+  PreparationTask,
+  FirePreparationRequest,
+  PreparationFireResult,
+  UpdatePreparationTaskStatusRequest,
+} from './restaurant/preparation.js';
+
+// Restaurant recipe/BOM configuration and production authority. Production reuses
+// the one inventory/cost ledger; it never creates a parallel restaurant stock truth.
+export {
+  RestaurantRecipeRefusedError,
+  readRestaurantRecipe,
+  setRestaurantRecipe,
+  readRestaurantRecipeCost,
+} from './restaurant/recipes.js';
+export {
+  RestaurantProductionRefusedError,
+  recordRestaurantRecipeProduction,
+} from './restaurant/production.js';
+export type {
+  RestaurantRecipeRefusal,
+  RestaurantRecipeActor,
+  RestaurantRecipeIngredientRecord,
+  RestaurantRecipeRecord,
+  SetRestaurantRecipeRequest,
+  RestaurantRecipeMutationResult,
+  RestaurantRecipeIngredientCost,
+  RestaurantRecipeCost,
+} from './restaurant/recipes.js';
+export type {
+  RestaurantProductionRefusal,
+  RestaurantProductionActor,
+  RestaurantRecipeProductionRequest,
+  RestaurantRecipeProductionLineResult,
+  RestaurantRecipeProductionResult,
+} from './restaurant/production.js';
+
+export { RestaurantWasteRefusedError, recordRestaurantWaste } from './restaurant/waste.js';
+export type {
+  RestaurantWasteReason,
+  RestaurantWasteRefusal,
+  RestaurantWasteActor,
+  RestaurantWasteLineRequest,
+  RestaurantWasteRequest,
+  RestaurantWasteLineResult,
+  RestaurantWasteResult,
+} from './restaurant/waste.js';
+
 // Category bootstrap. Tenant-scoped catalogue authority used by onboarding/migration.
 export {
   CategoryBootstrapRefusedError,

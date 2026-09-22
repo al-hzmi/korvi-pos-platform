@@ -19,8 +19,13 @@ import { intentLocked, signOutBlocked } from '../lib/checkout';
 import { createDurableProductSource } from '../lib/offline-search-source';
 import { shiftNeedsRefresh } from '../lib/shift';
 import { autoAddCandidate } from '../lib/search';
-import { parseSarToMinor } from '../lib/money';
 import { describeFailure } from '../lib/failures';
+import {
+  emptyElectronicTender,
+  planPayment,
+  type ElectronicTenderDraft,
+  type PaymentMode,
+} from '../lib/payment-tenders';
 import {
   cartLinesFromRestaurantOrder,
   restaurantOrderCreateLinesFromCart,
@@ -42,10 +47,13 @@ import type {
   Principal,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
   RestaurantOrderDetail,
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
+  RestaurantOrderTransferTableRequest,
+  RestaurantPreparationFireRequest,
   ShiftSummary,
   TerminalSummary,
 } from '../lib/api-types';
@@ -61,6 +69,21 @@ type PendingRestaurantOrderCommand =
       readonly kind: 'replace';
       readonly orderId: string;
       readonly request: RestaurantOrderReplaceLinesRequest;
+    }
+  | {
+      readonly kind: 'transfer-table';
+      readonly orderId: string;
+      readonly request: RestaurantOrderTransferTableRequest;
+    }
+  | {
+      readonly kind: 'cancel';
+      readonly orderId: string;
+      readonly request: RestaurantOrderCancelRequest;
+    }
+  | {
+      readonly kind: 'fire-preparation';
+      readonly orderId: string;
+      readonly request: RestaurantPreparationFireRequest;
     };
 
 /**
@@ -136,6 +159,10 @@ export function CashierScreen({
   const checkout = useCheckout(api, onExpired, queuePartition, offlineStoreProtector);
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);
   const [cash, setCash] = useState('');
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
+  const [electronicTenders, setElectronicTenders] = useState<readonly ElectronicTenderDraft[]>([
+    emptyElectronicTender(),
+  ]);
   const quickService = vertical === 'restaurant';
   const [orderType, setOrderType] = useState<RestaurantOrderType>('takeaway');
   const [tableId, setTableId] = useState<string | null>(null);
@@ -245,8 +272,10 @@ export function CashierScreen({
   } = useDurableSaleDraft(durableScope, offlineStoreProtector);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
-  const parsedCash = parseSarToMinor(cash);
-  const cashMinor = parsedCash.ok ? parsedCash.value : null;
+  const payment = useMemo(
+    () => planPayment(preview.total.minor.toString(), paymentMode, cash, electronicTenders),
+    [cash, electronicTenders, paymentMode, preview.total.minor],
+  );
   const durabilityLoading = !draftHydrated;
   const restaurantOrderContextBlocked =
     activeRestaurantOrderIdentity !== null && activeRestaurantOrder === null;
@@ -270,6 +299,13 @@ export function CashierScreen({
     if (durableState.status === 'ready' && durableState.draft !== null) {
       cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
       setCash(durableState.draft.cash);
+      setPaymentMode(durableState.draft.paymentMode ?? 'cash');
+      setElectronicTenders(
+        durableState.draft.electronicTenders === undefined ||
+          durableState.draft.electronicTenders.length === 0
+          ? [emptyElectronicTender()]
+          : durableState.draft.electronicTenders,
+      );
       if (durableState.draft.orderType !== undefined) setOrderType(durableState.draft.orderType);
       if (durableState.draft.tableId !== undefined) setTableId(durableState.draft.tableId);
       if (
@@ -340,6 +376,8 @@ export function CashierScreen({
     persistDraft({
       lines: cart.lines,
       cash,
+      paymentMode,
+      ...(paymentMode === 'mixed' ? { electronicTenders } : {}),
       ...(quickService ? { orderType } : {}),
       ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
       ...(activeRestaurantOrderIdentity === null
@@ -354,6 +392,8 @@ export function CashierScreen({
   }, [
     cart.lines,
     cash,
+    paymentMode,
+    electronicTenders,
     checkout.state.phase,
     clearDraft,
     draftHydrated,
@@ -413,6 +453,8 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
+    setPaymentMode('cash');
+    setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
     setTableId(null);
     resetRestaurantWorkspace();
@@ -431,10 +473,26 @@ export function CashierScreen({
       setRestaurantOrderCommandStatus('running');
       setRestaurantOrderNotice(null);
       try {
+        if (command.kind === 'fire-preparation') {
+          const fired = await api.fireRestaurantPreparation(command.orderId, command.request);
+          setPendingRestaurantOrderCommand(null);
+          setRestaurantOrderCommandStatus('idle');
+          setRestaurantOrderNotice(
+            fired.value.alreadyFired
+              ? 'الطلب مرسل للمطبخ مسبقاً بهذه النسخة.'
+              : `تم إرسال الطلب للمطبخ · ${String(fired.value.tasks.length)} مهمة تحضير.`,
+          );
+          return;
+        }
+
         const result =
           command.kind === 'create'
             ? await api.createRestaurantOrder(command.request)
-            : await api.replaceRestaurantOrderLines(command.orderId, command.request);
+            : command.kind === 'replace'
+              ? await api.replaceRestaurantOrderLines(command.orderId, command.request)
+              : command.kind === 'transfer-table'
+                ? await api.transferRestaurantOrderTable(command.orderId, command.request)
+                : await api.cancelRestaurantOrder(command.orderId, command.request);
 
         setPendingRestaurantOrderCommand(null);
         setRestaurantOrderCommandStatus('idle');
@@ -443,6 +501,8 @@ export function CashierScreen({
           checkout.newSale();
           cart.dispatch({ type: 'clear' });
           setCash('');
+          setPaymentMode('cash');
+          setElectronicTenders([emptyElectronicTender()]);
           setOrderType('takeaway');
           setTableId(null);
           resetRestaurantWorkspace();
@@ -455,11 +515,33 @@ export function CashierScreen({
           return;
         }
 
+        if (command.kind === 'cancel') {
+          clearDraft();
+          checkout.newSale();
+          cart.dispatch({ type: 'clear' });
+          setCash('');
+          setPaymentMode('cash');
+          setElectronicTenders([emptyElectronicTender()]);
+          setOrderType('takeaway');
+          setTableId(null);
+          resetRestaurantWorkspace();
+          setRestaurantOrderNotice('تم إلغاء الطلب وتسجيل السبب في سجل التدقيق.');
+          refreshRestaurantOrders();
+          search.browse();
+          focusSearch();
+          return;
+        }
+
         setActiveRestaurantOrder(result.order);
         setActiveRestaurantOrderIdentity({ id: result.order.id, revision: result.order.revision });
         setRestaurantOrderRestoreStatus('ready');
-        cart.dispatch({ type: 'replace', lines: cartLinesFromRestaurantOrder(result.order) });
-        setRestaurantOrderNotice('تم حفظ تعديلات الطلب.');
+        if (command.kind === 'replace') {
+          cart.dispatch({ type: 'replace', lines: cartLinesFromRestaurantOrder(result.order) });
+          setRestaurantOrderNotice('تم حفظ تعديلات الطلب.');
+        } else {
+          setTableId(result.order.tableId);
+          setRestaurantOrderNotice('تم نقل الطلب إلى الطاولة الجديدة.');
+        }
         refreshRestaurantOrders();
       } catch (error: unknown) {
         const failure = describeFailure(error);
@@ -526,6 +608,94 @@ export function CashierScreen({
     restaurantOrderDirty,
   ]);
 
+  const transferRestaurantOrderTable = useCallback(
+    (targetTableId: string) => {
+      if (
+        activeRestaurantOrderIdentity === null ||
+        activeRestaurantOrder === null ||
+        activeRestaurantOrder.orderType !== 'dine-in' ||
+        restaurantOrderDirty ||
+        targetTableId === '' ||
+        targetTableId === activeRestaurantOrder.tableId
+      ) {
+        return;
+      }
+      const request: RestaurantOrderTransferTableRequest = {
+        operationId: newId(),
+        expectedRevision: activeRestaurantOrderIdentity.revision,
+        tableId: targetTableId,
+      };
+      void executeRestaurantOrderCommand({
+        kind: 'transfer-table',
+        orderId: activeRestaurantOrderIdentity.id,
+        request,
+      });
+    },
+    [
+      activeRestaurantOrder,
+      activeRestaurantOrderIdentity,
+      executeRestaurantOrderCommand,
+      restaurantOrderDirty,
+    ],
+  );
+
+  const cancelRestaurantOrder = useCallback(
+    (reason: string) => {
+      if (
+        !principal.permissions.includes('sale.void') ||
+        activeRestaurantOrderIdentity === null ||
+        activeRestaurantOrder === null ||
+        restaurantOrderDirty ||
+        reason.trim() === ''
+      ) {
+        return;
+      }
+      const request: RestaurantOrderCancelRequest = {
+        operationId: newId(),
+        expectedRevision: activeRestaurantOrderIdentity.revision,
+        reason: reason.trim(),
+      };
+      void executeRestaurantOrderCommand({
+        kind: 'cancel',
+        orderId: activeRestaurantOrderIdentity.id,
+        request,
+      });
+    },
+    [
+      activeRestaurantOrder,
+      activeRestaurantOrderIdentity,
+      executeRestaurantOrderCommand,
+      principal.permissions,
+      restaurantOrderDirty,
+    ],
+  );
+
+  const fireRestaurantPreparation = useCallback(() => {
+    if (
+      activeRestaurantOrderIdentity === null ||
+      activeRestaurantOrder === null ||
+      restaurantOrderDirty ||
+      cart.lines.length === 0
+    ) {
+      return;
+    }
+    const request: RestaurantPreparationFireRequest = {
+      operationId: newId(),
+      expectedOrderRevision: activeRestaurantOrderIdentity.revision,
+    };
+    void executeRestaurantOrderCommand({
+      kind: 'fire-preparation',
+      orderId: activeRestaurantOrderIdentity.id,
+      request,
+    });
+  }, [
+    activeRestaurantOrder,
+    activeRestaurantOrderIdentity,
+    cart.lines.length,
+    executeRestaurantOrderCommand,
+    restaurantOrderDirty,
+  ]);
+
   const resumeRestaurantOrder = useCallback(
     (orderId: string) => {
       if (locked || cart.lines.length > 0 || activeRestaurantOrderIdentity !== null) return;
@@ -542,6 +712,8 @@ export function CashierScreen({
           clearDraft();
           cart.dispatch({ type: 'replace', lines: cartLinesFromRestaurantOrder(order) });
           setCash('');
+          setPaymentMode('cash');
+          setElectronicTenders([emptyElectronicTender()]);
           setOrderType(order.orderType);
           setTableId(order.tableId);
           setActiveRestaurantOrder(order);
@@ -576,6 +748,8 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
+    setPaymentMode('cash');
+    setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
     setTableId(null);
     resetRestaurantWorkspace();
@@ -598,7 +772,7 @@ export function CashierScreen({
   }, [executeRestaurantOrderCommand, pendingRestaurantOrderCommand]);
 
   const submit = useCallback(() => {
-    if (cashMinor === null) return;
+    if (!payment.valid) return;
     checkout.submit({
       terminalId: terminal.id,
       expectedShiftId: shift.id,
@@ -611,7 +785,9 @@ export function CashierScreen({
             expectedRestaurantOrderRevision: activeRestaurantOrderIdentity.revision,
           }),
       lines: cart.lines,
-      cashReceivedMinor: cashMinor,
+      ...(paymentMode === 'cash'
+        ? { cashReceivedMinor: payment.cashMinor }
+        : { tenders: payment.tenders }),
     });
   }, [
     checkout,
@@ -622,7 +798,8 @@ export function CashierScreen({
     tableId,
     activeRestaurantOrderIdentity,
     cart.lines,
-    cashMinor,
+    payment,
+    paymentMode,
   ]);
 
   const selectedRestaurantTable =
@@ -753,7 +930,9 @@ export function CashierScreen({
                 <p className="mt-2 break-all text-muted-foreground">
                   معرّف العملية: {checkout.state.intent.operationId}
                 </p>
-                <p className="mt-1 text-muted-foreground">المبلغ المستلم: {cash} ر.س</p>
+                <p className="mt-1 text-muted-foreground">
+                  طريقة الدفع: {checkout.state.intent.tenders === undefined ? 'نقدي' : 'متعدد'}
+                </p>
               </div>
               {preparationTicket === null ? null : (
                 <PreparationTicketControl
@@ -789,11 +968,16 @@ export function CashierScreen({
                   commandStatus={restaurantOrderCommandStatus}
                   notice={restaurantOrderNotice}
                   holdBlocker={tableSubmissionBlocker}
+                  tables={restaurantFloor?.tables ?? []}
+                  canCancel={principal.permissions.includes('sale.void')}
                   onRefresh={refreshRestaurantOrders}
                   onResume={resumeRestaurantOrder}
                   onHold={holdRestaurantOrder}
                   onSave={saveRestaurantOrder}
                   onRelease={releaseRestaurantOrder}
+                  onTransferTable={transferRestaurantOrderTable}
+                  onCancel={cancelRestaurantOrder}
+                  onFirePreparation={fireRestaurantPreparation}
                   onRetry={retryRestaurantOrderCommand}
                 />
               ) : null}
@@ -828,13 +1012,32 @@ export function CashierScreen({
                 netMinor={preview.net.minor.toString()}
                 vatMinor={preview.vat.minor.toString()}
                 cash={cash}
-                cashMinor={cashMinor}
+                paymentMode={paymentMode}
+                electronicTenders={electronicTenders}
                 lineCount={cart.lines.length}
                 locked={locked}
                 submissionBlocker={submissionBlocker}
                 state={checkout.state}
                 cashRef={cashInput}
                 onCashChange={setCash}
+                onPaymentModeChange={setPaymentMode}
+                onElectronicTenderChange={(index, value) => {
+                  setElectronicTenders((current) =>
+                    current.map((entry, entryIndex) => (entryIndex === index ? value : entry)),
+                  );
+                }}
+                onAddElectronicTender={() => {
+                  setElectronicTenders((current) =>
+                    current.length >= 7 ? current : [...current, emptyElectronicTender()],
+                  );
+                }}
+                onRemoveElectronicTender={(index) => {
+                  setElectronicTenders((current) =>
+                    current.length <= 1
+                      ? current
+                      : current.filter((_entry, entryIndex) => entryIndex !== index),
+                  );
+                }}
                 onSubmit={submit}
                 onDismiss={checkout.dismiss}
               />

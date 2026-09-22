@@ -66,11 +66,19 @@ import type {
   PurchaseReceiptSummary,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
   RestaurantOrderDetail,
   RestaurantOrderMutationResult,
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
+  RestaurantOrderTransferTableRequest,
+  RestaurantPreparationFireMutation,
+  RestaurantPreparationFireRequest,
+  RestaurantPreparationStation,
+  RestaurantPreparationTask,
+  RestaurantPreparationTaskMutation,
+  RestaurantPreparationTaskUpdateRequest,
   PurchasingBranch,
   PurchasingPage,
   PurchasingProduct,
@@ -172,6 +180,29 @@ export interface ApiClient {
     orderId: string,
     request: RestaurantOrderReplaceLinesRequest,
   ): Promise<RestaurantOrderMutationResult>;
+  transferRestaurantOrderTable(
+    orderId: string,
+    request: RestaurantOrderTransferTableRequest,
+  ): Promise<RestaurantOrderMutationResult>;
+  cancelRestaurantOrder(
+    orderId: string,
+    request: RestaurantOrderCancelRequest,
+  ): Promise<RestaurantOrderMutationResult>;
+  fireRestaurantPreparation(
+    orderId: string,
+    request: RestaurantPreparationFireRequest,
+  ): Promise<RestaurantPreparationFireMutation>;
+  restaurantPreparationStations(
+    options?: RequestOptions,
+  ): Promise<readonly RestaurantPreparationStation[]>;
+  restaurantPreparationTasks(
+    stationId: string,
+    options?: RequestOptions,
+  ): Promise<readonly RestaurantPreparationTask[]>;
+  updateRestaurantPreparationTask(
+    taskId: string,
+    request: RestaurantPreparationTaskUpdateRequest,
+  ): Promise<RestaurantPreparationTaskMutation>;
   dashboardSummary(options?: RequestOptions): Promise<DashboardSummary>;
   products(
     query: { readonly q?: string; readonly limit?: number },
@@ -578,6 +609,54 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
       );
     },
 
+    async transferRestaurantOrderTable(orderId, request) {
+      return retryableCommand<RestaurantOrderMutationResult>(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}/transfer-table`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async cancelRestaurantOrder(orderId, request) {
+      return retryableCommand<RestaurantOrderMutationResult>(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}/cancel`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async fireRestaurantPreparation(orderId, request) {
+      return retryableCommand<RestaurantPreparationFireMutation>(
+        `/v1/restaurant/orders/${encodeURIComponent(orderId)}/preparation/fire`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async restaurantPreparationStations(options) {
+      return (await call(
+        '/v1/restaurant/preparation-stations',
+        { method: 'GET' },
+        options,
+      )) as readonly RestaurantPreparationStation[];
+    },
+
+    async restaurantPreparationTasks(stationId, options) {
+      return (await call(
+        `/v1/restaurant/preparation-stations/${encodeURIComponent(stationId)}/tasks`,
+        { method: 'GET' },
+        options,
+      )) as readonly RestaurantPreparationTask[];
+    },
+
+    async updateRestaurantPreparationTask(taskId, request) {
+      return retryableCommand<RestaurantPreparationTaskMutation>(
+        `/v1/restaurant/preparation-tasks/${encodeURIComponent(taskId)}/status`,
+        request,
+        RESTAURANT_COMMAND_TIMEOUT_MS,
+      );
+    },
+
     async dashboardSummary(options) {
       return (await call('/v1/dashboard/summary', { method: 'GET' }, options)) as DashboardSummary;
     },
@@ -637,7 +716,23 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             ...(request.expectedRestaurantOrderRevision === undefined
               ? {}
               : { expectedRestaurantOrderRevision: request.expectedRestaurantOrderRevision }),
-            cashReceivedMinor: request.cashReceivedMinor,
+            ...(request.cashReceivedMinor === undefined
+              ? {}
+              : { cashReceivedMinor: request.cashReceivedMinor }),
+            ...(request.tenders === undefined
+              ? {}
+              : {
+                  tenders: request.tenders.map((tender) =>
+                    tender.kind === 'cash'
+                      ? { kind: 'cash' as const, amountMinor: tender.amountMinor }
+                      : {
+                          kind: 'electronic' as const,
+                          amountMinor: tender.amountMinor,
+                          scheme: tender.scheme,
+                          reference: tender.reference,
+                        },
+                  ),
+                }),
             lines: request.lines.map((line) => ({
               productId: line.productId,
               quantityScaled: line.quantityScaled,

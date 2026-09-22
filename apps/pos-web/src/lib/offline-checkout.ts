@@ -74,7 +74,16 @@ export function checkoutQueueOperation(
     ...(intent.expectedRestaurantOrderRevision === undefined
       ? {}
       : { expectedRestaurantOrderRevision: intent.expectedRestaurantOrderRevision }),
-    cashReceivedMinor: intent.cashReceivedMinor,
+    ...(intent.cashReceivedMinor === undefined
+      ? {}
+      : { cashReceivedMinor: intent.cashReceivedMinor }),
+    ...(intent.tenders === undefined
+      ? {}
+      : {
+          tenders: intent.tenders.map((tender) =>
+            tender.kind === 'cash' ? { ...tender } : { ...tender, reference: tender.reference },
+          ),
+        }),
     lines: intent.lines.map((line) => ({ ...line })),
   };
   if (!isCheckoutQueuePayload(payload)) {

@@ -149,3 +149,43 @@ describe('checkout queue executor', () => {
     expect(checkout).not.toHaveBeenCalled();
   });
 });
+
+describe('mixed tender queue validation', () => {
+  const MIXED_PAYLOAD = {
+    operationId: OPERATION_ID,
+    terminalId: TERMINAL_ID,
+    expectedShiftId: SHIFT_ID,
+    tenders: [
+      { kind: 'electronic', amountMinor: '650', scheme: 'mada', reference: 'approval-a' },
+      { kind: 'cash', amountMinor: '500' },
+    ],
+    lines: [{ productId: PRODUCT_ID, quantityScaled: '1000' }],
+  } as const;
+
+  it('accepts an exact replayable tender list and rejects ambiguous payment shapes', () => {
+    expect(isCheckoutQueuePayload(MIXED_PAYLOAD)).toBe(true);
+    expect(isCheckoutQueuePayload({ ...MIXED_PAYLOAD, cashReceivedMinor: '500' })).toBe(false);
+    expect(
+      isCheckoutQueuePayload({
+        ...MIXED_PAYLOAD,
+        tenders: [
+          { kind: 'electronic', amountMinor: '650', scheme: 'mada', reference: 'same' },
+          { kind: 'electronic', amountMinor: '500', scheme: 'mada', reference: 'same' },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('replays mixed tender payload without translating it back to cash', async () => {
+    const checkout = vi.fn<CheckoutSyncApi['checkout']>().mockResolvedValue({
+      sale: SALE,
+      receipt: RECEIPT,
+      replayed: true,
+    });
+    const executor = createCheckoutSyncExecutor(apiWithCheckout(checkout));
+    await expect(executor.execute({ ...OPERATION, payload: MIXED_PAYLOAD })).resolves.toEqual({
+      outcome: 'settled',
+    });
+    expect(checkout).toHaveBeenCalledWith(MIXED_PAYLOAD);
+  });
+});

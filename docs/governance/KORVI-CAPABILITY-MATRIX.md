@@ -205,3 +205,17 @@ For user-visible operational capabilities, backend authority alone is not enough
 For installed/offline claims, a PWA/browser proof alone is not enough once the official commercial client is defined as Windows/Android Installed Korvi; real installed-client proof is required.
 
 A roadmap deferment changes schedule, not acceptance. It does not erase the row.
+
+
+## Canonical Acquisition AR-2 overlay — 2026-09-22
+
+Restaurant and cashier tender evidence is being consolidated from verified source
+`95e9a76eda618860ed4f9e317b08c3be16659726` into the canonical acquisition
+lineage. This source already proves Restaurant preparation/KDS, recipe production,
+waste/spoilage and explicit Split/Mixed/Electronic Tender client behavior on its
+own lineage.
+
+Those capabilities are **not promoted to canonical VERIFIED status by this note**.
+Their status advances only after the reconciled canonical-target SHA passes CI
+and the required real operator/browser proof. Backend capability and sellable UX
+remain separate evidence dimensions.

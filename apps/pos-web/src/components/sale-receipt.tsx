@@ -31,6 +31,16 @@ export interface SaleReceiptProps {
 
 type PrintState = 'idle' | 'printing' | 'printed' | 'failed';
 
+function tenderLabel(kind: string, scheme: string | null): string {
+  if (kind === 'cash') return 'نقدي';
+  if (scheme === 'mada') return 'مدى';
+  if (scheme === 'visa') return 'Visa';
+  if (scheme === 'mastercard') return 'Mastercard';
+  if (scheme === 'amex') return 'Amex';
+  if (scheme === 'apple-pay') return 'Apple Pay';
+  return scheme ?? 'إلكتروني';
+}
+
 export function SaleReceipt({
   sale,
   receipt,
@@ -171,11 +181,30 @@ export function SaleReceipt({
           </dd>
         </div>
         <div className="flex items-center justify-between border-t border-border pt-2">
-          <dt className="font-medium text-card-foreground">النقد المستلم</dt>
+          <dt className="font-medium text-card-foreground">
+            {sale.tenders !== undefined && sale.tenders.some((tender) => tender.kind !== 'cash')
+              ? 'إجمالي المدفوع'
+              : 'النقد المستلم'}
+          </dt>
           <dd>
-            <Numeric value={formatMinor(sale.cashReceivedMinor)} />
+            <Numeric value={formatMinor(sale.tenderedMinor ?? sale.cashReceivedMinor)} />
           </dd>
         </div>
+        {sale.tenders === undefined || sale.tenders.length === 0 ? null : (
+          <div className="space-y-1 rounded-md border border-border bg-muted/30 px-3 py-2">
+            {sale.tenders.map((tender, index) => (
+              <div
+                key={`${tender.kind}-${tender.scheme ?? 'cash'}-${String(index)}`}
+                className="flex items-center justify-between text-xs text-muted-foreground"
+              >
+                <dt>{tenderLabel(tender.kind, tender.scheme)}</dt>
+                <dd>
+                  <Numeric value={formatMinor(tender.amountMinor)} /> ر.س
+                </dd>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex items-baseline justify-between rounded-md bg-accent px-3 py-2.5">
           <dt className="font-semibold text-accent-foreground">الباقي للعميل</dt>
           <dd className="flex items-baseline gap-1">

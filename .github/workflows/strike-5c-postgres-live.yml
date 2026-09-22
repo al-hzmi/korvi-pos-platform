@@ -5,6 +5,9 @@ on:
     branches:
       - review/operations-50-production-readiness
       - strike/5c-costing-authority
+      - product/post-v1-restaurant-production
+      - product/post-v1-restaurant-waste
+      - product/post-v1-restaurant-foundation
   workflow_dispatch:
 
 concurrency:

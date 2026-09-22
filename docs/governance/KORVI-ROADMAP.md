@@ -33,6 +33,22 @@ This scheduling exception means “continue building instead of waiting”. It d
 
 ## Immediate execution order — active workstream
 
+### AR-2 active integration checkpoint — Restaurant + commercial tender UX
+
+Active source: `95e9a76eda618860ed4f9e317b08c3be16659726`.
+
+Execution rule: integrate the verified Restaurant foundation/production/waste and
+Split/Mixed/Electronic Tender client work into the canonical lineage without
+overwriting later Security, Migration or release-governance changes. Existing
+checkout financial authority remains server-owned; this work closes sellable
+workflow gaps rather than creating a second settlement engine.
+
+After canonical-target CI:
+- verify Electronic Tender and Mixed Tender in the actual Arabic RTL cashier;
+- continue Return/Refund creation UX and Shift Close/Cash Reconciliation UX
+  against the already-implemented server authorities;
+- require browser proof and regression evidence before marking each workflow closed.
+
 ### P0-1 — Finish Product Routing / Role Experience / Visual Truth
 
 Continue from the first real open blocker on the active Product P0 branch. Required outcome:

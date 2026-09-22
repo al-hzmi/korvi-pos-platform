@@ -40,6 +40,9 @@ import { registerPlatformSupportRoutes } from './platform/support-routes.js';
 import { createPlatformSupportService } from './platform/support-service.js';
 import { createMerchantPurchasingService } from './purchasing/service.js';
 import { createMerchantRestaurantOrderService } from './restaurant/order-service.js';
+import { createMerchantPreparationService } from './restaurant/preparation-service.js';
+import { createMerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
+import { createMerchantRestaurantWasteService } from './restaurant/waste-service.js';
 import { createReturnService } from './returns/service.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -81,6 +84,9 @@ import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
+import type { MerchantPreparationService } from './restaurant/preparation-service.js';
+import type { MerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
+import type { MerchantRestaurantWasteService } from './restaurant/waste-service.js';
 import type { BusinessDeps } from './routes/business.js';
 import type { MerchantSalesReadService } from './sales/read-service.js';
 import type { MerchantZatcaService } from './zatca/merchant-service.js';
@@ -133,6 +139,12 @@ export interface ServerDeps {
   readonly openingInventoryMigration?: MerchantOpeningInventoryMigrationService;
   /** Operational restaurant open-order authority; non-fiscal until checkout. */
   readonly restaurantOrders?: MerchantRestaurantOrderService;
+  /** Non-fiscal preparation-station configuration and routing authority. */
+  readonly restaurantPreparation?: MerchantPreparationService;
+  /** Restaurant recipe/BOM configuration plus governed batch-production inventory authority. */
+  readonly restaurantRecipes?: MerchantRestaurantRecipeService;
+  /** Explicit waste/spoilage stock-loss authority; separate from generic inventory adjustments. */
+  readonly restaurantWaste?: MerchantRestaurantWasteService;
   /** Merchant customer directory and mutation authority. */
   readonly customers?: MerchantCustomerService;
   /** Read-only merchant sales history and financial reports, authorized by report.read. */
@@ -547,6 +559,61 @@ function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderS
   };
 }
 
+function lazyRestaurantPreparationService(config: ApiConfig): MerchantPreparationService {
+  let built: MerchantPreparationService | null = null;
+  const resolve = (): MerchantPreparationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantPreparationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    listStations: (principal, branchId, activeOnly) =>
+      resolve().listStations(principal, branchId, activeOnly),
+    operationalStations: (principal) => resolve().operationalStations(principal),
+    createStation: (principal, request) => resolve().createStation(principal, request),
+    listRoutes: (principal, branchId) => resolve().listRoutes(principal, branchId),
+    setProductRoutes: (principal, request) => resolve().setProductRoutes(principal, request),
+    routing: (principal, orderId) => resolve().routing(principal, orderId),
+    fire: (principal, orderId, request) => resolve().fire(principal, orderId, request),
+    tasks: (principal, stationId, includeServed) =>
+      resolve().tasks(principal, stationId, includeServed),
+    updateTask: (principal, taskId, request) => resolve().updateTask(principal, taskId, request),
+  };
+}
+
+function lazyRestaurantRecipeService(config: ApiConfig): MerchantRestaurantRecipeService {
+  let built: MerchantRestaurantRecipeService | null = null;
+  const resolve = (): MerchantRestaurantRecipeService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantRecipeService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    detail: (principal, productId) => resolve().detail(principal, productId),
+    set: (principal, productId, request) => resolve().set(principal, productId, request),
+    cost: (principal, branchId, productId) => resolve().cost(principal, branchId, productId),
+    produce: (principal, productId, request) => resolve().produce(principal, productId, request),
+  };
+}
+
+function lazyRestaurantWasteService(config: ApiConfig): MerchantRestaurantWasteService {
+  let built: MerchantRestaurantWasteService | null = null;
+  const resolve = (): MerchantRestaurantWasteService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantWasteService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    record: (principal, request) => resolve().record(principal, request),
+  };
+}
+
 function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
   let built: MerchantCustomerService | null = null;
 
@@ -704,6 +771,18 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerBusinessRoutes(app, { deps: business, guards, newId });
   registerRestaurantOrderRoutes(app, {
     service: deps.restaurantOrders ?? lazyRestaurantOrderService(config),
+    guards,
+  });
+  registerRestaurantPreparationRoutes(app, {
+    service: deps.restaurantPreparation ?? lazyRestaurantPreparationService(config),
+    guards,
+  });
+  registerRestaurantRecipeRoutes(app, {
+    service: deps.restaurantRecipes ?? lazyRestaurantRecipeService(config),
+    guards,
+  });
+  registerRestaurantWasteRoutes(app, {
+    service: deps.restaurantWaste ?? lazyRestaurantWasteService(config),
     guards,
   });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });

@@ -314,3 +314,27 @@ Required acceptance on the canonical-release lineage:
 - Full Verify/CI must pass on the integration SHA and again after canonical merge.
 
 Source-branch success is provenance only; AR-1 is not CLOSED until the canonical release SHA carries and proves the behavior.
+
+
+## 11. AR-2 source refresh and integration method — 2026-09-22
+
+Live source verification supersedes the earlier split-payment candidate assessment.
+
+- Latest verified combined Restaurant + Split/Mixed Tender source:
+  `product/post-v1-restaurant-split-payment@95e9a76eda618860ed4f9e317b08c3be16659726`.
+- This SHA is 12 commits ahead of the verified Restaurant foundation/waste SHA
+  `73d46d095422f58be5f23027d00746ed8115e074` and therefore subsumes that source.
+- Source-lineage evidence is green: CI `35755076144`, Windows proof
+  `35755076039`, Android proof `35755076036`.
+- Direct merge into the canonical release is **not allowed**: PR #63 proves the
+  lineages conflict after 261 canonical-side commits.
+- Three-way inspection found 70 source-changed files: 60 are untouched on the
+  canonical side since merge-base `23dd08aedde359f0be763a2a959f236c037d2546`;
+  10 require conscious reconciliation.
+- AR-2 therefore uses a canonical-based integration branch and preserves current
+  Security, Migration, Release, ZATCA and governance authority while porting only
+  the verified Restaurant/Commercial POS deltas.
+
+The source branch is evidence and provenance, not release truth. AR-2 closes only
+after the reconciled canonical-target SHA is green and browser/operator proof is
+recorded.

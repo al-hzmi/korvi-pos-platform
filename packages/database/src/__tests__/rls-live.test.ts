@@ -642,12 +642,24 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
       conname: string;
       child: string;
       parent: string;
-      cols: number;
+      childColumns: string[];
+      parentColumns: string[];
     }>(
       `SELECT c.conname,
               ch.relname AS child,
               pa.relname AS parent,
-              array_length(c.conkey, 1) AS cols
+              ARRAY(
+                SELECT a.attname
+                  FROM unnest(c.conkey) WITH ORDINALITY AS key(attnum, ord)
+                  JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = key.attnum
+                 ORDER BY key.ord
+              )::text[] AS "childColumns",
+              ARRAY(
+                SELECT a.attname
+                  FROM unnest(c.confkey) WITH ORDINALITY AS key(attnum, ord)
+                  JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = key.attnum
+                 ORDER BY key.ord
+              )::text[] AS "parentColumns"
          FROM pg_constraint c
          JOIN pg_class ch ON ch.oid = c.conrelid
          JOIN pg_class pa ON pa.oid = c.confrelid
@@ -660,7 +672,15 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
     expect(betweenTenantTables.length).toBeGreaterThanOrEqual(30);
 
     for (const row of betweenTenantTables) {
-      expect(row.cols, `${row.conname} references ${row.parent} by one column`).toBe(2);
+      expect(row.childColumns, `${row.conname} does not carry tenantId on ${row.child}`).toContain(
+        'tenantId',
+      );
+      expect(
+        row.parentColumns,
+        `${row.conname} does not reference tenantId on ${row.parent}`,
+      ).toContain('tenantId');
+      expect(row.childColumns.length, `${row.conname} is not composite`).toBeGreaterThanOrEqual(2);
+      expect(row.parentColumns).toHaveLength(row.childColumns.length);
     }
   });
 

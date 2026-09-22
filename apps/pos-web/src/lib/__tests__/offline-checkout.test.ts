@@ -95,3 +95,26 @@ describe('offline checkout ownership transfer', () => {
     expect(state.failure?.code).toBe('offline-queue-unavailable');
   });
 });
+
+describe('offline mixed tender ownership', () => {
+  it('queues the exact tender list under the same immutable operation id', () => {
+    const mixed = {
+      operationId: OPERATION_ID,
+      terminalId: TERMINAL_ID,
+      expectedShiftId: SHIFT_ID,
+      tenders: [
+        {
+          kind: 'electronic' as const,
+          amountMinor: '650',
+          scheme: 'mada' as const,
+          reference: 'A-1',
+        },
+        { kind: 'cash' as const, amountMinor: '500' },
+      ],
+      lines: [{ productId: PRODUCT_ID, quantityScaled: '1000' }],
+    };
+    const queued = checkoutQueueOperation(mixed);
+    expect(queued.payload).toEqual(mixed);
+    expect(queued.id).toBe(OPERATION_ID);
+  });
+});
