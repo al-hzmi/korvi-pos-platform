@@ -67,7 +67,6 @@ After the internal proof set passes on one canonical acquisition lineage, Korvi 
 Korvi may not record **Production ZATCA CLOSED** until the HSM, merchant identity,
 production-CSID and real reporting/clearance evidence above exists.
 
-
 ## Canonical internal proof checkpoint — 2026-09-22
 
 Canonical evidence SHA:

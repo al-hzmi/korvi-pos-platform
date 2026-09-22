@@ -46,7 +46,8 @@ for (const key of [
   'alertDrillEvidenceRef',
   'onCallAcknowledgementEvidenceRef',
   'secretRotationEvidenceRef',
-]) requiredText(ops[key], `productionOperations.${key}`);
+])
+  requiredText(ops[key], `productionOperations.${key}`);
 
 const zatca = evidence.zatca;
 assert.equal(zatca.realProductionActivation, true);
@@ -59,7 +60,8 @@ for (const key of [
   'reportingClearanceEvidenceRef',
   'reconciliationEvidenceRef',
   'rotationRecoveryEvidenceRef',
-]) requiredText(zatca[key], `zatca.${key}`);
+])
+  requiredText(zatca[key], `zatca.${key}`);
 
 const transaction = evidence.transactionHandoff;
 for (const key of [
@@ -68,7 +70,8 @@ for (const key of [
   'thirdPartyLicenseReviewEvidenceRef',
   'accountDomainCredentialTransferEvidenceRef',
   'repositoryGovernanceEvidenceRef',
-]) requiredText(transaction[key], `transactionHandoff.${key}`);
+])
+  requiredText(transaction[key], `transactionHandoff.${key}`);
 
 const pilot = evidence.merchantPilot;
 assert.equal(pilot.realMerchant, true);
@@ -88,7 +91,8 @@ for (const key of [
   'offlineReconnectEvidenceRef',
   'backupRollbackReadinessEvidenceRef',
   'merchantAcceptanceEvidenceRef',
-]) requiredText(pilot[key], `merchantPilot.${key}`);
+])
+  requiredText(pilot[key], `merchantPilot.${key}`);
 assert.equal(typeof pilot.restaurantApplicable, 'boolean');
 if (pilot.restaurantApplicable) {
   requiredText(pilot.restaurantFlowEvidenceRef, 'merchantPilot.restaurantFlowEvidenceRef');
@@ -101,7 +105,8 @@ for (const key of [
   'transactionReviewRef',
   'merchantPilotReviewRef',
   'executiveReleaseDecisionRef',
-]) requiredText(approvals[key], `reviewApprovals.${key}`);
+])
+  requiredText(approvals[key], `reviewApprovals.${key}`);
 
 for (const pattern of [
   /postgres(?:ql)?:\/\/[^\s:@]+:[^\s@]+@/i,
