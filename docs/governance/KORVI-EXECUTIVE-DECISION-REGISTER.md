@@ -494,3 +494,25 @@ Source promotion:
 - Roadmap
 - Product Readiness Scorecard
 - Executive Decision Register
+
+---
+
+## 2026-09-22 — AR-0 through AR-3 are closed on one canonical lineage
+
+**Decision:** VERIFIED / CLOSED.
+
+PR #64 merged the capability-scoped Restaurant + commercial POS integration into
+`release/canonical-acquisition-v1` at
+`941b512bdb82be8a4d52113a77def365b81cd4e4`.
+
+The exact canonical merge SHA passed CI, restricted PostgreSQL 17 live/full
+verification and actual Chrome commercial workflow proof. Platform Admin logout
+is server-revocation authoritative; Electronic/Mixed Tender, Return/Refund and
+Shift Close/Cash Reconciliation are operator-visible workflows on the same
+release lineage; Migration M2-M6 and Restaurant work are no longer stranded on
+separate release candidates.
+
+AR-0, AR-1, AR-2 and AR-3 are therefore CLOSED. This is an integration/product
+closure only. Production Operations, production ZATCA, acquisition handoff and
+a real merchant production pilot remain open and may not be implied by this
+decision.
