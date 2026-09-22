@@ -7,6 +7,7 @@ import { StatusNote } from '../status-note';
 import { CategoryMigrationPanel } from './category-migration-panel';
 import { CustomerMigrationPanel } from './customer-migration-panel';
 import { SupplierMigrationPanel } from './supplier-migration-panel';
+import { OpeningInventoryMigrationPanel } from './opening-inventory-migration-panel';
 import { ApiError } from '../../lib/api';
 import {
   migrationCellText,
@@ -88,12 +89,14 @@ export function MigrationPanel({
   canCommit,
   canCustomerCommit,
   canSupplierCommit,
+  canOpeningInventoryCommit,
   onCommandLockChange,
 }: {
   readonly api: ApiClient;
   readonly canCommit: boolean;
   readonly canCustomerCommit: boolean;
   readonly canSupplierCommit: boolean;
+  readonly canOpeningInventoryCommit: boolean;
   readonly onCommandLockChange: (locked: boolean) => void;
 }): JSX.Element {
   const [file, setFile] = useState<File | null>(null);
@@ -113,13 +116,18 @@ export function MigrationPanel({
   const [categoryCommandLocked, setCategoryCommandLocked] = useState(false);
   const [customerCommandLocked, setCustomerCommandLocked] = useState(false);
   const [supplierCommandLocked, setSupplierCommandLocked] = useState(false);
+  const [openingInventoryCommandLocked, setOpeningInventoryCommandLocked] = useState(false);
 
   const mappingProblems = useMemo(() => migrationMappingProblems(mapping), [mapping]);
   const selectedFormat = file === null ? null : fileFormat(file);
   const productCommandLocked =
     busy === 'create' || busy === 'dry-run' || busy === 'commit' || pending !== null;
   const commandLocked =
-    productCommandLocked || categoryCommandLocked || customerCommandLocked || supplierCommandLocked;
+    productCommandLocked ||
+    categoryCommandLocked ||
+    customerCommandLocked ||
+    supplierCommandLocked ||
+    openingInventoryCommandLocked;
 
   const resetFromFile = (nextFile: File | null): void => {
     setFile(nextFile);
@@ -663,7 +671,12 @@ export function MigrationPanel({
       <CategoryMigrationPanel
         api={api}
         canCommit={canCommit}
-        disabled={productCommandLocked || customerCommandLocked || supplierCommandLocked}
+        disabled={
+          productCommandLocked ||
+          customerCommandLocked ||
+          supplierCommandLocked ||
+          openingInventoryCommandLocked
+        }
         onCommandLockChange={(locked) => {
           setCategoryCommandLocked(locked);
           onCommandLockChange(locked);
@@ -673,7 +686,12 @@ export function MigrationPanel({
       <CustomerMigrationPanel
         api={api}
         canCommit={canCustomerCommit}
-        disabled={productCommandLocked || categoryCommandLocked || supplierCommandLocked}
+        disabled={
+          productCommandLocked ||
+          categoryCommandLocked ||
+          supplierCommandLocked ||
+          openingInventoryCommandLocked
+        }
         onCommandLockChange={(locked) => {
           setCustomerCommandLocked(locked);
           onCommandLockChange(locked);
@@ -683,9 +701,29 @@ export function MigrationPanel({
       <SupplierMigrationPanel
         api={api}
         canCommit={canSupplierCommit}
-        disabled={productCommandLocked || categoryCommandLocked || customerCommandLocked}
+        disabled={
+          productCommandLocked ||
+          categoryCommandLocked ||
+          customerCommandLocked ||
+          openingInventoryCommandLocked
+        }
         onCommandLockChange={(locked) => {
           setSupplierCommandLocked(locked);
+          onCommandLockChange(locked);
+        }}
+      />
+
+      <OpeningInventoryMigrationPanel
+        api={api}
+        canCommit={canOpeningInventoryCommit}
+        disabled={
+          productCommandLocked ||
+          categoryCommandLocked ||
+          customerCommandLocked ||
+          supplierCommandLocked
+        }
+        onCommandLockChange={(locked) => {
+          setOpeningInventoryCommandLocked(locked);
           onCommandLockChange(locked);
         }}
       />
