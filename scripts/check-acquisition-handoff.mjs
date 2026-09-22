@@ -54,7 +54,7 @@ assert.match(entries.monitoring, /availability/);
 assert.match(entries.monitoring, /readiness/);
 assert.match(entries.monitoring, /5xx/);
 assert.match(entries.monitoring, /latency/);
-assert.match(entries.ownership, /no root \`LICENSE\`/i);
+assert.match(entries.ownership, /no root `LICENSE`/i);
 assert.match(entries.deferred, /Production ZATCA/);
 assert.match(entries.deferred, /real merchant/i);
 assert.match(entries.handoff, /RELEASE-ROLLBACK/);
