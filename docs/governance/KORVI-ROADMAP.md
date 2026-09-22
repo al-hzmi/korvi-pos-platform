@@ -306,3 +306,30 @@ Rejected brainstorming/hypotheticals are not binding until explicitly accepted.
 - Do not weaken quality, security, financial correctness, inventory truth, ZATCA, offline guarantees or client-integrity boundaries to move faster.
 - Prefer root-cause fixes and reusable architecture over temporary patches.
 - Preserve evidence and exact-head traceability.
+
+
+---
+
+# P0 — CANONICAL ACQUISITION RELEASE PROGRAM (ADOPTED 2026-09-22)
+
+This program supersedes speculative feature expansion as the highest executable Korvi product priority.
+
+Canonical program source:
+
+- `docs/governance/KORVI-CANONICAL-ACQUISITION-RELEASE.md`
+
+Execution order:
+
+1. **AR-0 Canonical integration truth** — enumerate exact current product/restaurant/migration/security heads and build the integration matrix.
+2. **AR-1 Security integration** — merge and verify revocable Platform Admin sessions.
+3. **AR-2 Sellable POS workflow completion** — Electronic Tender, Mixed Tender, Return, Refund, Shift Close, Cash Reconciliation UX.
+4. **AR-3 Canonical product integration** — one release lineage containing the newest verified Product/Retail, Restaurant, Migration M2-M6 and security/workflow fixes.
+5. **AR-4 Production Operations Proof** — production-shaped deployment, backup/restore, RPO/RTO, observability, incident/on-call and rollback evidence.
+6. **AR-5 Production ZATCA closure** — real fail-closed provider path and production evidence; external prerequisites must be recorded truthfully if blocking.
+7. **AR-6 Acquisition/Handoff package** — deployment, operations, ownership/IP, dependency, security, test and release provenance package.
+8. **AR-7 Controlled real merchant pilot** — evidence on the canonical release lineage.
+9. **AR-8 Final Acquisition Release Gate** — one exact release SHA plus evidence package.
+
+Parallel lanes are allowed where isolated. External-only gates must not stop executable integration, UX, security or handoff work.
+
+Do not open new speculative capabilities while an executable P0 acquisition-release gap remains.
