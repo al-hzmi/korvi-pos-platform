@@ -306,3 +306,28 @@ Current terminology rule:
 Backend authority alone does not close a user-workflow gate.
 Staging alone does not close a production-proof gate.
 A synthetic test tenant does not close the merchant-production-pilot gate.
+
+
+## Canonical Acquisition AR-0–AR-3 closure overlay — 2026-09-22
+
+State: **AR-0 / AR-1 / AR-2 / AR-3 CLOSED**.
+
+Canonical evidence SHA:
+`941b512bdb82be8a4d52113a77def365b81cd4e4`.
+
+Evidence:
+- CI push `35775341358` — PASS;
+- CI PR `35775347600` — PASS;
+- restricted PostgreSQL 17 live/full verification `35775341360` — PASS;
+- actual Chrome commercial workflow proof `35775341446` — PASS.
+
+This overlay does not alter the historical 50-gate arithmetic merely because
+acquisition integration progressed. The canonical product now contains the
+verified Migration M2-M6 baseline, Platform Admin revocation, Restaurant
+capabilities and sellable Electronic/Mixed Tender + Return/Refund + Shift
+Close/Cash Reconciliation workflows on one lineage.
+
+The acquisition program remains **IN PROGRESS** because AR-4 Production
+Operations, AR-5 production ZATCA, AR-6 acquisition/handoff completion and AR-7
+real Merchant Pilot remain open. **Production Proven remains NOT YET
+EVIDENCE-BACKED.**
