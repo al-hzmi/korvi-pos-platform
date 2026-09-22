@@ -148,9 +148,7 @@ function cleanEmail(value: string | null): string | null {
 function cleanVatNumber(value: string | null): string | null {
   const candidate = cleanOptional(value, 15, 'customer VAT number');
   if (candidate === null) return null;
-  if (!/^[0-9]{15}$/u.test(candidate)) {
-    throw new Error('Customer VAT number must be 15 digits.');
-  }
+  if (!/^[0-9]{15}$/u.test(candidate)) throw new Error('Customer VAT number must be 15 digits.');
   return candidate;
 }
 
@@ -328,21 +326,13 @@ export function reviewCustomerSheet(
       )
     ) {
       try {
-        const nameAr = cleanRequired(
-          values.get('nameAr')?.value ?? null,
-          160,
-          'customer name',
-        );
+        const nameAr = cleanRequired(values.get('nameAr')?.value ?? null, 160, 'customer name');
         const nameEn = cleanOptional(
           values.get('nameEn')?.value ?? null,
           160,
           'customer English name',
         );
-        const phone = cleanOptional(
-          values.get('phone')?.value ?? null,
-          40,
-          'customer phone',
-        );
+        const phone = cleanOptional(values.get('phone')?.value ?? null, 40, 'customer phone');
         if (phone !== null && phone.length < 3) throw new Error('Customer phone is too short.');
         const email = cleanEmail(values.get('email')?.value ?? null);
         const vatNumber = cleanVatNumber(values.get('vatNumber')?.value ?? null);
