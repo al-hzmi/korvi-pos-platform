@@ -240,7 +240,7 @@ export interface ProductMigrationRowResult {
   readonly sourceRow: number;
   readonly sourceIdentifier: string | null;
   readonly classification: 'VALID' | 'WARNING' | 'ERROR' | 'BLOCKED';
-  readonly plannedAction: 'create' | 'reject';
+  readonly plannedAction: 'create' | 'update' | 'reject';
   readonly status: 'pending' | 'committing' | 'rejected' | 'committed' | 'failed';
   readonly targetEntityId: string | null;
   readonly errorCode: string | null;
@@ -262,13 +262,14 @@ export interface ProductMigrationSummary {
   readonly status: 'reviewed' | 'dry-run' | 'committing' | 'completed';
   readonly mappingVersion: number;
   readonly mapping: readonly ProductMigrationMapping[];
-  readonly conflictPolicy: 'reject';
+  readonly conflictPolicy: CustomerMigrationConflictPolicy;
   readonly totalRows: number;
   readonly validRows: number;
   readonly warningRows: number;
   readonly errorRows: number;
   readonly blockedRows: number;
   readonly created: number;
+  readonly updated: number;
   readonly failed: number;
   readonly rejected: number;
   readonly rows: readonly ProductMigrationRowResult[];
@@ -391,6 +392,7 @@ export interface CreateXlsxCategoryMigrationJobRequest extends XlsxCategoryMigra
 }
 
 export type CustomerMigrationTargetField = 'nameAr' | 'nameEn' | 'phone' | 'email' | 'vatNumber';
+export type CustomerMigrationConflictPolicy = 'reject' | 'update-existing-by-phone';
 
 export interface CustomerMigrationMapping {
   readonly sourceColumn: number;
@@ -472,11 +474,13 @@ export interface XlsxCustomerMigrationSource {
 export interface CreateCsvCustomerMigrationJobRequest extends CsvCustomerMigrationSource {
   readonly operationId: string;
   readonly mapping: readonly CustomerMigrationMapping[];
+  readonly conflictPolicy: CustomerMigrationConflictPolicy;
 }
 
 export interface CreateXlsxCustomerMigrationJobRequest extends XlsxCustomerMigrationSource {
   readonly operationId: string;
   readonly mapping: readonly CustomerMigrationMapping[];
+  readonly conflictPolicy: CustomerMigrationConflictPolicy;
 }
 
 export type SupplierMigrationTargetField = 'name';
