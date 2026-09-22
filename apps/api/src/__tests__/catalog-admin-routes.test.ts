@@ -135,6 +135,7 @@ async function build(role: RoleName): Promise<FastifyInstance> {
       tenants: memoryTenantRepository(business),
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
+      restaurantFloor: memoryRestaurantFloorRepository(),
       shifts,
       terminals,
       checkout: createCheckoutService({

@@ -266,6 +266,7 @@ async function build(permissions: readonly string[]): Promise<FastifyInstance> {
       tenants: memoryTenantRepository(business),
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
+      restaurantFloor: memoryRestaurantFloorRepository(),
       shifts,
       terminals,
       checkout: createCheckoutService({
