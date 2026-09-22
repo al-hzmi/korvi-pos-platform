@@ -11,6 +11,8 @@ import type {
   AdminTenantSettings,
   AdminTerminal,
   CheckoutRequest,
+  CreateReturnRequest,
+  CreateReturnResponse,
   CategoryMigrationInspection,
   CategoryMigrationRowPage,
   CategoryMigrationSummary,
@@ -83,6 +85,10 @@ import type {
   PurchasingPage,
   PurchasingProduct,
   PurchasingSupplier,
+  SaleLookupResult,
+  ReturnableSale,
+  ShiftCloseRequest,
+  ShiftCloseResponse,
   ShiftSummary,
   SupplierCreateRequest,
   SupplierMutationResult,
@@ -213,6 +219,14 @@ export interface ApiClient {
     readonly terminalId: string;
     readonly openingFloatMinor: string;
   }): Promise<ShiftSummary>;
+  saleLookup(
+    term: string,
+    limit?: number,
+    options?: RequestOptions,
+  ): Promise<readonly SaleLookupResult[]>;
+  returnableSale(saleId: string, options?: RequestOptions): Promise<ReturnableSale>;
+  createReturn(request: CreateReturnRequest): Promise<CreateReturnResponse>;
+  closeShift(request: ShiftCloseRequest): Promise<ShiftCloseResponse>;
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
 
   onboardingReadiness(options?: RequestOptions): Promise<OnboardingReadiness>;
@@ -689,6 +703,65 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         json({ terminalId: input.terminalId, openingFloatMinor: input.openingFloatMinor }),
       )) as { shift: ShiftSummary };
       return body.shift;
+    },
+
+    async saleLookup(term, limit = 10, options) {
+      const search = new URLSearchParams({ q: term, limit: String(limit) });
+      const body = (await call(
+        `/v1/sales/lookup?${search.toString()}`,
+        { method: 'GET' },
+        options,
+      )) as { sales: readonly SaleLookupResult[] };
+      return body.sales;
+    },
+
+    async returnableSale(saleId, options) {
+      const body = (await call(
+        `/v1/sales/${encodeURIComponent(saleId)}/returnable`,
+        { method: 'GET' },
+        options,
+      )) as { sale: ReturnableSale };
+      return body.sale;
+    },
+
+    async createReturn(request) {
+      return retryableCommand<CreateReturnResponse>(
+        '/v1/returns',
+        {
+          operationId: request.operationId,
+          terminalId: request.terminalId,
+          saleId: request.saleId,
+          ...(request.reason === undefined || request.reason.trim() === ''
+            ? {}
+            : { reason: request.reason.trim() }),
+          refund:
+            request.refund.kind === 'cash'
+              ? { kind: 'cash' as const }
+              : {
+                  kind: 'electronic' as const,
+                  scheme: request.refund.scheme,
+                  reference: request.refund.reference.trim(),
+                },
+          lines: request.lines.map((line) => ({
+            saleLineId: line.saleLineId,
+            quantityScaled: line.quantityScaled,
+          })),
+        },
+        CHECKOUT_TIMEOUT_MS,
+      );
+    },
+
+    async closeShift(request) {
+      return retryableCommand<ShiftCloseResponse>(
+        '/v1/shifts/close',
+        {
+          operationId: request.operationId,
+          terminalId: request.terminalId,
+          shiftId: request.shiftId,
+          declaredCashMinor: request.declaredCashMinor,
+        },
+        CHECKOUT_TIMEOUT_MS,
+      );
     },
 
     async checkout(request) {
