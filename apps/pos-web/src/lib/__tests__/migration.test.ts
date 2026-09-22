@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   CATEGORY_MIGRATION_TEMPLATE_CSV,
   CUSTOMER_MIGRATION_TEMPLATE_CSV,
+  SUPPLIER_MIGRATION_TEMPLATE_CSV,
   categoryMigrationMappingProblems,
   categoryMigrationProblemsCsv,
   customerMigrationMappingProblems,
   customerMigrationProblemsCsv,
+  supplierMigrationMappingProblems,
+  supplierMigrationProblemsCsv,
   migrationCellText,
   migrationMappingProblems,
   PRODUCT_MIGRATION_TEMPLATE_CSV,
@@ -14,6 +17,7 @@ import {
 import type {
   CategoryMigrationRowResult,
   CustomerMigrationRowResult,
+  SupplierMigrationRowResult,
   ProductMigrationRowResult,
 } from '../api-types';
 
@@ -152,4 +156,39 @@ describe('merchant migration presentation helpers', () => {
     expect(csv).toContain('"\'=CMD"');
     expect(csv).toContain('"\'+existing"');
   });
+
+  it('ships supplier name-only mapping, template and formula-safe error export', () => {
+    expect(
+      supplierMigrationMappingProblems([{ sourceColumn: 0, targetField: null }]),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]));
+
+    expect(SUPPLIER_MIGRATION_TEMPLATE_CSV).toContain('اسم المورد');
+    expect(SUPPLIER_MIGRATION_TEMPLATE_CSV).not.toMatch(/جوال|هاتف|ضريبي|دفع|ائتمان/);
+
+    const rows: readonly SupplierMigrationRowResult[] = [
+      {
+        sourceRow: 11,
+        sourceIdentifier: '=CMD',
+        classification: 'ERROR',
+        plannedAction: 'reject',
+        status: 'rejected',
+        targetEntityId: null,
+        errorCode: null,
+        issues: [
+          {
+            classification: 'ERROR',
+            code: 'invalid-supplier-row',
+            message: '+invalid',
+            row: 11,
+            sourceColumn: 0,
+            targetField: 'name',
+          },
+        ],
+      },
+    ];
+    const csv = supplierMigrationProblemsCsv(rows);
+    expect(csv).toContain('"\'=CMD"');
+    expect(csv).toContain('"\'+invalid"');
+  });
+
 });
