@@ -13,6 +13,7 @@ on:
       - packages/domain/src/index.ts
       - scripts/zatca-38-c14n-proof.mjs
       - .github/workflows/zatca-38-ubl-hash-proof.yml
+      - docs/acquisition/ZATCA-PRODUCTION-ACTIVATION.md
   workflow_dispatch:
 
 permissions:
