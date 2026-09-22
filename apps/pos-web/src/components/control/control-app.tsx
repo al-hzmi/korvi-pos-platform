@@ -150,6 +150,7 @@ function Section({
           canCommit={hasPermission(principal, 'product.write')}
           canCustomerCommit={hasPermission(principal, 'customer.write')}
           canSupplierCommit={hasPermission(principal, 'purchasing.manage')}
+          canOpeningInventoryCommit={hasPermission(principal, 'inventory.adjust')}
           onCommandLockChange={onCommandLockChange}
         />
       );
