@@ -156,7 +156,8 @@ export function CashierReturnWorkflow({
         .catch((error: unknown) => {
           const failure = describeFailure(error);
           if (failure.action === 'reauthenticate') onExpired();
-          if (failure.action === 'refresh-shift' || failure.action === 'open-shift') onShiftChanged();
+          if (failure.action === 'refresh-shift' || failure.action === 'open-shift')
+            onShiftChanged();
           setSaleState({ kind: 'failed', message: failure.message });
         });
     },
@@ -178,7 +179,8 @@ export function CashierReturnWorkflow({
         .catch((error: unknown) => {
           const failure = describeFailure(error);
           if (failure.action === 'reauthenticate') onExpired();
-          if (failure.action === 'refresh-shift' || failure.action === 'open-shift') onShiftChanged();
+          if (failure.action === 'refresh-shift' || failure.action === 'open-shift')
+            onShiftChanged();
           setCommandMessage(failure.message);
           if (failure.action !== 'retry-same') setPending(null);
         })
@@ -236,7 +238,13 @@ export function CashierReturnWorkflow({
             المبلغ المسترد يحسبه الخادم من الفاتورة الأصلية؛ لا يحدده الكاشير.
           </p>
         </div>
-        <Button type="button" variant="ghost" size="sm" disabled={pending !== null || submitting} onClick={close}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={pending !== null || submitting}
+          onClick={close}
+        >
           إغلاق
         </Button>
       </div>
@@ -245,9 +253,7 @@ export function CashierReturnWorkflow({
         <div className="flex flex-col gap-3">
           <StatusNote tone="success" live>
             تم اعتماد المرتجع {result.return.returnNumber}. مبلغ الاسترداد المعتمد{' '}
-            {result.return.refund === null
-              ? '—'
-              : formatMinor(result.return.refund.amountMinor)}{' '}
+            {result.return.refund === null ? '—' : formatMinor(result.return.refund.amountMinor)}{' '}
             {result.return.currency}.
           </StatusNote>
           <div className="flex justify-end gap-2">
@@ -272,12 +278,19 @@ export function CashierReturnWorkflow({
                 if (event.key === 'Enter') search();
               }}
             />
-            <Button type="button" variant="outline" loading={lookup.kind === 'loading'} onClick={search}>
+            <Button
+              type="button"
+              variant="outline"
+              loading={lookup.kind === 'loading'}
+              onClick={search}
+            >
               بحث
             </Button>
           </div>
 
-          {lookup.kind === 'failed' ? <StatusNote tone="danger">{lookup.message}</StatusNote> : null}
+          {lookup.kind === 'failed' ? (
+            <StatusNote tone="danger">{lookup.message}</StatusNote>
+          ) : null}
           {lookup.kind === 'ready' && lookup.sales.length === 0 ? (
             <StatusNote tone="info">لم يتم العثور على فاتورة مطابقة في هذا الفرع.</StatusNote>
           ) : null}
@@ -341,7 +354,11 @@ export function CashierReturnWorkflow({
                         className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-end text-sm"
                         inputMode="decimal"
                         value={quantities[line.saleLineId] ?? ''}
-                        disabled={submitting || pending !== null || BigInt(line.remainingQuantityScaled) === 0n}
+                        disabled={
+                          submitting ||
+                          pending !== null ||
+                          BigInt(line.remainingQuantityScaled) === 0n
+                        }
                         aria-label={`كمية إرجاع ${line.nameAr}`}
                         onChange={(event) =>
                           setQuantities((current) => ({
@@ -354,7 +371,11 @@ export function CashierReturnWorkflow({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={submitting || pending !== null || BigInt(line.remainingQuantityScaled) === 0n}
+                        disabled={
+                          submitting ||
+                          pending !== null ||
+                          BigInt(line.remainingQuantityScaled) === 0n
+                        }
                         onClick={() =>
                           setQuantities((current) => ({
                             ...current,

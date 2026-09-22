@@ -123,7 +123,13 @@ export function ShiftCloseControl({
           </p>
         </div>
         {result === null ? (
-          <Button type="button" variant="ghost" size="sm" disabled={pending !== null || submitting} onClick={cancel}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={pending !== null || submitting}
+            onClick={cancel}
+          >
             إلغاء
           </Button>
         ) : null}
@@ -169,15 +175,21 @@ export function ShiftCloseControl({
           <dl className="grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-md bg-muted/50 p-2">
               <dt className="text-xs text-muted-foreground">رصيد البداية</dt>
-              <dd className="mt-1"><Amount value={result.shift.reconciliation.openingFloatMinor} /></dd>
+              <dd className="mt-1">
+                <Amount value={result.shift.reconciliation.openingFloatMinor} />
+              </dd>
             </div>
             <div className="rounded-md bg-muted/50 p-2">
               <dt className="text-xs text-muted-foreground">المبيعات النقدية</dt>
-              <dd className="mt-1"><Amount value={result.shift.reconciliation.cashSalesMinor} /></dd>
+              <dd className="mt-1">
+                <Amount value={result.shift.reconciliation.cashSalesMinor} />
+              </dd>
             </div>
             <div className="rounded-md bg-muted/50 p-2">
               <dt className="text-xs text-muted-foreground">المرتجعات النقدية</dt>
-              <dd className="mt-1"><Amount value={result.shift.reconciliation.cashRefundsMinor} /></dd>
+              <dd className="mt-1">
+                <Amount value={result.shift.reconciliation.cashRefundsMinor} />
+              </dd>
             </div>
             <div className="rounded-md bg-muted/50 p-2">
               <dt className="text-xs text-muted-foreground">إيداع / سحب يدوي</dt>
@@ -189,15 +201,21 @@ export function ShiftCloseControl({
             </div>
             <div className="rounded-md bg-muted/50 p-2">
               <dt className="text-xs text-muted-foreground">المتوقع</dt>
-              <dd className="mt-1 font-semibold"><Amount value={result.shift.reconciliation.expectedCashMinor} /></dd>
+              <dd className="mt-1 font-semibold">
+                <Amount value={result.shift.reconciliation.expectedCashMinor} />
+              </dd>
             </div>
             <div className="rounded-md bg-muted/50 p-2">
               <dt className="text-xs text-muted-foreground">المعدود</dt>
-              <dd className="mt-1 font-semibold"><Amount value={result.shift.reconciliation.declaredCashMinor} /></dd>
+              <dd className="mt-1 font-semibold">
+                <Amount value={result.shift.reconciliation.declaredCashMinor} />
+              </dd>
             </div>
             <div className="col-span-2 rounded-md border border-border p-2">
               <dt className="text-xs text-muted-foreground">الفارق (المعدود − المتوقع)</dt>
-              <dd className="mt-1 text-lg font-semibold"><Amount value={result.shift.reconciliation.varianceMinor} /></dd>
+              <dd className="mt-1 text-lg font-semibold">
+                <Amount value={result.shift.reconciliation.varianceMinor} />
+              </dd>
             </div>
           </dl>
           <div className="flex justify-end">
