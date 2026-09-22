@@ -31,6 +31,7 @@ jobs:
       KORVI_API_ORIGIN: http://localhost:3001
       KORVI_BROWSER_ARTIFACT_DIR: artifacts/gate20-browser
       KORVI_CHROME_DEBUG_PORT: '9222'
+      KORVI_AR2_COMMERCIAL_PROOF: ${{ (github.ref_name == 'integration/acquisition-ar2' || github.ref_name == 'release/canonical-acquisition-v1') && '1' || '0' }}
 
     services:
       postgres:

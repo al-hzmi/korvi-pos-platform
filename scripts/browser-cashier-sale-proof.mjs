@@ -7,6 +7,7 @@ const ownerEmail = process.env.KORVI_BROWSER_OWNER_EMAIL ?? 'owner@stage5d-brows
 const password = process.env.KORVI_BROWSER_PASSWORD;
 const chromePort = process.env.KORVI_CHROME_DEBUG_PORT ?? '9222';
 const artifactDirectory = process.env.KORVI_BROWSER_ARTIFACT_DIR ?? 'artifacts/stage5d-browser';
+const proveAr2Commercial = process.env.KORVI_AR2_COMMERCIAL_PROOF === '1';
 
 if (password === undefined || password.length < 16) {
   throw new Error('KORVI_BROWSER_PASSWORD must contain at least 16 characters.');
@@ -211,6 +212,78 @@ function minorToMajor(value) {
   const whole = magnitude / 100n;
   const fraction = (magnitude % 100n).toString().padStart(2, '0');
   return `${negative ? '-' : ''}${whole.toString()}.${fraction}`;
+}
+
+
+async function setAriaValue(label, value) {
+  const changed = await evaluate(\`(() => {
+    const wanted = \${jsString(label)};
+    const input = [...document.querySelectorAll('input')].find(
+      (candidate) => candidate.getAttribute('aria-label') === wanted,
+    );
+    if (!(input instanceof HTMLInputElement)) return false;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(input, \${jsString(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.focus();
+    return true;
+  })()\`);
+  assert.equal(changed, true, \`Input with aria-label \${JSON.stringify(label)} was not available.\`);
+}
+
+async function setSelectById(id, value) {
+  const changed = await evaluate(\`(() => {
+    const select = document.getElementById(\${jsString(id)});
+    if (!(select instanceof HTMLSelectElement)) return false;
+    select.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(select, \${jsString(value)});
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()\`);
+  assert.equal(changed, true, \`Select #\${id} was not available.\`);
+}
+
+function parseUiMinor(value) {
+  assert.equal(typeof value, 'string', 'Expected rendered money text.');
+  const normalized = value
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/٬/g, '')
+    .replace(/٫/g, '.')
+    .replace(/,/g, '');
+  const match = normalized.match(/-?\d+(?:\.\d{1,2})?/);
+  assert.ok(match !== null, \`No decimal amount found in \${JSON.stringify(value)}.\`);
+  const negative = match[0].startsWith('-');
+  const unsigned = negative ? match[0].slice(1) : match[0];
+  const [whole = '0', fraction = ''] = unsigned.split('.');
+  const minor = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+  return negative ? -minor : minor;
+}
+
+function minorToDecimal(value) {
+  const minor = BigInt(value);
+  const negative = minor < 0n;
+  const magnitude = negative ? -minor : minor;
+  return \`\${negative ? '-' : ''}\${magnitude / 100n}.\${(magnitude % 100n)
+    .toString()
+    .padStart(2, '0')}\`;
+}
+
+async function readDefinitionMinor(label) {
+  const rendered = await evaluate(\`(() => {
+    const wanted = \${jsString(label)};
+    const term = [...document.querySelectorAll('dt')].find(
+      (candidate) => (candidate.textContent ?? '').trim() === wanted,
+    );
+    return term?.nextElementSibling?.textContent ?? null;
+  })()\`);
+  return parseUiMinor(rendered);
 }
 
 async function pointForButton(text) {
@@ -522,6 +595,200 @@ try {
   record(
     'cashier UI completed blind-count shift close; server reconciliation closed the authoritative shift',
   );
+
+
+  if (proveAr2Commercial) {
+    const salePayloads = [];
+    const returnPayloads = [];
+    cdp.on('Network.requestWillBeSent', (params) => {
+      const request = params.request;
+      if (request?.method !== 'POST' || typeof request.url !== 'string') return;
+      const pathname = new URL(request.url).pathname;
+      if (request.postData === undefined) return;
+      try {
+        const body = JSON.parse(request.postData);
+        if (pathname === '/v1/sales') salePayloads.push(body);
+        if (pathname === '/v1/returns') returnPayloads.push(body);
+      } catch {
+        // A proof listener must never alter runtime behavior because a body was not JSON.
+      }
+    });
+
+    const startTenderSale = async () => {
+      await clickButton('عملية بيع جديدة');
+      await waitForText('ابحث أو امسح الباركود', 20_000);
+      await setInput('product-search', 'BROWSER-SKU-001');
+      await pressEnter();
+      await waitForText('صنف برهان المتصفح', 20_000);
+      await clickButton('صنف برهان المتصفح');
+      await clickButton('إلكتروني / متعدد');
+      return await readDefinitionMinor('الإجمالي المستحق');
+    };
+
+    const electronicTotalMinor = await startTenderSale();
+    await setAriaValue('مبلغ الدفعة الإلكترونية 1', minorToDecimal(electronicTotalMinor));
+    await setAriaValue('مرجع الموافقة 1', 'AR2-ELECTRONIC-001');
+    const pureSaleCount = salePayloads.length;
+    await clickButton('إتمام البيع');
+    await waitForText('تمّت العملية', 30_000);
+    await waitForText('مدى', 20_000);
+    await waitFor(
+      \`document.body?.innerText.includes(\${jsString(minorToDecimal(electronicTotalMinor))}) === true\`,
+      'electronic tender amount on the server-owned receipt',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(salePayloads.length, pureSaleCount + 1, 'Electronic checkout emitted one sale command.');
+    const pureElectronicBody = salePayloads.at(-1);
+    assert.equal(pureElectronicBody.cashReceivedMinor, undefined);
+    assert.equal(pureElectronicBody.tenders?.length, 1);
+    assert.deepEqual(pureElectronicBody.tenders?.[0], {
+      kind: 'electronic',
+      scheme: 'mada',
+      amountMinor: electronicTotalMinor.toString(),
+      reference: 'AR2-ELECTRONIC-001',
+    });
+    await capture('cashier-ar2-electronic-tender');
+    record(
+      'AR-2 browser proof: full electronic tender completed in actual Chrome and receipt rendered the server-returned Mada settlement',
+    );
+
+    const mixedTotalMinor = await startTenderSale();
+    assert.equal(
+      mixedTotalMinor,
+      electronicTotalMinor,
+      'Identical proof product produced inconsistent checkout totals.',
+    );
+    assert.ok(mixedTotalMinor > 500n, 'Proof product total must exceed the 5.00 SAR cash split.');
+    await setInput('cash-received', '5.00');
+    await setAriaValue(
+      'مبلغ الدفعة الإلكترونية 1',
+      minorToDecimal(mixedTotalMinor - 500n),
+    );
+    await setAriaValue('مرجع الموافقة 1', 'AR2-MIXED-001');
+    const mixedSaleCount = salePayloads.length;
+    await clickButton('إتمام البيع');
+    await waitForText('تمّت العملية', 30_000);
+    await waitForText('نقدي', 20_000);
+    await waitForText('مدى', 20_000);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(salePayloads.length, mixedSaleCount + 1, 'Mixed checkout emitted one sale command.');
+    const mixedBody = salePayloads.at(-1);
+    assert.equal(mixedBody.cashReceivedMinor, undefined);
+    assert.deepEqual(mixedBody.tenders, [
+      { kind: 'cash', amountMinor: '500' },
+      {
+        kind: 'electronic',
+        scheme: 'mada',
+        amountMinor: (mixedTotalMinor - 500n).toString(),
+        reference: 'AR2-MIXED-001',
+      },
+    ]);
+
+    const invoiceHeading = await evaluate(\`(() => {
+      const heading = [...document.querySelectorAll('h2')].find((candidate) => {
+        const text = (candidate.textContent ?? '').trim();
+        return text.includes('فاتورة') || text.includes('إيصال محاكاة');
+      });
+      return (heading?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    })()\`);
+    assert.equal(typeof invoiceHeading, 'string');
+    const invoiceMatch = invoiceHeading.match(/(?:فاتورة|إيصال محاكاة)\s+(.+)$/u);
+    assert.ok(invoiceMatch !== null, \`Could not extract invoice number from \${invoiceHeading}.\`);
+    const invoiceNumber = invoiceMatch[1].trim();
+    await capture('cashier-ar2-mixed-tender');
+    record(
+      'AR-2 browser proof: mixed cash + Mada tender completed once and the server-owned receipt rendered both tenders',
+    );
+
+    await clickButton('عملية بيع جديدة');
+    await waitForText('ابحث أو امسح الباركود', 20_000);
+    await clickButton('مرتجع / استرداد');
+    await waitForText('إنشاء مرتجع', 20_000);
+    await setInput('return-search', invoiceNumber);
+    await clickButton('بحث');
+    await waitForText(invoiceNumber, 20_000);
+    await clickButton(invoiceNumber);
+    await waitForText('المعتمد تاريخياً', 20_000);
+    await clickButton('الكل');
+    await setSelectById('return-refund-kind', 'electronic');
+    await setInput('return-refund-reference', 'AR2-REFUND-001');
+    const returnCount = returnPayloads.length;
+    await clickButton('اعتماد المرتجع');
+    await waitForText('تم اعتماد المرتجع', 30_000);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(returnPayloads.length, returnCount + 1, 'Return UI emitted one refund command.');
+    const returnBody = returnPayloads.at(-1);
+    assert.equal(returnBody.refund?.kind, 'electronic');
+    assert.equal(returnBody.refund?.scheme, 'mada');
+    assert.equal(returnBody.refund?.reference, 'AR2-REFUND-001');
+    const serializedReturn = JSON.stringify(returnBody);
+    for (const forbidden of [
+      'refundTotal',
+      'refundTotalMinor',
+      'returnTotal',
+      'returnTotalMinor',
+      'totalMinor',
+      'netMinor',
+      'vatMinor',
+      'expectedCashMinor',
+      'varianceMinor',
+    ]) {
+      assert.equal(
+        serializedReturn.includes(forbidden),
+        false,
+        \`Return UI must not author server money field \${forbidden}.\`,
+      );
+    }
+    await capture('cashier-ar2-return-refund');
+    record(
+      'AR-2 browser proof: cashier created an electronic refund from historical sale truth without client-authored refund amount',
+    );
+
+    const proofBranches = await browserRequest('/v1/admin/inventory/branches?limit=50');
+    const proofBranch = proofBranches.rows.find((row) => row.nameAr === 'فرع ألف');
+    assert.ok(proofBranch !== undefined);
+    const balanceAfterReturn = await browserRequest(
+      \`/v1/admin/inventory/balances?branchId=\${encodeURIComponent(proofBranch.id)}&limit=50\`,
+    );
+    const balanceAfterReturnRow = balanceAfterReturn.rows.find(
+      (row) => row.sku === 'BROWSER-SKU-001',
+    );
+    assert.equal(
+      balanceAfterReturnRow?.quantityScaled,
+      '9000',
+      'Two new sales and one return after the original Gate 20 sale must leave nine units.',
+    );
+    record('return stock effect reconciled on server truth: 11 start → 8 after three sales → 9 after return');
+
+    await clickButton('تم');
+    await waitFor(
+      \`![...document.querySelectorAll('p')].some((node) => (node.textContent ?? '').trim() === 'إنشاء مرتجع')\`,
+      'return workflow to close',
+    );
+    await clickButton('إغلاق الوردية');
+    await waitForText('إغلاق الوردية وتسوية الدرج', 20_000);
+    const expectedVisibleBeforeCount = await evaluate(\`[...document.querySelectorAll('dt')].some(
+      (node) => (node.textContent ?? '').trim() === 'المتوقع'
+    )\`);
+    assert.equal(
+      expectedVisibleBeforeCount,
+      false,
+      'Expected drawer cash must remain hidden until the physical count is committed.',
+    );
+
+    const countedCashMinor = 10_000n + electronicTotalMinor + 500n;
+    await setInput('shift-close-declared-cash', minorToDecimal(countedCashMinor));
+    await clickButton('اعتماد العد وإغلاق الوردية');
+    await waitForText('أغلقت الوردية واعتمدت التسوية من الخادم.', 30_000);
+    const serverExpectedMinor = await readDefinitionMinor('المتوقع');
+    const serverVarianceMinor = await readDefinitionMinor('الفارق (المعدود − المتوقع)');
+    assert.equal(serverExpectedMinor, countedCashMinor);
+    assert.equal(serverVarianceMinor, 0n);
+    await capture('cashier-ar2-shift-close');
+    record(
+      'AR-2 browser proof: blind shift close hid expected cash before count, then server reconciliation returned the exact expected amount and zero variance',
+    );
+  }
 
   const overflow = await evaluate(
     `document.documentElement.scrollWidth > document.documentElement.clientWidth + 1`,
