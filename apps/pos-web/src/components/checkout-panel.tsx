@@ -4,6 +4,7 @@ import { Button, Numeric } from '@korvi/ui';
 import { Field } from './field';
 import { StatusNote } from './status-note';
 import { formatMinor } from '../lib/money';
+import type { CheckoutState } from '../lib/checkout';
 import {
   MAX_ELECTRONIC_TENDERS,
   planPayment,
@@ -37,7 +38,7 @@ export interface CheckoutPanelProps {
   readonly lineCount: number;
   readonly locked: boolean;
   readonly submissionBlocker?: string | null;
-  readonly state: import('../lib/checkout').CheckoutState;
+  readonly state: CheckoutState;
   readonly cashRef: Ref<HTMLInputElement>;
   readonly onCashChange: (value: string) => void;
   readonly onPaymentModeChange: (mode: PaymentMode) => void;
