@@ -280,7 +280,7 @@ used to earn score.
 
 ## Canonical Acquisition Release — supplemental P0 readiness gate (2026-09-22)
 
-Current state: **IN PROGRESS**
+Current state: **AR-0/AR-1/AR-2/AR-3 CLOSED; AR-4/AR-5/AR-6/AR-7 REMAIN OPEN**
 
 This gate is separate from historical arithmetic and does not silently rewrite prior verified scores.
 
@@ -297,6 +297,26 @@ A final acquisition release requires evidence on one canonical release lineage f
 - production ZATCA operational closure;
 - acquisition-grade handoff/ownership documentation;
 - controlled real merchant production pilot.
+
+### Canonical acquisition evidence checkpoint — `941b512b...`
+
+Canonical integration evidence:
+
+- canonical merge SHA: `941b512bdb82be8a4d52113a77def365b81cd4e4`;
+- CI `35775341358` — PASS;
+- PostgreSQL 17 restricted-role/full verification `35775341360` — PASS;
+- Chrome commercial POS workflow proof `35775341446` — PASS.
+
+Therefore the supplemental acquisition gate now records:
+
+- AR-0 Canonical Integration — CLOSED;
+- AR-1 Platform Admin Security — CLOSED;
+- AR-2 Sellable POS Workflows — CLOSED;
+- AR-3 One Product / One Canonical Lineage — CLOSED.
+
+The canonical `88 / 100` score is intentionally unchanged because these AR gates are supplemental acquisition-program gates, not retroactive additions to the historical 50-gate denominator.
+
+Production Operations, Production ZATCA, Acquisition/Handoff closure and a real Merchant Pilot remain evidence-gated.
 
 Current terminology rule:
 

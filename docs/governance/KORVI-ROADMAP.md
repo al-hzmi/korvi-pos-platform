@@ -3,6 +3,26 @@
 Status: **ACTIVE SEQUENCING DOCUMENT**
 Rule: roadmap can sequence/defer accepted capabilities; it cannot delete or downgrade them.
 
+## Canonical Acquisition AR-3 closure and next execution — 2026-09-22
+
+AR-0 through AR-3 are CLOSED on canonical merge SHA
+`941b512bdb82be8a4d52113a77def365b81cd4e4`.
+
+Verified canonical evidence:
+
+- CI `35775341358` — PASS;
+- PostgreSQL 17 live/full restricted-role verification `35775341360` — PASS;
+- actual Chrome commercial workflow proof `35775341446` — PASS.
+
+Immediate execution priority is now:
+
+1. **AR-4 + AR-6 in parallel:** production-operations proof preparation and acquisition handoff package.
+2. **AR-5 internal closure work:** complete every production-ZATCA component that does not require external credentials/customer identity; keep production fail-closed.
+3. **AR-7 preparation only:** prepare controlled pilot procedure/evidence contract, but do not claim a pilot until a real merchant executes it.
+4. **AR-8 only after the remaining gates are truthfully satisfied.**
+
+No speculative feature expansion outranks these acquisition-release gaps.
+
 ## Canonical Acquisition Release override — 2026-09-22
 
 The highest active execution priority is now `KORVI-CANONICAL-ACQUISITION-RELEASE.md`.

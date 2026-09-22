@@ -40,6 +40,20 @@ This register is a decision log and index. It does not replace the domain-specif
 
 ---
 
+## 2026-09-22 — AR-0 through AR-3 are canonicalized on one release lineage
+
+**Decision:** ACCEPTED.
+
+Canonical acquisition merge SHA `941b512bdb82be8a4d52113a77def365b81cd4e4` is now the release-integration authority for Product/Retail, Restaurant, Migration M2-M6, Platform Admin session revocation and the AR-2 commercial cashier workflows.
+
+AR-0, AR-1, AR-2 and AR-3 are CLOSED on that lineage based on canonical CI `35775341358`, PostgreSQL restricted-role/full verification `35775341360`, and actual Chrome commercial workflow proof `35775341446`.
+
+This decision does not close Production Operations, Production ZATCA, Acquisition Handoff, Human/Independent Gates or the real Merchant Pilot. It also does not promote parent-lineage installed-package proofs into exact merge-SHA evidence.
+
+Going forward, separate feature/security/product branches are provenance and candidate sources only. The canonical acquisition branch is the release truth.
+
+---
+
 ## 2026-09-22 — Restaurant and Split Tender use one verified source lineage
 
 **Decision:** ACCEPTED.

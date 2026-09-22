@@ -91,7 +91,7 @@ Repository evidence wins for implementation truth.
 ## 5. Immediate execution order
 
 ### AR-0 — Canonical branch and source-of-truth consolidation
-Status: **IN PROGRESS**
+Status: **CLOSED — CANONICALIZED ON `941b512bdb82be8a4d52113a77def365b81cd4e4`**
 
 - canonical integration branch exists;
 - enumerate current Retail/Product, Restaurant, Migration and Security heads;
@@ -100,7 +100,7 @@ Status: **IN PROGRESS**
 - stop treating RC7, product branches and security branches as interchangeable release truth.
 
 ### AR-1 — Security integration
-Status: **ADOPTED / P0**
+Status: **CLOSED — CANONICAL SERVER-SIDE REVOCATION PROVEN**
 
 Integrate the verified Platform Admin revocable-session authority from the security lineage.
 
@@ -114,7 +114,7 @@ Required behavior:
 Must include regression and PostgreSQL/runtime proof appropriate to the implementation.
 
 ### AR-2 — Sellable POS workflow completion
-Status: **ADOPTED / P0**
+Status: **CLOSED — CANONICAL OPERATOR WORKFLOWS PROVEN IN CHROME**
 
 Close the gap between backend capability and operator product workflow:
 
@@ -139,7 +139,7 @@ Each workflow requires:
 - regression coverage.
 
 ### AR-3 — Canonical product integration
-Status: **ADOPTED / P0**
+Status: **CLOSED — ONE RELEASE LINEAGE**
 
 Consolidate the newest verified:
 
@@ -338,3 +338,79 @@ Live source verification supersedes the earlier split-payment candidate assessme
 The source branch is evidence and provenance, not release truth. AR-2 closes only
 after the reconciled canonical-target SHA is green and browser/operator proof is
 recorded.
+
+
+## 12. AR-0 / AR-1 / AR-2 / AR-3 canonical closure — 2026-09-22
+
+Canonical merge SHA:
+
+`941b512bdb82be8a4d52113a77def365b81cd4e4`
+
+This SHA is the first canonical acquisition-lineage commit that carries the verified Migration M2-M6 baseline, focused Platform Admin server-side session revocation, the combined Restaurant production/waste lineage, and the commercial POS operator workflows in one release history.
+
+### AR-0 — CLOSED
+
+- Migration M2-M6 was already canonical ancestry and was not replayed.
+- Platform Admin revocation was capability-ported instead of blindly merging the divergent security branch.
+- Restaurant + Split/Mixed/Electronic Tender were integrated through PR #64 after three-way reconciliation rather than branch overwrite.
+- CI-failing Product Experience review heads were not promoted merely because they were newer.
+- No force-push or history rewrite was used.
+
+### AR-1 — CLOSED
+
+Canonical behavior includes durable PostgreSQL-backed Platform Admin session authority, logout revocation, active/revoked/expired server checks, production fail-closed behavior when durable revocation authority is unavailable, and preserved Platform actor/permission authority.
+
+Regression evidence on the canonical lineage includes:
+
+- captured/replayed Platform cookie rejected after logout;
+- a different live Platform session remains valid;
+- malformed/tampered session refusal;
+- merchant/platform realm boundary remains enforced;
+- PostgreSQL control-plane policy included in restricted-role verification.
+
+Exact canonical evidence:
+
+- CI push: run `35775341358` — PASS;
+- CI pull-request merge verification: run `35775347600` — PASS;
+- PostgreSQL 17 restricted-role live/full verification: run `35775341360` — PASS.
+
+### AR-2 — CLOSED
+
+The canonical cashier now exposes sellable operator flows for:
+
+- full Electronic Tender;
+- Mixed Tender;
+- Return creation;
+- Cash or Electronic Refund execution;
+- Shift Close;
+- Cash Reconciliation.
+
+The client does not author refund totals, expected drawer cash, variance, VAT, branch authority or shift authority. Those remain server-derived. Retryable commands retain the same operation identity for ambiguity-safe replay.
+
+Exact canonical browser proof:
+
+- Gate 20 / AR-2 Chrome + PostgreSQL 17 run `35775341446` — PASS on `941b512bdb82be8a4d52113a77def365b81cd4e4`.
+- The proof executes full Mada electronic checkout, cash + Mada mixed checkout, server-priced electronic refund/return, stock restoration and blind-count shift close/reconciliation in the actual cashier UI.
+- The Return and Shift Close flows are rendered as operator dialogs above the cashier workspace after a real browser defect proved the earlier inline placement could be obscured by the checkout surface.
+
+Installed-client evidence remains a separate Gate 11 dimension. Windows proof run `35774514477` and Android proof run `35774514489` passed on PR-head `53f631078b610e9281e196583002c2e658a67363`; these are supportive parent-lineage evidence, not falsely described as exact merge-SHA package proof.
+
+### AR-3 — CLOSED
+
+The canonical acquisition lineage now contains the selected Retail/Product authority already present on canonical, Restaurant production/waste, Migration M2-M6, Platform Admin revocation, and the AR-2 commercial workflows in the same release history.
+
+No separate product, restaurant, migration or security branch is release truth after this point. Candidate branches remain provenance only.
+
+### What remains open
+
+Closing AR-0 through AR-3 does **not** make Korvi Production Proven or complete the Canonical Acquisition Release.
+
+Still open:
+
+- AR-4 — production operations evidence;
+- AR-5 — production ZATCA external/provider closure;
+- AR-6 — buyer/operator acquisition handoff package;
+- AR-7 — controlled real merchant production pilot;
+- AR-8 — final acquisition release gate.
+
+Production ZATCA remains fail-closed. Synthetic/staging evidence remains insufficient for AR-4/AR-7.
