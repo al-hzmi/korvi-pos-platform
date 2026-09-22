@@ -306,6 +306,19 @@ Source promotion:
 - fiscal boundary: production is operational inventory truth only; it does not create sales, tenders, VAT invoices, fiscal QR, ICV or PIH authority;
 - remaining gap / exact next action: **Waste/Spoilage authority** using the same stock/cost/audit truth, followed by remaining split/merge/payment and course/delta semantics.
 
+### Verified follow-on checkpoint — Waste / Spoilage authority
+
+- branch: `product/post-v1-restaurant-waste`;
+- implementation/proof SHA: `a7553e4d31fae66a087e241382bca60420f3afb7`;
+- capability: explicit restaurant waste/spoilage documents that consume tracked stock through Korvi's existing inventory/cost authority;
+- status: **VERIFIED waste/spoilage authority / Restaurant Phase 2 IN PROGRESS**;
+- standard CI evidence: `35734109879` GREEN through dependency pins, audit, formatting, lint, invariants, Prisma, build, typecheck and tests; 193 test files / 2,359 tests passed, 26 files / 381 tests skipped by the standard profile;
+- PostgreSQL/RLS evidence: `35734109870` GREEN with restricted migrator/runtime separation, 38 live files discovered / 34 runtime-live, `restaurant-waste-live.test.ts` 5/5 passed, migration rehearsals + rollback fault harness green, runtime boundary re-proved, and final PostgreSQL-backed verify 194 files / 2,360 tests passed;
+- inventory/cost invariant: waste is a causal document, not an ungoverned adjustment shortcut; quantity and known/unknown valuation effects flow only through the existing inventory/cost ledger;
+- integrity: explicit `waste` / `spoilage` reason, bounded note and line set, duplicate-product refusal, tenant-scoped branch/product authority, physical non-negative floor independent of sale oversell, idempotent frozen replay, FORCE-RLS/composite tenant-key protection and atomic rollback;
+- fiscal boundary: waste is operational inventory truth only; it creates no sale, tender, VAT invoice, fiscal QR, ICV or PIH;
+- remaining gap / exact next action: **split/merge restaurant order/bill authority and split-payment workflow**, then course sequencing / safe post-fire delta semantics.
+
 ---
 
 ## Register maintenance rule
