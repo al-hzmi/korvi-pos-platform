@@ -158,9 +158,9 @@ describe('merchant migration presentation helpers', () => {
   });
 
   it('ships supplier name-only mapping, template and formula-safe error export', () => {
-    expect(
-      supplierMigrationMappingProblems([{ sourceColumn: 0, targetField: null }]),
-    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]));
+    expect(supplierMigrationMappingProblems([{ sourceColumn: 0, targetField: null }])).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'required-unmapped' })]),
+    );
 
     expect(SUPPLIER_MIGRATION_TEMPLATE_CSV).toContain('اسم المورد');
     expect(SUPPLIER_MIGRATION_TEMPLATE_CSV).not.toMatch(/جوال|هاتف|ضريبي|دفع|ائتمان/);
