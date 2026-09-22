@@ -446,8 +446,7 @@ try {
     const detail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(sale.id)}`);
     if (
       detail.tenders.some(
-        (tender) =>
-          tender.kind === 'electronic' && tender.reference === 'AR2-ELECTRONIC-PROOF-001',
+        (tender) => tender.kind === 'electronic' && tender.reference === 'AR2-ELECTRONIC-PROOF-001',
       )
     ) {
       electronicSaleDetail = detail;
