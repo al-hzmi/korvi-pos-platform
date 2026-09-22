@@ -68,11 +68,12 @@ function rawCell(cell: ImportCell | undefined): {
   if (cell.kind === 'text' && cell.formulaLike) {
     return { value: null, formula: true, controlCharacter: false };
   }
+  const controlCharacter = cell.kind === 'text' && hasAsciiControlCharacter(cell.value);
   const value = importCellText(cell);
   return {
     value,
     formula: false,
-    controlCharacter: value !== null && hasAsciiControlCharacter(value),
+    controlCharacter,
   };
 }
 
