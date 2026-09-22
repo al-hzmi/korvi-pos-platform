@@ -172,7 +172,7 @@ Close with actual evidence, not documentation-only claims:
 Existing staging evidence is useful but does not automatically satisfy production proof.
 
 ### AR-5 — Production ZATCA closure
-Status: **ADOPTED / P0 — EXTERNAL DEPENDENCY POSSIBLE**
+Status: **INTERNAL ENGINEERING COMPLETE — EXTERNAL PRODUCTION ACTIVATION OPEN**
 
 Production must remain fail-closed.
 
@@ -212,7 +212,7 @@ Prepare a buyer/operator-grade package containing at least:
 - operator/admin runbooks.
 
 ### AR-7 — Controlled Merchant Production Pilot
-Status: **ADOPTED / P0 — HUMAN/EXTERNAL EVIDENCE REQUIRED**
+Status: **PREPARED — REAL MERCHANT / HUMAN EVIDENCE REQUIRED**
 
 Run the canonical release with a real merchant under controlled rollout.
 
@@ -235,7 +235,7 @@ Evidence should cover as applicable:
 A synthetic tenant or staging dry run is not a Merchant Production Pilot.
 
 ### AR-8 — Final Acquisition Release Gate
-Status: **NOT STARTED**
+Status: **PREPARED — FAIL-CLOSED / NOT ELIGIBLE WITHOUT EXTERNAL EVIDENCE**
 
 Only after required P0 gates close may Korvi claim a canonical acquisition release.
 
@@ -420,3 +420,24 @@ credential/account/domain transfer, and repository-owner branch protection/rules
 
 Remaining canonical blockers: AR-4 external production activation, AR-5 real production
 ZATCA activation, AR-6 transaction activation, AR-7 real Merchant Pilot, and AR-8.
+
+
+## 14. AR-5 internal closure + AR-7/AR-8 preparation — 2026-09-22
+
+Canonical internal-ZATCA evidence SHA:
+
+`b9e063cb252ef0270756f52ba43d7562d644b2d5`
+
+All provider-independent/internal ZATCA acquisition workflows required by
+`docs/acquisition/ZATCA-PRODUCTION-ACTIVATION.md` are green on that exact canonical SHA.
+
+Therefore:
+
+- AR-5 internal engineering portion — **COMPLETE**;
+- AR-5 real production HSM/identity/CSID/reporting activation — **OPEN**;
+- AR-7 execution package — **PREPARED**, but no real merchant pilot is claimed;
+- AR-8 evidence contract/manual gate — **PREPARED**, but the release is not eligible without external evidence.
+
+The final gate is intentionally manual and exact-SHA bound. No final evidence manifest is
+committed by this checkpoint, so automated preparation cannot accidentally mark Korvi
+Production Proven or close the Canonical Acquisition Release.
