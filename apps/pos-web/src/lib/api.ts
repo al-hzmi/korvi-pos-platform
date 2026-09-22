@@ -20,17 +20,23 @@ import type {
   SupplierMigrationInspection,
   SupplierMigrationRowPage,
   SupplierMigrationSummary,
+  OpeningInventoryMigrationInspection,
+  OpeningInventoryMigrationRowPage,
+  OpeningInventoryMigrationSummary,
   CreateCsvCategoryMigrationJobRequest,
   CreateCsvCustomerMigrationJobRequest,
   CreateCsvSupplierMigrationJobRequest,
+  CreateCsvOpeningInventoryMigrationJobRequest,
   CreateCsvProductMigrationJobRequest,
   CreateXlsxCategoryMigrationJobRequest,
   CreateXlsxCustomerMigrationJobRequest,
   CreateXlsxSupplierMigrationJobRequest,
+  CreateXlsxOpeningInventoryMigrationJobRequest,
   CreateXlsxProductMigrationJobRequest,
   CsvCategoryMigrationSource,
   CsvCustomerMigrationSource,
   CsvSupplierMigrationSource,
+  CsvOpeningInventoryMigrationSource,
   CsvProductMigrationSource,
   DashboardSummary,
   CheckoutResponse,
@@ -77,6 +83,7 @@ import type {
   XlsxCategoryMigrationSource,
   XlsxCustomerMigrationSource,
   XlsxSupplierMigrationSource,
+  XlsxOpeningInventoryMigrationSource,
   XlsxProductMigrationSource,
 } from './api-types';
 
@@ -285,6 +292,39 @@ export interface ApiClient {
   ): Promise<SupplierMigrationRowPage>;
   dryRunSupplierMigration(jobId: string): Promise<SupplierMigrationSummary>;
   commitSupplierMigration(jobId: string, operationId: string): Promise<SupplierMigrationSummary>;
+
+  inspectOpeningInventoryMigrationCsv(
+    input: CsvOpeningInventoryMigrationSource,
+    options?: RequestOptions,
+  ): Promise<OpeningInventoryMigrationInspection>;
+  inspectOpeningInventoryMigrationXlsx(
+    input: XlsxOpeningInventoryMigrationSource,
+    options?: RequestOptions,
+  ): Promise<OpeningInventoryMigrationInspection>;
+  createOpeningInventoryMigrationCsvJob(
+    request: CreateCsvOpeningInventoryMigrationJobRequest,
+  ): Promise<OpeningInventoryMigrationSummary>;
+  createOpeningInventoryMigrationXlsxJob(
+    request: CreateXlsxOpeningInventoryMigrationJobRequest,
+  ): Promise<OpeningInventoryMigrationSummary>;
+  openingInventoryMigrationJob(
+    jobId: string,
+    options?: RequestOptions,
+  ): Promise<OpeningInventoryMigrationSummary>;
+  openingInventoryMigrationRows(
+    jobId: string,
+    query?: {
+      readonly limit?: number;
+      readonly afterSourceRow?: number | null;
+      readonly problemsOnly?: boolean;
+    },
+    options?: RequestOptions,
+  ): Promise<OpeningInventoryMigrationRowPage>;
+  dryRunOpeningInventoryMigration(jobId: string): Promise<OpeningInventoryMigrationSummary>;
+  commitOpeningInventoryMigration(
+    jobId: string,
+    operationId: string,
+  ): Promise<OpeningInventoryMigrationSummary>;
 
   inventoryBranches(
     query?: { readonly limit?: number; readonly cursor?: string },
@@ -916,6 +956,81 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     async commitSupplierMigration(jobId, operationId) {
       return retryableCommand<SupplierMigrationSummary>(
         `/v1/admin/migrations/suppliers/jobs/${encodeURIComponent(jobId)}/commit`,
+        { operationId },
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async inspectOpeningInventoryMigrationCsv(input, options) {
+      return (await call(
+        '/v1/admin/migrations/opening-inventory/inspect-csv',
+        json(input),
+        options,
+      )) as OpeningInventoryMigrationInspection;
+    },
+
+    async inspectOpeningInventoryMigrationXlsx(input, options) {
+      return (await call(
+        '/v1/admin/migrations/opening-inventory/inspect-xlsx',
+        json(input),
+        options,
+      )) as OpeningInventoryMigrationInspection;
+    },
+
+    async createOpeningInventoryMigrationCsvJob(request) {
+      return retryableCommand<OpeningInventoryMigrationSummary>(
+        '/v1/admin/migrations/opening-inventory/jobs',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async createOpeningInventoryMigrationXlsxJob(request) {
+      return retryableCommand<OpeningInventoryMigrationSummary>(
+        '/v1/admin/migrations/opening-inventory/jobs/xlsx',
+        request,
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async openingInventoryMigrationJob(jobId, options) {
+      return (await call(
+        `/v1/admin/migrations/opening-inventory/jobs/${encodeURIComponent(jobId)}`,
+        { method: 'GET' },
+        options,
+      )) as OpeningInventoryMigrationSummary;
+    },
+
+    async openingInventoryMigrationRows(jobId, query = {}, options) {
+      const search = new URLSearchParams();
+      if (query.limit !== undefined) search.set('limit', String(query.limit));
+      if (query.afterSourceRow !== undefined && query.afterSourceRow !== null) {
+        search.set('afterSourceRow', String(query.afterSourceRow));
+      }
+      if (query.problemsOnly !== undefined) {
+        search.set('problemsOnly', String(query.problemsOnly));
+      }
+      const suffix = search.toString();
+      return (await call(
+        `/v1/admin/migrations/opening-inventory/jobs/${encodeURIComponent(jobId)}/rows${
+          suffix === '' ? '' : `?${suffix}`
+        }`,
+        { method: 'GET' },
+        options,
+      )) as OpeningInventoryMigrationRowPage;
+    },
+
+    async dryRunOpeningInventoryMigration(jobId) {
+      return retryableCommand<OpeningInventoryMigrationSummary>(
+        `/v1/admin/migrations/opening-inventory/jobs/${encodeURIComponent(jobId)}/dry-run`,
+        {},
+        MIGRATION_COMMAND_TIMEOUT_MS,
+      );
+    },
+
+    async commitOpeningInventoryMigration(jobId, operationId) {
+      return retryableCommand<OpeningInventoryMigrationSummary>(
+        `/v1/admin/migrations/opening-inventory/jobs/${encodeURIComponent(jobId)}/commit`,
         { operationId },
         MIGRATION_COMMAND_TIMEOUT_MS,
       );
