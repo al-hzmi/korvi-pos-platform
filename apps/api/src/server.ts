@@ -301,6 +301,15 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       lookup: (principal, term, limit) => resolve().returns.lookup(principal, term, limit),
       returnable: (principal, saleId) => resolve().returns.returnable(principal, saleId),
     },
+    noReceiptExchanges: {
+      create: (input) => {
+        const service = resolve().noReceiptExchanges;
+        if (service === undefined) {
+          throw new Error('No-receipt exchange service failed to initialize.');
+        }
+        return service.create(input);
+      },
+    },
   };
 }
 
