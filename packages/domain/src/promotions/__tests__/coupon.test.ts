@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { InvalidCouponCodeError, normalizeCouponCode } from '../coupon.js';
 
 describe('coupon identity', () => {
-  it('normalizes case, outer whitespace and full-width ASCII deterministically', () => {
+  it('normalizes only case and outer whitespace deterministically', () => {
     expect(normalizeCouponCode('  save-10  ')).toBe('SAVE-10');
-    expect(normalizeCouponCode('ＳＡＶＥ１０')).toBe('SAVE10');
+  });
+
+  it('does not fold visually related Unicode into an ASCII business key', () => {
+    expect(() => normalizeCouponCode('ＳＡＶＥ１０')).toThrow(InvalidCouponCodeError);
+    expect(() => normalizeCouponCode('KORVI-10')).toThrow(InvalidCouponCodeError);
   });
 
   it.each(['--A', 'A--', 'AB', 'A_B', 'خصم10', 'SAVE 10', 'A'.repeat(33)])(
