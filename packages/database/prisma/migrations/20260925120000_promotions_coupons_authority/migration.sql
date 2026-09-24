@@ -102,9 +102,1014 @@ CREATE TABLE "coupons" (
     CHECK ("status" IN ('active','paused','retired')),
   CONSTRAINT "coupons_code"
     CHECK (
-      char_length("normalizedCode") BETWEEN 1 AND 40
+      char_length("normalizedCode") BETWEEN 3 AND 32
       AND "normalizedCode" = upper(btrim("normalizedCode"))
-      AND "normalizedCode" ~ '^[A-Z0-9-]+$'
+      AND "normalizedCode" ~ '^[A-Z0-9]([A-Z0-9-]*[A-Z0-9])?
+  CONSTRAINT "coupons_limit"
+    CHECK ("totalRedemptionLimit" IS NULL OR "totalRedemptionLimit" > 0),
+  CONSTRAINT "coupons_revision"
+    CHECK ("revision" > 0),
+  CONSTRAINT "coupons_window"
+    CHECK ("startsAt" IS NULL OR "endsAt" IS NULL OR "endsAt" > "startsAt")
+);
+
+CREATE UNIQUE INDEX "coupons_tenant_id_key"
+  ON "coupons"("tenantId","id");
+CREATE UNIQUE INDEX "coupons_tenant_code_key"
+  ON "coupons"("tenantId","normalizedCode");
+CREATE INDEX "coupons_tenant_promotion_status_idx"
+  ON "coupons"("tenantId","promotionId","status");
+
+CREATE TABLE "sale_promotion_applications" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "saleId" UUID NOT NULL,
+  "promotionId" UUID NOT NULL,
+  "couponId" UUID,
+  "promotionRevision" BIGINT NOT NULL,
+  "merchantCode" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "priority" INTEGER NOT NULL,
+  "stackingMode" TEXT NOT NULL,
+  "activationMode" TEXT NOT NULL,
+  "effectKind" TEXT NOT NULL,
+  "effectValue" BIGINT NOT NULL,
+  "eligibleBaseMinor" BIGINT NOT NULL,
+  "amountMinor" BIGINT NOT NULL,
+  "couponCode" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT "sale_promotion_applications_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_sale_fkey"
+    FOREIGN KEY ("tenantId","saleId") REFERENCES "sales"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_promotion_fkey"
+    FOREIGN KEY ("tenantId","promotionId") REFERENCES "promotions"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_coupon_fkey"
+    FOREIGN KEY ("tenantId","couponId") REFERENCES "coupons"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_revision"
+    CHECK ("promotionRevision" > 0),
+  CONSTRAINT "sale_promotion_applications_stacking"
+    CHECK ("stackingMode" IN ('stackable','exclusive')),
+  CONSTRAINT "sale_promotion_applications_activation"
+    CHECK ("activationMode" IN ('automatic','coupon')),
+  CONSTRAINT "sale_promotion_applications_effect"
+    CHECK (
+      ("effectKind" = 'fixed' AND "effectValue" > 0)
+      OR ("effectKind" = 'percentage' AND "effectValue" BETWEEN 1 AND 10000)
+    ),
+  CONSTRAINT "sale_promotion_applications_money"
+    CHECK ("eligibleBaseMinor" > 0 AND "amountMinor" > 0 AND "amountMinor" <= "eligibleBaseMinor"),
+  CONSTRAINT "sale_promotion_applications_coupon_shape"
+    CHECK (
+      ("activationMode" = 'automatic' AND "couponId" IS NULL AND "couponCode" IS NULL)
+      OR (
+        "activationMode" = 'coupon'
+        AND "couponId" IS NOT NULL
+        AND "couponCode" IS NOT NULL
+        AND char_length("couponCode") BETWEEN 3 AND 32
+        AND "couponCode" = upper(btrim("couponCode"))
+        AND "couponCode" ~ '^[A-Z0-9]([A-Z0-9-]*[A-Z0-9])?
+    )
+);
+
+CREATE UNIQUE INDEX "sale_promotion_applications_tenant_id_key"
+  ON "sale_promotion_applications"("tenantId","id");
+CREATE UNIQUE INDEX "sale_promotion_applications_tenant_sale_promotion_key"
+  ON "sale_promotion_applications"("tenantId","saleId","promotionId");
+CREATE INDEX "sale_promotion_applications_tenant_promotion_idx"
+  ON "sale_promotion_applications"("tenantId","promotionId","createdAt");
+CREATE INDEX "sale_promotion_applications_tenant_coupon_idx"
+  ON "sale_promotion_applications"("tenantId","couponId");
+
+CREATE TABLE "sale_promotion_allocations" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "applicationId" UUID NOT NULL,
+  "saleLineId" UUID NOT NULL,
+  "amountMinor" BIGINT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT "sale_promotion_allocations_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_application_fkey"
+    FOREIGN KEY ("tenantId","applicationId") REFERENCES "sale_promotion_applications"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_sale_line_fkey"
+    FOREIGN KEY ("tenantId","saleLineId") REFERENCES "sale_lines"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_amount"
+    CHECK ("amountMinor" > 0)
+);
+
+CREATE UNIQUE INDEX "sale_promotion_allocations_tenant_id_key"
+  ON "sale_promotion_allocations"("tenantId","id");
+CREATE UNIQUE INDEX "sale_promotion_allocations_tenant_application_line_key"
+  ON "sale_promotion_allocations"("tenantId","applicationId","saleLineId");
+CREATE INDEX "sale_promotion_allocations_tenant_sale_line_idx"
+  ON "sale_promotion_allocations"("tenantId","saleLineId");
+
+CREATE TABLE "coupon_redemptions" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "couponId" UUID NOT NULL,
+  "promotionId" UUID NOT NULL,
+  "saleId" UUID NOT NULL,
+  "applicationId" UUID NOT NULL,
+  "operationId" TEXT NOT NULL,
+  "redeemedAt" TIMESTAMP(3) NOT NULL,
+
+  CONSTRAINT "coupon_redemptions_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_coupon_fkey"
+    FOREIGN KEY ("tenantId","couponId") REFERENCES "coupons"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_promotion_fkey"
+    FOREIGN KEY ("tenantId","promotionId") REFERENCES "promotions"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_sale_fkey"
+    FOREIGN KEY ("tenantId","saleId") REFERENCES "sales"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_application_fkey"
+    FOREIGN KEY ("tenantId","applicationId") REFERENCES "sale_promotion_applications"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_operation_bounded"
+    CHECK ("operationId" = btrim("operationId") AND char_length("operationId") BETWEEN 1 AND 120)
+);
+
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_id_key"
+  ON "coupon_redemptions"("tenantId","id");
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_coupon_sale_key"
+  ON "coupon_redemptions"("tenantId","couponId","saleId");
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_application_key"
+  ON "coupon_redemptions"("tenantId","applicationId");
+CREATE INDEX "coupon_redemptions_tenant_coupon_redeemed_idx"
+  ON "coupon_redemptions"("tenantId","couponId","redeemedAt");
+CREATE INDEX "coupon_redemptions_tenant_operation_idx"
+  ON "coupon_redemptions"("tenantId","operationId");
+
+CREATE FUNCTION enforce_promotion_revision_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."id" <> OLD."id" OR NEW."tenantId" <> OLD."tenantId" OR NEW."createdAt" <> OLD."createdAt" THEN
+    RAISE EXCEPTION 'promotion identity and creation facts are immutable' USING ERRCODE = '55000';
+  END IF;
+  IF NEW."revision" <> OLD."revision" + 1 THEN
+    RAISE EXCEPTION 'promotion update must advance revision exactly once' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "promotions_revision_guard"
+BEFORE UPDATE ON "promotions"
+FOR EACH ROW EXECUTE FUNCTION enforce_promotion_revision_update();
+
+CREATE FUNCTION enforce_coupon_revision_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."id" <> OLD."id" OR NEW."tenantId" <> OLD."tenantId" OR NEW."promotionId" <> OLD."promotionId" OR NEW."createdAt" <> OLD."createdAt" THEN
+    RAISE EXCEPTION 'coupon identity, tenant, promotion and creation facts are immutable' USING ERRCODE = '55000';
+  END IF;
+  IF NEW."revision" <> OLD."revision" + 1 THEN
+    RAISE EXCEPTION 'coupon update must advance revision exactly once' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "coupons_revision_guard"
+BEFORE UPDATE ON "coupons"
+FOR EACH ROW EXECUTE FUNCTION enforce_coupon_revision_update();
+
+CREATE FUNCTION enforce_coupon_activation_mode() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  mode TEXT;
+BEGIN
+  SELECT "activationMode" INTO mode
+    FROM "promotions"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."promotionId";
+  IF mode IS DISTINCT FROM 'coupon' THEN
+    RAISE EXCEPTION 'coupon must reference a coupon-activated promotion' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "coupons_activation_mode_guard"
+BEFORE INSERT OR UPDATE ON "coupons"
+FOR EACH ROW EXECUTE FUNCTION enforce_coupon_activation_mode();
+
+CREATE FUNCTION enforce_promotion_product_target() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  target TEXT;
+BEGIN
+  SELECT "targetKind" INTO target
+    FROM "promotions"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."promotionId";
+  IF target IS DISTINCT FROM 'products' THEN
+    RAISE EXCEPTION 'promotion product allow-list requires product target mode' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "promotion_products_target_guard"
+BEFORE INSERT OR UPDATE ON "promotion_products"
+FOR EACH ROW EXECUTE FUNCTION enforce_promotion_product_target();
+
+-- Historical promotion facts must be relationally self-consistent, not
+-- merely tenant-consistent. These guards prevent a caller from composing an
+-- application/allocation/redemption out of individually valid rows belonging
+-- to different sales, promotions or coupons.
+CREATE FUNCTION enforce_sale_promotion_application_links() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE
+  current_revision BIGINT;
+  current_merchant_code TEXT;
+  current_name TEXT;
+  current_priority INTEGER;
+  current_stacking_mode TEXT;
+  current_activation_mode TEXT;
+  current_effect_kind TEXT;
+  current_effect_value BIGINT;
+  coupon_promotion UUID;
+  coupon_code TEXT;
+BEGIN
+  SELECT
+    "revision",
+    "merchantCode",
+    "name",
+    "priority",
+    "stackingMode",
+    "activationMode",
+    "effectKind",
+    "effectValue"
+  INTO
+    current_revision,
+    current_merchant_code,
+    current_name,
+    current_priority,
+    current_stacking_mode,
+    current_activation_mode,
+    current_effect_kind,
+    current_effect_value
+  FROM "promotions"
+  WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."promotionId"
+  FOR SHARE;
+
+  IF current_revision IS NULL THEN
+    RAISE EXCEPTION 'promotion application references an unknown tenant promotion'
+      USING ERRCODE = '23503';
+  END IF;
+
+  IF
+    NEW."promotionRevision" IS DISTINCT FROM current_revision
+    OR NEW."merchantCode" IS DISTINCT FROM current_merchant_code
+    OR NEW."name" IS DISTINCT FROM current_name
+    OR NEW."priority" IS DISTINCT FROM current_priority
+    OR NEW."stackingMode" IS DISTINCT FROM current_stacking_mode
+    OR NEW."activationMode" IS DISTINCT FROM current_activation_mode
+    OR NEW."effectKind" IS DISTINCT FROM current_effect_kind
+    OR NEW."effectValue" IS DISTINCT FROM current_effect_value
+  THEN
+    RAISE EXCEPTION 'promotion application snapshot does not match the locked promotion revision'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NEW."activationMode" = 'coupon' THEN
+    SELECT "promotionId", "normalizedCode"
+      INTO coupon_promotion, coupon_code
+      FROM "coupons"
+     WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."couponId"
+     FOR SHARE;
+
+    IF coupon_promotion IS NULL THEN
+      RAISE EXCEPTION 'coupon-backed promotion application references an unknown tenant coupon'
+        USING ERRCODE = '23503';
+    END IF;
+
+    IF
+      coupon_promotion IS DISTINCT FROM NEW."promotionId"
+      OR coupon_code IS DISTINCT FROM NEW."couponCode"
+    THEN
+      RAISE EXCEPTION 'coupon-backed promotion application does not match its coupon instrument'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER "sale_promotion_applications_link_guard"
+BEFORE INSERT OR UPDATE ON "sale_promotion_applications"
+FOR EACH ROW EXECUTE FUNCTION enforce_sale_promotion_application_links();
+
+CREATE FUNCTION enforce_sale_promotion_allocation_link() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE
+  application_sale UUID;
+  line_sale UUID;
+BEGIN
+  SELECT "saleId" INTO application_sale
+    FROM "sale_promotion_applications"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."applicationId"
+   FOR SHARE;
+
+  SELECT "saleId" INTO line_sale
+    FROM "sale_lines"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."saleLineId"
+   FOR SHARE;
+
+  IF application_sale IS NULL OR line_sale IS NULL THEN
+    RAISE EXCEPTION 'promotion allocation references an unknown application or sale line'
+      USING ERRCODE = '23503';
+  END IF;
+
+  IF application_sale IS DISTINCT FROM line_sale THEN
+    RAISE EXCEPTION 'promotion allocation sale line belongs to a different sale'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER "sale_promotion_allocations_link_guard"
+BEFORE INSERT OR UPDATE ON "sale_promotion_allocations"
+FOR EACH ROW EXECUTE FUNCTION enforce_sale_promotion_allocation_link();
+
+CREATE FUNCTION enforce_coupon_redemption_link() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE
+  application_sale UUID;
+  application_promotion UUID;
+  application_coupon UUID;
+  application_mode TEXT;
+  coupon_promotion UUID;
+  sale_operation TEXT;
+BEGIN
+  SELECT "saleId", "promotionId", "couponId", "activationMode"
+    INTO application_sale, application_promotion, application_coupon, application_mode
+    FROM "sale_promotion_applications"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."applicationId"
+   FOR SHARE;
+
+  SELECT "promotionId" INTO coupon_promotion
+    FROM "coupons"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."couponId"
+   FOR SHARE;
+
+  SELECT "operationId" INTO sale_operation
+    FROM "sales"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."saleId"
+   FOR SHARE;
+
+  IF application_sale IS NULL OR coupon_promotion IS NULL OR sale_operation IS NULL THEN
+    RAISE EXCEPTION 'coupon redemption references an unknown application, coupon or sale'
+      USING ERRCODE = '23503';
+  END IF;
+
+  IF
+    application_mode IS DISTINCT FROM 'coupon'
+    OR application_sale IS DISTINCT FROM NEW."saleId"
+    OR application_promotion IS DISTINCT FROM NEW."promotionId"
+    OR application_coupon IS DISTINCT FROM NEW."couponId"
+    OR coupon_promotion IS DISTINCT FROM NEW."promotionId"
+    OR sale_operation IS DISTINCT FROM NEW."operationId"
+  THEN
+    RAISE EXCEPTION 'coupon redemption does not reconcile to its application and sale'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER "coupon_redemptions_link_guard"
+BEFORE INSERT OR UPDATE ON "coupon_redemptions"
+FOR EACH ROW EXECUTE FUNCTION enforce_coupon_redemption_link();
+
+CREATE FUNCTION reject_promotion_history_update() RETURNS trigger
+LANGUAGE plpgsql AS $
+BEGIN
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+    RETURN OLD;
+  END IF;
+
+  RAISE EXCEPTION 'finalized promotion application/redemption facts are immutable'
+    USING ERRCODE = '55000';
+END;
+$;
+
+CREATE TRIGGER "sale_promotion_applications_immutable"
+BEFORE UPDATE ON "sale_promotion_applications"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "sale_promotion_allocations_immutable"
+BEFORE UPDATE ON "sale_promotion_allocations"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "coupon_redemptions_immutable"
+BEFORE UPDATE ON "coupon_redemptions"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "sale_promotion_applications_immutable_delete"
+BEFORE DELETE ON "sale_promotion_applications"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "sale_promotion_allocations_immutable_delete"
+BEFORE DELETE ON "sale_promotion_allocations"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "coupon_redemptions_immutable_delete"
+BEFORE DELETE ON "coupon_redemptions"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+ALTER TABLE "promotions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "promotions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "promotions_isolation" ON "promotions"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "promotion_products" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "promotion_products" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "promotion_products_isolation" ON "promotion_products"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "coupons" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "coupons" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "coupons_isolation" ON "coupons"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "sale_promotion_applications" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sale_promotion_applications" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "sale_promotion_applications_isolation" ON "sale_promotion_applications"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "sale_promotion_allocations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sale_promotion_allocations" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "sale_promotion_allocations_isolation" ON "sale_promotion_allocations"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "coupon_redemptions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "coupon_redemptions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "coupon_redemptions_isolation" ON "coupon_redemptions"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+INSERT INTO "permissions" ("key", "descriptionAr", "descriptionEn")
+VALUES ('promotion.manage', 'إدارة العروض والكوبونات', 'Manage promotions and coupons')
+ON CONFLICT ("key") DO NOTHING;
+
+ALTER TABLE "roles" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "role_permissions" NO FORCE ROW LEVEL SECURITY;
+
+INSERT INTO "role_permissions" ("id", "tenantId", "roleId", "permissionKey")
+SELECT
+  (
+    lpad(to_hex((extract(epoch FROM clock_timestamp()) * 1000)::bigint), 12, '0')
+    || '7'
+    || substr(replace(gen_random_uuid()::text, '-', ''), 14, 3)
+    || substr(replace(gen_random_uuid()::text, '-', ''), 17, 16)
+  )::uuid,
+  r."tenantId",
+  r."id",
+  'promotion.manage'
+FROM "roles" r
+WHERE r."isSystem" = TRUE
+  AND r."key" IN ('manager','admin','owner')
+ON CONFLICT ("tenantId","roleId","permissionKey") DO NOTHING;
+
+ALTER TABLE "roles" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "role_permissions" FORCE ROW LEVEL SECURITY;
+
+COMMIT;
+
+    ),
+  CONSTRAINT "coupons_limit"
+    CHECK ("totalRedemptionLimit" IS NULL OR "totalRedemptionLimit" > 0),
+  CONSTRAINT "coupons_revision"
+    CHECK ("revision" > 0),
+  CONSTRAINT "coupons_window"
+    CHECK ("startsAt" IS NULL OR "endsAt" IS NULL OR "endsAt" > "startsAt")
+);
+
+CREATE UNIQUE INDEX "coupons_tenant_id_key"
+  ON "coupons"("tenantId","id");
+CREATE UNIQUE INDEX "coupons_tenant_code_key"
+  ON "coupons"("tenantId","normalizedCode");
+CREATE INDEX "coupons_tenant_promotion_status_idx"
+  ON "coupons"("tenantId","promotionId","status");
+
+CREATE TABLE "sale_promotion_applications" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "saleId" UUID NOT NULL,
+  "promotionId" UUID NOT NULL,
+  "couponId" UUID,
+  "promotionRevision" BIGINT NOT NULL,
+  "merchantCode" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "priority" INTEGER NOT NULL,
+  "stackingMode" TEXT NOT NULL,
+  "activationMode" TEXT NOT NULL,
+  "effectKind" TEXT NOT NULL,
+  "effectValue" BIGINT NOT NULL,
+  "eligibleBaseMinor" BIGINT NOT NULL,
+  "amountMinor" BIGINT NOT NULL,
+  "couponCode" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT "sale_promotion_applications_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_sale_fkey"
+    FOREIGN KEY ("tenantId","saleId") REFERENCES "sales"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_promotion_fkey"
+    FOREIGN KEY ("tenantId","promotionId") REFERENCES "promotions"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_coupon_fkey"
+    FOREIGN KEY ("tenantId","couponId") REFERENCES "coupons"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_applications_revision"
+    CHECK ("promotionRevision" > 0),
+  CONSTRAINT "sale_promotion_applications_stacking"
+    CHECK ("stackingMode" IN ('stackable','exclusive')),
+  CONSTRAINT "sale_promotion_applications_activation"
+    CHECK ("activationMode" IN ('automatic','coupon')),
+  CONSTRAINT "sale_promotion_applications_effect"
+    CHECK (
+      ("effectKind" = 'fixed' AND "effectValue" > 0)
+      OR ("effectKind" = 'percentage' AND "effectValue" BETWEEN 1 AND 10000)
+    ),
+  CONSTRAINT "sale_promotion_applications_money"
+    CHECK ("eligibleBaseMinor" > 0 AND "amountMinor" > 0 AND "amountMinor" <= "eligibleBaseMinor"),
+  CONSTRAINT "sale_promotion_applications_coupon_shape"
+    CHECK (
+      ("activationMode" = 'automatic' AND "couponId" IS NULL AND "couponCode" IS NULL)
+      OR (
+        "activationMode" = 'coupon'
+        AND "couponId" IS NOT NULL
+        AND "couponCode" IS NOT NULL
+        AND "couponCode" = upper(btrim("couponCode"))
+        AND "couponCode" ~ '^[A-Z0-9-]+$'
+      )
+    )
+);
+
+CREATE UNIQUE INDEX "sale_promotion_applications_tenant_id_key"
+  ON "sale_promotion_applications"("tenantId","id");
+CREATE UNIQUE INDEX "sale_promotion_applications_tenant_sale_promotion_key"
+  ON "sale_promotion_applications"("tenantId","saleId","promotionId");
+CREATE INDEX "sale_promotion_applications_tenant_promotion_idx"
+  ON "sale_promotion_applications"("tenantId","promotionId","createdAt");
+CREATE INDEX "sale_promotion_applications_tenant_coupon_idx"
+  ON "sale_promotion_applications"("tenantId","couponId");
+
+CREATE TABLE "sale_promotion_allocations" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "applicationId" UUID NOT NULL,
+  "saleLineId" UUID NOT NULL,
+  "amountMinor" BIGINT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT "sale_promotion_allocations_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_application_fkey"
+    FOREIGN KEY ("tenantId","applicationId") REFERENCES "sale_promotion_applications"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_sale_line_fkey"
+    FOREIGN KEY ("tenantId","saleLineId") REFERENCES "sale_lines"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_amount"
+    CHECK ("amountMinor" > 0)
+);
+
+CREATE UNIQUE INDEX "sale_promotion_allocations_tenant_id_key"
+  ON "sale_promotion_allocations"("tenantId","id");
+CREATE UNIQUE INDEX "sale_promotion_allocations_tenant_application_line_key"
+  ON "sale_promotion_allocations"("tenantId","applicationId","saleLineId");
+CREATE INDEX "sale_promotion_allocations_tenant_sale_line_idx"
+  ON "sale_promotion_allocations"("tenantId","saleLineId");
+
+CREATE TABLE "coupon_redemptions" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "couponId" UUID NOT NULL,
+  "promotionId" UUID NOT NULL,
+  "saleId" UUID NOT NULL,
+  "applicationId" UUID NOT NULL,
+  "operationId" TEXT NOT NULL,
+  "redeemedAt" TIMESTAMP(3) NOT NULL,
+
+  CONSTRAINT "coupon_redemptions_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_coupon_fkey"
+    FOREIGN KEY ("tenantId","couponId") REFERENCES "coupons"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_promotion_fkey"
+    FOREIGN KEY ("tenantId","promotionId") REFERENCES "promotions"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_sale_fkey"
+    FOREIGN KEY ("tenantId","saleId") REFERENCES "sales"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_application_fkey"
+    FOREIGN KEY ("tenantId","applicationId") REFERENCES "sale_promotion_applications"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_operation_bounded"
+    CHECK ("operationId" = btrim("operationId") AND char_length("operationId") BETWEEN 1 AND 120)
+);
+
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_id_key"
+  ON "coupon_redemptions"("tenantId","id");
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_coupon_sale_key"
+  ON "coupon_redemptions"("tenantId","couponId","saleId");
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_application_key"
+  ON "coupon_redemptions"("tenantId","applicationId");
+CREATE INDEX "coupon_redemptions_tenant_coupon_redeemed_idx"
+  ON "coupon_redemptions"("tenantId","couponId","redeemedAt");
+CREATE INDEX "coupon_redemptions_tenant_operation_idx"
+  ON "coupon_redemptions"("tenantId","operationId");
+
+CREATE FUNCTION enforce_promotion_revision_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."id" <> OLD."id" OR NEW."tenantId" <> OLD."tenantId" OR NEW."createdAt" <> OLD."createdAt" THEN
+    RAISE EXCEPTION 'promotion identity and creation facts are immutable' USING ERRCODE = '55000';
+  END IF;
+  IF NEW."revision" <> OLD."revision" + 1 THEN
+    RAISE EXCEPTION 'promotion update must advance revision exactly once' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "promotions_revision_guard"
+BEFORE UPDATE ON "promotions"
+FOR EACH ROW EXECUTE FUNCTION enforce_promotion_revision_update();
+
+CREATE FUNCTION enforce_coupon_revision_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."id" <> OLD."id" OR NEW."tenantId" <> OLD."tenantId" OR NEW."promotionId" <> OLD."promotionId" OR NEW."createdAt" <> OLD."createdAt" THEN
+    RAISE EXCEPTION 'coupon identity, tenant, promotion and creation facts are immutable' USING ERRCODE = '55000';
+  END IF;
+  IF NEW."revision" <> OLD."revision" + 1 THEN
+    RAISE EXCEPTION 'coupon update must advance revision exactly once' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "coupons_revision_guard"
+BEFORE UPDATE ON "coupons"
+FOR EACH ROW EXECUTE FUNCTION enforce_coupon_revision_update();
+
+CREATE FUNCTION enforce_coupon_activation_mode() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  mode TEXT;
+BEGIN
+  SELECT "activationMode" INTO mode
+    FROM "promotions"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."promotionId";
+  IF mode IS DISTINCT FROM 'coupon' THEN
+    RAISE EXCEPTION 'coupon must reference a coupon-activated promotion' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "coupons_activation_mode_guard"
+BEFORE INSERT OR UPDATE ON "coupons"
+FOR EACH ROW EXECUTE FUNCTION enforce_coupon_activation_mode();
+
+CREATE FUNCTION enforce_promotion_product_target() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  target TEXT;
+BEGIN
+  SELECT "targetKind" INTO target
+    FROM "promotions"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."promotionId";
+  IF target IS DISTINCT FROM 'products' THEN
+    RAISE EXCEPTION 'promotion product allow-list requires product target mode' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "promotion_products_target_guard"
+BEFORE INSERT OR UPDATE ON "promotion_products"
+FOR EACH ROW EXECUTE FUNCTION enforce_promotion_product_target();
+
+CREATE FUNCTION reject_promotion_history_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'finalized promotion application/redemption facts are immutable'
+    USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE TRIGGER "sale_promotion_applications_immutable"
+BEFORE UPDATE ON "sale_promotion_applications"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "sale_promotion_allocations_immutable"
+BEFORE UPDATE ON "sale_promotion_allocations"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "coupon_redemptions_immutable"
+BEFORE UPDATE ON "coupon_redemptions"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+ALTER TABLE "promotions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "promotions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "promotions_isolation" ON "promotions"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "promotion_products" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "promotion_products" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "promotion_products_isolation" ON "promotion_products"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "coupons" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "coupons" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "coupons_isolation" ON "coupons"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "sale_promotion_applications" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sale_promotion_applications" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "sale_promotion_applications_isolation" ON "sale_promotion_applications"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "sale_promotion_allocations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sale_promotion_allocations" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "sale_promotion_allocations_isolation" ON "sale_promotion_allocations"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "coupon_redemptions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "coupon_redemptions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "coupon_redemptions_isolation" ON "coupon_redemptions"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+INSERT INTO "permissions" ("key", "descriptionAr", "descriptionEn")
+VALUES ('promotion.manage', 'إدارة العروض والكوبونات', 'Manage promotions and coupons')
+ON CONFLICT ("key") DO NOTHING;
+
+ALTER TABLE "roles" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "role_permissions" NO FORCE ROW LEVEL SECURITY;
+
+INSERT INTO "role_permissions" ("id", "tenantId", "roleId", "permissionKey")
+SELECT
+  (
+    lpad(to_hex((extract(epoch FROM clock_timestamp()) * 1000)::bigint), 12, '0')
+    || '7'
+    || substr(replace(gen_random_uuid()::text, '-', ''), 14, 3)
+    || substr(replace(gen_random_uuid()::text, '-', ''), 17, 16)
+  )::uuid,
+  r."tenantId",
+  r."id",
+  'promotion.manage'
+FROM "roles" r
+WHERE r."isSystem" = TRUE
+  AND r."key" IN ('manager','admin','owner')
+ON CONFLICT ("tenantId","roleId","permissionKey") DO NOTHING;
+
+ALTER TABLE "roles" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "role_permissions" FORCE ROW LEVEL SECURITY;
+
+COMMIT;
+
+      )
+    )
+);
+
+CREATE UNIQUE INDEX "sale_promotion_applications_tenant_id_key"
+  ON "sale_promotion_applications"("tenantId","id");
+CREATE UNIQUE INDEX "sale_promotion_applications_tenant_sale_promotion_key"
+  ON "sale_promotion_applications"("tenantId","saleId","promotionId");
+CREATE INDEX "sale_promotion_applications_tenant_promotion_idx"
+  ON "sale_promotion_applications"("tenantId","promotionId","createdAt");
+CREATE INDEX "sale_promotion_applications_tenant_coupon_idx"
+  ON "sale_promotion_applications"("tenantId","couponId");
+
+CREATE TABLE "sale_promotion_allocations" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "applicationId" UUID NOT NULL,
+  "saleLineId" UUID NOT NULL,
+  "amountMinor" BIGINT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT "sale_promotion_allocations_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_application_fkey"
+    FOREIGN KEY ("tenantId","applicationId") REFERENCES "sale_promotion_applications"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_sale_line_fkey"
+    FOREIGN KEY ("tenantId","saleLineId") REFERENCES "sale_lines"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "sale_promotion_allocations_amount"
+    CHECK ("amountMinor" > 0)
+);
+
+CREATE UNIQUE INDEX "sale_promotion_allocations_tenant_id_key"
+  ON "sale_promotion_allocations"("tenantId","id");
+CREATE UNIQUE INDEX "sale_promotion_allocations_tenant_application_line_key"
+  ON "sale_promotion_allocations"("tenantId","applicationId","saleLineId");
+CREATE INDEX "sale_promotion_allocations_tenant_sale_line_idx"
+  ON "sale_promotion_allocations"("tenantId","saleLineId");
+
+CREATE TABLE "coupon_redemptions" (
+  "id" UUID PRIMARY KEY,
+  "tenantId" UUID NOT NULL,
+  "couponId" UUID NOT NULL,
+  "promotionId" UUID NOT NULL,
+  "saleId" UUID NOT NULL,
+  "applicationId" UUID NOT NULL,
+  "operationId" TEXT NOT NULL,
+  "redeemedAt" TIMESTAMP(3) NOT NULL,
+
+  CONSTRAINT "coupon_redemptions_tenant_fkey"
+    FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_coupon_fkey"
+    FOREIGN KEY ("tenantId","couponId") REFERENCES "coupons"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_promotion_fkey"
+    FOREIGN KEY ("tenantId","promotionId") REFERENCES "promotions"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_sale_fkey"
+    FOREIGN KEY ("tenantId","saleId") REFERENCES "sales"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_application_fkey"
+    FOREIGN KEY ("tenantId","applicationId") REFERENCES "sale_promotion_applications"("tenantId","id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "coupon_redemptions_operation_bounded"
+    CHECK ("operationId" = btrim("operationId") AND char_length("operationId") BETWEEN 1 AND 120)
+);
+
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_id_key"
+  ON "coupon_redemptions"("tenantId","id");
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_coupon_sale_key"
+  ON "coupon_redemptions"("tenantId","couponId","saleId");
+CREATE UNIQUE INDEX "coupon_redemptions_tenant_application_key"
+  ON "coupon_redemptions"("tenantId","applicationId");
+CREATE INDEX "coupon_redemptions_tenant_coupon_redeemed_idx"
+  ON "coupon_redemptions"("tenantId","couponId","redeemedAt");
+CREATE INDEX "coupon_redemptions_tenant_operation_idx"
+  ON "coupon_redemptions"("tenantId","operationId");
+
+CREATE FUNCTION enforce_promotion_revision_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."id" <> OLD."id" OR NEW."tenantId" <> OLD."tenantId" OR NEW."createdAt" <> OLD."createdAt" THEN
+    RAISE EXCEPTION 'promotion identity and creation facts are immutable' USING ERRCODE = '55000';
+  END IF;
+  IF NEW."revision" <> OLD."revision" + 1 THEN
+    RAISE EXCEPTION 'promotion update must advance revision exactly once' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "promotions_revision_guard"
+BEFORE UPDATE ON "promotions"
+FOR EACH ROW EXECUTE FUNCTION enforce_promotion_revision_update();
+
+CREATE FUNCTION enforce_coupon_revision_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."id" <> OLD."id" OR NEW."tenantId" <> OLD."tenantId" OR NEW."promotionId" <> OLD."promotionId" OR NEW."createdAt" <> OLD."createdAt" THEN
+    RAISE EXCEPTION 'coupon identity, tenant, promotion and creation facts are immutable' USING ERRCODE = '55000';
+  END IF;
+  IF NEW."revision" <> OLD."revision" + 1 THEN
+    RAISE EXCEPTION 'coupon update must advance revision exactly once' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "coupons_revision_guard"
+BEFORE UPDATE ON "coupons"
+FOR EACH ROW EXECUTE FUNCTION enforce_coupon_revision_update();
+
+CREATE FUNCTION enforce_coupon_activation_mode() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  mode TEXT;
+BEGIN
+  SELECT "activationMode" INTO mode
+    FROM "promotions"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."promotionId";
+  IF mode IS DISTINCT FROM 'coupon' THEN
+    RAISE EXCEPTION 'coupon must reference a coupon-activated promotion' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "coupons_activation_mode_guard"
+BEFORE INSERT OR UPDATE ON "coupons"
+FOR EACH ROW EXECUTE FUNCTION enforce_coupon_activation_mode();
+
+CREATE FUNCTION enforce_promotion_product_target() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  target TEXT;
+BEGIN
+  SELECT "targetKind" INTO target
+    FROM "promotions"
+   WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."promotionId";
+  IF target IS DISTINCT FROM 'products' THEN
+    RAISE EXCEPTION 'promotion product allow-list requires product target mode' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "promotion_products_target_guard"
+BEFORE INSERT OR UPDATE ON "promotion_products"
+FOR EACH ROW EXECUTE FUNCTION enforce_promotion_product_target();
+
+CREATE FUNCTION reject_promotion_history_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'finalized promotion application/redemption facts are immutable'
+    USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE TRIGGER "sale_promotion_applications_immutable"
+BEFORE UPDATE ON "sale_promotion_applications"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "sale_promotion_allocations_immutable"
+BEFORE UPDATE ON "sale_promotion_allocations"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+CREATE TRIGGER "coupon_redemptions_immutable"
+BEFORE UPDATE ON "coupon_redemptions"
+FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
+
+ALTER TABLE "promotions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "promotions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "promotions_isolation" ON "promotions"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "promotion_products" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "promotion_products" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "promotion_products_isolation" ON "promotion_products"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "coupons" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "coupons" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "coupons_isolation" ON "coupons"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "sale_promotion_applications" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sale_promotion_applications" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "sale_promotion_applications_isolation" ON "sale_promotion_applications"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "sale_promotion_allocations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sale_promotion_allocations" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "sale_promotion_allocations_isolation" ON "sale_promotion_allocations"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+ALTER TABLE "coupon_redemptions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "coupon_redemptions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "coupon_redemptions_isolation" ON "coupon_redemptions"
+  USING ("tenantId" = current_tenant_id())
+  WITH CHECK ("tenantId" = current_tenant_id());
+
+INSERT INTO "permissions" ("key", "descriptionAr", "descriptionEn")
+VALUES ('promotion.manage', 'إدارة العروض والكوبونات', 'Manage promotions and coupons')
+ON CONFLICT ("key") DO NOTHING;
+
+ALTER TABLE "roles" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "role_permissions" NO FORCE ROW LEVEL SECURITY;
+
+INSERT INTO "role_permissions" ("id", "tenantId", "roleId", "permissionKey")
+SELECT
+  (
+    lpad(to_hex((extract(epoch FROM clock_timestamp()) * 1000)::bigint), 12, '0')
+    || '7'
+    || substr(replace(gen_random_uuid()::text, '-', ''), 14, 3)
+    || substr(replace(gen_random_uuid()::text, '-', ''), 17, 16)
+  )::uuid,
+  r."tenantId",
+  r."id",
+  'promotion.manage'
+FROM "roles" r
+WHERE r."isSystem" = TRUE
+  AND r."key" IN ('manager','admin','owner')
+ON CONFLICT ("tenantId","roleId","permissionKey") DO NOTHING;
+
+ALTER TABLE "roles" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "role_permissions" FORCE ROW LEVEL SECURITY;
+
+COMMIT;
+
     ),
   CONSTRAINT "coupons_limit"
     CHECK ("totalRedemptionLimit" IS NULL OR "totalRedemptionLimit" > 0),
