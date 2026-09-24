@@ -47,7 +47,9 @@ The following must **not** yet be claimed:
 12. `TRANSACTION-HANDOFF-CHECKLIST.md`
 13. `PRIVATE-EVIDENCE-REQUEST-LIST.md`
 14. `EXTERNAL-EVIDENCE-REGISTER.md`
-15. `MANIFEST.json`
+15. `EVIDENCE-ARTIFACT-RETENTION.md`
+16. `BUYER-ACCEPTANCE-TEST-PLAN.md`
+17. `MANIFEST.json`
 
 Then review the canonical sources:
 
