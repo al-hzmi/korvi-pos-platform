@@ -125,7 +125,12 @@ function buildInvoice(input: RecordNoReceiptExchangeInput): InvoiceRecord {
 
 function service() {
   const tenants = {
-    current: async () => ({ id: tenantId(TENANT), name: 'Korvi', slug: 'korvi', vatNumber: '310000000000003' }),
+    current: async () => ({
+      id: tenantId(TENANT),
+      name: 'Korvi',
+      slug: 'korvi',
+      vatNumber: '310000000000003',
+    }),
     settings: async () => ({
       tenantId: tenantId(TENANT),
       vertical: 'retail' as const,
@@ -143,7 +148,8 @@ function service() {
   } satisfies TenantRepository;
 
   const productRepository = {
-    findById: async (_scope: unknown, id: string) => products.find((product) => product.id === id) ?? null,
+    findById: async (_scope: unknown, id: string) =>
+      products.find((product) => product.id === id) ?? null,
     search: async () => [],
     findBySku: async () => null,
     findByBarcode: async () => null,
