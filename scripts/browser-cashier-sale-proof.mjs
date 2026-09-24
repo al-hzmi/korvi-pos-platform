@@ -314,7 +314,10 @@ async function clickButtonWithinDialog(text) {
     const rect = button.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   })()`);
-  assert.ok(point !== null, `Enabled dialog button containing ${JSON.stringify(text)} was not visible.`);
+  assert.ok(
+    point !== null,
+    `Enabled dialog button containing ${JSON.stringify(text)} was not visible.`,
+  );
   await cdp.send('Input.dispatchMouseEvent', {
     type: 'mousePressed',
     x: point.x,
