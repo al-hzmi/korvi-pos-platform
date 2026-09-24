@@ -203,12 +203,11 @@ ALTER TABLE "role_permissions" FORCE ROW LEVEL SECURITY;
 -- them as part of tenant lifecycle, but an application transaction cannot
 -- rewrite the case or its line snapshots after commit.
 CREATE FUNCTION reject_no_receipt_exchange_update() RETURNS trigger
-LANGUAGE plpgsql AS $
-BEGIN
-  RAISE EXCEPTION 'finalized no-receipt exchange facts are immutable'
-    USING ERRCODE = '55000';
-END;
-$;
+LANGUAGE plpgsql
+AS 'BEGIN
+  RAISE EXCEPTION ''finalized no-receipt exchange facts are immutable''
+    USING ERRCODE = ''55000'';
+END;';
 
 CREATE TRIGGER "no_receipt_exchange_cases_immutable"
 BEFORE UPDATE ON "no_receipt_exchange_cases"
