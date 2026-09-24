@@ -1081,7 +1081,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                   expectedRevision: restaurantOrder.revision,
                 },
               }),
-          ...(promotionEvaluation.applications.length === 0
+          ...(restaurantOrder !== null || deps.promotions === undefined
             ? {}
             : {
                 promotionSettlement: {
@@ -1124,21 +1124,25 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                       };
                     },
                   ),
-                  audit: {
-                    id: newId(),
-                    actorUserId: input.principal.userId,
-                    branchId: shift.branchId,
-                    terminalId: input.terminalId,
-                    eventType: 'sale.promoted',
-                    entityType: 'sale',
-                    entityId: saleId,
-                    metadata: {
-                      applicationCount: promotionEvaluation.applications.length,
-                      couponCount: couponCodes.length,
-                      promotionDiscountMinor: promotionEvaluation.totalDiscountMinor.toString(),
-                    },
-                    occurredAt: issuedAt,
-                  },
+                  audit:
+                    promotionEvaluation.applications.length === 0
+                      ? null
+                      : {
+                          id: newId(),
+                          actorUserId: input.principal.userId,
+                          branchId: shift.branchId,
+                          terminalId: input.terminalId,
+                          eventType: 'sale.promoted',
+                          entityType: 'sale',
+                          entityId: saleId,
+                          metadata: {
+                            applicationCount: promotionEvaluation.applications.length,
+                            couponCount: couponCodes.length,
+                            promotionDiscountMinor:
+                              promotionEvaluation.totalDiscountMinor.toString(),
+                          },
+                          occurredAt: issuedAt,
+                        },
                 },
               }),
           idempotency: {

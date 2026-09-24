@@ -535,16 +535,6 @@ async function provePromotionSettlementWithin(
   if (input.restaurantOrderSettlement !== undefined || input.sale.restaurantOrderId !== null) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
-  if (
-    input.sale.discounts.length > 0 ||
-    input.sale.lineDiscountMinor !== '0' ||
-    input.sale.basketDiscountMinor !== '0' ||
-    input.sale.lines.some(
-      (line) => line.lineDiscountMinor !== '0' || line.basketDiscountMinor !== '0',
-    )
-  ) {
-    throw new PromotionPolicyRefusedError('policy-stale');
-  }
   if (settlement.evaluatedAt !== input.sale.issuedAt) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
@@ -598,6 +588,20 @@ async function provePromotionSettlementWithin(
   }
 
   if (settlement.applications.length !== evaluation.applications.length) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+
+  if (
+    evaluation.applications.length > 0 &&
+    (
+      input.sale.discounts.length > 0 ||
+      input.sale.lineDiscountMinor !== '0' ||
+      input.sale.basketDiscountMinor !== '0' ||
+      input.sale.lines.some(
+        (line) => line.lineDiscountMinor !== '0' || line.basketDiscountMinor !== '0',
+      )
+    )
+  ) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
 
