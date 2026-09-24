@@ -1,4 +1,4 @@
-import { tenantId as brandTenantId } from '@korvi/domain';
+import { basisPointsToColumn, tenantId as brandTenantId } from '@korvi/domain';
 import { ShiftOpenRefusedError } from '@korvi/database';
 import {
   checkoutBody,
@@ -29,6 +29,7 @@ import type {
   DashboardRepository,
   ProductRepository,
   RestaurantFloorRepository,
+  NoReceiptExchangeRecord,
   ShiftRepository,
   TenantRepository,
   TenantScope,
@@ -212,6 +213,51 @@ const NO_RECEIPT_EXCHANGE_STATUS: Readonly<Record<NoReceiptExchangeFailureReason
   'insufficient-stock': 409,
   'idempotency-conflict': 409,
 };
+
+/**
+ * Public cashier DTO for a no-receipt exchange.
+ *
+ * Persistence uses a branded bigint for basis points. JSON must never see that
+ * representation, and the cashier also has no reason to receive the tenant id
+ * or request fingerprint. Keep this boundary explicit instead of serializing
+ * the domain record wholesale.
+ */
+function noReceiptExchangeSummary(record: NoReceiptExchangeRecord) {
+  return {
+    id: record.id,
+    branchId: record.branchId,
+    terminalId: record.terminalId,
+    shiftId: record.shiftId,
+    actorUserId: record.actorUserId,
+    operationId: record.operationId,
+    status: record.status,
+    sequence: record.sequence,
+    caseNumber: record.caseNumber,
+    reason: record.reason,
+    evidenceNote: record.evidenceNote,
+    currency: record.currency,
+    referenceCeilingMinor: record.referenceCeilingMinor,
+    approvedAllowanceMinor: record.approvedAllowanceMinor,
+    linkedSaleId: record.linkedSaleId,
+    issuedAt: record.issuedAt,
+    lines: record.lines.map((line) => ({
+      id: line.id,
+      lineNumber: line.lineNumber,
+      productId: line.productId,
+      sku: line.sku,
+      nameAr: line.nameAr,
+      nameEn: line.nameEn,
+      productType: line.productType,
+      quantityScaled: line.quantityScaled,
+      currentUnitReferencePriceMinor: line.currentUnitReferencePriceMinor,
+      currentVatBasisPoints: basisPointsToColumn(line.currentVatBasisPoints),
+      currentReferenceTotalMinor: line.currentReferenceTotalMinor,
+      trackInventory: line.trackInventory,
+      stockDisposition: line.stockDisposition,
+      costProvenance: line.costProvenance,
+    })),
+  };
+}
 
 /**
  * A drawer refusal says what to do next and nothing about the rest of the
@@ -900,7 +946,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       }
 
       return reply.code(result.replayed ? 200 : 201).send({
-        exchange: result.case,
+        exchange: noReceiptExchangeSummary(result.case),
         sale: result.sale,
         receipt: result.receipt,
         replayed: result.replayed,

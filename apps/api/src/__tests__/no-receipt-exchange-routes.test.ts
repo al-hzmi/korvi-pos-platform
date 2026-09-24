@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ROLE_PERMISSIONS } from '@korvi/domain';
+import { ROLE_PERMISSIONS, basisPoints, tenantId } from '@korvi/domain';
 import { buildServer } from '../server.js';
 import { loadConfig } from '../config.js';
 import { createAuthService } from '../auth/service.js';
@@ -27,7 +27,10 @@ import {
   memoryTerminalRepository,
   seedStore,
 } from './support/memory-business.js';
-import type { NoReceiptExchangeInput } from '../no-receipt-exchange/service.js';
+import type {
+  NoReceiptExchangeInput,
+  NoReceiptExchangeResult,
+} from '../no-receipt-exchange/service.js';
 import type { Fixture } from './support/memory-business.js';
 import type { RoleName } from '@korvi/domain';
 import type { FastifyInstance } from 'fastify';
@@ -55,7 +58,10 @@ function nextId(): string {
   return '018f7200-0000-7000-8000-' + String(ids).padStart(12, '0');
 }
 
-async function build(role: RoleName): Promise<FastifyInstance> {
+async function build(
+  role: RoleName,
+  exchangeResult: NoReceiptExchangeResult = { outcome: 'failure', reason: 'idempotency-conflict' },
+): Promise<FastifyInstance> {
   ids = 0;
   calls = [];
   const business = new MemoryBusinessStore();
@@ -123,7 +129,7 @@ async function build(role: RoleName): Promise<FastifyInstance> {
       noReceiptExchanges: {
         async create(input) {
           calls.push(input);
-          return { outcome: 'failure', reason: 'idempotency-conflict' };
+          return exchangeResult;
         },
       },
       drawer: createDrawerService({
@@ -277,5 +283,95 @@ describe('V2-1 no-receipt exchange route authority', () => {
     });
     expect(calls[0]).not.toHaveProperty('branchId');
     expect(calls[0]).not.toHaveProperty('referenceCeilingMinor');
+  });
+
+  it('serializes the successful domain case as a JSON-safe cashier DTO', async () => {
+    const server = await build('manager', {
+      outcome: 'success',
+      replayed: false,
+      case: {
+        id: '018f7200-0000-7000-8000-0000000000d1',
+        tenantId: tenantId(A.tenant),
+        branchId: A.branch,
+        terminalId: A.terminal,
+        shiftId: A.shift,
+        actorUserId: A.user,
+        operationId: '018f7200-0000-7000-8000-0000000000f1',
+        requestHash: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        status: 'finalized',
+        sequence: 1,
+        caseNumber: 'NR-01-000001',
+        reason: 'customer-no-receipt',
+        evidenceNote: null,
+        currency: 'SAR',
+        referenceCeilingMinor: '1000',
+        approvedAllowanceMinor: '1000',
+        linkedSaleId: '018f7200-0000-7000-8000-0000000000d2',
+        issuedAt: '2026-09-24T22:00:00.000Z',
+        lines: [
+          {
+            id: '018f7200-0000-7000-8000-0000000000d3',
+            lineNumber: 1,
+            productId: A.milk,
+            sku: 'MILK',
+            nameAr: 'حليب',
+            nameEn: null,
+            productType: 'unit',
+            quantityScaled: '1000',
+            currentUnitReferencePriceMinor: '1000',
+            currentVatBasisPoints: basisPoints(1500),
+            currentReferenceTotalMinor: '1000',
+            trackInventory: true,
+            stockDisposition: 'sellable',
+            costProvenance: 'unknown',
+          },
+        ],
+      },
+      sale: {
+        saleId: '018f7200-0000-7000-8000-0000000000d2',
+        operationId: '018f7200-0000-7000-8000-0000000000f1:replacement',
+        orderType: null,
+        tableId: null,
+        restaurantOrderId: null,
+        sequence: 1,
+        invoiceNumber: 'INV-01-000001',
+        issuedAt: '2026-09-24T22:00:00.000Z',
+        currency: 'SAR',
+        branchId: A.branch,
+        terminalId: A.terminal,
+        shiftId: A.shift,
+        cashierName: 'مدير',
+        lines: [],
+        netMinor: '870',
+        vatMinor: '130',
+        totalMinor: '1000',
+        tenderedMinor: '1000',
+        cashReceivedMinor: '0',
+        changeMinor: '0',
+        tenders: [
+          {
+            kind: 'exchange_allowance',
+            scheme: null,
+            amountMinor: '1000',
+            changeMinor: '0',
+            reference: null,
+          },
+        ],
+      },
+      receipt: null,
+    });
+    const cookie = await cookieFor(server);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/no-receipt-exchanges',
+      headers: { cookie, origin: ORIGIN },
+      payload: validPayload(),
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body.exchange.lines[0].currentVatBasisPoints).toBe(1500);
+    expect(body.exchange).not.toHaveProperty('tenantId');
+    expect(body.exchange).not.toHaveProperty('requestHash');
   });
 });
