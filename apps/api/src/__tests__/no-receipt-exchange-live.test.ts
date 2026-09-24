@@ -539,8 +539,10 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
       const result = await service.create(
         request({
           operationId: newId(),
+          acceptedProductId: A.untracked,
+          replacementProductId: A.untracked,
           approvedAllowanceMinor: '0',
-          cashMinor: '2300',
+          cashMinor: '575',
         }),
       );
       if (result.outcome !== 'success') throw new Error(result.reason);
