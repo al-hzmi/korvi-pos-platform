@@ -337,36 +337,42 @@ FOR EACH ROW EXECUTE FUNCTION reject_promotion_history_update();
 
 ALTER TABLE "promotions" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "promotions" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "promotions_isolation" ON "promotions";
 CREATE POLICY "promotions_isolation" ON "promotions"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "promotion_products" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "promotion_products" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "promotion_products_isolation" ON "promotion_products";
 CREATE POLICY "promotion_products_isolation" ON "promotion_products"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "coupons" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "coupons" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "coupons_isolation" ON "coupons";
 CREATE POLICY "coupons_isolation" ON "coupons"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "sale_promotion_applications" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "sale_promotion_applications" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sale_promotion_applications_isolation" ON "sale_promotion_applications";
 CREATE POLICY "sale_promotion_applications_isolation" ON "sale_promotion_applications"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "sale_promotion_allocations" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "sale_promotion_allocations" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sale_promotion_allocations_isolation" ON "sale_promotion_allocations";
 CREATE POLICY "sale_promotion_allocations_isolation" ON "sale_promotion_allocations"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "coupon_redemptions" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "coupon_redemptions" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "coupon_redemptions_isolation" ON "coupon_redemptions";
 CREATE POLICY "coupon_redemptions_isolation" ON "coupon_redemptions"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
