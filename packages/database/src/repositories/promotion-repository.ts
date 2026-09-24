@@ -18,7 +18,12 @@ import type {
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
 
-const PROMOTION_STATUSES: readonly PromotionPolicyStatus[] = ['draft', 'active', 'paused', 'archived'];
+const PROMOTION_STATUSES: readonly PromotionPolicyStatus[] = [
+  'draft',
+  'active',
+  'paused',
+  'archived',
+];
 const ACTIVATION_MODES: readonly PromotionActivationMode[] = ['automatic', 'coupon'];
 const STACKING_MODES: readonly PromotionPolicyStackingMode[] = ['stackable', 'exclusive'];
 const EFFECT_KINDS: readonly PromotionPolicyEffectKind[] = ['fixed', 'percentage'];
@@ -216,9 +221,10 @@ export async function resolvePromotionCheckoutWithin(
     if (!couponAvailable(row, at)) {
       if (options.commitAuthority === true) {
         const exhausted =
-          row.totalRedemptionLimit !== null &&
-          row._count.redemptions >= row.totalRedemptionLimit;
-        throw new PromotionPolicyRefusedError(exhausted ? 'coupon-exhausted' : 'coupon-unavailable');
+          row.totalRedemptionLimit !== null && row._count.redemptions >= row.totalRedemptionLimit;
+        throw new PromotionPolicyRefusedError(
+          exhausted ? 'coupon-exhausted' : 'coupon-unavailable',
+        );
       }
       unavailableCouponCodes.push(code);
       continue;

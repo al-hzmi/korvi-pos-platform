@@ -554,7 +554,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
           return fail('idempotency-conflict');
         }
-        const replayHash = fingerprintCheckoutIntent(input, payment, existing.branchId, couponCodes);
+        const replayHash = fingerprintCheckoutIntent(
+          input,
+          payment,
+          existing.branchId,
+          couponCodes,
+        );
         if (reserved.requestHash !== replayHash) return fail('idempotency-conflict');
         const invoice = await deps.sales.invoiceForSale(scope, existing.id);
         if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
@@ -1106,7 +1111,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                         (candidate) => candidate.promotion.id === application.promotionId,
                       );
                       if (policy === undefined) {
-                        throw new Error('Promotion policy snapshot missing for evaluated application.');
+                        throw new Error(
+                          'Promotion policy snapshot missing for evaluated application.',
+                        );
                       }
                       return {
                         id: newId(),

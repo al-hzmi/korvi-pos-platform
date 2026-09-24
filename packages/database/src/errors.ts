@@ -394,4 +394,3 @@ export class PromotionPolicyRefusedError extends DatabaseError {
     this.detail = detail;
   }
 }
-

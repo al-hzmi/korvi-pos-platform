@@ -540,7 +540,10 @@ async function provePromotionSettlementWithin(
   }
 
   const codes = [...settlement.presentedCouponCodes].sort();
-  if (new Set(codes).size !== codes.length || codes.some((code, index) => code !== settlement.presentedCouponCodes[index])) {
+  if (
+    new Set(codes).size !== codes.length ||
+    codes.some((code, index) => code !== settlement.presentedCouponCodes[index])
+  ) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
 
@@ -579,7 +582,9 @@ async function provePromotionSettlementWithin(
     throw new PromotionPolicyRefusedError('policy-stale');
   }
   const expectedLineTotals = new Map(
-    evaluation.lineDiscounts.map((allocation) => [allocation.lineId, allocation.amountMinor] as const),
+    evaluation.lineDiscounts.map(
+      (allocation) => [allocation.lineId, allocation.amountMinor] as const,
+    ),
   );
   for (const line of input.sale.lines) {
     if (BigInt(line.promotionDiscountMinor ?? '0') !== (expectedLineTotals.get(line.id) ?? 0n)) {
@@ -593,19 +598,19 @@ async function provePromotionSettlementWithin(
 
   if (
     evaluation.applications.length > 0 &&
-    (
-      input.sale.discounts.length > 0 ||
+    (input.sale.discounts.length > 0 ||
       input.sale.lineDiscountMinor !== '0' ||
       input.sale.basketDiscountMinor !== '0' ||
       input.sale.lines.some(
         (line) => line.lineDiscountMinor !== '0' || line.basketDiscountMinor !== '0',
-      )
-    )
+      ))
   ) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
 
-  const policyByPromotion = new Map(current.policies.map((policy) => [policy.promotion.id, policy] as const));
+  const policyByPromotion = new Map(
+    current.policies.map((policy) => [policy.promotion.id, policy] as const),
+  );
   const ids = new Set<string>();
   const allocationIds = new Set<string>();
   const redemptionIds = new Set<string>();
@@ -669,7 +674,11 @@ async function provePromotionSettlementWithin(
     if (expected.allocations.length !== actual.allocations.length) {
       throw new PromotionPolicyRefusedError('policy-stale');
     }
-    for (let allocationIndex = 0; allocationIndex < actual.allocations.length; allocationIndex += 1) {
+    for (
+      let allocationIndex = 0;
+      allocationIndex < actual.allocations.length;
+      allocationIndex += 1
+    ) {
       const actualAllocation = actual.allocations[allocationIndex];
       const expectedAllocation = expected.allocations[allocationIndex];
       if (

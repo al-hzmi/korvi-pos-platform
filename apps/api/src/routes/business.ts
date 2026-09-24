@@ -720,9 +720,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         ...(parsed.data.basketDiscount === undefined
           ? {}
           : { basketDiscount: parsed.data.basketDiscount }),
-        ...(parsed.data.couponCodes === undefined
-          ? {}
-          : { couponCodes: parsed.data.couponCodes }),
+        ...(parsed.data.couponCodes === undefined ? {} : { couponCodes: parsed.data.couponCodes }),
         ...(parsed.data.offlineCaptured === undefined
           ? {}
           : { offlineCaptured: parsed.data.offlineCaptured }),

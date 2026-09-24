@@ -510,5 +510,4 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
       ),
     ).rejects.toThrow(/configured before activation/i);
   });
-
 });
