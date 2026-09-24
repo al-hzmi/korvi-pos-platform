@@ -412,6 +412,8 @@ export interface SaleLineRecord {
   readonly quantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  /** Optional only for pre-V2 fixtures; real persisted rows always carry it. */
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -466,6 +468,8 @@ export interface SaleRecord {
   readonly currency: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  /** Optional only for pre-V2 fixtures; real persisted rows always carry it. */
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -874,6 +878,7 @@ export interface ReturnLineRecord {
   readonly quantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -896,6 +901,7 @@ export interface ReturnRecord {
   readonly currency: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -929,6 +935,7 @@ export interface ReturnableSaleLine {
   readonly remainingQuantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -936,6 +943,7 @@ export interface ReturnableSaleLine {
   readonly refundedGrossMinor: string;
   readonly refundedNetMinor: string;
   readonly refundedLineDiscountMinor: string;
+  readonly refundedPromotionDiscountMinor?: string;
   readonly refundedBasketDiscountMinor: string;
   readonly refundedVatMinor: string;
 }
@@ -994,6 +1002,7 @@ export interface RecordReturnPlan {
     readonly quantityScaled: string;
     readonly grossMinor: string;
     readonly lineDiscountMinor: string;
+    readonly promotionDiscountMinor: string;
     readonly basketDiscountMinor: string;
     readonly netMinor: string;
     readonly vatMinor: string;
@@ -1001,6 +1010,7 @@ export interface RecordReturnPlan {
   }[];
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;

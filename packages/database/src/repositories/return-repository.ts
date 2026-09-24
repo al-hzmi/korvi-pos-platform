@@ -87,6 +87,7 @@ interface ReturnLineRow {
   quantityScaled: bigint;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
+  promotionDiscountMinor: bigint;
   basketDiscountMinor: bigint;
   netMinor: bigint;
   vatMinor: bigint;
@@ -118,6 +119,7 @@ interface ReturnRow {
   currency: string;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
+  promotionDiscountMinor: bigint;
   basketDiscountMinor: bigint;
   netMinor: bigint;
   vatMinor: bigint;
@@ -141,6 +143,7 @@ function lineToDomain(row: ReturnLineRow): ReturnLineRecord {
     quantityScaled: minor(row.quantityScaled),
     grossMinor: minor(row.grossMinor),
     lineDiscountMinor: minor(row.lineDiscountMinor),
+    promotionDiscountMinor: minor(row.promotionDiscountMinor),
     basketDiscountMinor: minor(row.basketDiscountMinor),
     netMinor: minor(row.netMinor),
     vatMinor: minor(row.vatMinor),
@@ -182,6 +185,7 @@ function returnToDomain(scope: TenantScope, row: ReturnRow): ReturnRecord {
     currency: row.currency,
     grossMinor: minor(row.grossMinor),
     lineDiscountMinor: minor(row.lineDiscountMinor),
+    promotionDiscountMinor: minor(row.promotionDiscountMinor),
     basketDiscountMinor: minor(row.basketDiscountMinor),
     netMinor: minor(row.netMinor),
     vatMinor: minor(row.vatMinor),
@@ -229,6 +233,7 @@ interface SaleLineRow {
   quantityScaled: bigint;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
+  promotionDiscountMinor: bigint;
   basketDiscountMinor: bigint;
   netMinor: bigint;
   vatMinor: bigint;
@@ -245,6 +250,7 @@ interface ReturnedAggregateRow {
   grossMinor: bigint | null;
   netMinor: bigint | null;
   lineDiscountMinor: bigint | null;
+  promotionDiscountMinor: bigint | null;
   basketDiscountMinor: bigint | null;
   vatMinor: bigint | null;
   totalMinor: bigint | null;
@@ -297,6 +303,7 @@ async function returnedSoFar(
            SUM(rl."grossMinor")::bigint               AS "grossMinor",
            SUM(rl."netMinor")::bigint                 AS "netMinor",
            SUM(rl."lineDiscountMinor")::bigint        AS "lineDiscountMinor",
+           SUM(rl."promotionDiscountMinor")::bigint   AS "promotionDiscountMinor",
            SUM(rl."basketDiscountMinor")::bigint      AS "basketDiscountMinor",
            SUM(rl."vatMinor")::bigint                 AS "vatMinor",
            SUM(rl."totalMinor")::bigint               AS "totalMinor"
@@ -337,6 +344,7 @@ function stateFrom(
       remainingQuantityScaled: minor(remaining > 0n ? remaining : 0n),
       grossMinor: minor(line.grossMinor),
       lineDiscountMinor: minor(line.lineDiscountMinor),
+      promotionDiscountMinor: minor(line.promotionDiscountMinor),
       basketDiscountMinor: minor(line.basketDiscountMinor),
       netMinor: minor(line.netMinor),
       vatMinor: minor(line.vatMinor),
@@ -344,6 +352,7 @@ function stateFrom(
       refundedGrossMinor: minor(big(prior?.grossMinor ?? null)),
       refundedNetMinor: minor(big(prior?.netMinor ?? null)),
       refundedLineDiscountMinor: minor(big(prior?.lineDiscountMinor ?? null)),
+      refundedPromotionDiscountMinor: minor(big(prior?.promotionDiscountMinor ?? null)),
       refundedBasketDiscountMinor: minor(big(prior?.basketDiscountMinor ?? null)),
       refundedVatMinor: minor(big(prior?.vatMinor ?? null)),
     };
@@ -700,6 +709,7 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
             currency: input.currency,
             grossMinor: BigInt(plan.grossMinor),
             lineDiscountMinor: BigInt(plan.lineDiscountMinor),
+            promotionDiscountMinor: BigInt(plan.promotionDiscountMinor),
             basketDiscountMinor: BigInt(plan.basketDiscountMinor),
             netMinor: BigInt(plan.netMinor),
             vatMinor: BigInt(plan.vatMinor),
@@ -724,6 +734,7 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
             quantityScaled: BigInt(line.quantityScaled),
             grossMinor: BigInt(line.grossMinor),
             lineDiscountMinor: BigInt(line.lineDiscountMinor),
+            promotionDiscountMinor: BigInt(line.promotionDiscountMinor),
             basketDiscountMinor: BigInt(line.basketDiscountMinor),
             netMinor: BigInt(line.netMinor),
             vatMinor: BigInt(line.vatMinor),

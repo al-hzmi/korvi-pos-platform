@@ -54,6 +54,7 @@ interface LineRow {
   quantityScaled: bigint;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
+  promotionDiscountMinor: bigint;
   basketDiscountMinor: bigint;
   netMinor: bigint;
   vatMinor: bigint;
@@ -99,6 +100,7 @@ interface SaleRow {
   currency: string;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
+  promotionDiscountMinor: bigint;
   basketDiscountMinor: bigint;
   netMinor: bigint;
   vatMinor: bigint;
@@ -155,6 +157,7 @@ function lineToDomain(row: LineRow): SaleLineRecord {
     quantityScaled: minor(row.quantityScaled),
     grossMinor: minor(row.grossMinor),
     lineDiscountMinor: minor(row.lineDiscountMinor),
+    promotionDiscountMinor: minor(row.promotionDiscountMinor),
     basketDiscountMinor: minor(row.basketDiscountMinor),
     netMinor: minor(row.netMinor),
     vatMinor: minor(row.vatMinor),
@@ -208,6 +211,7 @@ function saleToDomain(scope: TenantScope, row: SaleRow): SaleRecord {
     currency: row.currency,
     grossMinor: minor(row.grossMinor),
     lineDiscountMinor: minor(row.lineDiscountMinor),
+    promotionDiscountMinor: minor(row.promotionDiscountMinor),
     basketDiscountMinor: minor(row.basketDiscountMinor),
     netMinor: minor(row.netMinor),
     vatMinor: minor(row.vatMinor),
@@ -390,6 +394,7 @@ async function assertRestaurantOrderSettlement(
   if (
     sale.discounts.length !== 0 ||
     sale.lineDiscountMinor !== '0' ||
+    (sale.promotionDiscountMinor ?? '0') !== '0' ||
     sale.basketDiscountMinor !== '0'
   ) {
     throw new DatabaseError('Restaurant order settlement cannot silently add checkout discounts.');
@@ -546,6 +551,7 @@ export async function recordSaleWithin(
       currency: sale.currency,
       grossMinor: BigInt(sale.grossMinor),
       lineDiscountMinor: BigInt(sale.lineDiscountMinor),
+      promotionDiscountMinor: BigInt(sale.promotionDiscountMinor ?? '0'),
       basketDiscountMinor: BigInt(sale.basketDiscountMinor),
       netMinor: BigInt(sale.netMinor),
       vatMinor: BigInt(sale.vatMinor),
@@ -572,6 +578,7 @@ export async function recordSaleWithin(
       quantityScaled: BigInt(line.quantityScaled),
       grossMinor: BigInt(line.grossMinor),
       lineDiscountMinor: BigInt(line.lineDiscountMinor),
+      promotionDiscountMinor: BigInt(line.promotionDiscountMinor ?? '0'),
       basketDiscountMinor: BigInt(line.basketDiscountMinor),
       netMinor: BigInt(line.netMinor),
       vatMinor: BigInt(line.vatMinor),

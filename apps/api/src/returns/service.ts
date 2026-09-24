@@ -80,6 +80,7 @@ export interface ReturnSummaryLine {
   readonly quantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -106,6 +107,7 @@ export interface ReturnSummary {
   readonly reason: string | null;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -175,6 +177,7 @@ function summarise(record: ReturnRecord): ReturnSummary {
     reason: record.reason,
     grossMinor: record.grossMinor,
     lineDiscountMinor: record.lineDiscountMinor,
+    promotionDiscountMinor: record.promotionDiscountMinor ?? '0',
     basketDiscountMinor: record.basketDiscountMinor,
     netMinor: record.netMinor,
     vatMinor: record.vatMinor,
@@ -189,6 +192,7 @@ function summarise(record: ReturnRecord): ReturnSummary {
       quantityScaled: line.quantityScaled,
       grossMinor: line.grossMinor,
       lineDiscountMinor: line.lineDiscountMinor,
+      promotionDiscountMinor: line.promotionDiscountMinor ?? '0',
       basketDiscountMinor: line.basketDiscountMinor,
       netMinor: line.netMinor,
       vatMinor: line.vatMinor,
@@ -225,6 +229,7 @@ function toReturnableLines(state: ReturnableSale): readonly ReturnableLine[] {
     original: {
       grossMinor: BigInt(line.grossMinor),
       lineDiscountMinor: BigInt(line.lineDiscountMinor),
+      promotionDiscountMinor: BigInt(line.promotionDiscountMinor ?? '0'),
       basketDiscountMinor: BigInt(line.basketDiscountMinor),
       netMinor: BigInt(line.netMinor),
       vatMinor: BigInt(line.vatMinor),
@@ -234,6 +239,7 @@ function toReturnableLines(state: ReturnableSale): readonly ReturnableLine[] {
       grossMinor: BigInt(line.refundedGrossMinor),
       netMinor: BigInt(line.refundedNetMinor),
       lineDiscountMinor: BigInt(line.refundedLineDiscountMinor),
+      promotionDiscountMinor: BigInt(line.refundedPromotionDiscountMinor ?? '0'),
       basketDiscountMinor: BigInt(line.refundedBasketDiscountMinor),
       vatMinor: BigInt(line.refundedVatMinor),
     },
@@ -441,6 +447,7 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
                 quantityScaled: line.quantityScaled.toString(),
                 grossMinor: line.components.grossMinor.toString(),
                 lineDiscountMinor: line.components.lineDiscountMinor.toString(),
+                promotionDiscountMinor: (line.components.promotionDiscountMinor ?? 0n).toString(),
                 basketDiscountMinor: line.components.basketDiscountMinor.toString(),
                 netMinor: line.components.netMinor.toString(),
                 vatMinor: line.components.vatMinor.toString(),
@@ -448,6 +455,7 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
               })),
               grossMinor: draft.grossMinor.toString(),
               lineDiscountMinor: draft.lineDiscountMinor.toString(),
+              promotionDiscountMinor: draft.promotionDiscountMinor.toString(),
               basketDiscountMinor: draft.basketDiscountMinor.toString(),
               netMinor: draft.netMinor.toString(),
               vatMinor: draft.vatMinor.toString(),
