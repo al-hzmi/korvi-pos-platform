@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "createdFor": "Korvi acquisition due diligence",
+  "source": {
+    "branch": "release/canonical-acquisition-v1",
+    "sha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+    "frozen": true
+  },
+  "dataRoomBranch": "docs/acquisition-data-room-61dbb34",
+  "status": "CANONICAL_ACQUISITION_CANDIDATE_INTERNAL_ENGINEERING_COMPLETE_EXTERNAL_ACTIVATION_ONLY",
+  "github": {
+    "defaultBranch": "main",
+    "acquisitionPullRequest": 62,
+    "acquisitionPullRequestState": "open",
+    "sourceCommitVerified": true
+  },
+  "exactShaRuns": [
+    35788189407,
+    35788194829,
+    35788189451,
+    35788189485,
+    35788189450,
+    35788189607,
+    35788194784,
+    35788194966,
+    35788189408,
+    35788189552,
+    35788189482,
+    35788189427,
+    35788189346,
+    35788189464,
+    35788189391
+  ],
+  "staging": {
+    "provider": "Render",
+    "api": {
+      "serviceId": "srv-dafasa1t0dsc73dbumbg",
+      "deployId": "dep-daphbcek1f9s7391th4g",
+      "sha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+      "status": "live"
+    },
+    "web": {
+      "serviceId": "srv-dafashn40ujc73ag1540",
+      "deployId": "dep-daphc8mk1f9s73921c80",
+      "sha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+      "status": "live"
+    },
+    "database": {
+      "engine": "PostgreSQL",
+      "major": 17,
+      "plan": "free",
+      "ha": false,
+      "reportedExpiration": "2026-10-07"
+    }
+  },
+  "openExternalGates": [
+    "production infrastructure and HA",
+    "managed backups and measured RPO/RTO",
+    "external monitoring and on-call activation",
+    "production secret management and rotation",
+    "real Azure HSM / Production ZATCA activation",
+    "real merchant production pilot",
+    "legal IP/transaction/account transfer",
+    "final acquisition evidence manifest and review"
+  ],
+  "prohibitedClaims": [
+    "Production Proven",
+    "Production ZATCA Activated",
+    "Final Canonical Acquisition Release",
+    "Merchant Proven"
+  ]
+}
