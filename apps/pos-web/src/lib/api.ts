@@ -13,6 +13,8 @@ import type {
   CheckoutRequest,
   CreateReturnRequest,
   CreateReturnResponse,
+  NoReceiptExchangeRequest,
+  NoReceiptExchangeResponse,
   CategoryMigrationInspection,
   CategoryMigrationRowPage,
   CategoryMigrationSummary,
@@ -226,6 +228,7 @@ export interface ApiClient {
   ): Promise<readonly SaleLookupResult[]>;
   returnableSale(saleId: string, options?: RequestOptions): Promise<ReturnableSale>;
   createReturn(request: CreateReturnRequest): Promise<CreateReturnResponse>;
+  createNoReceiptExchange(request: NoReceiptExchangeRequest): Promise<NoReceiptExchangeResponse>;
   closeShift(request: ShiftCloseRequest): Promise<ShiftCloseResponse>;
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
 
@@ -746,6 +749,37 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             saleLineId: line.saleLineId,
             quantityScaled: line.quantityScaled,
           })),
+        },
+        CHECKOUT_TIMEOUT_MS,
+      );
+    },
+
+    async createNoReceiptExchange(request) {
+      return retryableCommand<NoReceiptExchangeResponse>(
+        '/v1/no-receipt-exchanges',
+        {
+          operationId: request.operationId,
+          terminalId: request.terminalId,
+          ...(request.expectedShiftId === undefined
+            ? {}
+            : { expectedShiftId: request.expectedShiftId }),
+          reason: request.reason,
+          ...(request.evidenceNote === undefined || request.evidenceNote.trim() === ''
+            ? {}
+            : { evidenceNote: request.evidenceNote.trim() }),
+          approvedAllowanceMinor: request.approvedAllowanceMinor,
+          acceptedLines: request.acceptedLines,
+          replacementLines: request.replacementLines,
+          tenders: request.tenders.map((tender) =>
+            tender.kind === 'cash'
+              ? { kind: 'cash' as const, amountMinor: tender.amountMinor }
+              : {
+                  kind: 'electronic' as const,
+                  amountMinor: tender.amountMinor,
+                  scheme: tender.scheme,
+                  reference: tender.reference.trim(),
+                },
+          ),
         },
         CHECKOUT_TIMEOUT_MS,
       );

@@ -922,6 +922,75 @@ export interface CreateReturnResponse {
   readonly replayed: boolean;
 }
 
+export type NoReceiptExchangeReason =
+  | 'customer-no-receipt'
+  | 'gift-return'
+  | 'receipt-unavailable'
+  | 'manager-exception'
+  | 'other';
+
+export interface NoReceiptExchangeRequest {
+  readonly operationId: string;
+  readonly terminalId: string;
+  readonly expectedShiftId?: string;
+  readonly reason: NoReceiptExchangeReason;
+  readonly evidenceNote?: string;
+  readonly approvedAllowanceMinor: string;
+  readonly acceptedLines: readonly {
+    readonly productId: string;
+    readonly quantityScaled: string;
+  }[];
+  readonly replacementLines: readonly {
+    readonly productId: string;
+    readonly quantityScaled: string;
+  }[];
+  readonly tenders: readonly CheckoutTenderRequest[];
+}
+
+export interface NoReceiptExchangeLineSummary {
+  readonly id: string;
+  readonly lineNumber: number;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: 'unit' | 'weighted';
+  readonly quantityScaled: string;
+  readonly currentUnitReferencePriceMinor: string;
+  readonly currentVatBasisPoints: number;
+  readonly currentReferenceTotalMinor: string;
+  readonly trackInventory: boolean;
+  readonly stockDisposition: 'sellable';
+  readonly costProvenance: 'unknown';
+}
+
+export interface NoReceiptExchangeSummary {
+  readonly id: string;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly shiftId: string;
+  readonly actorUserId: string;
+  readonly operationId: string;
+  readonly status: 'finalized';
+  readonly sequence: number;
+  readonly caseNumber: string;
+  readonly reason: string;
+  readonly evidenceNote: string | null;
+  readonly currency: string;
+  readonly referenceCeilingMinor: string;
+  readonly approvedAllowanceMinor: string;
+  readonly linkedSaleId: string;
+  readonly issuedAt: string;
+  readonly lines: readonly NoReceiptExchangeLineSummary[];
+}
+
+export interface NoReceiptExchangeResponse {
+  readonly exchange: NoReceiptExchangeSummary;
+  readonly sale: SaleSummary;
+  readonly receipt: FiscalReceipt | null;
+  readonly replayed: boolean;
+}
+
 export interface SaleSummaryLine {
   readonly lineNumber: number;
   readonly productId: string | null;
