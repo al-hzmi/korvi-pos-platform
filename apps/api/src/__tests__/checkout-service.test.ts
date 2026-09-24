@@ -358,6 +358,7 @@ describe('the intent fingerprint', () => {
     lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
     tenders: [{ kind: 'cash', amountMinor: '5000', scheme: '', reference: '' }],
     basketDiscount: '',
+    couponCodes: [],
   };
 
   it('is stable across line order', () => {
@@ -367,6 +368,18 @@ describe('the intent fingerprint', () => {
     };
     const reversed = { ...two, lines: [...two.lines].reverse() };
     expect(fingerprintIntent(two)).toBe(fingerprintIntent(reversed));
+  });
+
+  it('is stable across coupon-code order', () => {
+    const two = { ...base, couponCodes: ['SAVE-10', 'VIP-5'] };
+    const reversed = { ...two, couponCodes: [...two.couponCodes].reverse() };
+    expect(fingerprintIntent(two)).toBe(fingerprintIntent(reversed));
+  });
+
+  it('changes when coupon activation intent changes', () => {
+    expect(fingerprintIntent({ ...base, couponCodes: ['SAVE-10'] })).not.toBe(
+      fingerprintIntent(base),
+    );
   });
 
   it('is stable across tender order', () => {
@@ -525,6 +538,7 @@ describe('the canonical form cannot be forged', () => {
     restaurantOrderRevision: '',
     lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
     basketDiscount: '',
+    couponCodes: [],
   };
 
   it('cannot be made to collide with a delimiter-bearing reference', () => {
