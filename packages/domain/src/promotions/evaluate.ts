@@ -310,20 +310,21 @@ export function evaluatePromotions(input: {
 
   let applications: AppliedPromotion[] = [];
 
-  if (exclusive.length > 0) {
-    // Eligibility/effect is checked against the same original cart for every
-    // exclusive candidate. The first policy by priority/id wins; discount size
-    // never becomes an implicit priority rule the merchant did not configure.
-    for (const candidate of exclusive) {
-      const application = applicationFor(candidate, input.lines, original);
-      if (application !== null) {
-        applications = [application];
-        break;
-      }
+  // Only an ELIGIBLE exclusive rule suppresses the stackable set. An active
+  // exclusive rule that targets products absent from this basket (or misses
+  // its minimum) is not a merchant instruction to disable unrelated offers.
+  for (const candidate of exclusive) {
+    const application = applicationFor(candidate, input.lines, original);
+    if (application !== null) {
+      applications = [application];
+      break;
     }
-  } else {
+  }
+
+  if (applications.length === 0) {
     const remaining = [...original];
     for (const candidate of active) {
+      if (candidate.stackingMode !== 'stackable') continue;
       if (applications.length >= maxApplied) break;
       const application = applicationFor(candidate, input.lines, remaining);
       if (application === null) continue;

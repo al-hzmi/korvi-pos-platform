@@ -104,6 +104,32 @@ describe('deterministic promotion evaluator', () => {
     expect(result.totalDiscountMinor).toBe(1n);
   });
 
+  it('does not let an ineligible exclusive rule suppress eligible stackable policy', () => {
+    const result = evaluatePromotions({
+      evaluatedAtMs: NOW,
+      lines,
+      candidates: [
+        candidate({
+          promotionId: 'exclusive-miss',
+          stackingMode: 'exclusive',
+          priority: 999,
+          target: { kind: 'products', productIds: ['not-in-cart'] },
+          effect: { kind: 'fixed', amountMinor: 900n },
+        }),
+        candidate({
+          promotionId: 'stackable-hit',
+          stackingMode: 'stackable',
+          priority: 100,
+          effect: { kind: 'fixed', amountMinor: 25n },
+        }),
+      ],
+    });
+
+    expect(result.applications).toHaveLength(1);
+    expect(result.applications[0]?.promotionId).toBe('stackable-hit');
+    expect(result.totalDiscountMinor).toBe(25n);
+  });
+
   it('uses id as deterministic tie-breaker regardless of input order', () => {
     const a = candidate({ promotionId: 'a', priority: 10 });
     const b = candidate({ promotionId: 'b', priority: 10 });
