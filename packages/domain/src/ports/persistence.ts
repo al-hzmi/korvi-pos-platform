@@ -4,7 +4,6 @@ import type { BasisPoints } from '../tax/basis-points.js';
 // would be free to disagree tomorrow, and the two would sit on either side of
 // the persistence boundary.
 import type { PriceMode } from '../pricing/line.js';
-import type { PromotionCandidate } from '../promotions/evaluate.js';
 import type { TenantLifecycleState } from '../tenancy/lifecycle.js';
 import type { TenderKind, TenderScheme } from '../tender/tender.js';
 
@@ -412,12 +411,6 @@ export interface ManualCashMovementInput {
   /** Whoever is actually standing there — not necessarily the shift's owner. */
   readonly actorUserId: string;
   readonly occurredAt: string;
-  /**
-   * Present only when this direct checkout applied merchant promotion policy.
-   * Persistence re-locks/re-evaluates the policy and writes immutable
-   * application/allocation/redemption facts in this same sale transaction.
-   */
-  readonly promotionSettlement?: PromotionSettlementInput | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 
@@ -587,27 +580,6 @@ export interface InvoiceRecord {
  * or stock decremented for a sale that never existed — so the port takes them
  * together and the adapter commits them in one transaction.
  */
-export interface PromotionCouponAuthoritySnapshot {
-  readonly couponId: string;
-  readonly normalizedCode: string;
-  readonly revision: string;
-}
-
-export interface PromotionCheckoutPolicySnapshot {
-  readonly candidates: readonly PromotionCandidate[];
-  readonly coupons: readonly PromotionCouponAuthoritySnapshot[];
-}
-
-export interface PromotionPolicyRepository {
-  checkoutSnapshot(
-    scope: TenantScope,
-    input: {
-      readonly couponCodes: readonly string[];
-      readonly evaluatedAt: string;
-    },
-  ): Promise<PromotionCheckoutPolicySnapshot>;
-}
-
 export interface SalePromotionApplicationInput {
   readonly id: string;
   readonly promotionId: string;
@@ -670,6 +642,12 @@ export interface RecordSaleInput {
         readonly expectedRevision: string;
       }
     | undefined;
+  /**
+   * Present only when this direct checkout applied merchant promotion policy.
+   * Persistence re-locks/revalidates policy and writes immutable application,
+   * allocation and redemption facts in this same sale transaction.
+   */
+  readonly promotionSettlement?: PromotionSettlementInput | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 
