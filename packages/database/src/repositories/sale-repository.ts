@@ -535,7 +535,14 @@ async function provePromotionSettlementWithin(
   if (input.restaurantOrderSettlement !== undefined || input.sale.restaurantOrderId !== null) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
-  if (input.sale.discounts.length > 0) {
+  if (
+    input.sale.discounts.length > 0 ||
+    input.sale.lineDiscountMinor !== '0' ||
+    input.sale.basketDiscountMinor !== '0' ||
+    input.sale.lines.some(
+      (line) => line.lineDiscountMinor !== '0' || line.basketDiscountMinor !== '0',
+    )
+  ) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
   if (settlement.evaluatedAt !== input.sale.issuedAt) {
@@ -675,9 +682,13 @@ async function provePromotionSettlementWithin(
   }
 
   if (
+    settlement.audit.eventType !== 'sale.promoted' ||
     settlement.audit.entityType !== 'sale' ||
     settlement.audit.entityId !== input.sale.id ||
-    settlement.audit.actorUserId !== input.sale.userId
+    settlement.audit.actorUserId !== input.sale.userId ||
+    settlement.audit.branchId !== input.sale.branchId ||
+    settlement.audit.terminalId !== input.sale.terminalId ||
+    settlement.audit.occurredAt !== input.sale.issuedAt
   ) {
     throw new PromotionPolicyRefusedError('policy-stale');
   }
