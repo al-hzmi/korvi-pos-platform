@@ -570,5 +570,4 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     );
     expect(allowances).toBe(0);
   });
-
 });
