@@ -46,6 +46,8 @@ export interface CheckoutIntent {
   readonly tenders: readonly CheckoutIntentTender[];
   /** Canonical normalized coupon codes. Order is not material. */
   readonly couponCodes?: readonly string[];
+  /** True only when this intent was captured offline; it can only tighten authority. */
+  readonly offlineCaptured?: boolean;
   /** Canonical description of the basket discount, or the empty string. */
   readonly basketDiscount: string;
 }
@@ -68,6 +70,9 @@ export interface CheckoutIntent {
  * external approval reference — exactly what the sale row itself will hold in
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
+ *
+ * `v7` because the offline-captured boundary joined the canonical form. A
+ * delayed sale cannot replay as an ordinary online sale under the same key.
  *
  * `v6` because coupon activation intent joined the canonical form. Server-owned
  * automatic promotion policy is deliberately absent: policy is authority, not
@@ -118,7 +123,7 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
   const couponCodes = [...(intent.couponCodes ?? [])].sort();
 
   const canonical = JSON.stringify([
-    'v6',
+    'v7',
     intent.branchId,
     intent.terminalId,
     intent.orderType,
@@ -127,6 +132,7 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     intent.restaurantOrderRevision,
     intent.basketDiscount,
     couponCodes,
+    intent.offlineCaptured === true,
     tenders,
     lines,
   ]);

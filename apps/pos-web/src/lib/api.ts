@@ -840,6 +840,10 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
                         },
                   ),
                 }),
+            ...(request.couponCodes === undefined ? {} : { couponCodes: request.couponCodes }),
+            ...(request.offlineCaptured === undefined
+              ? {}
+              : { offlineCaptured: request.offlineCaptured }),
             lines: request.lines.map((line) => ({
               productId: line.productId,
               quantityScaled: line.quantityScaled,

@@ -66,6 +66,7 @@ export function checkoutQueueOperation(
     operationId: intent.operationId,
     terminalId: intent.terminalId,
     expectedShiftId: intent.expectedShiftId,
+    offlineCaptured: true,
     ...(intent.orderType === undefined ? {} : { orderType: intent.orderType }),
     ...(intent.tableId === undefined ? {} : { tableId: intent.tableId }),
     ...(intent.restaurantOrderId === undefined

@@ -255,6 +255,8 @@ export const checkoutBody = z
     basketDiscount: discountBody.optional(),
     // Intent only. Canonical normalization + eligibility + money remain server-owned.
     couponCodes: z.array(z.string().min(1).max(64)).max(8).optional(),
+    // Restrictive replay marker only. `false` carries no meaning and is refused.
+    offlineCaptured: z.literal(true).optional(),
     lines: z
       .array(
         z.object({

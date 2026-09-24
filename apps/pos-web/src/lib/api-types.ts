@@ -1095,6 +1095,9 @@ export interface CheckoutRequest {
   readonly expectedRestaurantOrderRevision?: string;
   readonly cashReceivedMinor?: string;
   readonly tenders?: readonly CheckoutTenderRequest[];
+  readonly couponCodes?: readonly string[];
+  /** Restrictive marker set by offline queue/sync; never pricing authority. */
+  readonly offlineCaptured?: true;
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
 }
 

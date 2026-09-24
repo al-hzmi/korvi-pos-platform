@@ -92,6 +92,7 @@ export type CheckoutFailureReason =
   | 'coupon-ineligible'
   | 'promotion-manual-conflict'
   | 'promotion-policy-stale'
+  | 'promotion-offline-unsupported'
   | 'promotions-not-applicable'
   | 'idempotency-conflict'
   | 'duplicate-line'
@@ -244,6 +245,8 @@ export interface CheckoutInput {
   readonly basketDiscount?: CheckoutDiscountInput | undefined;
   /** Coupon activation intent only; policy, amount and eligibility remain server-owned. */
   readonly couponCodes?: readonly string[] | undefined;
+  /** Offline-captured is a restrictive replay precondition, never pricing authority. */
+  readonly offlineCaptured?: true | undefined;
 }
 
 export interface CheckoutDeps {
@@ -384,6 +387,7 @@ function fingerprintCheckoutIntent(
     })),
     basketDiscount: describeDiscount(input.basketDiscount),
     couponCodes,
+    offlineCaptured: input.offlineCaptured === true,
   });
 }
 
@@ -772,6 +776,15 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             })),
             candidates: promotionPolicies.map(promotionCandidateFromPolicy),
           });
+
+          // ADR-0037: never replay an offline-captured sale through today's
+          // promotion policy and silently change the customer's captured price.
+          if (
+            input.offlineCaptured === true &&
+            (couponCodes.length > 0 || promotionEvaluation.applications.length > 0)
+          ) {
+            return fail('promotion-offline-unsupported');
+          }
 
           if (
             couponCodes.some(

@@ -78,6 +78,8 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
       value.tableId === undefined ||
       (typeof value.tableId === 'string' && isUuidV7(value.tableId))
     ) ||
+    !(value.offlineCaptured === undefined || value.offlineCaptured === true) ||
+    value.couponCodes !== undefined ||
     !(
       (value.restaurantOrderId === undefined &&
         value.expectedRestaurantOrderRevision === undefined) ||
@@ -129,7 +131,9 @@ export function createCheckoutSyncExecutor(
       }
 
       try {
-        await api.checkout(operation.payload);
+        // Legacy queue rows predate offlineCaptured; the sync boundary upgrades
+        // them in-memory so every delayed sale remains fail-closed under ADR-0037.
+        await api.checkout({ ...operation.payload, offlineCaptured: true });
         return { outcome: 'settled' } as const;
       } catch (error) {
         if (!(error instanceof ApiError)) {
