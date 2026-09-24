@@ -424,4 +424,91 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
       ),
     ).rejects.toThrow(/archived or retired/i);
   });
+
+  it('H. product-target edits advance policy revision and active policy cannot lose its last target', async () => {
+    const promotionId = '018fd200-0000-7000-8000-000000000203';
+    const targetId = '018fd200-0000-7000-8000-000000000251';
+
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.promotion.create({
+        data: {
+          id: promotionId,
+          tenantId: A.tenant,
+          merchantCode: 'PROMO-TARGET',
+          name: 'عرض صنف محدد',
+          status: 'draft',
+          activationMode: 'automatic',
+          priority: 80,
+          stackingMode: 'stackable',
+          effectKind: 'fixed',
+          effectValue: 50n,
+          minimumEligibleSubtotalMinor: 0n,
+          targetKind: 'products',
+          revision: 1n,
+          updatedAt: new Date(),
+        },
+      });
+
+      await tx.promotionProduct.create({
+        data: {
+          id: targetId,
+          tenantId: A.tenant,
+          promotionId,
+          productId: A.product,
+        },
+      });
+    });
+
+    const afterTarget = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.promotion.findFirst({ where: { id: promotionId } }),
+    );
+    expect(afterTarget?.revision).toBe(2n);
+
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      await tx.promotion.update({
+        where: { id: promotionId },
+        data: { status: 'active', revision: 3n },
+      });
+    });
+
+    await expect(
+      withTenant(prisma, scope.tenantId, async (tx) =>
+        tx.promotionProduct.delete({ where: { id: targetId } }),
+      ),
+    ).rejects.toThrow(/requires at least one product/i);
+
+    const [promotion, target] = await withTenant(prisma, scope.tenantId, async (tx) => [
+      await tx.promotion.findFirst({ where: { id: promotionId } }),
+      await tx.promotionProduct.findFirst({ where: { id: targetId } }),
+    ]);
+    expect(promotion?.status).toBe('active');
+    expect(promotion?.revision).toBe(3n);
+    expect(target?.productId).toBe(A.product);
+  });
+
+  it('I. product-targeted policy cannot enter active state before its allow-list exists', async () => {
+    await expect(
+      withTenant(prisma, scope.tenantId, async (tx) =>
+        tx.promotion.create({
+          data: {
+            id: '018fd200-0000-7000-8000-000000000204',
+            tenantId: A.tenant,
+            merchantCode: 'PROMO-EMPTY-TARGET',
+            name: 'عرض بلا أصناف',
+            status: 'active',
+            activationMode: 'automatic',
+            priority: 70,
+            stackingMode: 'stackable',
+            effectKind: 'fixed',
+            effectValue: 50n,
+            minimumEligibleSubtotalMinor: 0n,
+            targetKind: 'products',
+            revision: 1n,
+            updatedAt: new Date(),
+          },
+        }),
+      ),
+    ).rejects.toThrow(/configured before activation/i);
+  });
+
 });
