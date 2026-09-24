@@ -1,7 +1,7 @@
 # KORVI — MASTERMIND V2-0 CURRENT REPOSITORY GAP AUDIT
 
-Status: **INITIAL REPOSITORY-GROUNDED AUDIT**
-Date: 2026-09-24
+Status: **UPDATED REPOSITORY-GROUNDED AUDIT — V2-1 CLOSED**
+Date: 2026-09-25
 Branch: `mastermind/v2-strengthening`
 Base acquisition SHA: `61dbb34dea08809756fd767b907b0e852b7e5978`
 
@@ -39,15 +39,48 @@ Key current law:
 - refund is cash or recorded electronic approval reference;
 - cardholder data is refused.
 
-### No-receipt return/exchange — ABSENT / ACCEPTED
+### No-receipt return/exchange — PRESENT / V2-1 CLOSED
 
-The Master Product Directive explicitly treats this as a separately governed accepted capability.
+V2-1 is now a separate authority from original-sale returns.
 
-The current return engine is sale-referenced by design. The audited return authority requires original sale/line facts.
+Repository evidence includes:
 
-No separate no-receipt/exchange domain, DB authority, route or cashier workflow was found in the current tree.
+- ADR-0036 no-receipt return/exchange contract;
+- deterministic current-policy valuation domain and unit tests;
+- dedicated `sale.exchange.no-receipt` permission;
+- explicit internal `exchange_allowance` tender boundary;
+- PostgreSQL case/line persistence, FORCE-RLS, immutability, idempotency and deterministic locking;
+- canonical stock/cost intake with unknown cost provenance;
+- atomic reuse of the canonical sale authority for replacement merchandise;
+- strict API schemas that reject client-authored price/VAT/cost/ceiling/allowance-tender facts;
+- negative authorization and tenant-isolation tests;
+- live PostgreSQL concurrency/rollback/replay/immutability proof;
+- Arabic RTL online-only cashier workflow;
+- actual Chrome operator proof.
 
-**Recommended first C0 strike: V2-1.**
+Scope law:
+
+- no original sale fact is inferred;
+- no cash refund is issued from this capability;
+- no store-credit counter/balance was invented;
+- current catalogue facts are policy inputs only, never historical evidence;
+- accepted tracked stock returns as sellable with historical cost **unknown**;
+- replacement sale tax/fiscalization remains the ordinary sale authority;
+- no synthetic credit note or original invoice provenance exists;
+- V2-1 is Retail scope and is deliberately online-authoritative.
+
+Verified implementation HEAD:
+
+`a1d640f3b3d30faf4c4c04e90c1c5fa04412971a`
+
+Evidence:
+
+- CI `36070419973` — **SUCCESS**;
+- PostgreSQL 17 / RLS live proof `36070419982` — **SUCCESS**;
+- Chrome cashier proof `36070420015` — **SUCCESS**;
+- independent PR CI `36070424151` — **SUCCESS**.
+
+**V2-1 gap is closed. Next strike: V2-2.**
 
 ## 2. Promotions / coupons
 
@@ -199,31 +232,40 @@ Initial evidence supports this order:
 9. **V2-9 Omnichannel adapter contracts**
 10. **V2-10 Kiosk/QR/customer display**
 
-## 10. V2-1 architecture discovery targets
+## 10. V2-1 closure reconciliation
 
-Before any implementation, Mastermind must inspect and reconcile:
+The V2-1 discovery targets were reconciled in ADR-0036 and the implementation at
+`a1d640f3b3d30faf4c4c04e90c1c5fa04412971a`.
 
-- ADR-0016 return semantics;
-- current return domain/proration;
-- ReturnRepository transaction/number/idempotency/stock/drawer authority;
-- current permission catalogue;
-- sale/return audit model;
-- pricing/VAT modes;
-- stock receiving/adjustment provenance;
-- refund/tender authority;
-- ZATCA credit-note boundary;
-- cashier return workflow;
-- historical product snapshots.
+Resolved decisions:
 
-No-receipt return must not pretend to have historical sale price/tax evidence that does not exist.
+- original-sale return semantics remain owned by ADR-0016 and are not reused when historical evidence is absent;
+- no-receipt scope is exchange-only;
+- current-policy reference value is bounded and explicitly non-historical;
+- cash refund/store credit are outside V2-1;
+- stock disposition is sellable for accepted tracked products;
+- missing historical cost enters costing as unknown;
+- manager-class permission, reason/evidence, audit and immutable snapshots govern abuse risk;
+- operation-id fingerprinting owns replay/conflict behavior;
+- PostgreSQL owns tenant isolation and transaction/concurrency truth;
+- offline execution is prohibited in this strike;
+- tax/ZATCA authority belongs only to the new replacement sale, never to invented historical provenance.
 
-The architecture must explicitly decide whether the merchant policy supports:
+The former implementation block is therefore removed.
 
-- refund at current/authorized reference price;
-- exchange/store credit only;
-- inventory disposition;
-- tax-document treatment;
-- manager override;
-- fraud/risk controls.
+## 11. Next audit target — V2-2
 
-Until those facts are defined, implementation is blocked.
+The next repository audit must begin from the existing deterministic discount/sale/return primitives and establish an architecture contract for:
+
+- promotion eligibility;
+- priority and exclusivity;
+- stacking;
+- deterministic allocation;
+- VAT interaction;
+- immutable sale snapshots;
+- return/refund treatment of promotion allocations;
+- coupon/voucher identity, lifecycle and redemption idempotency;
+- tenant isolation, concurrency, permissions and audit;
+- offline/replay semantics.
+
+No coupon UI should precede the shared deterministic authority.

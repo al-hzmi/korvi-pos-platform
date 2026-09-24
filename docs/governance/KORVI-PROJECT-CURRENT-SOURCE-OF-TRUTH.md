@@ -1,7 +1,7 @@
 # KORVI — PROJECT CURRENT SOURCE OF TRUTH
 
-Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT**
-Date: 2026-09-24
+Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT — V2-1 VERIFIED**
+Date: 2026-09-25
 Protected acquisition source: `61dbb34dea08809756fd767b907b0e852b7e5978`
 Acquisition branch: `release/canonical-acquisition-v1`
 Active future-development branch: `mastermind/v2-strengthening`
@@ -220,25 +220,45 @@ The program will prioritize:
 - build a fresh current capability matrix for V2 rather than relying on historical 88/100 snapshot;
 - identify implemented-vs-accepted gaps directly from repository.
 
-### V2-1 — No-receipt return / exchange authority
+### V2-1 — No-receipt return / exchange authority — VERIFIED COMPLETE
 
-Why first:
+Verified implementation HEAD:
 
-- explicitly accepted in the product constitution;
-- high-value Retail parity;
-- financial/inventory C0 capability;
-- currently excluded from the closed original-sale return scope;
-- no paid provider required.
+`a1d640f3b3d30faf4c4c04e90c1c5fa04412971a`
 
-Required:
-- explicit risk/permission authority;
-- return/exchange policy facts;
-- deterministic pricing/tax treatment;
-- stock and tender/refund truth;
-- audit/reason/evidence;
-- abuse controls;
-- Arabic operator workflow;
-- negative/adversarial tests.
+Closed scope:
+
+- separately governed **exchange-only** authority; it does not extend or reinterpret original-sale refunds;
+- manager/admin/owner permission `sale.exchange.no-receipt`; cashier role does not receive it;
+- current merchant-policy reference valuation only; no original price, VAT, discount, tender, invoice provenance or historical cost is reconstructed;
+- approved allowance is bounded by deterministic current-policy reference and cannot create change;
+- `exchange_allowance` is an internal non-cash settlement component created only server-side and cannot carry PSP/card references;
+- accepted tracked stock re-enters the canonical stock/cost ledger as sellable inventory with **unknown** incoming cost basis, never known zero;
+- replacement merchandise is a normal authoritative sale using the existing sale/pricing/VAT/tender/stock authority;
+- accepted intake + replacement sale + allowance + case + audit + idempotency commit atomically in PostgreSQL;
+- finalized case/line snapshots are append-only/immutable;
+- tenant FORCE-RLS, least privilege, deterministic locking, replay/conflict handling and adversarial concurrency are proven;
+- Arabic RTL cashier workflow is online-authoritative; this capability is deliberately unavailable offline in V2-1;
+- Restaurant use is not claimed by this strike;
+- ZATCA applies to the replacement sale through the existing checkout fiscalization boundary; the no-receipt intake does not invent an original invoice or credit note;
+- no cash refund and no store-credit balance/ledger were fabricated.
+
+Exact-head evidence for `a1d640f3b3d30faf4c4c04e90c1c5fa04412971a`:
+
+- full CI: GitHub Actions run `36070419973` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / restricted-runtime live suite: run `36070419982` — **SUCCESS**;
+- actual Chrome cashier workflow + restricted database authority: run `36070420015` — **SUCCESS**;
+- PR full CI independently repeated at run `36070424151` — **SUCCESS**.
+
+The frozen acquisition candidate remains untouched. V2-1 exists only on the Mastermind V2 lineage.
+
+### Current Mastermind execution state
+
+V2-0 baseline/drift lock: **COMPLETE**.
+
+V2-1 no-receipt exchange: **COMPLETE / EXACT-HEAD VERIFIED**.
+
+Next authorized strike: **V2-2 Deterministic Promotions + Coupons foundation**.
 
 ### V2-2 — Deterministic Promotions + Coupons foundation
 
