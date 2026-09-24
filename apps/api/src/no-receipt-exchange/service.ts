@@ -324,10 +324,12 @@ export function createNoReceiptExchangeService(
         return fail('shift-invalid');
       }
 
-      const [tenant, settings] = await Promise.all([
-        deps.tenants.current(scope),
-        deps.tenants.settings(scope),
-      ]);
+      // Match the canonical checkout read discipline: these repositories share
+      // the same database authority, so do not overlap their transactions on
+      // one pg client. Parallel reads here produced an integration-only
+      // TypeError under the production-style browser runtime.
+      const tenant = await deps.tenants.current(scope);
+      const settings = await deps.tenants.settings(scope);
       if (tenant === null || settings === null || settings.currency !== 'SAR') {
         return fail('tenant-misconfigured');
       }
