@@ -160,7 +160,9 @@ function validateCandidates(candidates: readonly PromotionCandidate[]): void {
 
     if (candidate.coupon !== null) {
       if (candidate.coupon.normalizedCode.trim() !== candidate.coupon.normalizedCode) {
-        throw new InvalidPromotionDefinitionError('Coupon snapshot code must already be normalized.');
+        throw new InvalidPromotionDefinitionError(
+          'Coupon snapshot code must already be normalized.',
+        );
       }
       if (couponIds.has(candidate.coupon.couponId)) {
         throw new InvalidPromotionDefinitionError(
@@ -220,10 +222,7 @@ function applicationFor(
 
   const weights = indexes.map((index) => remaining[index] ?? 0n);
   const eligibleBaseMinor = weights.reduce((sum, value) => sum + value, 0n);
-  if (
-    eligibleBaseMinor <= 0n ||
-    eligibleBaseMinor < candidate.minimumEligibleSubtotalMinor
-  ) {
+  if (eligibleBaseMinor <= 0n || eligibleBaseMinor < candidate.minimumEligibleSubtotalMinor) {
     return null;
   }
 
@@ -238,10 +237,7 @@ function applicationFor(
     }))
     .filter((allocation) => allocation.amountMinor > 0n);
 
-  if (
-    allocations.reduce((sum, allocation) => sum + allocation.amountMinor, 0n) !==
-    amountMinor
-  ) {
+  if (allocations.reduce((sum, allocation) => sum + allocation.amountMinor, 0n) !== amountMinor) {
     throw new Error('Promotion allocation invariant failed.');
   }
 
@@ -304,7 +300,9 @@ export function evaluatePromotions(input: {
     );
   }
 
-  const active = ordered(input.candidates.filter((candidate) => activeAt(candidate, input.evaluatedAtMs)));
+  const active = ordered(
+    input.candidates.filter((candidate) => activeAt(candidate, input.evaluatedAtMs)),
+  );
   const original = input.lines.map((line) => line.grossMinor);
   const exclusive = active.filter((candidate) => candidate.stackingMode === 'exclusive');
 
@@ -333,12 +331,13 @@ export function evaluatePromotions(input: {
     }
   }
 
-  const lineTotals = new Map<string, bigint>(
-    input.lines.map((line) => [line.lineId, 0n] as const),
-  );
+  const lineTotals = new Map<string, bigint>(input.lines.map((line) => [line.lineId, 0n] as const));
   for (const application of applications) {
     for (const allocation of application.allocations) {
-      lineTotals.set(allocation.lineId, (lineTotals.get(allocation.lineId) ?? 0n) + allocation.amountMinor);
+      lineTotals.set(
+        allocation.lineId,
+        (lineTotals.get(allocation.lineId) ?? 0n) + allocation.amountMinor,
+      );
     }
   }
 
