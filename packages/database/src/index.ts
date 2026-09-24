@@ -56,6 +56,7 @@ export { createInventoryRepository } from './repositories/inventory-repository.j
 export { createCustomerRepository } from './repositories/customer-repository.js';
 export { createShiftRepository } from './repositories/shift-repository.js';
 export { createSaleRepository } from './repositories/sale-repository.js';
+export { createPromotionRepository } from './repositories/promotion-repository.js';
 export {
   MAX_MERCHANT_SALES_PAGE,
   listMerchantSales,

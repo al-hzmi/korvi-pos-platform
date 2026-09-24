@@ -187,6 +187,69 @@ export interface GlobalCatalogItem {
 }
 
 // ---------------------------------------------------------------------------
+// Promotions and coupons (ADR-0037)
+// ---------------------------------------------------------------------------
+
+export type PromotionActivationMode = 'automatic' | 'coupon';
+export type PromotionPolicyStatus = 'draft' | 'active' | 'paused' | 'archived';
+export type PromotionPolicyStackingMode = 'stackable' | 'exclusive';
+export type PromotionPolicyEffectKind = 'fixed' | 'percentage';
+export type PromotionPolicyTargetKind = 'basket' | 'products';
+export type CouponPolicyStatus = 'active' | 'paused' | 'retired';
+
+export interface PromotionPolicyRecord {
+  readonly id: string;
+  readonly merchantCode: string;
+  readonly name: string;
+  readonly status: PromotionPolicyStatus;
+  readonly activationMode: PromotionActivationMode;
+  readonly priority: number;
+  readonly stackingMode: PromotionPolicyStackingMode;
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly effectKind: PromotionPolicyEffectKind;
+  readonly effectValue: string;
+  readonly minimumEligibleSubtotalMinor: string;
+  readonly targetKind: PromotionPolicyTargetKind;
+  readonly productIds: readonly string[];
+  readonly revision: string;
+}
+
+export interface CouponPolicyRecord {
+  readonly id: string;
+  readonly promotionId: string;
+  readonly normalizedCode: string;
+  readonly status: CouponPolicyStatus;
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly totalRedemptionLimit: number | null;
+  readonly revision: string;
+  /** Preview only; final usage is re-counted under lock at sale commit. */
+  readonly observedRedemptionCount: number;
+}
+
+export interface PromotionCheckoutPolicy {
+  readonly promotion: PromotionPolicyRecord;
+  readonly coupon: CouponPolicyRecord | null;
+}
+
+export interface PromotionCheckoutResolution {
+  readonly policies: readonly PromotionCheckoutPolicy[];
+  readonly unavailableCouponCodes: readonly string[];
+}
+
+export interface PromotionRepository {
+  resolveForCheckout(
+    scope: TenantScope,
+    input: {
+      readonly evaluatedAt: string;
+      readonly productIds: readonly string[];
+      readonly normalizedCouponCodes: readonly string[];
+    },
+  ): Promise<PromotionCheckoutResolution>;
+}
+
+// ---------------------------------------------------------------------------
 // Inventory
 // ---------------------------------------------------------------------------
 
