@@ -130,6 +130,7 @@ function service() {
       name: 'Korvi',
       slug: 'korvi',
       vatNumber: '310000000000003',
+      status: 'active' as const,
     }),
     settings: async () => ({
       tenantId: tenantId(TENANT),
@@ -158,12 +159,12 @@ function service() {
 
   const shifts = {
     findOpenForTerminal: async () => shift(),
-  } as ShiftRepository;
+  } as unknown as ShiftRepository;
 
   const sales = {
     findById: async () => storedSale,
     invoiceForSale: async () => storedInvoice,
-  } as SaleRepository;
+  } as unknown as SaleRepository;
 
   const exchanges: NoReceiptExchangeRepository = {
     findByOperationId: async (_scope, operationId) =>
