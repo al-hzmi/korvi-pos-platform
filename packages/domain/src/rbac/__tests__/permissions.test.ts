@@ -23,11 +23,11 @@ const actorFor = (role: RoleName): Actor => ({
 
 describe('permission catalogue', () => {
   it('lists twenty-four distinct permissions', () => {
-    // Twenty-one after Strike 5B added purchasing authority. Strike 5C adds
-    // two distinct cost capabilities: seeing merchant cost and changing
-    // valuation are not the same decision (ADR-0024 §8).
+    // Strike 5C separated cost visibility from valuation authority. V2-1 adds
+    // the dedicated no-receipt exchange authority rather than reusing refund
+    // permission (ADR-0036). All catalogue entries remain distinct.
     expect(PERMISSIONS).toHaveLength(24);
-    expect(new Set(PERMISSIONS).size).toBe(23);
+    expect(new Set(PERMISSIONS).size).toBe(24);
   });
 
   it('grants the owner every permission', () => {

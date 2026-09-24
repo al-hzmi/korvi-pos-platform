@@ -42,7 +42,7 @@ describe('native terminal authority', () => {
   it('fences every till-addressed business path through the same authority resolver', () => {
     expect(
       businessSource.match(/authoritativeTerminalId\(principal, parsed\.data\.terminalId\)/g),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
     expect(businessSource).toContain(
       'const authoritative = authoritativeTerminalId(principal, terminalId);',
     );

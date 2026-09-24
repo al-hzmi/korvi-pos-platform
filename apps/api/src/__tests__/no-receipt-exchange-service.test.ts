@@ -166,7 +166,8 @@ function service() {
   } as SaleRepository;
 
   const exchanges: NoReceiptExchangeRepository = {
-    findByOperationId: async () => existing,
+    findByOperationId: async (_scope, operationId) =>
+      existing?.operationId === operationId ? existing : null,
     record: async (_scope, input) => {
       recorded = input;
       storedSale = buildSale(input);
@@ -307,7 +308,10 @@ describe('V2-1 no-receipt exchange service', () => {
     );
     expect(result.outcome).toBe('success');
     expect(recorded?.replacementSale.cashMovement).toBeNull();
-    expect(JSON.stringify(recorded)).not.toContain('refund');
-    expect(JSON.stringify(recorded)).not.toContain('storeCredit');
+    const serialized = JSON.stringify(recorded, (_key, value) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    );
+    expect(serialized).not.toContain('refund');
+    expect(serialized).not.toContain('storeCredit');
   });
 });

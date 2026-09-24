@@ -442,7 +442,12 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
   });
 
   it('G. finalized case and line snapshots cannot be updated or directly deleted', async () => {
-    const result = await service.create(request());
+    const result = await service.create(
+      request({
+        replacementProductId: A.accepted,
+        cashMinor: null,
+      }),
+    );
     if (result.outcome !== 'success') throw new Error(result.reason);
 
     await expect(

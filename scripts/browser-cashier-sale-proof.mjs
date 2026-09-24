@@ -290,6 +290,47 @@ async function clickButton(text) {
   });
 }
 
+async function clickButtonWithinDialog(text) {
+  await waitFor(
+    `(() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      return dialog !== null && [...dialog.querySelectorAll('button')].some(
+        (button) =>
+          !button.disabled &&
+          (button.textContent ?? '').replace(/\\s+/g, ' ').trim().includes(${jsString(text)})
+      );
+    })()`,
+    `enabled dialog button ${JSON.stringify(text)}`,
+  );
+  const point = await evaluate(`(() => {
+    const dialog = document.querySelector('[role="dialog"]');
+    if (dialog === null) return null;
+    const wanted = ${jsString(text)};
+    const button = [...dialog.querySelectorAll('button')].find((candidate) =>
+      (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim().includes(wanted)
+    );
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
+    button.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const rect = button.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  assert.ok(point !== null, `Enabled dialog button containing ${JSON.stringify(text)} was not visible.`);
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1,
+  });
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1,
+  });
+}
+
 async function pressEnter() {
   await cdp.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -635,7 +676,7 @@ try {
   await setInputByPlaceholder('ابحث بالاسم أو الباركود أو SKU', 'BROWSER-SKU-001');
   await clickButton('بحث');
   await waitForText('BROWSER-SKU-001', 20_000);
-  await clickButton('صنف برهان المتصفح');
+  await clickButtonWithinDialog('صنف برهان المتصفح');
   await waitForText('مرجع اليوم:', 20_000);
   await setInputByLabelText('قيمة الاستبدال المعتمدة (ريال)', exchangeReplacementTotalMajor);
   await clickButton('اعتماد الحالة والبيع البديل');

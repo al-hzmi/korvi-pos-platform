@@ -156,12 +156,14 @@ CREATE INDEX "no_receipt_exchange_lines_tenant_product_idx"
 
 ALTER TABLE "no_receipt_exchange_cases" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "no_receipt_exchange_cases" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "no_receipt_exchange_cases_isolation" ON "no_receipt_exchange_cases";
 CREATE POLICY "no_receipt_exchange_cases_isolation" ON "no_receipt_exchange_cases"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
 
 ALTER TABLE "no_receipt_exchange_lines" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "no_receipt_exchange_lines" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "no_receipt_exchange_lines_isolation" ON "no_receipt_exchange_lines";
 CREATE POLICY "no_receipt_exchange_lines_isolation" ON "no_receipt_exchange_lines"
   USING ("tenantId" = current_tenant_id())
   WITH CHECK ("tenantId" = current_tenant_id());
