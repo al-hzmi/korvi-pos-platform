@@ -482,8 +482,7 @@ export async function recordSaleWithin(
   options: { readonly skipIdempotencyReservation?: boolean } = {},
 ): Promise<SaleRecord> {
   const tenant = tenantParam(scope);
-  const { sale, invoice, inventory, cashMovement, restaurantOrderSettlement, idempotency } =
-    input;
+  const { sale, invoice, inventory, cashMovement, restaurantOrderSettlement, idempotency } = input;
 
   // First, and inside this transaction: the number is issued to a sale
   // that is about to exist, not to a request that might not finish.
@@ -502,9 +501,7 @@ export async function recordSaleWithin(
   if (restaurantOrderSettlement !== undefined) {
     await assertRestaurantOrderSettlement(tx, tenant, sale, restaurantOrderSettlement);
   } else if (sale.restaurantOrderId !== null && sale.restaurantOrderId !== undefined) {
-    throw new DatabaseError(
-      'A restaurantOrderId requires an atomic settlement precondition.',
-    );
+    throw new DatabaseError('A restaurantOrderId requires an atomic settlement precondition.');
   }
 
   // The merchant's overselling policy, read inside the transaction that
@@ -652,25 +649,19 @@ export async function recordSaleWithin(
       .filter((line) => line.productId !== null)
       .map((line) => [line.productId as string, line] as const),
   );
-  if (
-    saleLineByProduct.size !== sale.lines.filter((line) => line.productId !== null).length
-  ) {
+  if (saleLineByProduct.size !== sale.lines.filter((line) => line.productId !== null).length) {
     throw new DatabaseError('A sale cannot contain duplicate product lines at persistence.');
   }
 
   for (const movement of inventory) {
     const saleLine = saleLineByProduct.get(movement.productId);
     if (saleLine === undefined) {
-      throw new DatabaseError(
-        'A sale stock movement has no matching sale line for cost basis.',
-      );
+      throw new DatabaseError('A sale stock movement has no matching sale line for cost basis.');
     }
     const movementQuantity = BigInt(movement.quantityScaled);
     const lineQuantity = BigInt(saleLine.quantityScaled);
     if (movementQuantity >= 0n || -movementQuantity !== lineQuantity) {
-      throw new DatabaseError(
-        'Sale movement cost basis does not reconcile to its sale line.',
-      );
+      throw new DatabaseError('Sale movement cost basis does not reconcile to its sale line.');
     }
 
     // The guard is in the stock UPDATE, not in a prior read: two tills
@@ -740,7 +731,6 @@ export async function recordSaleWithin(
     throw new DatabaseError('The sale just written could not be read back.');
   }
   return saleToDomain(scope, row);
-
 }
 
 /**

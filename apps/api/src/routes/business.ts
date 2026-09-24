@@ -173,9 +173,7 @@ const RETURN_STATUS: Readonly<Record<ReturnFailureReason, number>> = {
   'branch-required': 409,
 };
 
-const NO_RECEIPT_EXCHANGE_MESSAGES: Readonly<
-  Record<NoReceiptExchangeFailureReason, string>
-> = {
+const NO_RECEIPT_EXCHANGE_MESSAGES: Readonly<Record<NoReceiptExchangeFailureReason, string>> = {
   'permission-denied': 'هذه العملية تتطلب صلاحية مشرف.',
   'branch-required': 'لا يوجد فرع مرتبط بهذا المستخدم. راجع إعدادات المنشأة.',
   'no-open-shift': 'لا توجد وردية مفتوحة على هذا الصندوق. افتح وردية أولاً.',
@@ -194,9 +192,7 @@ const NO_RECEIPT_EXCHANGE_MESSAGES: Readonly<
   'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
 };
 
-const NO_RECEIPT_EXCHANGE_STATUS: Readonly<
-  Record<NoReceiptExchangeFailureReason, number>
-> = {
+const NO_RECEIPT_EXCHANGE_STATUS: Readonly<Record<NoReceiptExchangeFailureReason, number>> = {
   'permission-denied': 403,
   'branch-required': 409,
   'no-open-shift': 409,
@@ -846,10 +842,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
   app.post(
     '/v1/no-receipt-exchanges',
     {
-      preHandler: [
-        guards.requireSession,
-        guards.requirePermission('sale.exchange.no-receipt'),
-      ],
+      preHandler: [guards.requireSession, guards.requirePermission('sale.exchange.no-receipt')],
     },
     async (request, reply: FastifyReply) => {
       const principal = principalOf(request);
@@ -898,12 +891,10 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
 
       if (result.outcome === 'failure') {
         request.log.info({ reason: result.reason }, 'no-receipt exchange refused');
-        return reply
-          .code(NO_RECEIPT_EXCHANGE_STATUS[result.reason])
-          .send({
-            error: result.reason,
-            message: result.detail ?? NO_RECEIPT_EXCHANGE_MESSAGES[result.reason],
-          });
+        return reply.code(NO_RECEIPT_EXCHANGE_STATUS[result.reason]).send({
+          error: result.reason,
+          message: result.detail ?? NO_RECEIPT_EXCHANGE_MESSAGES[result.reason],
+        });
       }
 
       return reply.code(result.replayed ? 200 : 201).send({

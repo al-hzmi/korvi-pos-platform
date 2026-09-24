@@ -8,7 +8,9 @@ import {
   planNoReceiptExchangePolicy,
 } from '../no-receipt-exchange.js';
 
-function accepted(overrides: Partial<Parameters<typeof planNoReceiptExchangePolicy>[0]['accepted'][number]> = {}) {
+function accepted(
+  overrides: Partial<Parameters<typeof planNoReceiptExchangePolicy>[0]['accepted'][number]> = {},
+) {
   return {
     productId: '00000000-0000-7000-8000-000000000001',
     sku: 'SKU-1',

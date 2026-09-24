@@ -117,10 +117,7 @@ export interface NoReceiptExchangeDeps {
   readonly newId?: () => string;
 }
 
-function fail(
-  reason: NoReceiptExchangeFailureReason,
-  detail?: string,
-): NoReceiptExchangeFailure {
+function fail(reason: NoReceiptExchangeFailureReason, detail?: string): NoReceiptExchangeFailure {
   return detail === undefined
     ? { outcome: 'failure', reason }
     : { outcome: 'failure', reason, detail };
@@ -148,11 +145,7 @@ function toTenderLine(tender: CheckoutTenderInput, currency: Currency): TenderLi
       };
 }
 
-function summariseSale(
-  sale: SaleRecord,
-  invoiceNumber: string,
-  cashierName: string,
-): SaleSummary {
+function summariseSale(sale: SaleRecord, invoiceNumber: string, cashierName: string): SaleSummary {
   return {
     saleId: sale.id,
     operationId: sale.operationId,
@@ -203,7 +196,10 @@ async function loadProducts(
   lines: readonly { readonly productId: string; readonly quantityScaled: string }[],
 ): Promise<
   | { readonly ok: true; readonly rows: readonly { product: Product; quantityScaled: bigint }[] }
-  | { readonly ok: false; readonly reason: 'unknown-product' | 'product-unavailable' | 'invalid-quantity' }
+  | {
+      readonly ok: false;
+      readonly reason: 'unknown-product' | 'product-unavailable' | 'invalid-quantity';
+    }
 > {
   const rows: { product: Product; quantityScaled: bigint }[] = [];
   for (const line of lines) {
@@ -365,19 +361,17 @@ export function createNoReceiptExchangeService(
       const cart = {
         priceMode: settings.priceMode,
         currency,
-        lines: replacement.rows.map(
-          ({ product, quantityScaled }, index): CartLineInput => ({
-            lineId: String(index + 1),
-            productId: product.id,
-            sku: product.sku,
-            nameAr: product.nameAr,
-            nameEn: product.nameEn,
-            unitPrice: money(BigInt(product.priceMinor), currency),
-            quantity: quantity(quantityScaled),
-            vatRate: basisPoints(Number(product.vatBasisPoints)),
-            isWeighted: product.productType === 'weighted',
-          }),
-        ),
+        lines: replacement.rows.map(({ product, quantityScaled }, index): CartLineInput => ({
+          lineId: String(index + 1),
+          productId: product.id,
+          sku: product.sku,
+          nameAr: product.nameAr,
+          nameEn: product.nameEn,
+          unitPrice: money(BigInt(product.priceMinor), currency),
+          quantity: quantity(quantityScaled),
+          vatRate: basisPoints(Number(product.vatBasisPoints)),
+          isWeighted: product.productType === 'weighted',
+        })),
       };
 
       const pricedPreview = priceCart(cart);
@@ -426,11 +420,10 @@ export function createNoReceiptExchangeService(
       const recordedTenders: TenderRecord[] = payment.map((tender) => ({
         id: newId(),
         kind: tender.kind,
-        scheme: tender.kind === 'electronic' ? tender.scheme ?? null : null,
+        scheme: tender.kind === 'electronic' ? (tender.scheme ?? null) : null,
         amountMinor: tender.amount.minor.toString(),
-        changeMinor:
-          tender.kind === 'cash' ? finalized.settlement.change.minor.toString() : '0',
-        reference: tender.kind === 'electronic' ? tender.reference ?? null : null,
+        changeMinor: tender.kind === 'cash' ? finalized.settlement.change.minor.toString() : '0',
+        reference: tender.kind === 'electronic' ? (tender.reference ?? null) : null,
       }));
 
       const cashRetainedMinor =

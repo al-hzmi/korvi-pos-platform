@@ -30,18 +30,14 @@ function sortedLines(
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
 
-export function fingerprintNoReceiptExchangeIntent(
-  intent: NoReceiptExchangeIntent,
-): string {
+export function fingerprintNoReceiptExchangeIntent(intent: NoReceiptExchangeIntent): string {
   const tenders = intent.tenders
-    .map(
-      (tender): readonly string[] => [
-        tender.kind,
-        tender.amountMinor,
-        tender.scheme,
-        tender.reference,
-      ],
-    )
+    .map((tender): readonly string[] => [
+      tender.kind,
+      tender.amountMinor,
+      tender.scheme,
+      tender.reference,
+    ])
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 
   const canonical = JSON.stringify([

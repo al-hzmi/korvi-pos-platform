@@ -923,11 +923,7 @@ export interface CreateReturnResponse {
 }
 
 export type NoReceiptExchangeReason =
-  | 'customer-no-receipt'
-  | 'gift-return'
-  | 'receipt-unavailable'
-  | 'manager-exception'
-  | 'other';
+  'customer-no-receipt' | 'gift-return' | 'receipt-unavailable' | 'manager-exception' | 'other';
 
 export interface NoReceiptExchangeRequest {
   readonly operationId: string;

@@ -114,7 +114,8 @@ export function planNoReceiptExchangePolicy(input: {
     approvedAllowanceMinor: input.approvedAllowanceMinor,
     lines: input.accepted.map((line, index) => {
       const pricedLine = priced.lines[index];
-      if (pricedLine === undefined) throw new Error('No-receipt exchange pricing invariant failed.');
+      if (pricedLine === undefined)
+        throw new Error('No-receipt exchange pricing invariant failed.');
       return {
         productId: line.productId,
         sku: line.sku,

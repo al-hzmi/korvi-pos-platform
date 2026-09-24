@@ -17,12 +17,7 @@ import type { Money } from '../money/money.js';
  * time a scheme is added.
  */
 export type TenderKind =
-  | 'cash'
-  | 'card'
-  | 'mada'
-  | 'transfer'
-  | 'electronic'
-  | 'exchange_allowance';
+  'cash' | 'card' | 'mada' | 'transfer' | 'electronic' | 'exchange_allowance';
 
 /**
  * The schemes a cashier may record against an electronic tender.

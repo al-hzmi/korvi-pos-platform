@@ -200,7 +200,9 @@ function assertCompositeShape(input: RecordNoReceiptExchangeInput): void {
     sale.shiftId !== exchange.shiftId ||
     sale.userId !== exchange.actorUserId
   ) {
-    throw new DatabaseError('Replacement sale authority must match the no-receipt exchange actor/till.');
+    throw new DatabaseError(
+      'Replacement sale authority must match the no-receipt exchange actor/till.',
+    );
   }
   if (
     audits.length < 2 ||
@@ -219,7 +221,9 @@ function assertCompositeShape(input: RecordNoReceiptExchangeInput): void {
         audit.actorUserId === exchange.actorUserId,
     )
   ) {
-    throw new DatabaseError('Composite exchange must atomically audit both case and replacement sale.');
+    throw new DatabaseError(
+      'Composite exchange must atomically audit both case and replacement sale.',
+    );
   }
 
   const allowanceTenders = replacementSale.sale.tenders.filter(
@@ -232,17 +236,23 @@ function assertCompositeShape(input: RecordNoReceiptExchangeInput): void {
       (allowanceTenders.length !== 1 ||
         BigInt(allowanceTenders[0]?.amountMinor ?? '-1') !== approvedAllowance))
   ) {
-    throw new DatabaseError('Replacement sale exchange allowance does not match the approved case value.');
+    throw new DatabaseError(
+      'Replacement sale exchange allowance does not match the approved case value.',
+    );
   }
 
   const byLineId = new Map(lines.map((line) => [line.id, line] as const));
-  const expectedTracked = new Set(lines.filter((line) => line.trackInventory).map((line) => line.id));
+  const expectedTracked = new Set(
+    lines.filter((line) => line.trackInventory).map((line) => line.id),
+  );
   const actualTracked = new Set<string>();
 
   for (const entry of intake) {
     const line = byLineId.get(entry.caseLineId);
     if (line === undefined || !line.trackInventory || actualTracked.has(entry.caseLineId)) {
-      throw new DatabaseError('No-receipt intake does not map one-to-one to tracked accepted lines.');
+      throw new DatabaseError(
+        'No-receipt intake does not map one-to-one to tracked accepted lines.',
+      );
     }
     actualTracked.add(entry.caseLineId);
     const movement = entry.movement;
@@ -256,7 +266,9 @@ function assertCompositeShape(input: RecordNoReceiptExchangeInput): void {
       movement.sourceId !== exchange.id ||
       movement.actorUserId !== exchange.actorUserId
     ) {
-      throw new DatabaseError('No-receipt intake movement does not match its accepted-line snapshot.');
+      throw new DatabaseError(
+        'No-receipt intake movement does not match its accepted-line snapshot.',
+      );
     }
   }
   if (
@@ -301,34 +313,20 @@ export function createNoReceiptExchangeRepository(
         // Pre-lock every stock row the two-sided operation may touch in one
         // deterministic order. Intake and replacement sale then reuse the same
         // canonical stock/cost ledger under these locks.
-        await lockInventoryBalancesWithin(
-          tx,
-          tenant,
-          input.exchange.branchId,
-          [
-            ...input.intake.map((entry) => entry.movement.productId),
-            ...input.replacementSale.inventory.map((movement) => movement.productId),
-          ],
-        );
+        await lockInventoryBalancesWithin(tx, tenant, input.exchange.branchId, [
+          ...input.intake.map((entry) => entry.movement.productId),
+          ...input.replacementSale.inventory.map((movement) => movement.productId),
+        ]);
 
         for (const entry of input.intake) {
           // No incoming cost basis is passed: absent historical evidence is
           // represented by the costing ledger as explicit unknown, never zero.
-          await applyMovementWithin(
-            tx,
-            tenant,
-            entry.movement,
-            true,
-            entry.caseLineId,
-          );
+          await applyMovementWithin(tx, tenant, entry.movement, true, entry.caseLineId);
         }
 
-        const replacement = await recordSaleWithin(
-          tx,
-          scope,
-          input.replacementSale,
-          { skipIdempotencyReservation: true },
-        );
+        const replacement = await recordSaleWithin(tx, scope, input.replacementSale, {
+          skipIdempotencyReservation: true,
+        });
 
         await tx.noReceiptExchangeCase.create({
           data: {

@@ -39,8 +39,7 @@ const ALLOWED_BEHIND = {
     'Post-V1 parallel product-development baseline (2026-09-21): retain the verified 8.70.0 lint/parser toolchain during Migration M2/M3 work; upgrade to 8.70.1 only in a dedicated dependency-maintenance change, not inside a migration vertical slice.',
   tailwindcss: 'ADR-0007: the design system ships a verified v3 config (v3-lts).',
   tsx: 'Post-V1 parallel product-development baseline (2026-09-20): retain the verified 4.23.13 TypeScript execution tool during Restaurant/Migration feature work; upgrade to 4.23.15 only in a dedicated dependency-maintenance change.',
-  vite:
-    'Mastermind V2 feature-work baseline (2026-09-24): retain the frozen acquisition-candidate Vite 8.3.0 toolchain while V2-1 changes financial/inventory authority; evaluate 8.3.1 only in a dedicated dependency-maintenance change.',
+  vite: 'Mastermind V2 feature-work baseline (2026-09-24): retain the frozen acquisition-candidate Vite 8.3.0 toolchain while V2-1 changes financial/inventory authority; evaluate 8.3.1 only in a dedicated dependency-maintenance change.',
   '@types/node':
     'ADR-0007: typings track the Node 24 runtime. A newer major describes APIs ' +
     'the runtime does not have, so code typechecks and then fails at run time.',
