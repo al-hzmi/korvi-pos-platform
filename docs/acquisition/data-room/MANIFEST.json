@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "createdFor": "Korvi acquisition due diligence",
   "source": {
     "branch": "release/canonical-acquisition-v1",
@@ -68,5 +68,44 @@
     "Production ZATCA Activated",
     "Final Canonical Acquisition Release",
     "Merchant Proven"
-  ]
+  ],
+  "dataRoomDocuments": [
+    "README.md",
+    "15-MINUTE-BUYER-REVIEW.md",
+    "BUYER-EXECUTIVE-SUMMARY.md",
+    "CURRENT-STATUS.md",
+    "DEAL-RISK-REGISTER.md",
+    "EVIDENCE-INDEX.md",
+    "TECHNICAL-DUE-DILIGENCE-QA.md",
+    "DOCUMENTATION-DRIFT-NOTICE.md",
+    "RELEASE-PROVENANCE.md",
+    "DUE-DILIGENCE-CHECKLIST.md",
+    "THIRD-PARTY-LICENSE-TECHNICAL-INVENTORY.md",
+    "ASSET-ACCOUNT-TRANSFER-REGISTER.md",
+    "TRANSACTION-HANDOFF-CHECKLIST.md",
+    "PRIVATE-EVIDENCE-REQUEST-LIST.md",
+    "EXTERNAL-EVIDENCE-REGISTER.md"
+  ],
+  "repositoryGovernance": {
+    "defaultBranch": "main",
+    "mainProtected": false,
+    "repositoryRulesetsCount": 0,
+    "acquisitionPullRequest": 62,
+    "acquisitionPullRequestState": "open",
+    "note": "Governance observations are diligence items, not runtime defects."
+  },
+  "currentClaims": {
+    "allowed": [
+      "Canonical Acquisition Candidate",
+      "Internal Engineering Complete",
+      "Hosted staging aligned to canonical SHA",
+      "Engineering handoff ready"
+    ],
+    "prohibited": [
+      "Production Proven",
+      "Production ZATCA Activated",
+      "Final Canonical Acquisition Release",
+      "Merchant Proven"
+    ]
+  }
 }
