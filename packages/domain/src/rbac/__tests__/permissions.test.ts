@@ -27,7 +27,7 @@ describe('permission catalogue', () => {
     // the dedicated no-receipt exchange authority rather than reusing refund
     // permission (ADR-0036). All catalogue entries remain distinct.
     expect(PERMISSIONS).toHaveLength(25);
-    expect(new Set(PERMISSIONS).size).toBe(24);
+    expect(new Set(PERMISSIONS).size).toBe(25);
   });
 
   it('grants the owner every permission', () => {
