@@ -7,9 +7,7 @@ import {
 
 const NOW = Date.UTC(2026, 8, 25, 12, 0, 0);
 
-function candidate(
-  overrides: Partial<PromotionCandidate> = {},
-): PromotionCandidate {
+function candidate(overrides: Partial<PromotionCandidate> = {}): PromotionCandidate {
   return {
     promotionId: '00000000-0000-7000-8000-000000000100',
     revision: 1n,
@@ -253,9 +251,7 @@ describe('deterministic promotion evaluator', () => {
       evaluatePromotions({
         evaluatedAtMs: NOW,
         lines,
-        candidates: [
-          candidate({ effect: { kind: 'percentage', basisPoints: 10_001n } }),
-        ],
+        candidates: [candidate({ effect: { kind: 'percentage', basisPoints: 10_001n } })],
       }),
     ).toThrow(InvalidPromotionDefinitionError);
 
@@ -287,10 +283,7 @@ describe('deterministic promotion evaluator', () => {
           }),
         ],
       });
-      const granted = result.lineDiscounts.reduce(
-        (sum, entry) => sum + entry.amountMinor,
-        0n,
-      );
+      const granted = result.lineDiscounts.reduce((sum, entry) => sum + entry.amountMinor, 0n);
       expect(granted).toBe(result.totalDiscountMinor);
       expect(granted).toBeLessThanOrEqual(total * 3n + 3n);
     }
