@@ -14,9 +14,14 @@ import {
   closeShiftBody,
   manualMovementBody,
   namesDrawerAuthorityField,
+  noReceiptExchangeBody,
 } from './validation.js';
 import type { CheckoutFailureReason, CheckoutService } from '../checkout/service.js';
 import type { ReturnFailureReason, ReturnService } from '../returns/service.js';
+import type {
+  NoReceiptExchangeFailureReason,
+  NoReceiptExchangeService,
+} from '../no-receipt-exchange/service.js';
 import type { DrawerFailureReason, DrawerService } from '../shifts/service.js';
 import type { Guards } from '../auth/guards.js';
 import type {
@@ -50,6 +55,8 @@ export interface BusinessDeps {
   readonly restaurantFloor: RestaurantFloorRepository;
   readonly checkout: CheckoutService;
   readonly returns: ReturnService;
+  /** V2-1, optional only so older isolated route fixtures remain narrow. */
+  readonly noReceiptExchanges?: NoReceiptExchangeService;
   readonly drawer: DrawerService;
 }
 
@@ -164,6 +171,48 @@ const RETURN_STATUS: Readonly<Record<ReturnFailureReason, number>> = {
   // The same 404 a till in another branch gets from every other route.
   'unknown-terminal': 404,
   'branch-required': 409,
+};
+
+const NO_RECEIPT_EXCHANGE_MESSAGES: Readonly<
+  Record<NoReceiptExchangeFailureReason, string>
+> = {
+  'permission-denied': 'هذه العملية تتطلب صلاحية مشرف.',
+  'branch-required': 'لا يوجد فرع مرتبط بهذا المستخدم. راجع إعدادات المنشأة.',
+  'no-open-shift': 'لا توجد وردية مفتوحة على هذا الصندوق. افتح وردية أولاً.',
+  'shift-invalid': 'الوردية لم تعد صالحة لهذا الصندوق. تحقّق من الوردية.',
+  'tenant-misconfigured': 'إعدادات المنشأة غير مكتملة.',
+  'unknown-product': 'أحد الأصناف غير موجود.',
+  'product-unavailable': 'أحد الأصناف لم يعد متاحاً.',
+  'duplicate-accepted-line': 'الصنف مكرر ضمن الأصناف المستلمة.',
+  'duplicate-replacement-line': 'الصنف مكرر ضمن سلة الاستبدال.',
+  'invalid-quantity': 'إحدى الكميات غير صالحة.',
+  'invalid-allowance': 'قيمة الاستبدال غير صالحة أو تتجاوز الحد الحالي المسموح.',
+  'replacement-below-allowance': 'قيمة البيع البديل أقل من قيمة الاستبدال المعتمدة.',
+  'insufficient-payment': 'المبلغ الإضافي لا يغطي المتبقي من البيع البديل.',
+  'invalid-tender': 'بيانات الدفع الإضافي غير صالحة.',
+  'insufficient-stock': 'مخزون سلة الاستبدال غير كافٍ.',
+  'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
+};
+
+const NO_RECEIPT_EXCHANGE_STATUS: Readonly<
+  Record<NoReceiptExchangeFailureReason, number>
+> = {
+  'permission-denied': 403,
+  'branch-required': 409,
+  'no-open-shift': 409,
+  'shift-invalid': 409,
+  'tenant-misconfigured': 409,
+  'unknown-product': 404,
+  'product-unavailable': 409,
+  'duplicate-accepted-line': 422,
+  'duplicate-replacement-line': 422,
+  'invalid-quantity': 422,
+  'invalid-allowance': 422,
+  'replacement-below-allowance': 422,
+  'insufficient-payment': 422,
+  'invalid-tender': 422,
+  'insufficient-stock': 409,
+  'idempotency-conflict': 409,
 };
 
 /**
@@ -786,6 +835,86 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         .send({ return: result.document, replayed: result.replayed });
     },
   );
+  /**
+   * Manager-authorized no-receipt exchange.
+   *
+   * The intake is not an original-sale return and this endpoint accepts no
+   * historical price/VAT/tender/cost assertion. It is online-authoritative and
+   * commits accepted stock + bounded allowance + the normal replacement sale
+   * as one database transaction (ADR-0036).
+   */
+  app.post(
+    '/v1/no-receipt-exchanges',
+    {
+      preHandler: [
+        guards.requireSession,
+        guards.requirePermission('sale.exchange.no-receipt'),
+      ],
+    },
+    async (request, reply: FastifyReply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (deps.noReceiptExchanges === undefined) {
+        return reply.code(503).send({
+          error: 'no-receipt-exchange-unavailable',
+          message: 'خدمة الاستبدال بدون فاتورة غير متاحة حالياً.',
+        });
+      }
+
+      const forbidden = namesForbiddenField(request.body);
+      if (forbidden !== null) {
+        return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
+      }
+      const cardField = namesCardField(request.body);
+      if (cardField !== null) {
+        return reply.code(400).send({ error: 'card_data_refused', field: cardField });
+      }
+      if (carriesCardNumber(request.body)) {
+        return reply.code(400).send({ error: 'card_data_refused' });
+      }
+
+      const parsed = noReceiptExchangeBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
+      const result = await deps.noReceiptExchanges.create({
+        principal,
+        operationId: parsed.data.operationId,
+        terminalId,
+        ...(parsed.data.expectedShiftId === undefined
+          ? {}
+          : { expectedShiftId: parsed.data.expectedShiftId }),
+        reason: parsed.data.reason,
+        ...(parsed.data.evidenceNote === undefined
+          ? {}
+          : { evidenceNote: parsed.data.evidenceNote }),
+        approvedAllowanceMinor: parsed.data.approvedAllowanceMinor,
+        acceptedLines: parsed.data.acceptedLines,
+        replacementLines: parsed.data.replacementLines,
+        tenders: parsed.data.tenders,
+      });
+
+      if (result.outcome === 'failure') {
+        request.log.info({ reason: result.reason }, 'no-receipt exchange refused');
+        return reply
+          .code(NO_RECEIPT_EXCHANGE_STATUS[result.reason])
+          .send({
+            error: result.reason,
+            message: result.detail ?? NO_RECEIPT_EXCHANGE_MESSAGES[result.reason],
+          });
+      }
+
+      return reply.code(result.replayed ? 200 : 201).send({
+        exchange: result.case,
+        sale: result.sale,
+        receipt: result.receipt,
+        replayed: result.replayed,
+      });
+    },
+  );
+
   /**
    * Money into or out of the drawer by hand.
    *

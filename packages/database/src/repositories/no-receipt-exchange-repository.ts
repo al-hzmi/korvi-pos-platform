@@ -1,5 +1,5 @@
 import { withTenant } from '../tenant-context.js';
-import { DatabaseError, OperationAlreadyRecordedError } from '../errors.js';
+import { DatabaseError, OperationAlreadyRecordedError, ShiftUnusableError } from '../errors.js';
 import { applyMovementWithin, lockInventoryBalancesWithin } from './inventory-repository.js';
 import { recordSaleWithin } from './sale-repository.js';
 import { iso, minor, oneOf, rate, scoped, tenantParam } from './mapping.js';
@@ -46,7 +46,7 @@ interface CaseRow {
   sequence: number;
   caseNumber: string;
   reason: string;
-  evidenceNote: string;
+  evidenceNote: string | null;
   currency: string;
   referenceCeilingMinor: bigint;
   approvedAllowanceMinor: bigint;
@@ -143,6 +143,30 @@ async function reserveCompositeOperation(
   }
 }
 
+async function assertShiftUsable(
+  tx: TransactionClient,
+  tenant: string,
+  input: RecordNoReceiptExchangeInput,
+): Promise<void> {
+  const rows = await tx.$queryRaw<
+    { status: string; terminalId: string; branchId: string; userId: string }[]
+  >`
+    SELECT "status","terminalId","branchId","userId"
+      FROM "shifts"
+     WHERE "tenantId" = ${tenant}::uuid AND "id" = ${input.exchange.shiftId}::uuid
+     FOR UPDATE`;
+  const shift = rows.at(0);
+  if (
+    shift === undefined ||
+    shift.status !== 'open' ||
+    shift.terminalId !== input.exchange.terminalId ||
+    shift.branchId !== input.exchange.branchId ||
+    shift.userId !== input.exchange.actorUserId
+  ) {
+    throw new ShiftUnusableError('shift-invalid');
+  }
+}
+
 async function allocateCaseNumber(
   tx: TransactionClient,
   tenant: string,
@@ -168,7 +192,7 @@ async function allocateCaseNumber(
 }
 
 function assertCompositeShape(input: RecordNoReceiptExchangeInput): void {
-  const { exchange, replacementSale, lines, intake, audit } = input;
+  const { exchange, replacementSale, lines, intake, audits } = input;
   const sale = replacementSale.sale;
   if (
     sale.branchId !== exchange.branchId ||
@@ -178,8 +202,37 @@ function assertCompositeShape(input: RecordNoReceiptExchangeInput): void {
   ) {
     throw new DatabaseError('Replacement sale authority must match the no-receipt exchange actor/till.');
   }
-  if (audit.entityId !== exchange.id || audit.actorUserId !== exchange.actorUserId) {
-    throw new DatabaseError('No-receipt exchange audit identity does not match the case.');
+  if (
+    audits.length < 2 ||
+    !audits.some(
+      (audit) =>
+        audit.eventType === 'no-receipt-exchange.completed' &&
+        audit.entityType === 'no-receipt-exchange' &&
+        audit.entityId === exchange.id &&
+        audit.actorUserId === exchange.actorUserId,
+    ) ||
+    !audits.some(
+      (audit) =>
+        audit.eventType === 'sale.completed' &&
+        audit.entityType === 'sale' &&
+        audit.entityId === replacementSale.sale.id &&
+        audit.actorUserId === exchange.actorUserId,
+    )
+  ) {
+    throw new DatabaseError('Composite exchange must atomically audit both case and replacement sale.');
+  }
+
+  const allowanceTenders = replacementSale.sale.tenders.filter(
+    (tender) => tender.kind === 'exchange_allowance',
+  );
+  const approvedAllowance = BigInt(exchange.approvedAllowanceMinor);
+  if (
+    (approvedAllowance === 0n && allowanceTenders.length !== 0) ||
+    (approvedAllowance > 0n &&
+      (allowanceTenders.length !== 1 ||
+        BigInt(allowanceTenders[0]?.amountMinor ?? '-1') !== approvedAllowance))
+  ) {
+    throw new DatabaseError('Replacement sale exchange allowance does not match the approved case value.');
   }
 
   const byLineId = new Map(lines.map((line) => [line.id, line] as const));
@@ -243,6 +296,7 @@ export function createNoReceiptExchangeRepository(
         // Branch lock is the document-number serialization boundary shared by
         // sale receipt allocation and this case series.
         const number = await allocateCaseNumber(tx, tenant, input.exchange.branchId);
+        await assertShiftUsable(tx, tenant, input);
 
         // Pre-lock every stock row the two-sided operation may touch in one
         // deterministic order. Intake and replacement sale then reuse the same
@@ -320,20 +374,22 @@ export function createNoReceiptExchangeRepository(
           })),
         });
 
-        await tx.auditEvent.create({
-          data: {
-            id: input.audit.id,
-            tenantId: tenant,
-            actorUserId: input.audit.actorUserId,
-            branchId: input.audit.branchId,
-            terminalId: input.audit.terminalId,
-            eventType: input.audit.eventType,
-            entityType: input.audit.entityType,
-            entityId: input.audit.entityId,
-            ...(input.audit.metadata === null ? {} : { metadata: { ...input.audit.metadata } }),
-            occurredAt: new Date(input.audit.occurredAt),
-          },
-        });
+        for (const audit of input.audits) {
+          await tx.auditEvent.create({
+            data: {
+              id: audit.id,
+              tenantId: tenant,
+              actorUserId: audit.actorUserId,
+              branchId: audit.branchId,
+              terminalId: audit.terminalId,
+              eventType: audit.eventType,
+              entityType: audit.entityType,
+              entityId: audit.entityId,
+              ...(audit.metadata === null ? {} : { metadata: { ...audit.metadata } }),
+              occurredAt: new Date(audit.occurredAt),
+            },
+          });
+        }
 
         const row = await loadCase(tx, tenant, { id: input.exchange.id });
         if (row === null) {

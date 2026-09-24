@@ -5,6 +5,7 @@ import {
   createAuthRepository,
   createIdempotencyRepository,
   createInventoryRepository,
+  createNoReceiptExchangeRepository,
   createPlatformAdminSessionStore,
   createPrismaClient,
   createProductRepository,
@@ -27,6 +28,7 @@ import { createCheckoutService } from './checkout/service.js';
 import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
+import { createNoReceiptExchangeService } from './no-receipt-exchange/service.js';
 import { createMerchantCategoryMigrationService } from './migration/category-import-service.js';
 import { createMerchantCustomerMigrationService } from './migration/customer-import-service.js';
 import { createMerchantProductMigrationService } from './migration/product-import-service.js';
@@ -241,6 +243,14 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         shifts,
         idempotency,
         audit,
+      }),
+      noReceiptExchanges: createNoReceiptExchangeService({
+        tenants,
+        products,
+        shifts,
+        sales,
+        exchanges: createNoReceiptExchangeRepository(prisma),
+        ...(fiscalization === undefined ? {} : { fiscalization }),
       }),
     };
     return built;

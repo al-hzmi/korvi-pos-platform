@@ -1539,6 +1539,7 @@ model Shift {
   cashMovements CashMovement[]
   sales         Sale[]
   returns       Return[]
+  noReceiptExchangeCases NoReceiptExchangeCase[]
 
   /// The tenant-consistency key. A child row references this table by
   /// (tenantId, id), not by id alone, so PostgreSQL itself refuses a
@@ -1843,7 +1844,7 @@ model NoReceiptExchangeCase {
   caseNumber  String
 
   reason       String
-  evidenceNote String
+  evidenceNote String?
   currency     String @default("SAR")
 
   referenceCeilingMinor  BigInt

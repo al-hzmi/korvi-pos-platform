@@ -47,7 +47,7 @@ CREATE TABLE "no_receipt_exchange_cases" (
   "sequence" INTEGER NOT NULL,
   "caseNumber" TEXT NOT NULL,
   "reason" TEXT NOT NULL,
-  "evidenceNote" TEXT NOT NULL,
+  "evidenceNote" TEXT,
   "currency" TEXT NOT NULL DEFAULT 'SAR',
   "referenceCeilingMinor" BIGINT NOT NULL,
   "approvedAllowanceMinor" BIGINT NOT NULL,
@@ -76,7 +76,10 @@ CREATE TABLE "no_receipt_exchange_cases" (
   CONSTRAINT "no_receipt_exchange_cases_reason_bounded"
     CHECK ("reason" = btrim("reason") AND char_length("reason") BETWEEN 1 AND 200),
   CONSTRAINT "no_receipt_exchange_cases_evidence_bounded"
-    CHECK ("evidenceNote" = btrim("evidenceNote") AND char_length("evidenceNote") BETWEEN 1 AND 500),
+    CHECK (
+      "evidenceNote" IS NULL
+      OR ("evidenceNote" = btrim("evidenceNote") AND char_length("evidenceNote") BETWEEN 1 AND 500)
+    ),
   CONSTRAINT "no_receipt_exchange_cases_values"
     CHECK (
       "referenceCeilingMinor" >= 0

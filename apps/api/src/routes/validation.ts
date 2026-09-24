@@ -323,6 +323,49 @@ export const returnBody = z.object({
     }),
 });
 
+export const NO_RECEIPT_EXCHANGE_REASONS = [
+  'customer-no-receipt',
+  'gift-return',
+  'receipt-unavailable',
+  'manager-exception',
+  'other',
+] as const;
+
+const noReceiptExchangeLineBody = z
+  .object({
+    productId: UUID,
+    quantityScaled: SCALED_QUANTITY,
+  })
+  .strict();
+
+export const noReceiptExchangeBody = z
+  .object({
+    operationId: UUID,
+    terminalId: UUID,
+    expectedShiftId: UUID.optional(),
+    reason: z.enum(NO_RECEIPT_EXCHANGE_REASONS),
+    evidenceNote: z.string().trim().min(1).max(500).optional(),
+    approvedAllowanceMinor: MINOR,
+    acceptedLines: z
+      .array(noReceiptExchangeLineBody)
+      .min(1)
+      .max(MAX_RETURN_LINES)
+      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
+        message: 'duplicate accepted product',
+      }),
+    replacementLines: z
+      .array(noReceiptExchangeLineBody)
+      .min(1)
+      .max(MAX_CART_LINES)
+      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
+        message: 'duplicate replacement product',
+      }),
+    // Real settlement only. exchange_allowance never crosses this boundary;
+    // the server creates it only after proving the case ceiling.
+    tenders: z.array(tenderBody).max(MAX_TENDERS).default([]),
+  })
+  .strict();
+
 export const saleLookupQuery = z.object({
   q: z.string().trim().min(1).max(64),
   limit: z.coerce.number().int().min(1).max(25).default(10),
@@ -372,6 +415,13 @@ export const FORBIDDEN_FIELDS = [
   'vatBasisPoints',
   'currency',
   'price',
+  'referenceCeilingMinor',
+  'currentUnitReferencePriceMinor',
+  'currentReferenceTotalMinor',
+  'stockDisposition',
+  'costProvenance',
+  'linkedSaleId',
+  'caseNumber',
 ] as const;
 
 export function namesForbiddenField(body: unknown): string | null {

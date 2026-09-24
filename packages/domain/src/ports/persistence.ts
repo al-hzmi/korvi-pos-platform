@@ -804,7 +804,7 @@ export interface NoReceiptExchangeRecord {
   readonly sequence: number;
   readonly caseNumber: string;
   readonly reason: string;
-  readonly evidenceNote: string;
+  readonly evidenceNote: string | null;
   readonly currency: string;
   readonly referenceCeilingMinor: string;
   readonly approvedAllowanceMinor: string;
@@ -824,7 +824,7 @@ export interface RecordNoReceiptExchangeInput {
     readonly caseLineId: string;
   }[];
   readonly replacementSale: RecordSaleInput;
-  readonly audit: AuditEventInput;
+  readonly audits: readonly AuditEventInput[];
 }
 
 export interface NoReceiptExchangeRepository {
