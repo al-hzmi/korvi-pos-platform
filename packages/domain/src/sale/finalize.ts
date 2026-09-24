@@ -214,11 +214,11 @@ function assertPromotionManualBoundary(cart: PriceCartInput): void {
   if (!hasPromotion) return;
 
   const hasManualLine = cart.lines.some(
-    (line) => line.discount !== undefined && line.discount.kind !== 'none' && line.discount.value > 0n,
+    (line) =>
+      line.discount !== undefined && line.discount.kind !== 'none' && line.discount.value > 0n,
   );
   const basket = cart.basketDiscount;
-  const hasManualBasket =
-    basket !== undefined && basket.kind !== 'none' && basket.value > 0n;
+  const hasManualBasket = basket !== undefined && basket.kind !== 'none' && basket.value > 0n;
 
   if (hasManualLine || hasManualBasket) {
     throw new PromotionManualDiscountConflictError(
