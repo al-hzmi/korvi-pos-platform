@@ -33,6 +33,10 @@ export const PERMISSION_CATALOGUE: Readonly<
   'sale.create': { ar: 'إتمام عملية بيع', en: 'Complete a sale' },
   'sale.discount': { ar: 'منح خصم', en: 'Grant a discount' },
   'sale.refund': { ar: 'استرجاع مبيعات', en: 'Refund a sale' },
+  'sale.exchange.no-receipt': {
+    ar: 'اعتماد استبدال بدون فاتورة',
+    en: 'Approve no-receipt exchange',
+  },
   'sale.void': { ar: 'إلغاء فاتورة', en: 'Void an invoice' },
   'shift.open': { ar: 'فتح وردية', en: 'Open a shift' },
   'shift.close': { ar: 'إغلاق وردية', en: 'Close a shift' },

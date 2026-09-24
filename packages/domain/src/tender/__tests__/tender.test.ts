@@ -9,6 +9,7 @@ describe('tender rules', () => {
     expect(canGiveChange('card')).toBe(false);
     expect(canGiveChange('mada')).toBe(false);
     expect(canGiveChange('transfer')).toBe(false);
+    expect(canGiveChange('exchange_allowance')).toBe(false);
   });
 });
 
@@ -52,6 +53,21 @@ describe('settle', () => {
   it('accepts a card tender for exactly the amount due', () => {
     const result = settle(money(10_000n), [{ kind: 'card', amount: money(10_000n) }]);
     expect(result.change.minor).toBe(0n);
+  });
+
+  it('lets a no-receipt exchange allowance settle part of a new sale without creating change', () => {
+    const result = settle(money(10_000n), [
+      { kind: 'exchange_allowance', amount: money(4_000n) },
+      { kind: 'cash', amount: money(6_000n) },
+    ]);
+    expect(result.tendered.minor).toBe(10_000n);
+    expect(result.change.minor).toBe(0n);
+  });
+
+  it('refuses an exchange allowance larger than the new sale because it cannot create change', () => {
+    expect(() =>
+      settle(money(10_000n), [{ kind: 'exchange_allowance', amount: money(10_001n) }]),
+    ).toThrow(NonCashChangeError);
   });
 
   it('refuses an underpayment', () => {

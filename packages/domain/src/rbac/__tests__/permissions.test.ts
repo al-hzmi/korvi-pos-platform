@@ -22,11 +22,11 @@ const actorFor = (role: RoleName): Actor => ({
 });
 
 describe('permission catalogue', () => {
-  it('lists twenty-three distinct permissions', () => {
+  it('lists twenty-four distinct permissions', () => {
     // Twenty-one after Strike 5B added purchasing authority. Strike 5C adds
     // two distinct cost capabilities: seeing merchant cost and changing
     // valuation are not the same decision (ADR-0024 §8).
-    expect(PERMISSIONS).toHaveLength(23);
+    expect(PERMISSIONS).toHaveLength(24);
     expect(new Set(PERMISSIONS).size).toBe(23);
   });
 
@@ -59,6 +59,7 @@ describe('least privilege', () => {
       'zatca.manage',
       'sale.discount',
       'sale.refund',
+      'sale.exchange.no-receipt',
       'sale.void',
       'inventory.adjust',
       'product.write',
@@ -99,6 +100,7 @@ describe('least privilege', () => {
     expect(can(manager, 'users.manage')).toBe(false);
     expect(can(manager, 'zatca.manage')).toBe(false);
     expect(can(manager, 'sale.refund')).toBe(true);
+    expect(can(manager, 'sale.exchange.no-receipt')).toBe(true);
     expect(can(manager, 'inventory.cost.read')).toBe(true);
     expect(can(manager, 'inventory.cost.manage')).toBe(true);
   });

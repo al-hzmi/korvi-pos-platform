@@ -197,7 +197,8 @@ export type InventoryMovementKind =
   | 'receipt'
   | 'transfer'
   | 'production-consumption'
-  | 'production-output';
+  | 'production-output'
+  | 'no-receipt-exchange-intake';
 
 export interface InventoryBalance {
   readonly tenantId: TenantId;
@@ -765,6 +766,73 @@ export interface SaleRepository {
   invoiceForSale(scope: TenantScope, saleId: string): Promise<InvoiceRecord | null>;
   /** Sale, lines, tenders, invoice, stock and cash — one transaction. */
   record(scope: TenantScope, input: RecordSaleInput): Promise<SaleRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// No-receipt exchanges (ADR-0036)
+// ---------------------------------------------------------------------------
+
+export type NoReceiptExchangeStatus = 'finalized';
+
+export interface NoReceiptExchangeLineRecord {
+  readonly id: string;
+  readonly lineNumber: number;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: ProductType;
+  readonly quantityScaled: string;
+  readonly currentUnitReferencePriceMinor: string;
+  readonly currentVatBasisPoints: BasisPoints;
+  readonly currentReferenceTotalMinor: string;
+  readonly trackInventory: boolean;
+  readonly stockDisposition: 'sellable';
+  readonly costProvenance: 'unknown';
+}
+
+export interface NoReceiptExchangeRecord {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly shiftId: string;
+  readonly actorUserId: string;
+  readonly operationId: string;
+  readonly requestHash: string;
+  readonly status: NoReceiptExchangeStatus;
+  readonly sequence: number;
+  readonly caseNumber: string;
+  readonly reason: string;
+  readonly evidenceNote: string;
+  readonly currency: string;
+  readonly referenceCeilingMinor: string;
+  readonly approvedAllowanceMinor: string;
+  readonly linkedSaleId: string;
+  readonly issuedAt: string;
+  readonly lines: readonly NoReceiptExchangeLineRecord[];
+}
+
+export interface RecordNoReceiptExchangeInput {
+  readonly exchange: Omit<
+    NoReceiptExchangeRecord,
+    'tenantId' | 'sequence' | 'caseNumber' | 'linkedSaleId' | 'lines'
+  >;
+  readonly lines: readonly NoReceiptExchangeLineRecord[];
+  readonly intake: readonly {
+    readonly movement: InventoryMovementInput;
+    readonly caseLineId: string;
+  }[];
+  readonly replacementSale: RecordSaleInput;
+  readonly audit: AuditEventInput;
+}
+
+export interface NoReceiptExchangeRepository {
+  findByOperationId(
+    scope: TenantScope,
+    operationId: string,
+  ): Promise<NoReceiptExchangeRecord | null>;
+  record(scope: TenantScope, input: RecordNoReceiptExchangeInput): Promise<NoReceiptExchangeRecord>;
 }
 
 // ---------------------------------------------------------------------------

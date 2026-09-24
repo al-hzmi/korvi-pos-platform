@@ -27,7 +27,14 @@ import type { PrismaClient } from '../client.js';
 const STATUSES: readonly SaleStatus[] = ['finalized', 'voided'];
 const RESTAURANT_ORDER_TYPES: readonly RestaurantOrderType[] = ['dine-in', 'takeaway', 'delivery'];
 const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
-const TENDER_KINDS: readonly TenderKind[] = ['cash', 'card', 'mada', 'transfer', 'electronic'];
+const TENDER_KINDS: readonly TenderKind[] = [
+  'cash',
+  'card',
+  'mada',
+  'transfer',
+  'electronic',
+  'exchange_allowance',
+];
 const TENDER_SCHEMES: readonly TenderScheme[] = [...ELECTRONIC_SCHEMES];
 const INVOICE_TYPES: readonly InvoiceType[] = ['simplified', 'standard'];
 const PRODUCT_TYPES: readonly ProductType[] = ['unit', 'weighted'];
@@ -468,6 +475,274 @@ async function loadSale(
   return tx.sale.findFirst({ where: { ...where, tenantId: tenant }, include: WITH_CHILDREN });
 }
 
+export async function recordSaleWithin(
+  tx: TransactionClient,
+  scope: TenantScope,
+  input: RecordSaleInput,
+  options: { readonly skipIdempotencyReservation?: boolean } = {},
+): Promise<SaleRecord> {
+  const tenant = tenantParam(scope);
+  const { sale, invoice, inventory, cashMovement, restaurantOrderSettlement, idempotency } =
+    input;
+
+  // First, and inside this transaction: the number is issued to a sale
+  // that is about to exist, not to a request that might not finish.
+  const receipt = await allocateReceipt(tx, tenant, sale.branchId);
+
+  // Before anything is written: the shift this sale names must still be
+  // open, still on this terminal, still in this branch and still the
+  // cashier's own.
+  await assertShiftUsable(tx, tenant, {
+    shiftId: sale.shiftId,
+    terminalId: sale.terminalId,
+    branchId: sale.branchId,
+    userId: sale.userId,
+  });
+
+  if (restaurantOrderSettlement !== undefined) {
+    await assertRestaurantOrderSettlement(tx, tenant, sale, restaurantOrderSettlement);
+  } else if (sale.restaurantOrderId !== null && sale.restaurantOrderId !== undefined) {
+    throw new DatabaseError(
+      'A restaurantOrderId requires an atomic settlement precondition.',
+    );
+  }
+
+  // The merchant's overselling policy, read inside the transaction that
+  // is about to move the stock.
+  const settingsRows = await tx.$queryRaw<{ allowNegativeStock: boolean }[]>`
+    SELECT "allowNegativeStock" FROM "tenant_settings"
+     WHERE "tenantId" = ${tenant}::uuid`;
+  const allowNegativeStock = settingsRows.at(0)?.allowNegativeStock ?? false;
+
+  if (!options.skipIdempotencyReservation) {
+    await reserveOperation(tx, tenant, idempotency, sale.id, new Date(sale.issuedAt));
+  }
+
+  await tx.sale.create({
+    data: {
+      id: sale.id,
+      tenantId: tenant,
+      branchId: sale.branchId,
+      terminalId: sale.terminalId,
+      shiftId: sale.shiftId,
+      userId: sale.userId,
+      customerId: sale.customerId,
+      tableId: sale.tableId ?? null,
+      restaurantOrderId: sale.restaurantOrderId ?? null,
+      operationId: sale.operationId,
+      status: sale.status,
+      orderType: sale.orderType ?? null,
+      sequence: receipt.sequence,
+      priceMode: sale.priceMode,
+      currency: sale.currency,
+      grossMinor: BigInt(sale.grossMinor),
+      lineDiscountMinor: BigInt(sale.lineDiscountMinor),
+      basketDiscountMinor: BigInt(sale.basketDiscountMinor),
+      netMinor: BigInt(sale.netMinor),
+      vatMinor: BigInt(sale.vatMinor),
+      totalMinor: BigInt(sale.totalMinor),
+      tenderedMinor: BigInt(sale.tenderedMinor),
+      changeMinor: BigInt(sale.changeMinor),
+      issuedAt: new Date(sale.issuedAt),
+    },
+  });
+
+  await tx.saleLine.createMany({
+    data: sale.lines.map((line) => ({
+      id: line.id,
+      tenantId: tenant,
+      saleId: sale.id,
+      productId: line.productId,
+      lineNumber: line.lineNumber,
+      sku: line.sku,
+      nameAr: line.nameAr,
+      nameEn: line.nameEn,
+      productType: line.productType,
+      unitPriceMinor: BigInt(line.unitPriceMinor),
+      vatBasisPoints: Number(line.vatBasisPoints),
+      quantityScaled: BigInt(line.quantityScaled),
+      grossMinor: BigInt(line.grossMinor),
+      lineDiscountMinor: BigInt(line.lineDiscountMinor),
+      basketDiscountMinor: BigInt(line.basketDiscountMinor),
+      netMinor: BigInt(line.netMinor),
+      vatMinor: BigInt(line.vatMinor),
+      totalMinor: BigInt(line.totalMinor),
+      // A new line has no historical ambiguity: if it does not produce a
+      // tracked-stock movement its inventory basis is explicitly unknown.
+      // Tracked lines are replaced below, in this same transaction, by
+      // the exact basis their sale movement consumed.
+      costKnownQuantityScaled: 0n,
+      costUnknownQuantityScaled: BigInt(line.quantityScaled),
+      costValueMinor: 0n,
+      costProvenance: 'unknown',
+    })),
+  });
+
+  if (sale.discounts.length > 0) {
+    await tx.saleDiscount.createMany({
+      data: sale.discounts.map((discount) => ({
+        id: discount.id,
+        tenantId: tenant,
+        saleId: sale.id,
+        scope: discount.scope,
+        lineNumber: discount.lineNumber,
+        kind: discount.kind,
+        inputValue: BigInt(discount.inputValue),
+        amountMinor: BigInt(discount.amountMinor),
+        reason: discount.reason,
+        grantedByUserId: discount.grantedByUserId,
+      })),
+    });
+  }
+
+  await tx.tender.createMany({
+    data: sale.tenders.map((tender) => ({
+      id: tender.id,
+      tenantId: tenant,
+      saleId: sale.id,
+      kind: tender.kind,
+      scheme: tender.scheme,
+      amountMinor: BigInt(tender.amountMinor),
+      changeMinor: BigInt(tender.changeMinor),
+      reference: tender.reference,
+    })),
+  });
+
+  await tx.invoice.create({
+    data: {
+      id: invoice.id,
+      tenantId: tenant,
+      saleId: sale.id,
+      invoiceNumber: receipt.invoiceNumber,
+      invoiceType: invoice.invoiceType,
+      sellerName: invoice.sellerName,
+      sellerVatNumber: invoice.sellerVatNumber,
+      buyerName: invoice.buyerName,
+      buyerVatNumber: invoice.buyerVatNumber,
+      netMinor: BigInt(invoice.netMinor),
+      vatMinor: BigInt(invoice.vatMinor),
+      totalMinor: BigInt(invoice.totalMinor),
+      currency: invoice.currency,
+      issuedAt: new Date(invoice.issuedAt),
+    },
+  });
+
+  if (invoice.taxBreakdown.length > 0) {
+    await tx.invoiceTaxBreakdown.createMany({
+      data: invoice.taxBreakdown.map((bucket, index) => ({
+        // The bucket has no identity of its own; it is a projection of
+        // the invoice, so its id is derived from the invoice's and its
+        // position rather than minted separately.
+        id: bucketId(invoice.id, index),
+        tenantId: tenant,
+        invoiceId: invoice.id,
+        vatBasisPoints: Number(bucket.vatBasisPoints),
+        netMinor: BigInt(bucket.netMinor),
+        vatMinor: BigInt(bucket.vatMinor),
+      })),
+    });
+  }
+
+  // A checkout already refuses duplicate product lines. Assert the
+  // same invariant again at the persistence boundary so every tracked
+  // movement has exactly one immutable sale line on which to freeze its
+  // original cost basis.
+  const saleLineByProduct = new Map(
+    sale.lines
+      .filter((line) => line.productId !== null)
+      .map((line) => [line.productId as string, line] as const),
+  );
+  if (
+    saleLineByProduct.size !== sale.lines.filter((line) => line.productId !== null).length
+  ) {
+    throw new DatabaseError('A sale cannot contain duplicate product lines at persistence.');
+  }
+
+  for (const movement of inventory) {
+    const saleLine = saleLineByProduct.get(movement.productId);
+    if (saleLine === undefined) {
+      throw new DatabaseError(
+        'A sale stock movement has no matching sale line for cost basis.',
+      );
+    }
+    const movementQuantity = BigInt(movement.quantityScaled);
+    const lineQuantity = BigInt(saleLine.quantityScaled);
+    if (movementQuantity >= 0n || -movementQuantity !== lineQuantity) {
+      throw new DatabaseError(
+        'Sale movement cost basis does not reconcile to its sale line.',
+      );
+    }
+
+    // The guard is in the stock UPDATE, not in a prior read: two tills
+    // selling the last unit both saw one in stock, and only the mutation
+    // can tell them apart. Costing runs under the same locked stock row.
+    const applied = await applyMovementWithin(
+      tx,
+      tenant,
+      movement,
+      allowNegativeStock,
+      saleLine.id,
+    );
+
+    // Frozen before commit. A future return reads these four fields from
+    // the original sale line and never consults today's branch average.
+    await tx.saleLine.update({
+      where: { tenantId_id: { tenantId: tenant, id: saleLine.id } },
+      data: {
+        costKnownQuantityScaled: applied.cost.knownQuantityScaled,
+        costUnknownQuantityScaled: applied.cost.unknownQuantityScaled,
+        costValueMinor: applied.cost.knownValueMinor,
+        costProvenance: applied.cost.provenance,
+      },
+    });
+  }
+
+  if (cashMovement !== null) {
+    await tx.cashMovement.create({
+      data: {
+        id: cashMovement.id,
+        tenantId: tenant,
+        shiftId: cashMovement.shiftId,
+        kind: cashMovement.kind,
+        amountMinor: BigInt(cashMovement.amountMinor),
+        reason: cashMovement.reason,
+        actorUserId: cashMovement.actorUserId,
+        occurredAt: new Date(cashMovement.occurredAt),
+      },
+    });
+  }
+
+  if (restaurantOrderSettlement !== undefined) {
+    const expectedRevision = BigInt(restaurantOrderSettlement.expectedRevision);
+    const settled = await tx.restaurantOrder.updateMany({
+      where: {
+        tenantId: tenant,
+        id: restaurantOrderSettlement.orderId,
+        branchId: sale.branchId,
+        status: 'open',
+        revision: expectedRevision,
+      },
+      data: {
+        status: 'settled',
+        revision: { increment: 1n },
+        closedAt: new Date(sale.issuedAt),
+        closedReason: null,
+        updatedAt: new Date(sale.issuedAt),
+      },
+    });
+    if (settled.count !== 1) {
+      throw new RestaurantOrderRefusedError('stale-revision');
+    }
+  }
+
+  const row = await loadSale(tx, tenant, { id: sale.id });
+  if (row === null) {
+    throw new DatabaseError('The sale just written could not be read back.');
+  }
+  return saleToDomain(scope, row);
+
+}
+
 /**
  * The sale write path.
  *
@@ -510,265 +785,7 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
     },
 
     async record(scope: TenantScope, input: RecordSaleInput): Promise<SaleRecord> {
-      return withTenant(prisma, scope.tenantId, async (tx) => {
-        const tenant = tenantParam(scope);
-        const { sale, invoice, inventory, cashMovement, restaurantOrderSettlement, idempotency } =
-          input;
-
-        // First, and inside this transaction: the number is issued to a sale
-        // that is about to exist, not to a request that might not finish.
-        const receipt = await allocateReceipt(tx, tenant, sale.branchId);
-
-        // Before anything is written: the shift this sale names must still be
-        // open, still on this terminal, still in this branch and still the
-        // cashier's own.
-        await assertShiftUsable(tx, tenant, {
-          shiftId: sale.shiftId,
-          terminalId: sale.terminalId,
-          branchId: sale.branchId,
-          userId: sale.userId,
-        });
-
-        if (restaurantOrderSettlement !== undefined) {
-          await assertRestaurantOrderSettlement(tx, tenant, sale, restaurantOrderSettlement);
-        } else if (sale.restaurantOrderId !== null && sale.restaurantOrderId !== undefined) {
-          throw new DatabaseError(
-            'A restaurantOrderId requires an atomic settlement precondition.',
-          );
-        }
-
-        // The merchant's overselling policy, read inside the transaction that
-        // is about to move the stock.
-        const settingsRows = await tx.$queryRaw<{ allowNegativeStock: boolean }[]>`
-          SELECT "allowNegativeStock" FROM "tenant_settings"
-           WHERE "tenantId" = ${tenant}::uuid`;
-        const allowNegativeStock = settingsRows.at(0)?.allowNegativeStock ?? false;
-
-        await reserveOperation(tx, tenant, idempotency, sale.id, new Date(sale.issuedAt));
-
-        await tx.sale.create({
-          data: {
-            id: sale.id,
-            tenantId: tenant,
-            branchId: sale.branchId,
-            terminalId: sale.terminalId,
-            shiftId: sale.shiftId,
-            userId: sale.userId,
-            customerId: sale.customerId,
-            tableId: sale.tableId ?? null,
-            restaurantOrderId: sale.restaurantOrderId ?? null,
-            operationId: sale.operationId,
-            status: sale.status,
-            orderType: sale.orderType ?? null,
-            sequence: receipt.sequence,
-            priceMode: sale.priceMode,
-            currency: sale.currency,
-            grossMinor: BigInt(sale.grossMinor),
-            lineDiscountMinor: BigInt(sale.lineDiscountMinor),
-            basketDiscountMinor: BigInt(sale.basketDiscountMinor),
-            netMinor: BigInt(sale.netMinor),
-            vatMinor: BigInt(sale.vatMinor),
-            totalMinor: BigInt(sale.totalMinor),
-            tenderedMinor: BigInt(sale.tenderedMinor),
-            changeMinor: BigInt(sale.changeMinor),
-            issuedAt: new Date(sale.issuedAt),
-          },
-        });
-
-        await tx.saleLine.createMany({
-          data: sale.lines.map((line) => ({
-            id: line.id,
-            tenantId: tenant,
-            saleId: sale.id,
-            productId: line.productId,
-            lineNumber: line.lineNumber,
-            sku: line.sku,
-            nameAr: line.nameAr,
-            nameEn: line.nameEn,
-            productType: line.productType,
-            unitPriceMinor: BigInt(line.unitPriceMinor),
-            vatBasisPoints: Number(line.vatBasisPoints),
-            quantityScaled: BigInt(line.quantityScaled),
-            grossMinor: BigInt(line.grossMinor),
-            lineDiscountMinor: BigInt(line.lineDiscountMinor),
-            basketDiscountMinor: BigInt(line.basketDiscountMinor),
-            netMinor: BigInt(line.netMinor),
-            vatMinor: BigInt(line.vatMinor),
-            totalMinor: BigInt(line.totalMinor),
-            // A new line has no historical ambiguity: if it does not produce a
-            // tracked-stock movement its inventory basis is explicitly unknown.
-            // Tracked lines are replaced below, in this same transaction, by
-            // the exact basis their sale movement consumed.
-            costKnownQuantityScaled: 0n,
-            costUnknownQuantityScaled: BigInt(line.quantityScaled),
-            costValueMinor: 0n,
-            costProvenance: 'unknown',
-          })),
-        });
-
-        if (sale.discounts.length > 0) {
-          await tx.saleDiscount.createMany({
-            data: sale.discounts.map((discount) => ({
-              id: discount.id,
-              tenantId: tenant,
-              saleId: sale.id,
-              scope: discount.scope,
-              lineNumber: discount.lineNumber,
-              kind: discount.kind,
-              inputValue: BigInt(discount.inputValue),
-              amountMinor: BigInt(discount.amountMinor),
-              reason: discount.reason,
-              grantedByUserId: discount.grantedByUserId,
-            })),
-          });
-        }
-
-        await tx.tender.createMany({
-          data: sale.tenders.map((tender) => ({
-            id: tender.id,
-            tenantId: tenant,
-            saleId: sale.id,
-            kind: tender.kind,
-            scheme: tender.scheme,
-            amountMinor: BigInt(tender.amountMinor),
-            changeMinor: BigInt(tender.changeMinor),
-            reference: tender.reference,
-          })),
-        });
-
-        await tx.invoice.create({
-          data: {
-            id: invoice.id,
-            tenantId: tenant,
-            saleId: sale.id,
-            invoiceNumber: receipt.invoiceNumber,
-            invoiceType: invoice.invoiceType,
-            sellerName: invoice.sellerName,
-            sellerVatNumber: invoice.sellerVatNumber,
-            buyerName: invoice.buyerName,
-            buyerVatNumber: invoice.buyerVatNumber,
-            netMinor: BigInt(invoice.netMinor),
-            vatMinor: BigInt(invoice.vatMinor),
-            totalMinor: BigInt(invoice.totalMinor),
-            currency: invoice.currency,
-            issuedAt: new Date(invoice.issuedAt),
-          },
-        });
-
-        if (invoice.taxBreakdown.length > 0) {
-          await tx.invoiceTaxBreakdown.createMany({
-            data: invoice.taxBreakdown.map((bucket, index) => ({
-              // The bucket has no identity of its own; it is a projection of
-              // the invoice, so its id is derived from the invoice's and its
-              // position rather than minted separately.
-              id: bucketId(invoice.id, index),
-              tenantId: tenant,
-              invoiceId: invoice.id,
-              vatBasisPoints: Number(bucket.vatBasisPoints),
-              netMinor: BigInt(bucket.netMinor),
-              vatMinor: BigInt(bucket.vatMinor),
-            })),
-          });
-        }
-
-        // A checkout already refuses duplicate product lines. Assert the
-        // same invariant again at the persistence boundary so every tracked
-        // movement has exactly one immutable sale line on which to freeze its
-        // original cost basis.
-        const saleLineByProduct = new Map(
-          sale.lines
-            .filter((line) => line.productId !== null)
-            .map((line) => [line.productId as string, line] as const),
-        );
-        if (
-          saleLineByProduct.size !== sale.lines.filter((line) => line.productId !== null).length
-        ) {
-          throw new DatabaseError('A sale cannot contain duplicate product lines at persistence.');
-        }
-
-        for (const movement of inventory) {
-          const saleLine = saleLineByProduct.get(movement.productId);
-          if (saleLine === undefined) {
-            throw new DatabaseError(
-              'A sale stock movement has no matching sale line for cost basis.',
-            );
-          }
-          const movementQuantity = BigInt(movement.quantityScaled);
-          const lineQuantity = BigInt(saleLine.quantityScaled);
-          if (movementQuantity >= 0n || -movementQuantity !== lineQuantity) {
-            throw new DatabaseError(
-              'Sale movement cost basis does not reconcile to its sale line.',
-            );
-          }
-
-          // The guard is in the stock UPDATE, not in a prior read: two tills
-          // selling the last unit both saw one in stock, and only the mutation
-          // can tell them apart. Costing runs under the same locked stock row.
-          const applied = await applyMovementWithin(
-            tx,
-            tenant,
-            movement,
-            allowNegativeStock,
-            saleLine.id,
-          );
-
-          // Frozen before commit. A future return reads these four fields from
-          // the original sale line and never consults today's branch average.
-          await tx.saleLine.update({
-            where: { tenantId_id: { tenantId: tenant, id: saleLine.id } },
-            data: {
-              costKnownQuantityScaled: applied.cost.knownQuantityScaled,
-              costUnknownQuantityScaled: applied.cost.unknownQuantityScaled,
-              costValueMinor: applied.cost.knownValueMinor,
-              costProvenance: applied.cost.provenance,
-            },
-          });
-        }
-
-        if (cashMovement !== null) {
-          await tx.cashMovement.create({
-            data: {
-              id: cashMovement.id,
-              tenantId: tenant,
-              shiftId: cashMovement.shiftId,
-              kind: cashMovement.kind,
-              amountMinor: BigInt(cashMovement.amountMinor),
-              reason: cashMovement.reason,
-              actorUserId: cashMovement.actorUserId,
-              occurredAt: new Date(cashMovement.occurredAt),
-            },
-          });
-        }
-
-        if (restaurantOrderSettlement !== undefined) {
-          const expectedRevision = BigInt(restaurantOrderSettlement.expectedRevision);
-          const settled = await tx.restaurantOrder.updateMany({
-            where: {
-              tenantId: tenant,
-              id: restaurantOrderSettlement.orderId,
-              branchId: sale.branchId,
-              status: 'open',
-              revision: expectedRevision,
-            },
-            data: {
-              status: 'settled',
-              revision: { increment: 1n },
-              closedAt: new Date(sale.issuedAt),
-              closedReason: null,
-              updatedAt: new Date(sale.issuedAt),
-            },
-          });
-          if (settled.count !== 1) {
-            throw new RestaurantOrderRefusedError('stale-revision');
-          }
-        }
-
-        const row = await loadSale(tx, tenant, { id: sale.id });
-        if (row === null) {
-          throw new DatabaseError('The sale just written could not be read back.');
-        }
-        return saleToDomain(scope, row);
-      });
+      return withTenant(prisma, scope.tenantId, async (tx) => recordSaleWithin(tx, scope, input));
     },
   };
 }

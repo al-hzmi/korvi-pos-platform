@@ -16,7 +16,13 @@ import type { Money } from '../money/money.js';
  * "Mada" and "Visa" apart in a report without inventing a tender kind each
  * time a scheme is added.
  */
-export type TenderKind = 'cash' | 'card' | 'mada' | 'transfer' | 'electronic';
+export type TenderKind =
+  | 'cash'
+  | 'card'
+  | 'mada'
+  | 'transfer'
+  | 'electronic'
+  | 'exchange_allowance';
 
 /**
  * The schemes a cashier may record against an electronic tender.
@@ -154,6 +160,7 @@ export function assertTenderComposition(lines: readonly TenderLine[]): void {
   }
 
   let cashCount = 0;
+  let exchangeAllowanceCount = 0;
   const seen = new Set<string>();
 
   for (const line of lines) {
@@ -168,6 +175,19 @@ export function assertTenderComposition(lines: readonly TenderLine[]): void {
       }
       if (line.scheme !== undefined || line.reference !== undefined) {
         throw new InvalidTenderError('A cash tender carries no scheme and no reference.');
+      }
+      continue;
+    }
+
+    if (line.kind === 'exchange_allowance') {
+      exchangeAllowanceCount += 1;
+      if (exchangeAllowanceCount > 1) {
+        throw new InvalidTenderError('A sale may carry at most one no-receipt exchange allowance.');
+      }
+      if (line.scheme !== undefined || line.reference !== undefined) {
+        throw new InvalidTenderError(
+          'A no-receipt exchange allowance is internal policy value, not an external payment.',
+        );
       }
       continue;
     }

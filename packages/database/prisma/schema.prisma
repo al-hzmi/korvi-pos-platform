@@ -128,6 +128,8 @@ model Tenant {
   returns                       Return[]
   returnLines                   ReturnLine[]
   refunds                       Refund[]
+  noReceiptExchangeCases        NoReceiptExchangeCase[]
+  noReceiptExchangeLines        NoReceiptExchangeLine[]
   idempotencyKeys               IdempotencyKey[]
   auditEvents                   AuditEvent[]
   sessions                      Session[]
@@ -179,6 +181,7 @@ model Branch {
   restaurantRecipeProductions    RestaurantRecipeProduction[]
   restaurantWastes               RestaurantWaste[]
   returns                  Return[]
+  noReceiptExchangeCases   NoReceiptExchangeCase[]
   memberships              TenantMembership[]
 
   @@unique([tenantId, code])
@@ -566,6 +569,7 @@ model User {
   auditEvents      AuditEvent[]
   saleDiscounts SaleDiscount[]
   returns       Return[]
+  noReceiptExchangeCases NoReceiptExchangeCase[]
 
   inventoryAdjustments     InventoryAdjustment[]
   inventoryCounts          InventoryCount[]
@@ -677,6 +681,7 @@ model Terminal {
   sales                         Sale[]
   restaurantOrders              RestaurantOrder[]
   returns                       Return[]
+  noReceiptExchangeCases        NoReceiptExchangeCase[]
   zatcaCsidProvisioningAttempts ZatcaCsidProvisioningAttempt[]
   zatcaComplianceEvidence       ZatcaComplianceEvidence[]
   zatcaFatooraCredentials       ZatcaFatooraCredential[]
@@ -898,6 +903,7 @@ model Product {
   restaurantRecipeProductionLines RestaurantRecipeProductionLine[]  @relation("RestaurantRecipeProductionProduct")
   restaurantWasteLines            RestaurantWasteLine[]
   returnLines                   ReturnLine[]
+  noReceiptExchangeLines        NoReceiptExchangeLine[]
 
   @@unique([tenantId, sku])
   /// The tenant-consistency key. A child row references this table by
@@ -993,7 +999,7 @@ model InventoryMovement {
   branchId  String @db.Uuid
   productId String @db.Uuid
 
-  /// 'sale' | 'return' | 'adjustment' | 'receipt' | 'transfer'
+  /// Includes ordinary stock causes plus 'no-receipt-exchange-intake'.
   kind           String
   quantityScaled BigInt
   reason         String?
@@ -1625,6 +1631,7 @@ model Sale {
   tenders   Tender[]
   invoice   Invoice?
   returns   Return[]
+  noReceiptExchangeCase NoReceiptExchangeCase?
 
   @@unique([tenantId, operationId])
   @@unique([tenantId, branchId, sequence])
@@ -1727,8 +1734,9 @@ model Tender {
   tenantId String @db.Uuid
   saleId   String @db.Uuid
 
-  /// 'cash' | 'electronic'. 'card' | 'mada' | 'transfer' are legacy and
-  /// readable, but no route writes them any more.
+  /// 'cash' | 'electronic' are ordinary settlement. 'exchange_allowance' is
+  /// internal merchant-policy value created only by ADR-0036's atomic exchange.
+  /// 'card' | 'mada' | 'transfer' are legacy and readable only.
   kind        String
   /// 'mada' | 'visa' | 'mastercard' | 'amex' | 'apple-pay' | 'other'.
   /// Present on an electronic tender and on nothing else.
@@ -1819,6 +1827,82 @@ model InvoiceTaxBreakdown {
 // ---------------------------------------------------------------------------
 // Returns — new records, never edits to the original
 // ---------------------------------------------------------------------------
+
+model NoReceiptExchangeCase {
+  id          String @id @db.Uuid
+  tenantId    String @db.Uuid
+  branchId    String @db.Uuid
+  terminalId  String @db.Uuid
+  shiftId     String @db.Uuid
+  actorUserId String @db.Uuid
+
+  operationId String
+  requestHash String
+  status      String @default("finalized")
+  sequence    Int
+  caseNumber  String
+
+  reason       String
+  evidenceNote String
+  currency     String @default("SAR")
+
+  referenceCeilingMinor  BigInt
+  approvedAllowanceMinor BigInt
+  linkedSaleId           String @db.Uuid
+
+  issuedAt  DateTime
+  createdAt DateTime @default(now())
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch     Branch   @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  terminal   Terminal @relation(fields: [tenantId, terminalId], references: [tenantId, id], onDelete: NoAction)
+  shift      Shift    @relation(fields: [tenantId, shiftId], references: [tenantId, id], onDelete: NoAction)
+  actor      User     @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+  linkedSale Sale     @relation(fields: [tenantId, linkedSaleId], references: [tenantId, id], onDelete: NoAction)
+  lines      NoReceiptExchangeLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@unique([tenantId, branchId, sequence])
+  @@unique([tenantId, caseNumber])
+  @@unique([tenantId, linkedSaleId])
+  @@index([tenantId, branchId, issuedAt])
+  @@index([tenantId, actorUserId, issuedAt])
+  @@map("no_receipt_exchange_cases")
+}
+
+model NoReceiptExchangeLine {
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  caseId     String @db.Uuid
+  productId  String @db.Uuid
+  lineNumber Int
+
+  sku         String
+  nameAr      String
+  nameEn      String?
+  productType String
+
+  quantityScaled                 BigInt
+  currentUnitReferencePriceMinor BigInt
+  currentVatBasisPoints          Int
+  currentReferenceTotalMinor     BigInt
+  trackInventory                 Boolean
+  stockDisposition               String @default("sellable")
+  costProvenance                 String @default("unknown")
+
+  createdAt DateTime @default(now())
+
+  tenant  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case    NoReceiptExchangeCase @relation(fields: [tenantId, caseId], references: [tenantId, id], onDelete: Cascade)
+  product Product               @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, caseId, lineNumber])
+  @@unique([tenantId, caseId, productId])
+  @@index([tenantId, productId])
+  @@map("no_receipt_exchange_lines")
+}
 
 model Return {
   id         String  @id @db.Uuid

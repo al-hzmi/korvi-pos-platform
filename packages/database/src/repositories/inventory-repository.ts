@@ -78,6 +78,21 @@ async function lockBalanceWithin(
 }
 
 /**
+ * Acquire every stock row a composite operation will touch in deterministic
+ * product-id order. The caller already owns its document/branch lock.
+ */
+export async function lockInventoryBalancesWithin(
+  tx: TransactionClient,
+  tenant: string,
+  branchId: string,
+  productIds: readonly string[],
+): Promise<void> {
+  for (const productId of [...new Set(productIds)].sort()) {
+    await lockBalanceWithin(tx, tenant, branchId, productId);
+  }
+}
+
+/**
  * Apply one stock movement inside an existing transaction.
  *
  * Strike 5C extends the old stock primitive rather than adding a second write

@@ -69,6 +69,7 @@ export type {
   MerchantSaleDetail,
 } from './sales/read-model.js';
 export { createReturnRepository } from './repositories/return-repository.js';
+export { createNoReceiptExchangeRepository } from './repositories/no-receipt-exchange-repository.js';
 export { createIdempotencyRepository } from './repositories/idempotency-repository.js';
 export { createAuditRepository } from './repositories/audit-repository.js';
 export { createAuthRepository } from './repositories/auth-repository.js';
