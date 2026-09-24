@@ -613,8 +613,8 @@ export interface PromotionSettlementInput {
   /** Canonical normalized codes, sorted/deduplicated by the server. */
   readonly presentedCouponCodes: readonly string[];
   readonly applications: readonly SalePromotionApplicationInput[];
-  /** Promotion/coupon audit is part of the sale transaction (ADR-0037 §10). */
-  readonly audit: AuditEventInput;
+  /** Null only when evaluation applied no promotion; applied promotions audit atomically. */
+  readonly audit: AuditEventInput | null;
 }
 
 export interface RecordSaleInput {

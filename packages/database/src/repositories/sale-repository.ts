@@ -681,16 +681,22 @@ async function provePromotionSettlementWithin(
     }
   }
 
-  if (
-    settlement.audit.eventType !== 'sale.promoted' ||
-    settlement.audit.entityType !== 'sale' ||
-    settlement.audit.entityId !== input.sale.id ||
-    settlement.audit.actorUserId !== input.sale.userId ||
-    settlement.audit.branchId !== input.sale.branchId ||
-    settlement.audit.terminalId !== input.sale.terminalId ||
-    settlement.audit.occurredAt !== input.sale.issuedAt
-  ) {
-    throw new PromotionPolicyRefusedError('policy-stale');
+  if (evaluation.applications.length === 0) {
+    if (settlement.audit !== null) throw new PromotionPolicyRefusedError('policy-stale');
+  } else {
+    const audit = settlement.audit;
+    if (
+      audit === null ||
+      audit.eventType !== 'sale.promoted' ||
+      audit.entityType !== 'sale' ||
+      audit.entityId !== input.sale.id ||
+      audit.actorUserId !== input.sale.userId ||
+      audit.branchId !== input.sale.branchId ||
+      audit.terminalId !== input.sale.terminalId ||
+      audit.occurredAt !== input.sale.issuedAt
+    ) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
   }
 }
 export async function recordSaleWithin(
@@ -875,20 +881,22 @@ export async function recordSaleWithin(
     }
 
     const audit = promotionSettlement.audit;
-    await tx.auditEvent.create({
-      data: {
-        id: audit.id,
-        tenantId: tenant,
-        actorUserId: audit.actorUserId,
-        branchId: audit.branchId,
-        terminalId: audit.terminalId,
-        eventType: audit.eventType,
-        entityType: audit.entityType,
-        entityId: audit.entityId,
-        ...(audit.metadata === null ? {} : { metadata: { ...audit.metadata } }),
-        occurredAt: new Date(audit.occurredAt),
-      },
-    });
+    if (audit !== null) {
+      await tx.auditEvent.create({
+        data: {
+          id: audit.id,
+          tenantId: tenant,
+          actorUserId: audit.actorUserId,
+          branchId: audit.branchId,
+          terminalId: audit.terminalId,
+          eventType: audit.eventType,
+          entityType: audit.entityType,
+          entityId: audit.entityId,
+          ...(audit.metadata === null ? {} : { metadata: { ...audit.metadata } }),
+          occurredAt: new Date(audit.occurredAt),
+        },
+      });
+    }
   }
 
   if (sale.discounts.length > 0) {
