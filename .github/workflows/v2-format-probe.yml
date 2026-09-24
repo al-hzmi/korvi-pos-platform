@@ -1,0 +1,43 @@
+name: V2 Canonical Format Probe
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-format-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  format-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format and emit exact files
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            packages/domain/src/promotions/__tests__/evaluate.test.ts
+            packages/domain/src/promotions/evaluate.ts
+            packages/domain/src/sale/finalize.ts
+          )
+          npx --no-install prettier --write "${files[@]}" >/dev/null
+          for file in "${files[@]}"; do
+            printf '%s\n' "<<<KORVI_FILE_BEGIN:${file}>>>"
+            base64 -w0 "$file"
+            printf '\n%s\n' "<<<KORVI_FILE_END:${file}>>>"
+          done
