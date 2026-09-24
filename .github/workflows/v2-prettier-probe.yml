@@ -1,0 +1,36 @@
+name: V2 Prettier Probe
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-prettier-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  format-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Format and emit exact file
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install prettier --write apps/api/src/__tests__/no-receipt-exchange-live.test.ts >/dev/null
+          printf '%s\n' '<<<KORVI_FORMATTED_BASE64_BEGIN>>>'
+          base64 -w0 apps/api/src/__tests__/no-receipt-exchange-live.test.ts
+          printf '\n%s\n' '<<<KORVI_FORMATTED_BASE64_END>>>'
