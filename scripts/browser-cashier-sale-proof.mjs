@@ -168,6 +168,43 @@ async function setInputByAriaLabel(label, value) {
   assert.equal(changed, true, `Input with aria-label ${label} was not available.`);
 }
 
+async function setInputByPlaceholder(placeholder, value) {
+  const changed = await evaluate(`(() => {
+    const input = [...document.querySelectorAll('input')].find(
+      (candidate) => candidate.getAttribute('placeholder') === ${jsString(placeholder)}
+    );
+    if (!(input instanceof HTMLInputElement)) return false;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(input, ${jsString(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.focus();
+    return true;
+  })()`);
+  assert.equal(changed, true, `Input with placeholder ${placeholder} was not available.`);
+}
+
+async function setInputByLabelText(labelText, value) {
+  const changed = await evaluate(`(() => {
+    const label = [...document.querySelectorAll('label')].find((candidate) =>
+      (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
+    );
+    const input = label?.querySelector('input');
+    if (!(input instanceof HTMLInputElement)) return false;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(input, ${jsString(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.focus();
+    return true;
+  })()`);
+  assert.equal(changed, true, `Input under label ${labelText} was not available.`);
+}
+
 async function setSelect(id, value) {
   const changed = await evaluate(`(() => {
     const select = document.getElementById(${jsString(id)});
@@ -568,6 +605,104 @@ try {
   );
 
   await clickButton('تم');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+
+  const exchangeReplacementTotalMajor = await amountAfterLabel('الإجمالي المستحق');
+  const exchangeReplacementTotalMinor = majorToMinor(exchangeReplacementTotalMajor);
+  let noReceiptRequests = 0;
+  let noReceiptResponseStatus = null;
+  cdp.on('Network.requestWillBeSent', (params) => {
+    const request = params.request;
+    if (
+      request?.method === 'POST' &&
+      new URL(request.url).pathname === '/v1/no-receipt-exchanges'
+    ) {
+      noReceiptRequests += 1;
+    }
+  });
+  cdp.on('Network.responseReceived', (params) => {
+    if (new URL(params.response.url).pathname === '/v1/no-receipt-exchanges') {
+      noReceiptResponseStatus = params.response.status;
+    }
+  });
+
+  await clickButton('استبدال بدون فاتورة');
+  await waitForText('الأصناف المستلمة بدون فاتورة', 20_000);
+  await setInputByPlaceholder('ابحث بالاسم أو الباركود أو SKU', 'BROWSER-SKU-001');
+  await clickButton('بحث');
+  await waitForText('مرجع اليوم:', 20_000);
+  await clickButton('صنف برهان المتصفح');
+  await setInputByLabelText('قيمة الاستبدال المعتمدة (ريال)', exchangeReplacementTotalMajor);
+  await clickButton('اعتماد الحالة والبيع البديل');
+  try {
+    await waitForText('تم اعتماد الحالة', 30_000);
+  } catch (error) {
+    const visibleText = String(await evaluate(`document.body?.innerText ?? ''`))
+      .replace(/\s+/g, ' ')
+      .slice(-1600);
+    throw new Error(
+      `No-receipt exchange UI did not reach success. POST count=${String(noReceiptRequests)} HTTP=${String(noReceiptResponseStatus)} visible=${visibleText}`,
+      { cause: error },
+    );
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(
+    noReceiptRequests,
+    1,
+    'No-receipt exchange UI must emit exactly one POST /v1/no-receipt-exchanges request.',
+  );
+  assert.ok(
+    noReceiptResponseStatus === 200 || noReceiptResponseStatus === 201,
+    `No-receipt exchange returned HTTP ${String(noReceiptResponseStatus)}.`,
+  );
+
+  const exchangeSales = await browserRequest('/v1/admin/sales?limit=20');
+  let exchangeSaleDetail = null;
+  for (const sale of exchangeSales.items) {
+    if (sale.terminal?.id !== terminal.id || sale.status !== 'finalized') continue;
+    const detail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(sale.id)}`);
+    if (detail.tenders.some((tender) => tender.kind === 'exchange_allowance')) {
+      exchangeSaleDetail = detail;
+      break;
+    }
+  }
+  assert.ok(exchangeSaleDetail !== null, 'Linked replacement sale with exchange allowance is missing.');
+  const allowanceTender = exchangeSaleDetail.tenders.find(
+    (tender) => tender.kind === 'exchange_allowance',
+  );
+  assert.equal(allowanceTender?.amountMinor, exchangeReplacementTotalMinor.toString());
+  assert.equal(allowanceTender?.changeMinor, '0');
+  assert.equal(
+    exchangeSaleDetail.tenders.some((tender) => tender.kind === 'cash'),
+    false,
+    'Exact allowance exchange must not invent a cash tender.',
+  );
+
+  const exchangeBalance = await browserRequest(
+    `/v1/admin/inventory/balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
+  );
+  const exchangeRow = exchangeBalance.rows.find((row) => row.sku === 'BROWSER-SKU-001');
+  assert.equal(
+    exchangeRow?.quantityScaled,
+    '10000',
+    'Accepted stock + replacement sale must net to zero authoritative quantity.',
+  );
+  const exchangeCost = await browserRequest(
+    `/v1/admin/inventory/cost-balances?branchId=${encodeURIComponent(branch.id)}&limit=50`,
+  );
+  const exchangeCostRow = exchangeCost.rows.find((row) => row.sku === 'BROWSER-SKU-001');
+  assert.equal(exchangeCostRow?.knownQuantityScaled, '10000');
+  assert.equal(exchangeCostRow?.unknownPositiveQuantityScaled, '0');
+  record(
+    'actual Chrome cashier UI completed an online-authoritative no-receipt exchange; allowance settled exactly, drawer unchanged, stock net-zero',
+  );
+  await capture('cashier-v2-1-no-receipt-success');
+  await clickButton('تم وابدأ بيعاً جديداً');
+
   await clickButton('إغلاق الوردية');
   await waitForText('إغلاق الوردية وتسوية الدرج', 20_000);
   await setInput('shift-close-declared-cash', '101.00');

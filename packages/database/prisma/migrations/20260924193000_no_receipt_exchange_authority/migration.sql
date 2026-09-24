@@ -199,4 +199,23 @@ ON CONFLICT ("tenantId", "roleId", "permissionKey") DO NOTHING;
 ALTER TABLE "roles" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "role_permissions" FORCE ROW LEVEL SECURITY;
 
+-- Finalized no-receipt facts are append-only. Tenant deletion may still cascade
+-- them as part of tenant lifecycle, but an application transaction cannot
+-- rewrite the case or its line snapshots after commit.
+CREATE FUNCTION reject_no_receipt_exchange_update() RETURNS trigger
+LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'finalized no-receipt exchange facts are immutable'
+    USING ERRCODE = '55000';
+END;
+$;
+
+CREATE TRIGGER "no_receipt_exchange_cases_immutable"
+BEFORE UPDATE ON "no_receipt_exchange_cases"
+FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_update();
+
+CREATE TRIGGER "no_receipt_exchange_lines_immutable"
+BEFORE UPDATE ON "no_receipt_exchange_lines"
+FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_update();
+
 COMMIT;

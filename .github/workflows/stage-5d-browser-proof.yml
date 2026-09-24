@@ -6,6 +6,7 @@ on:
       - review/5d-browser-proof
       - review/operations-50-production-readiness
       - strike/5c-costing-authority
+      - mastermind/v2-strengthening
   workflow_dispatch:
 
 concurrency:
@@ -183,6 +184,13 @@ jobs:
           source "$RUNNER_TEMP/stage5d-secrets.env"
           node scripts/browser-stage5d-proof.mjs
 
+      - name: Run actual Chrome cashier + V2-1 no-receipt workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/stage5d-secrets.env"
+          node scripts/browser-cashier-sale-proof.mjs
+
       - name: Prove browser-created state under the restricted role
         shell: bash
         run: |
@@ -230,6 +238,7 @@ jobs:
           path: |
             artifacts/stage5d-browser/authority.txt
             artifacts/stage5d-browser/proof.txt
+            artifacts/stage5d-browser/cashier-proof.txt
             artifacts/stage5d-browser/*.png
           if-no-files-found: error
           retention-days: 14

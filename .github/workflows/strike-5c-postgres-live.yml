@@ -10,6 +10,7 @@ on:
       - product/post-v1-restaurant-foundation
       - integration/acquisition-ar2
       - release/canonical-acquisition-v1
+      - mastermind/v2-strengthening
   workflow_dispatch:
 
 concurrency:
