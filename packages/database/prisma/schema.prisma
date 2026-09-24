@@ -1614,9 +1614,10 @@ model Sale {
   /// later would produce a different answer after any price change.
   priceMode           String
   currency            String @default("SAR")
-  grossMinor          BigInt
-  lineDiscountMinor   BigInt
-  basketDiscountMinor BigInt
+  grossMinor             BigInt
+  lineDiscountMinor      BigInt
+  promotionDiscountMinor BigInt @default(0)
+  basketDiscountMinor    BigInt
   netMinor            BigInt
   vatMinor            BigInt
   totalMinor          BigInt
@@ -1680,9 +1681,10 @@ model SaleLine {
   vatBasisPoints Int
   quantityScaled BigInt
 
-  grossMinor          BigInt
-  lineDiscountMinor   BigInt
-  basketDiscountMinor BigInt
+  grossMinor             BigInt
+  lineDiscountMinor      BigInt
+  promotionDiscountMinor BigInt @default(0)
+  basketDiscountMinor    BigInt
   netMinor            BigInt
   vatMinor            BigInt
   totalMinor          BigInt
@@ -2097,9 +2099,10 @@ model Return {
 
   /// The same six figures a sale carries, so a credit note can be produced
   /// years later without replaying today's prices or discounts.
-  grossMinor          BigInt @default(0)
-  lineDiscountMinor   BigInt @default(0)
-  basketDiscountMinor BigInt @default(0)
+  grossMinor             BigInt @default(0)
+  lineDiscountMinor      BigInt @default(0)
+  promotionDiscountMinor BigInt @default(0)
+  basketDiscountMinor    BigInt @default(0)
   netMinor            BigInt
   vatMinor            BigInt
   totalMinor          BigInt
@@ -2153,9 +2156,10 @@ model ReturnLine {
 
   quantityScaled BigInt
 
-  grossMinor          BigInt @default(0)
-  lineDiscountMinor   BigInt @default(0)
-  basketDiscountMinor BigInt @default(0)
+  grossMinor             BigInt @default(0)
+  lineDiscountMinor      BigInt @default(0)
+  promotionDiscountMinor BigInt @default(0)
+  basketDiscountMinor    BigInt @default(0)
   netMinor            BigInt
   vatMinor            BigInt
   totalMinor          BigInt
