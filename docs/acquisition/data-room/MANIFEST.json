@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "createdFor": "Korvi acquisition due diligence",
   "source": {
     "branch": "release/canonical-acquisition-v1",
@@ -86,7 +86,12 @@
     "PRIVATE-EVIDENCE-REQUEST-LIST.md",
     "EXTERNAL-EVIDENCE-REGISTER.md",
     "EVIDENCE-ARTIFACT-RETENTION.md",
-    "BUYER-ACCEPTANCE-TEST-PLAN.md"
+    "BUYER-ACCEPTANCE-TEST-PLAN.md",
+    "COMMERCIAL-ACQUISITION-BRIEF.md",
+    "SELLER-TECHNICAL-DISCLOSURE-SCHEDULE.md",
+    "POST-ACQUISITION-90-DAY-ACTIVATION-PLAN.md",
+    "FINAL-DATA-ROOM-INDEX.md",
+    "CLOSURE-RECORD.md"
   ],
   "repositoryGovernance": {
     "defaultBranch": "main",
@@ -115,5 +120,13 @@
     "sha256": "eda179635f566a761aa330e674ddd96486005fd015088686350b6e4d219cf151",
     "preparedAt": "2026-09-24",
     "note": "Preservation copy of exact-SHA GitHub Actions artifacts; does not change evidence classification."
+  },
+  "dataRoomStatus": "COMPLETE_FOR_CURRENT_ENGINEERING_ACQUISITION_STAGE",
+  "closure": {
+    "sourceSha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+    "sourceFrozen": true,
+    "internalAcquisitionPackagingComplete": true,
+    "remainingWorkType": "EXTERNAL_ACTIVATION_TRANSACTION_OR_EVIDENCE",
+    "closedAt": "2026-09-24"
   }
 }
