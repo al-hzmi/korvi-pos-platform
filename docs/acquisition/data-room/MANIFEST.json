@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "createdFor": "Korvi acquisition due diligence",
   "source": {
     "branch": "release/canonical-acquisition-v1",
@@ -84,7 +84,9 @@
     "ASSET-ACCOUNT-TRANSFER-REGISTER.md",
     "TRANSACTION-HANDOFF-CHECKLIST.md",
     "PRIVATE-EVIDENCE-REQUEST-LIST.md",
-    "EXTERNAL-EVIDENCE-REGISTER.md"
+    "EXTERNAL-EVIDENCE-REGISTER.md",
+    "EVIDENCE-ARTIFACT-RETENTION.md",
+    "BUYER-ACCEPTANCE-TEST-PLAN.md"
   ],
   "repositoryGovernance": {
     "defaultBranch": "main",
@@ -107,5 +109,11 @@
       "Final Canonical Acquisition Release",
       "Merchant Proven"
     ]
+  },
+  "preservedEvidenceArchive": {
+    "fileName": "Korvi_Acquisition_Evidence_61dbb34.zip",
+    "sha256": "eda179635f566a761aa330e674ddd96486005fd015088686350b6e4d219cf151",
+    "preparedAt": "2026-09-24",
+    "note": "Preservation copy of exact-SHA GitHub Actions artifacts; does not change evidence classification."
   }
 }
