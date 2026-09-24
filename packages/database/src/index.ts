@@ -27,6 +27,7 @@ export {
   StockOperationRefusedError,
   CostBootstrapRefusedError,
   PurchasingRefusedError,
+  PromotionPolicyRefusedError,
 } from './errors.js';
 export type {
   TenantProvisioningRefusal,
@@ -37,6 +38,7 @@ export type {
   StockOperationRefusal,
   CostBootstrapRefusal,
   PurchasingRefusal,
+  PromotionPolicyRefusal,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
