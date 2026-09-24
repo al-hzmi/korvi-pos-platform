@@ -202,19 +202,31 @@ ALTER TABLE "role_permissions" FORCE ROW LEVEL SECURITY;
 -- Finalized no-receipt facts are append-only. Tenant deletion may still cascade
 -- them as part of tenant lifecycle, but an application transaction cannot
 -- rewrite the case or its line snapshots after commit.
-CREATE FUNCTION reject_no_receipt_exchange_update() RETURNS trigger
+CREATE FUNCTION reject_no_receipt_exchange_mutation() RETURNS trigger
 LANGUAGE plpgsql
 AS 'BEGIN
+  IF TG_OP = ''DELETE'' AND pg_trigger_depth() > 1 THEN
+    RETURN OLD;
+  END IF;
+
   RAISE EXCEPTION ''finalized no-receipt exchange facts are immutable''
     USING ERRCODE = ''55000'';
 END;';
 
-CREATE TRIGGER "no_receipt_exchange_cases_immutable"
+CREATE TRIGGER "no_receipt_exchange_cases_immutable_update"
 BEFORE UPDATE ON "no_receipt_exchange_cases"
-FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_update();
+FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_mutation();
 
-CREATE TRIGGER "no_receipt_exchange_lines_immutable"
+CREATE TRIGGER "no_receipt_exchange_cases_immutable_delete"
+BEFORE DELETE ON "no_receipt_exchange_cases"
+FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_mutation();
+
+CREATE TRIGGER "no_receipt_exchange_lines_immutable_update"
 BEFORE UPDATE ON "no_receipt_exchange_lines"
-FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_update();
+FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_mutation();
+
+CREATE TRIGGER "no_receipt_exchange_lines_immutable_delete"
+BEFORE DELETE ON "no_receipt_exchange_lines"
+FOR EACH ROW EXECUTE FUNCTION reject_no_receipt_exchange_mutation();
 
 COMMIT;

@@ -441,7 +441,7 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     expect(visible).toBe(0);
   });
 
-  it('G. finalized case and line snapshots cannot be updated', async () => {
+  it('G. finalized case and line snapshots cannot be updated or directly deleted', async () => {
     const result = await service.create(request());
     if (result.outcome !== 'success') throw new Error(result.reason);
 
@@ -462,6 +462,18 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
           where: { id: lineId },
           data: { nameAr: 'محاولة إعادة كتابة' },
         }),
+      ),
+    ).rejects.toThrow(/immutable/i);
+
+    await expect(
+      withTenant(prisma, scope.tenantId, async (tx) =>
+        tx.noReceiptExchangeCase.delete({ where: { id: result.case.id } }),
+      ),
+    ).rejects.toThrow(/immutable/i);
+
+    await expect(
+      withTenant(prisma, scope.tenantId, async (tx) =>
+        tx.noReceiptExchangeLine.delete({ where: { id: lineId } }),
       ),
     ).rejects.toThrow(/immutable/i);
   });
