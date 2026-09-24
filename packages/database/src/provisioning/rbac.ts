@@ -30,6 +30,7 @@ export const PERMISSION_CATALOGUE: Readonly<
     en: 'Manage suppliers and purchase orders',
   },
   'purchasing.receive': { ar: 'استلام بضاعة أوامر الشراء', en: 'Receive purchase order goods' },
+  'promotion.manage': { ar: 'إدارة العروض والكوبونات', en: 'Manage promotions and coupons' },
   'sale.create': { ar: 'إتمام عملية بيع', en: 'Complete a sale' },
   'sale.discount': { ar: 'منح خصم', en: 'Grant a discount' },
   'sale.refund': { ar: 'استرجاع مبيعات', en: 'Refund a sale' },

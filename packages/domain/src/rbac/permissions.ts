@@ -18,6 +18,7 @@ export const PERMISSIONS = [
   'purchasing.read',
   'purchasing.manage',
   'purchasing.receive',
+  'promotion.manage',
   'sale.create',
   'sale.discount',
   'sale.refund',
@@ -83,6 +84,7 @@ const MANAGER: readonly Permission[] = [
   'purchasing.read',
   'purchasing.manage',
   'purchasing.receive',
+  'promotion.manage',
   'product.write',
   'report.read',
 ];
