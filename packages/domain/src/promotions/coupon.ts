@@ -5,7 +5,7 @@ export class InvalidCouponCodeError extends DomainError {
 }
 
 export function normalizeCouponCode(input: string): string {
-  const normalized = input.normalize('NFKC').trim().toUpperCase();
+  const normalized = input.trim().toUpperCase();
   if (
     normalized.length < 3 ||
     normalized.length > 32 ||
