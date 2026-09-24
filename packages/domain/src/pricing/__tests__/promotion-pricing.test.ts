@@ -3,6 +3,7 @@ import { money } from '../../money/money.js';
 import { quantity } from '../../quantity/quantity.js';
 import { basisPoints } from '../../tax/basis-points.js';
 import {
+  PromotionAuthorizationError,
   PromotionManualDiscountConflictError,
   finalizeSale,
   saleReconciles,
@@ -54,6 +55,10 @@ describe('promotion pricing authority', () => {
       customerId: null,
       issuedAt: '2026-09-25T12:00:00.000Z',
       maxDiscountBasisPoints: 0n,
+      promotionAuthorization: {
+        totalDiscountMinor: 115n,
+        lineDiscounts: [{ lineId: '1', amountMinor: 115n }],
+      },
       cart: {
         priceMode: 'tax-inclusive',
         lines: [
@@ -77,6 +82,78 @@ describe('promotion pricing authority', () => {
     expect(saleReconciles(sale)).toBe(true);
   });
 
+  it('refuses a promotion allocation with no server-evaluated authorization plan', () => {
+    expect(() =>
+      finalizeSale({
+        saleId: '00000000-0000-7000-8000-000000000021',
+        operationId: 'op-auth-missing',
+        tenantId: '00000000-0000-7000-8000-000000000022',
+        branchId: '00000000-0000-7000-8000-000000000023',
+        terminalId: '00000000-0000-7000-8000-000000000024',
+        shiftId: '00000000-0000-7000-8000-000000000025',
+        cashierId: '00000000-0000-7000-8000-000000000026',
+        customerId: null,
+        issuedAt: '2026-09-25T12:00:00.000Z',
+        maxDiscountBasisPoints: 0n,
+        cart: {
+          priceMode: 'tax-inclusive',
+          lines: [
+            {
+              lineId: '1',
+              productId: 'p1',
+              sku: 'P1',
+              nameAr: 'صنف',
+              nameEn: null,
+              unitPrice: money(1_150n),
+              quantity: quantity(1_000n),
+              vatRate: basisPoints(1500),
+              promotionDiscountMinor: 115n,
+            },
+          ],
+        },
+        tenders: [{ kind: 'cash', amount: money(1_035n) }],
+      }),
+    ).toThrow(PromotionAuthorizationError);
+  });
+
+  it('refuses a promotion authorization plan that does not match the cart allocations', () => {
+    expect(() =>
+      finalizeSale({
+        saleId: '00000000-0000-7000-8000-000000000031',
+        operationId: 'op-auth-mismatch',
+        tenantId: '00000000-0000-7000-8000-000000000032',
+        branchId: '00000000-0000-7000-8000-000000000033',
+        terminalId: '00000000-0000-7000-8000-000000000034',
+        shiftId: '00000000-0000-7000-8000-000000000035',
+        cashierId: '00000000-0000-7000-8000-000000000036',
+        customerId: null,
+        issuedAt: '2026-09-25T12:00:00.000Z',
+        maxDiscountBasisPoints: 0n,
+        promotionAuthorization: {
+          totalDiscountMinor: 114n,
+          lineDiscounts: [{ lineId: '1', amountMinor: 114n }],
+        },
+        cart: {
+          priceMode: 'tax-inclusive',
+          lines: [
+            {
+              lineId: '1',
+              productId: 'p1',
+              sku: 'P1',
+              nameAr: 'صنف',
+              nameEn: null,
+              unitPrice: money(1_150n),
+              quantity: quantity(1_000n),
+              vatRate: basisPoints(1500),
+              promotionDiscountMinor: 115n,
+            },
+          ],
+        },
+        tenders: [{ kind: 'cash', amount: money(1_035n) }],
+      }),
+    ).toThrow(PromotionAuthorizationError);
+  });
+
   it('refuses manual discount plus promotion policy in one finalized sale', () => {
     expect(() =>
       finalizeSale({
@@ -90,6 +167,10 @@ describe('promotion pricing authority', () => {
         customerId: null,
         issuedAt: '2026-09-25T12:00:00.000Z',
         maxDiscountBasisPoints: 10_000n,
+        promotionAuthorization: {
+          totalDiscountMinor: 115n,
+          lineDiscounts: [{ lineId: '1', amountMinor: 115n }],
+        },
         cart: {
           priceMode: 'tax-inclusive',
           lines: [
