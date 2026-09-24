@@ -122,6 +122,12 @@ model Tenant {
   restaurantWasteLines              RestaurantWasteLine[]
   saleLines                     SaleLine[]
   saleDiscounts                 SaleDiscount[]
+  promotions                    Promotion[]
+  promotionProducts             PromotionProduct[]
+  coupons                       Coupon[]
+  salePromotionApplications     SalePromotionApplication[]
+  salePromotionAllocations      SalePromotionAllocation[]
+  couponRedemptions             CouponRedemption[]
   tenders                       Tender[]
   invoices                      Invoice[]
   taxBreakdown                  InvoiceTaxBreakdown[]
@@ -904,6 +910,7 @@ model Product {
   restaurantWasteLines            RestaurantWasteLine[]
   returnLines                   ReturnLine[]
   noReceiptExchangeLines        NoReceiptExchangeLine[]
+  promotionProducts             PromotionProduct[]
 
   @@unique([tenantId, sku])
   /// The tenant-consistency key. A child row references this table by
@@ -1633,6 +1640,8 @@ model Sale {
   invoice   Invoice?
   returns   Return[]
   noReceiptExchangeCase NoReceiptExchangeCase?
+  promotionApplications SalePromotionApplication[]
+  couponRedemptions CouponRedemption[]
 
   @@unique([tenantId, operationId])
   @@unique([tenantId, branchId, sequence])
@@ -1689,6 +1698,7 @@ model SaleLine {
   sale        Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
   product     Product?     @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
   returnLines ReturnLine[]
+  promotionAllocations SalePromotionAllocation[]
 
   @@unique([tenantId, saleId, lineNumber])
   /// The tenant-consistency key. A child row references this table by
@@ -1698,6 +1708,166 @@ model SaleLine {
   @@index([tenantId, saleId])
   @@index([tenantId, productId])
   @@map("sale_lines")
+}
+
+model Promotion {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+
+  merchantCode   String
+  name           String
+  status         String @default("draft")
+  activationMode String
+  priority       Int
+  stackingMode   String
+
+  startsAt DateTime?
+  endsAt   DateTime?
+
+  effectKind  String
+  effectValue BigInt
+
+  minimumEligibleSubtotalMinor BigInt @default(0)
+  targetKind                   String
+
+  revision  BigInt @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products      PromotionProduct[]
+  coupons       Coupon[]
+  applications  SalePromotionApplication[]
+  redemptions   CouponRedemption[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, merchantCode])
+  @@index([tenantId, status, activationMode, priority])
+  @@map("promotions")
+}
+
+model PromotionProduct {
+  id          String @id @db.Uuid
+  tenantId    String @db.Uuid
+  promotionId String @db.Uuid
+  productId   String @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [tenantId, promotionId], references: [tenantId, id], onDelete: Cascade)
+  product   Product   @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, promotionId, productId])
+  @@index([tenantId, productId])
+  @@map("promotion_products")
+}
+
+model Coupon {
+  id          String @id @db.Uuid
+  tenantId    String @db.Uuid
+  promotionId String @db.Uuid
+
+  normalizedCode String
+  status         String @default("active")
+  startsAt       DateTime?
+  endsAt         DateTime?
+  totalRedemptionLimit Int?
+  revision       BigInt @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  promotion   Promotion                @relation(fields: [tenantId, promotionId], references: [tenantId, id], onDelete: NoAction)
+  applications SalePromotionApplication[]
+  redemptions  CouponRedemption[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, normalizedCode])
+  @@index([tenantId, promotionId, status])
+  @@map("coupons")
+}
+
+model SalePromotionApplication {
+  id          String @id @db.Uuid
+  tenantId    String @db.Uuid
+  saleId      String @db.Uuid
+  promotionId String @db.Uuid
+  couponId    String? @db.Uuid
+
+  promotionRevision BigInt
+  merchantCode      String
+  name              String
+  priority          Int
+  stackingMode      String
+  activationMode    String
+  effectKind        String
+  effectValue       BigInt
+
+  eligibleBaseMinor BigInt
+  amountMinor       BigInt
+  couponCode        String?
+
+  createdAt DateTime @default(now())
+
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale        Sale       @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+  promotion   Promotion  @relation(fields: [tenantId, promotionId], references: [tenantId, id], onDelete: NoAction)
+  coupon      Coupon?    @relation(fields: [tenantId, couponId], references: [tenantId, id], onDelete: NoAction)
+  allocations SalePromotionAllocation[]
+  redemption  CouponRedemption?
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, saleId, promotionId])
+  @@index([tenantId, promotionId, createdAt])
+  @@index([tenantId, couponId])
+  @@map("sale_promotion_applications")
+}
+
+model SalePromotionAllocation {
+  id            String @id @db.Uuid
+  tenantId      String @db.Uuid
+  applicationId String @db.Uuid
+  saleLineId    String @db.Uuid
+  amountMinor   BigInt
+
+  createdAt DateTime @default(now())
+
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application SalePromotionApplication @relation(fields: [tenantId, applicationId], references: [tenantId, id], onDelete: Cascade)
+  saleLine    SaleLine                 @relation(fields: [tenantId, saleLineId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, applicationId, saleLineId])
+  @@index([tenantId, saleLineId])
+  @@map("sale_promotion_allocations")
+}
+
+model CouponRedemption {
+  id            String @id @db.Uuid
+  tenantId      String @db.Uuid
+  couponId      String @db.Uuid
+  promotionId   String @db.Uuid
+  saleId        String @db.Uuid
+  applicationId String @db.Uuid
+
+  operationId String
+  redeemedAt  DateTime
+
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupon      Coupon                   @relation(fields: [tenantId, couponId], references: [tenantId, id], onDelete: NoAction)
+  promotion   Promotion                @relation(fields: [tenantId, promotionId], references: [tenantId, id], onDelete: NoAction)
+  sale        Sale                     @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
+  application SalePromotionApplication @relation(fields: [tenantId, applicationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, couponId, saleId])
+  @@unique([tenantId, applicationId])
+  @@index([tenantId, couponId, redeemedAt])
+  @@index([tenantId, operationId])
+  @@map("coupon_redemptions")
 }
 
 model SaleDiscount {

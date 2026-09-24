@@ -46,6 +46,7 @@ Required authoritative fields:
 - promotion id;
 - merchant-visible code/name;
 - status: `draft | active | paused | archived`;
+- activation mode: `automatic | coupon`;
 - deterministic priority;
 - stacking mode: `stackable | exclusive`;
 - activation window;
@@ -62,6 +63,17 @@ V2-2 target scope is deliberately bounded to:
 
 Category/tag/segment predicates are future extensions and must not be inferred from
 current mutable catalogue metadata for historical sales.
+
+### 2A. Activation mode
+
+Activation is explicit authority, not inferred from whether coupon rows happen to exist.
+
+- `automatic`: the active promotion is considered for every eligible online direct checkout.
+- `coupon`: the promotion is considered only when the server resolves a presented active coupon bound to it.
+
+A coupon-mode promotion must never be auto-applied merely because it is active. An automatic
+promotion may not be activated by a coupon in V2-2. Changing activation mode increments promotion
+revision.
 
 ### 3. Coupon instrument
 
