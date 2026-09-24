@@ -326,6 +326,7 @@ export function createNoReceiptExchangeRepository(
 
         const replacement = await recordSaleWithin(tx, scope, input.replacementSale, {
           skipIdempotencyReservation: true,
+          allowExchangeAllowance: true,
         });
 
         await tx.noReceiptExchangeCase.create({

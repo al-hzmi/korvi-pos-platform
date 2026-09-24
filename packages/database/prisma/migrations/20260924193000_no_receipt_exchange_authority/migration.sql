@@ -154,6 +154,63 @@ CREATE UNIQUE INDEX "no_receipt_exchange_lines_tenant_case_product_key"
 CREATE INDEX "no_receipt_exchange_lines_tenant_product_idx"
   ON "no_receipt_exchange_lines"("tenantId","productId");
 
+-- An exchange allowance is not a reusable tender. It is valid only when the
+-- same transaction also finalizes exactly one no-receipt case linked to this
+-- sale for the same approved amount. The check is deferred because the normal
+-- sale authority writes tenders before the composite authority writes the case.
+CREATE FUNCTION enforce_no_receipt_exchange_allowance_link() RETURNS trigger
+LANGUAGE plpgsql
+AS 'DECLARE
+  approved BIGINT;
+BEGIN
+  SELECT "approvedAllowanceMinor"
+    INTO approved
+    FROM "no_receipt_exchange_cases"
+   WHERE "tenantId" = NEW."tenantId"
+     AND "linkedSaleId" = NEW."saleId"
+     AND "status" = ''finalized'';
+
+  IF approved IS NULL OR approved <> NEW."amountMinor" THEN
+    RAISE EXCEPTION ''exchange allowance requires a matching finalized no-receipt exchange case''
+      USING ERRCODE = ''23514'';
+  END IF;
+
+  RETURN NEW;
+END;';
+
+CREATE CONSTRAINT TRIGGER "tenders_exchange_allowance_case_link"
+AFTER INSERT ON "tenders"
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+WHEN (NEW."kind" = 'exchange_allowance')
+EXECUTE FUNCTION enforce_no_receipt_exchange_allowance_link();
+
+-- Once committed, the allowance component is historical settlement truth.
+-- Direct mutation/removal is refused; tenant/sale lifecycle cascades may still
+-- remove it through nested referential actions.
+CREATE FUNCTION reject_exchange_allowance_mutation() RETURNS trigger
+LANGUAGE plpgsql
+AS 'BEGIN
+  IF TG_OP = ''DELETE'' AND pg_trigger_depth() > 1 THEN
+    RETURN OLD;
+  END IF;
+
+  RAISE EXCEPTION ''finalized exchange allowance tender is immutable''
+    USING ERRCODE = ''55000'';
+END;';
+
+CREATE TRIGGER "tenders_exchange_allowance_immutable_update"
+BEFORE UPDATE ON "tenders"
+FOR EACH ROW
+WHEN (OLD."kind" = 'exchange_allowance' OR NEW."kind" = 'exchange_allowance')
+EXECUTE FUNCTION reject_exchange_allowance_mutation();
+
+CREATE TRIGGER "tenders_exchange_allowance_immutable_delete"
+BEFORE DELETE ON "tenders"
+FOR EACH ROW
+WHEN (OLD."kind" = 'exchange_allowance')
+EXECUTE FUNCTION reject_exchange_allowance_mutation();
+
 ALTER TABLE "no_receipt_exchange_cases" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "no_receipt_exchange_cases" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "no_receipt_exchange_cases_isolation" ON "no_receipt_exchange_cases";

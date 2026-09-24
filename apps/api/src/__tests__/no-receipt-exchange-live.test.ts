@@ -532,4 +532,43 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
       cashier?.permissions.some((row) => row.permissionKey === 'sale.exchange.no-receipt'),
     ).toBe(false);
   });
+
+  it('J. PostgreSQL refuses an exchange allowance that is not backed by the linked case amount', async () => {
+    const result = await service.create(
+      request({
+        operationId: newId(),
+        approvedAllowanceMinor: '0',
+        cashMinor: '2300',
+      }),
+    );
+    if (result.outcome !== 'success') throw new Error(result.reason);
+
+    await expect(
+      withTenant(prisma, scope.tenantId, async (tx) => {
+        await tx.tender.create({
+          data: {
+            id: newId(),
+            tenantId: A.tenant,
+            saleId: result.sale.saleId,
+            kind: 'exchange_allowance',
+            scheme: null,
+            amountMinor: 100n,
+            changeMinor: 0n,
+            reference: null,
+          },
+        });
+        await tx.$executeRawUnsafe(
+          'SET CONSTRAINTS "tenders_exchange_allowance_case_link" IMMEDIATE',
+        );
+      }),
+    ).rejects.toThrow(/matching finalized no-receipt exchange case/i);
+
+    const allowances = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.tender.count({
+        where: { saleId: result.sale.saleId, kind: 'exchange_allowance' },
+      }),
+    );
+    expect(allowances).toBe(0);
+  });
+
 });

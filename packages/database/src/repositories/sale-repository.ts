@@ -479,10 +479,22 @@ export async function recordSaleWithin(
   tx: TransactionClient,
   scope: TenantScope,
   input: RecordSaleInput,
-  options: { readonly skipIdempotencyReservation?: boolean } = {},
+  options: {
+    readonly skipIdempotencyReservation?: boolean;
+    readonly allowExchangeAllowance?: boolean;
+  } = {},
 ): Promise<SaleRecord> {
   const tenant = tenantParam(scope);
   const { sale, invoice, inventory, cashMovement, restaurantOrderSettlement, idempotency } = input;
+
+  if (
+    sale.tenders.some((tender) => tender.kind === 'exchange_allowance') &&
+    options.allowExchangeAllowance !== true
+  ) {
+    throw new DatabaseError(
+      'Exchange allowance may only be persisted by the atomic no-receipt exchange authority.',
+    );
+  }
 
   // First, and inside this transaction: the number is issued to a sale
   // that is about to exist, not to a request that might not finish.
