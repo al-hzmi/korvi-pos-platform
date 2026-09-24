@@ -44,6 +44,8 @@ export interface CheckoutIntent {
   readonly restaurantOrderRevision: string;
   readonly lines: readonly CheckoutIntentLine[];
   readonly tenders: readonly CheckoutIntentTender[];
+  /** Canonical normalized coupon codes. Order is not material. */
+  readonly couponCodes?: readonly string[];
   /** Canonical description of the basket discount, or the empty string. */
   readonly basketDiscount: string;
 }
@@ -66,6 +68,10 @@ export interface CheckoutIntent {
  * external approval reference — exactly what the sale row itself will hold in
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
+ *
+ * `v6` because coupon activation intent joined the canonical form. Server-owned
+ * automatic promotion policy is deliberately absent: policy is authority, not
+ * client intent.
  *
  * `v5` because open-order identity + revision joined the canonical form. An
  * order settlement cannot replay as a direct sale, or against a later revision.
@@ -109,8 +115,10 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     ])
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
+  const couponCodes = [...(intent.couponCodes ?? [])].sort();
+
   const canonical = JSON.stringify([
-    'v5',
+    'v6',
     intent.branchId,
     intent.terminalId,
     intent.orderType,
@@ -118,6 +126,7 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     intent.restaurantOrderId,
     intent.restaurantOrderRevision,
     intent.basketDiscount,
+    couponCodes,
     tenders,
     lines,
   ]);

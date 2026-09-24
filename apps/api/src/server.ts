@@ -9,6 +9,7 @@ import {
   createPlatformAdminSessionStore,
   createPrismaClient,
   createProductRepository,
+  createPromotionRepository,
   createRestaurantFloorRepository,
   createSaleRepository,
   createReturnRepository,
@@ -209,6 +210,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const idempotency = createIdempotencyRepository(prisma);
     const audit = createAuditRepository(prisma);
     const sales = createSaleRepository(prisma);
+    const promotions = createPromotionRepository(prisma);
     const fiscalization =
       config.checkoutFiscalizationMode === 'simulation'
         ? createStagingSimulationCheckoutFiscalization()
@@ -228,6 +230,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         inventory: createInventoryRepository(prisma),
         shifts,
         sales,
+        promotions,
         restaurantFloor,
         restaurantOrders: {
           read: (scope, branchId, orderId) => readRestaurantOrder(prisma, scope, branchId, orderId),

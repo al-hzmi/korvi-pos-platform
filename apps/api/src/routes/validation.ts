@@ -253,6 +253,8 @@ export const checkoutBody = z
     cashReceivedMinor: MINOR.optional(),
     tenders: z.array(tenderBody).min(1).max(MAX_TENDERS).optional(),
     basketDiscount: discountBody.optional(),
+    // Intent only. Canonical normalization + eligibility + money remain server-owned.
+    couponCodes: z.array(z.string().min(1).max(64)).max(8).optional(),
     lines: z
       .array(
         z.object({

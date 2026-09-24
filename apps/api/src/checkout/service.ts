@@ -1,16 +1,21 @@
 import {
   DiscountNotPermittedError,
   InvalidAmountError,
+  InvalidCouponCodeError,
   InvalidDiscountError,
   InvalidTenderError,
+  PromotionManualDiscountConflictError,
   NonCashChangeError,
   UnderpaidError,
   basisPoints,
+  evaluatePromotions,
+  extendedPrice,
   finalizeSale,
   maxDiscountForRoles,
   money,
   moneyToMajorString,
   newId as defaultNewId,
+  normalizeCouponCode,
   quantity,
   saleReconciles,
   tenantId as brandTenantId,
@@ -18,6 +23,7 @@ import {
 import {
   InsufficientStockError,
   OperationAlreadyRecordedError,
+  PromotionPolicyRefusedError,
   RestaurantOrderRefusedError,
   ShiftUnusableError,
 } from '@korvi/database';
@@ -40,10 +46,13 @@ import type {
   InventoryMovementInput,
   InventoryRepository,
   PriceMode,
+  PromotionCheckoutPolicy,
+  PromotionRepository,
   RestaurantOrderType,
   RestaurantFloorRepository,
   ProductRepository,
   SaleDiscountRecord,
+  SalePromotionApplicationInput,
   SaleRecord,
   SaleRepository,
   TenderLine,
@@ -78,6 +87,12 @@ export type CheckoutFailureReason =
   | 'ambiguous-payment'
   | 'invalid-discount'
   | 'discount-not-authorized'
+  | 'invalid-coupon'
+  | 'coupon-unavailable'
+  | 'coupon-ineligible'
+  | 'promotion-manual-conflict'
+  | 'promotion-policy-stale'
+  | 'promotions-not-applicable'
   | 'idempotency-conflict'
   | 'duplicate-line'
   | 'shift-invalid'
@@ -227,6 +242,8 @@ export interface CheckoutInput {
   readonly cashReceivedMinor?: string | undefined;
   readonly tenders?: readonly CheckoutTenderInput[] | undefined;
   readonly basketDiscount?: CheckoutDiscountInput | undefined;
+  /** Coupon activation intent only; policy, amount and eligibility remain server-owned. */
+  readonly couponCodes?: readonly string[] | undefined;
 }
 
 export interface CheckoutDeps {
@@ -235,6 +252,8 @@ export interface CheckoutDeps {
   readonly inventory: InventoryRepository;
   readonly shifts: ShiftRepository;
   readonly sales: SaleRepository;
+  /** Production direct checkout promotion/coupon resolver (ADR-0037). */
+  readonly promotions?: PromotionRepository;
   /** Required only for dine-in table validation. */
   readonly restaurantFloor?: RestaurantFloorRepository;
   /** Pre-flight read; the sale repository re-proves the same snapshot under lock. */
@@ -305,10 +324,45 @@ function toTenderLine(tender: CheckoutTenderInput, currency: Currency): TenderLi
       };
 }
 
+function normalizeCouponCodes(input: readonly string[] | undefined): readonly string[] {
+  if (input === undefined || input.length === 0) return [];
+  const normalized = input.map((code) => normalizeCouponCode(code));
+  return [...new Set(normalized)].sort();
+}
+
+function promotionCandidateFromPolicy(policy: PromotionCheckoutPolicy) {
+  const promotion = policy.promotion;
+  return {
+    promotionId: promotion.id,
+    revision: BigInt(promotion.revision),
+    merchantCode: promotion.merchantCode,
+    name: promotion.name,
+    status: promotion.status,
+    priority: promotion.priority,
+    stackingMode: promotion.stackingMode,
+    startsAtMs: promotion.startsAt === null ? null : new Date(promotion.startsAt).getTime(),
+    endsAtMs: promotion.endsAt === null ? null : new Date(promotion.endsAt).getTime(),
+    effect:
+      promotion.effectKind === 'fixed'
+        ? { kind: 'fixed' as const, amountMinor: BigInt(promotion.effectValue) }
+        : { kind: 'percentage' as const, basisPoints: BigInt(promotion.effectValue) },
+    minimumEligibleSubtotalMinor: BigInt(promotion.minimumEligibleSubtotalMinor),
+    target:
+      promotion.targetKind === 'basket'
+        ? ({ kind: 'basket' } as const)
+        : ({ kind: 'products', productIds: promotion.productIds } as const),
+    coupon:
+      policy.coupon === null
+        ? null
+        : { couponId: policy.coupon.id, normalizedCode: policy.coupon.normalizedCode },
+  };
+}
+
 function fingerprintCheckoutIntent(
   input: CheckoutInput,
   payment: readonly CheckoutTenderInput[],
   branchId: string,
+  couponCodes: readonly string[],
 ): string {
   return fingerprintIntent({
     branchId,
@@ -329,6 +383,7 @@ function fingerprintCheckoutIntent(
       reference: tender.kind === 'electronic' ? tender.reference : '',
     })),
     basketDiscount: describeDiscount(input.basketDiscount),
+    couponCodes,
   });
 }
 
@@ -459,6 +514,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       const scope: TenantScope = { tenantId: brandTenantId(input.principal.tenantId) };
       if (input.lines.length === 0) return fail('empty-cart');
 
+      let couponCodes: readonly string[];
+      try {
+        couponCodes = normalizeCouponCodes(input.couponCodes);
+      } catch (error) {
+        if (error instanceof InvalidCouponCodeError) return fail('invalid-coupon');
+        throw error;
+      }
+
       // A cash sale needs somewhere for the cash to go. The shift also supplies
       // the branch, so the client never names one.
       // Two lines for one product would each pass a stock check the sum fails.
@@ -487,7 +550,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         if (input.expectedShiftId !== undefined && existing.shiftId !== input.expectedShiftId) {
           return fail('idempotency-conflict');
         }
-        const replayHash = fingerprintCheckoutIntent(input, payment, existing.branchId);
+        const replayHash = fingerprintCheckoutIntent(input, payment, existing.branchId, couponCodes);
         if (reserved.requestHash !== replayHash) return fail('idempotency-conflict');
         const invoice = await deps.sales.invoiceForSale(scope, existing.id);
         if (invoice === null) throw new Error('Finalized checkout is missing its durable invoice.');
@@ -518,7 +581,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         return fail('shift-invalid');
       }
 
-      const intentHash = fingerprintCheckoutIntent(input, payment, shift.branchId);
+      const intentHash = fingerprintCheckoutIntent(input, payment, shift.branchId, couponCodes);
 
       const tenant = await deps.tenants.current(scope);
       const settings = await deps.tenants.settings(scope);
@@ -551,6 +614,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         ) {
           return fail('restaurant-order-mismatch');
         }
+        if (couponCodes.length > 0) return fail('promotions-not-applicable');
         if (
           input.basketDiscount !== undefined ||
           input.lines.some((line) => line.discount !== undefined)
@@ -664,13 +728,83 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       if (restaurantOrder !== null && restaurantOrder.currency !== currency) {
         return fail('restaurant-order-mismatch');
       }
+
+      const saleId = newId();
+      const issuedAt = now().toISOString();
+      const saleLineIds = loaded.map(() => newId());
+
+      let promotionPolicies: readonly PromotionCheckoutPolicy[] = [];
+      let promotionEvaluation = evaluatePromotions({
+        evaluatedAtMs: new Date(issuedAt).getTime(),
+        lines: loaded.map((entry, index) => ({
+          lineId: saleLineIds[index] ?? '',
+          productId: entry.product.id,
+          grossMinor: extendedPrice(
+            money(BigInt(entry.product.priceMinor), currency),
+            quantity(entry.scaled),
+          ).minor,
+        })),
+        candidates: [],
+      });
+
+      if (restaurantOrder === null) {
+        if (deps.promotions === undefined) {
+          if (couponCodes.length > 0) return fail('coupon-unavailable');
+        } else {
+          const resolution = await deps.promotions.resolveForCheckout(scope, {
+            evaluatedAt: issuedAt,
+            productIds: loaded.map((entry) => entry.product.id),
+            normalizedCouponCodes: couponCodes,
+          });
+          if (resolution.unavailableCouponCodes.length > 0) {
+            return fail('coupon-unavailable');
+          }
+          promotionPolicies = resolution.policies;
+          promotionEvaluation = evaluatePromotions({
+            evaluatedAtMs: new Date(issuedAt).getTime(),
+            lines: loaded.map((entry, index) => ({
+              lineId: saleLineIds[index] ?? '',
+              productId: entry.product.id,
+              grossMinor: extendedPrice(
+                money(BigInt(entry.product.priceMinor), currency),
+                quantity(entry.scaled),
+              ).minor,
+            })),
+            candidates: promotionPolicies.map(promotionCandidateFromPolicy),
+          });
+
+          if (
+            couponCodes.some(
+              (code) =>
+                !promotionEvaluation.applications.some(
+                  (application) => application.coupon?.normalizedCode === code,
+                ),
+            )
+          ) {
+            return fail('coupon-ineligible');
+          }
+        }
+      }
+
+      const manuallyDiscounted =
+        input.basketDiscount !== undefined ||
+        input.lines.some((line) => line.discount !== undefined);
+      if (manuallyDiscounted && promotionEvaluation.applications.length > 0) {
+        return fail('promotion-manual-conflict');
+      }
+
+      const promotionByLine = new Map(
+        promotionEvaluation.lineDiscounts.map((line) => [line.lineId, line.amountMinor] as const),
+      );
+
       const cart = {
         priceMode: (restaurantOrder?.priceMode ?? settings.priceMode) as PriceMode,
         currency,
         lines: loaded.map((entry, index): CartLineInput => {
           const requested = input.lines[index]?.discount;
+          const lineId = saleLineIds[index] ?? '';
           return {
-            lineId: String(index + 1),
+            lineId,
             productId: entry.product.id,
             sku: entry.product.sku,
             nameAr: entry.product.nameAr,
@@ -679,6 +813,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             quantity: quantity(entry.scaled),
             vatRate: basisPoints(entry.product.vatBasisPoints),
             isWeighted: entry.product.productType === 'weighted',
+            ...((promotionByLine.get(lineId) ?? 0n) === 0n
+              ? {}
+              : { promotionDiscountMinor: promotionByLine.get(lineId) ?? 0n }),
             // Omitted rather than set to undefined: exactOptionalPropertyTypes
             // is on, and an absent key is what "no discount" means there.
             ...(requested === undefined ? {} : { discount: toDomainDiscount(requested) }),
@@ -701,8 +838,6 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         return fail('discount-not-authorized');
       }
 
-      const saleId = newId();
-      const issuedAt = now().toISOString();
       const discounted =
         input.basketDiscount !== undefined ||
         input.lines.some((line) => line.discount !== undefined);
@@ -724,6 +859,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           // the request. No discount is offered in this strike; passing the
           // real figure keeps the guard live for when one is.
           maxDiscountBasisPoints: maxDiscountForRoles(input.principal.roles),
+          ...(promotionEvaluation.applications.length === 0
+            ? {}
+            : {
+                promotionAuthorization: {
+                  totalDiscountMinor: promotionEvaluation.totalDiscountMinor,
+                  lineDiscounts: promotionEvaluation.lineDiscounts,
+                },
+              }),
         });
       } catch (error) {
         // The ceiling is the merchant's policy, and refusing loudly is the
@@ -731,6 +874,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         // the customer a different price from the one the cashier promised.
         if (error instanceof InvalidDiscountError) return fail('invalid-discount');
         if (error instanceof DiscountNotPermittedError) return fail('discount-not-authorized');
+        if (error instanceof PromotionManualDiscountConflictError) {
+          return fail('promotion-manual-conflict');
+        }
         if (error instanceof InvalidTenderError) return fail('invalid-tender');
         // Told apart on purpose. Underpaid is "give me more money"; an
         // electronic overpay is "that card was charged too much", which no
@@ -844,7 +990,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             changeMinor: finalized.settlement.change.minor.toString(),
             issuedAt,
             lines: priced.lines.map((line, index) => ({
-              id: newId(),
+              id: line.lineId,
               lineNumber: index + 1,
               productId: line.productId,
               sku: line.sku,
@@ -935,6 +1081,66 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                   expectedRevision: restaurantOrder.revision,
                 },
               }),
+          ...(promotionEvaluation.applications.length === 0
+            ? {}
+            : {
+                promotionSettlement: {
+                  evaluatedAt: issuedAt,
+                  presentedCouponCodes: couponCodes,
+                  applications: promotionEvaluation.applications.map(
+                    (application): SalePromotionApplicationInput => {
+                      const policy = promotionPolicies.find(
+                        (candidate) => candidate.promotion.id === application.promotionId,
+                      );
+                      if (policy === undefined) {
+                        throw new Error('Promotion policy snapshot missing for evaluated application.');
+                      }
+                      return {
+                        id: newId(),
+                        promotionId: application.promotionId,
+                        promotionRevision: application.revision.toString(),
+                        merchantCode: application.merchantCode,
+                        name: application.name,
+                        priority: application.priority,
+                        stackingMode: application.stackingMode,
+                        activationMode: application.coupon === null ? 'automatic' : 'coupon',
+                        effectKind: application.effect.kind,
+                        effectValue:
+                          application.effect.kind === 'fixed'
+                            ? application.effect.amountMinor.toString()
+                            : application.effect.basisPoints.toString(),
+                        eligibleBaseMinor: application.eligibleBaseMinor.toString(),
+                        amountMinor: application.amountMinor.toString(),
+                        couponId: application.coupon?.couponId ?? null,
+                        couponCode: application.coupon?.normalizedCode ?? null,
+                        expectedCouponRevision:
+                          policy.coupon === null ? null : policy.coupon.revision,
+                        allocations: application.allocations.map((allocation) => ({
+                          id: newId(),
+                          saleLineId: allocation.lineId,
+                          amountMinor: allocation.amountMinor.toString(),
+                        })),
+                        redemptionId: application.coupon === null ? null : newId(),
+                      };
+                    },
+                  ),
+                  audit: {
+                    id: newId(),
+                    actorUserId: input.principal.userId,
+                    branchId: shift.branchId,
+                    terminalId: input.terminalId,
+                    eventType: 'sale.promoted',
+                    entityType: 'sale',
+                    entityId: saleId,
+                    metadata: {
+                      applicationCount: promotionEvaluation.applications.length,
+                      couponCount: couponCodes.length,
+                      promotionDiscountMinor: promotionEvaluation.totalDiscountMinor.toString(),
+                    },
+                    occurredAt: issuedAt,
+                  },
+                },
+              }),
           idempotency: {
             id: newId(),
             scope: IDEMPOTENCY_SCOPE,
@@ -948,6 +1154,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         // transaction back; none of them reaches the client as a driver error.
         if (error instanceof InsufficientStockError) return fail('insufficient-stock');
         if (error instanceof ShiftUnusableError) return fail('shift-invalid');
+        if (error instanceof PromotionPolicyRefusedError) {
+          if (error.detail === 'unknown-coupon') return fail('coupon-unavailable');
+          if (error.detail === 'coupon-unavailable') return fail('coupon-unavailable');
+          if (error.detail === 'coupon-exhausted') return fail('coupon-unavailable');
+          return fail('promotion-policy-stale');
+        }
         if (error instanceof RestaurantOrderRefusedError) {
           if (error.detail === 'unknown-order') return fail('restaurant-order-not-found');
           if (error.detail === 'order-not-open') return fail('restaurant-order-not-open');

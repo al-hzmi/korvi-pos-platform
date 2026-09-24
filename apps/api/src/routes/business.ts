@@ -87,6 +87,12 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'ambiguous-payment': 'أرسل نقداً أو قائمة دفعات، لا الاثنين معاً.',
   'invalid-discount': 'الخصم غير صالح لهذه السلة.',
   'discount-not-authorized': 'الخصم المطلوب يتجاوز الحد المسموح لهذا المستخدم.',
+  'invalid-coupon': 'صيغة كود الخصم غير صالحة.',
+  'coupon-unavailable': 'كود الخصم غير متاح أو انتهى استخدامه.',
+  'coupon-ineligible': 'كود الخصم صالح لكنه لا ينطبق على هذه السلة.',
+  'promotion-manual-conflict': 'لا يمكن الجمع بين خصم الموظف وعرض أو كوبون في نفس العملية.',
+  'promotion-policy-stale': 'تغيّرت سياسة العرض أثناء العملية. أعد المحاولة بالسعر المحدث.',
+  'promotions-not-applicable': 'العروض والكوبونات غير متاحة لمسار الطلب الحالي.',
   'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
   'duplicate-line': 'الصنف مكرر في السلة. ادمج الكمية في سطر واحد.',
   'shift-invalid': 'الوردية لم تعد صالحة لهذا الصندوق. تحقّق من الوردية.',
@@ -119,6 +125,12 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   // 403: the request is well-formed and the server understood it. This user
   // may not grant that much.
   'discount-not-authorized': 403,
+  'invalid-coupon': 422,
+  'coupon-unavailable': 409,
+  'coupon-ineligible': 422,
+  'promotion-manual-conflict': 422,
+  'promotion-policy-stale': 409,
+  'promotions-not-applicable': 422,
   'idempotency-conflict': 409,
   'duplicate-line': 422,
   'shift-invalid': 409,
@@ -706,6 +718,9 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         ...(parsed.data.basketDiscount === undefined
           ? {}
           : { basketDiscount: parsed.data.basketDiscount }),
+        ...(parsed.data.couponCodes === undefined
+          ? {}
+          : { couponCodes: parsed.data.couponCodes }),
       });
 
       if (result.outcome === 'failure') {
