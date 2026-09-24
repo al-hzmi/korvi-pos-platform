@@ -1,8 +1,14 @@
-import { ELECTRONIC_SCHEMES } from '@korvi/domain';
+import { ELECTRONIC_SCHEMES, evaluatePromotions } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
-import { DatabaseError, OperationAlreadyRecordedError, ShiftUnusableError } from '../errors.js';
+import {
+  DatabaseError,
+  OperationAlreadyRecordedError,
+  PromotionPolicyRefusedError,
+  ShiftUnusableError,
+} from '../errors.js';
 import { RestaurantOrderRefusedError } from '../restaurant/orders.js';
 import { applyMovementWithin } from './inventory-repository.js';
+import { resolvePromotionCheckoutWithin } from './promotion-repository.js';
 import { iso, minor, oneOf, rate, scoped, tenantParam } from './mapping.js';
 import type { TransactionClient } from '../tenant-context.js';
 import type {
@@ -10,6 +16,7 @@ import type {
   InvoiceType,
   PriceMode,
   ProductType,
+  PromotionCheckoutPolicy,
   RestaurantOrderType,
   RecordSaleInput,
   SaleDiscountRecord,
@@ -480,6 +487,201 @@ async function loadSale(
   return tx.sale.findFirst({ where: { ...where, tenantId: tenant }, include: WITH_CHILDREN });
 }
 
+function promotionCandidateFromPolicy(policy: PromotionCheckoutPolicy) {
+  const promotion = policy.promotion;
+  return {
+    promotionId: promotion.id,
+    revision: BigInt(promotion.revision),
+    merchantCode: promotion.merchantCode,
+    name: promotion.name,
+    status: promotion.status,
+    priority: promotion.priority,
+    stackingMode: promotion.stackingMode,
+    startsAtMs: promotion.startsAt === null ? null : new Date(promotion.startsAt).getTime(),
+    endsAtMs: promotion.endsAt === null ? null : new Date(promotion.endsAt).getTime(),
+    effect:
+      promotion.effectKind === 'fixed'
+        ? { kind: 'fixed' as const, amountMinor: BigInt(promotion.effectValue) }
+        : { kind: 'percentage' as const, basisPoints: BigInt(promotion.effectValue) },
+    minimumEligibleSubtotalMinor: BigInt(promotion.minimumEligibleSubtotalMinor),
+    target:
+      promotion.targetKind === 'basket'
+        ? ({ kind: 'basket' } as const)
+        : ({ kind: 'products', productIds: promotion.productIds } as const),
+    coupon:
+      policy.coupon === null
+        ? null
+        : { couponId: policy.coupon.id, normalizedCode: policy.coupon.normalizedCode },
+  };
+}
+
+async function provePromotionSettlementWithin(
+  tx: TransactionClient,
+  tenant: string,
+  input: RecordSaleInput,
+): Promise<void> {
+  const settlement = input.promotionSettlement;
+  if (settlement === undefined) {
+    const recordedPromotionTotal = BigInt(input.sale.promotionDiscountMinor ?? '0');
+    if (recordedPromotionTotal !== 0n) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
+    if (input.sale.lines.some((line) => BigInt(line.promotionDiscountMinor ?? '0') !== 0n)) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
+    return;
+  }
+
+  if (input.restaurantOrderSettlement !== undefined || input.sale.restaurantOrderId !== null) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+  if (input.sale.discounts.length > 0) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+  if (settlement.evaluatedAt !== input.sale.issuedAt) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+
+  const codes = [...settlement.presentedCouponCodes].sort();
+  if (new Set(codes).size !== codes.length || codes.some((code, index) => code !== settlement.presentedCouponCodes[index])) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+
+  const productIds: string[] = [];
+  const cartLines = input.sale.lines.map((line) => {
+    if (line.productId === null) throw new PromotionPolicyRefusedError('policy-stale');
+    productIds.push(line.productId);
+    return {
+      lineId: line.id,
+      productId: line.productId,
+      grossMinor: BigInt(line.grossMinor),
+    };
+  });
+
+  const current = await resolvePromotionCheckoutWithin(
+    tx,
+    tenant,
+    {
+      evaluatedAt: settlement.evaluatedAt,
+      productIds,
+      normalizedCouponCodes: codes,
+    },
+    { commitAuthority: true },
+  );
+  if (current.unavailableCouponCodes.length > 0) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+
+  const evaluation = evaluatePromotions({
+    evaluatedAtMs: new Date(settlement.evaluatedAt).getTime(),
+    lines: cartLines,
+    candidates: current.policies.map(promotionCandidateFromPolicy),
+  });
+
+  if (BigInt(input.sale.promotionDiscountMinor ?? '0') !== evaluation.totalDiscountMinor) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+  const expectedLineTotals = new Map(
+    evaluation.lineDiscounts.map((allocation) => [allocation.lineId, allocation.amountMinor] as const),
+  );
+  for (const line of input.sale.lines) {
+    if (BigInt(line.promotionDiscountMinor ?? '0') !== (expectedLineTotals.get(line.id) ?? 0n)) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
+  }
+
+  if (settlement.applications.length !== evaluation.applications.length) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+
+  const policyByPromotion = new Map(current.policies.map((policy) => [policy.promotion.id, policy] as const));
+  const ids = new Set<string>();
+  const allocationIds = new Set<string>();
+  const redemptionIds = new Set<string>();
+  for (let index = 0; index < evaluation.applications.length; index += 1) {
+    const actual = evaluation.applications[index];
+    const expected = settlement.applications[index];
+    if (actual === undefined || expected === undefined) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
+    const policy = policyByPromotion.get(actual.promotionId);
+    if (policy === undefined || ids.has(expected.id)) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
+    ids.add(expected.id);
+
+    const effectKind = actual.effect.kind;
+    const effectValue =
+      actual.effect.kind === 'fixed' ? actual.effect.amountMinor : actual.effect.basisPoints;
+    const activationMode = actual.coupon === null ? 'automatic' : 'coupon';
+    if (
+      expected.promotionId !== actual.promotionId ||
+      BigInt(expected.promotionRevision) !== actual.revision ||
+      expected.merchantCode !== actual.merchantCode ||
+      expected.name !== actual.name ||
+      expected.priority !== actual.priority ||
+      expected.stackingMode !== actual.stackingMode ||
+      expected.activationMode !== activationMode ||
+      expected.effectKind !== effectKind ||
+      BigInt(expected.effectValue) !== effectValue ||
+      BigInt(expected.eligibleBaseMinor) !== actual.eligibleBaseMinor ||
+      BigInt(expected.amountMinor) !== actual.amountMinor
+    ) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
+
+    if (actual.coupon === null) {
+      if (
+        expected.couponId !== null ||
+        expected.couponCode !== null ||
+        expected.expectedCouponRevision !== null ||
+        expected.redemptionId !== null
+      ) {
+        throw new PromotionPolicyRefusedError('policy-stale');
+      }
+    } else {
+      const coupon = policy.coupon;
+      if (
+        coupon === null ||
+        expected.couponId !== coupon.id ||
+        expected.couponCode !== coupon.normalizedCode ||
+        expected.expectedCouponRevision === null ||
+        BigInt(expected.expectedCouponRevision) !== BigInt(coupon.revision) ||
+        expected.redemptionId === null ||
+        redemptionIds.has(expected.redemptionId)
+      ) {
+        throw new PromotionPolicyRefusedError('policy-stale');
+      }
+      redemptionIds.add(expected.redemptionId);
+    }
+
+    if (expected.allocations.length !== actual.allocations.length) {
+      throw new PromotionPolicyRefusedError('policy-stale');
+    }
+    for (let allocationIndex = 0; allocationIndex < actual.allocations.length; allocationIndex += 1) {
+      const actualAllocation = actual.allocations[allocationIndex];
+      const expectedAllocation = expected.allocations[allocationIndex];
+      if (
+        actualAllocation === undefined ||
+        expectedAllocation === undefined ||
+        expectedAllocation.saleLineId !== actualAllocation.lineId ||
+        BigInt(expectedAllocation.amountMinor) !== actualAllocation.amountMinor ||
+        allocationIds.has(expectedAllocation.id)
+      ) {
+        throw new PromotionPolicyRefusedError('policy-stale');
+      }
+      allocationIds.add(expectedAllocation.id);
+    }
+  }
+
+  if (
+    settlement.audit.entityType !== 'sale' ||
+    settlement.audit.entityId !== input.sale.id ||
+    settlement.audit.actorUserId !== input.sale.userId
+  ) {
+    throw new PromotionPolicyRefusedError('policy-stale');
+  }
+}
 export async function recordSaleWithin(
   tx: TransactionClient,
   scope: TenantScope,
@@ -490,7 +692,15 @@ export async function recordSaleWithin(
   } = {},
 ): Promise<SaleRecord> {
   const tenant = tenantParam(scope);
-  const { sale, invoice, inventory, cashMovement, restaurantOrderSettlement, idempotency } = input;
+  const {
+    sale,
+    invoice,
+    inventory,
+    cashMovement,
+    restaurantOrderSettlement,
+    promotionSettlement,
+    idempotency,
+  } = input;
 
   if (
     sale.tenders.some((tender) => tender.kind === 'exchange_allowance') &&
@@ -527,6 +737,11 @@ export async function recordSaleWithin(
     SELECT "allowNegativeStock" FROM "tenant_settings"
      WHERE "tenantId" = ${tenant}::uuid`;
   const allowNegativeStock = settingsRows.at(0)?.allowNegativeStock ?? false;
+
+  // Promotion policy is re-proven under commit-time locks before any financial
+  // row is inserted. A stale revision or final coupon redemption rolls the
+  // whole sale back rather than silently changing the customer's price.
+  await provePromotionSettlementWithin(tx, tenant, input);
 
   if (!options.skipIdempotencyReservation) {
     await reserveOperation(tx, tenant, idempotency, sale.id, new Date(sale.issuedAt));
@@ -593,6 +808,77 @@ export async function recordSaleWithin(
       costProvenance: 'unknown',
     })),
   });
+
+  if (promotionSettlement !== undefined) {
+    for (const application of promotionSettlement.applications) {
+      await tx.salePromotionApplication.create({
+        data: {
+          id: application.id,
+          tenantId: tenant,
+          saleId: sale.id,
+          promotionId: application.promotionId,
+          couponId: application.couponId,
+          promotionRevision: BigInt(application.promotionRevision),
+          merchantCode: application.merchantCode,
+          name: application.name,
+          priority: application.priority,
+          stackingMode: application.stackingMode,
+          activationMode: application.activationMode,
+          effectKind: application.effectKind,
+          effectValue: BigInt(application.effectValue),
+          eligibleBaseMinor: BigInt(application.eligibleBaseMinor),
+          amountMinor: BigInt(application.amountMinor),
+          couponCode: application.couponCode,
+        },
+      });
+
+      if (application.allocations.length > 0) {
+        await tx.salePromotionAllocation.createMany({
+          data: application.allocations.map((allocation) => ({
+            id: allocation.id,
+            tenantId: tenant,
+            applicationId: application.id,
+            saleLineId: allocation.saleLineId,
+            amountMinor: BigInt(allocation.amountMinor),
+          })),
+        });
+      }
+
+      if (application.redemptionId !== null) {
+        if (application.couponId === null) {
+          throw new PromotionPolicyRefusedError('policy-stale');
+        }
+        await tx.couponRedemption.create({
+          data: {
+            id: application.redemptionId,
+            tenantId: tenant,
+            couponId: application.couponId,
+            promotionId: application.promotionId,
+            saleId: sale.id,
+            applicationId: application.id,
+            operationId: sale.operationId,
+            redeemedAt: new Date(sale.issuedAt),
+          },
+        });
+      }
+    }
+
+    const audit = promotionSettlement.audit;
+    await tx.auditEvent.create({
+      data: {
+        id: audit.id,
+        tenantId: tenant,
+        actorUserId: audit.actorUserId,
+        branchId: audit.branchId,
+        terminalId: audit.terminalId,
+        eventType: audit.eventType,
+        entityType: audit.entityType,
+        entityId: audit.entityId,
+        ...(audit.metadata === null ? {} : { metadata: { ...audit.metadata } }),
+        occurredAt: new Date(audit.occurredAt),
+      },
+    });
+  }
 
   if (sale.discounts.length > 0) {
     await tx.saleDiscount.createMany({
