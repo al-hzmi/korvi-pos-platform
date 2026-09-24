@@ -372,3 +372,26 @@ export class PurchasingRefusedError extends DatabaseError {
     this.subjectId = subjectId;
   }
 }
+
+/**
+ * Promotion/coupon checkout policy changed or cannot authorize the requested
+ * coupon. These are business refusals decided from tenant-scoped rows, not
+ * driver errors.
+ */
+export type PromotionPolicyRefusal =
+  | 'unknown-coupon'
+  | 'coupon-unavailable'
+  | 'coupon-exhausted'
+  | 'duplicate-promotion-coupon'
+  | 'policy-stale';
+
+export class PromotionPolicyRefusedError extends DatabaseError {
+  public override readonly name = 'PromotionPolicyRefusedError';
+  public readonly detail: PromotionPolicyRefusal;
+
+  public constructor(detail: PromotionPolicyRefusal) {
+    super(`Promotion policy refused: ${detail}`);
+    this.detail = detail;
+  }
+}
+
