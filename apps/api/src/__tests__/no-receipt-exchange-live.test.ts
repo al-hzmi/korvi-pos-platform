@@ -257,7 +257,9 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     await prisma.$disconnect();
   });
 
-  it('A. atomically commits case + unknown-cost intake + replacement sale + allowance + audit', async () => {
+  it(
+    'A. atomically commits case + unknown-cost intake + replacement sale + allowance + audit',
+    async () => {
     const result = await service.create(request());
     if (result.outcome !== 'success') throw new Error(result.reason);
 
@@ -316,7 +318,8 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     ]);
     expect(stored.acceptedBalance?.quantityScaled).toBe(2_000n);
     expect(stored.replacementBalance?.quantityScaled).toBe(4_000n);
-  });
+    },
+  );
 
   it('B. a non-tracked accepted product creates no stock intake movement', async () => {
     const result = await service.create(
@@ -336,7 +339,9 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     expect(movements).toHaveLength(0);
   });
 
-  it('C. exact concurrent replays create one case, one sale and consume the allowance once', async () => {
+  it(
+    'C. exact concurrent replays create one case, one sale and consume the allowance once',
+    async () => {
     const operationId = newId();
     const same = request({ operationId });
 
@@ -362,7 +367,8 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     });
 
     expect(counts).toEqual({ cases: 1, sales: 1, allowances: 1, keys: 1 });
-  });
+    },
+  );
 
   it('D. same operation id with different material intent conflicts', async () => {
     const operationId = newId();
@@ -375,7 +381,9 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     expect(second).toEqual({ outcome: 'failure', reason: 'idempotency-conflict' });
   });
 
-  it('E. a late replacement-stock failure rolls back intake, case, sale, audit and idempotency', async () => {
+  it(
+    'E. a late replacement-stock failure rolls back intake, case, sale, audit and idempotency',
+    async () => {
     const operationId = newId();
     const before = await withTenant(prisma, scope.tenantId, async (tx) => ({
       accepted: await tx.inventoryBalance.findFirst({
@@ -418,7 +426,8 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     expect(after.sales).toBe(0);
     expect(after.keys).toBe(0);
     expect(after.auditCount).toBe(before.auditCount);
-  });
+    },
+  );
 
   it('F. RLS and tenant-scoped product lookup do not enumerate another merchant', async () => {
     const operationId = newId();
@@ -500,7 +509,9 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     expect(after?.revision).toBe(before.revision + 4n);
   });
 
-  it('I. manager role provisioning carries the dedicated permission and cashier does not', async () => {
+  it(
+    'I. manager role provisioning carries the dedicated permission and cashier does not',
+    async () => {
     const rows = await withTenant(prisma, scope.tenantId, async (tx) =>
       tx.role.findMany({
         where: { key: { in: ['manager', 'cashier'] } },
@@ -509,11 +520,12 @@ describe.skipIf(url === '')('Mastermind V2-1 no-receipt exchange, PostgreSQL liv
     );
     const manager = rows.find((row) => row.key === 'manager');
     const cashier = rows.find((row) => row.key === 'cashier');
-    expect(manager?.permissions.some((row) => row.permissionKey === 'sale.exchange.no-receipt')).toBe(
-      true,
-    );
-    expect(cashier?.permissions.some((row) => row.permissionKey === 'sale.exchange.no-receipt')).toBe(
-      false,
-    );
-  });
+    expect(
+      manager?.permissions.some((row) => row.permissionKey === 'sale.exchange.no-receipt'),
+    ).toBe(true);
+    expect(
+      cashier?.permissions.some((row) => row.permissionKey === 'sale.exchange.no-receipt'),
+    ).toBe(false);
+    },
+  );
 });

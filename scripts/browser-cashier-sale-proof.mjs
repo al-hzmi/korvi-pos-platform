@@ -670,7 +670,10 @@ try {
       break;
     }
   }
-  assert.ok(exchangeSaleDetail !== null, 'Linked replacement sale with exchange allowance is missing.');
+  assert.ok(
+    exchangeSaleDetail !== null,
+    'Linked replacement sale with exchange allowance is missing.',
+  );
   const allowanceTender = exchangeSaleDetail.tenders.find(
     (tender) => tender.kind === 'exchange_allowance',
   );
