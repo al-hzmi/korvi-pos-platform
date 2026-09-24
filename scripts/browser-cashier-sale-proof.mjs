@@ -634,8 +634,9 @@ try {
   await waitForText('الأصناف المستلمة بدون فاتورة', 20_000);
   await setInputByPlaceholder('ابحث بالاسم أو الباركود أو SKU', 'BROWSER-SKU-001');
   await clickButton('بحث');
-  await waitForText('مرجع اليوم:', 20_000);
+  await waitForText('BROWSER-SKU-001', 20_000);
   await clickButton('صنف برهان المتصفح');
+  await waitForText('مرجع اليوم:', 20_000);
   await setInputByLabelText('قيمة الاستبدال المعتمدة (ريال)', exchangeReplacementTotalMajor);
   await clickButton('اعتماد الحالة والبيع البديل');
   try {
