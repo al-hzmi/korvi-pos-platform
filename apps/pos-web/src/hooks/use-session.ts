@@ -2,23 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadSession } from '../lib/session';
+import { clearOfflineWorkspace } from '../lib/offline-workspace';
 import { createLogoutController } from '../lib/logout';
 import type { ApiClient } from '../lib/api';
 import type { Principal } from '../lib/api-types';
 import type { LogoutController } from '../lib/logout';
 import type { SessionState } from '../lib/session';
 
-/**
- * The boot question, asked once and answerable again.
- *
- * `expire` is what every other hook calls when it meets a 401: the session is
- * gone, the screen goes back to login, and nothing pretends otherwise.
- *
- * `signOut` is the opposite case and is handled by a controller held across
- * renders, for the same reason the checkout flight is: two clicks in one tick
- * both read the old state, and only a synchronous guard stops the second from
- * issuing a request.
- */
 export interface SessionHandle {
   readonly state: SessionState;
   readonly signedIn: (principal: Principal) => void;
@@ -37,7 +27,12 @@ export function useSession(api: ApiClient): SessionHandle {
     const controller = new AbortController();
     let live = true;
     void loadSession(api, { signal: controller.signal }).then((next) => {
-      if (live) setState(next);
+      if (!live) return;
+      // A server-confirmed 401 is stronger evidence than any local snapshot.
+      // Delete it before rendering login so a later outage cannot revive an
+      // identity the server already rejected.
+      if (next.kind === 'anonymous') clearOfflineWorkspace();
+      setState(next);
     });
     return () => {
       live = false;
@@ -50,6 +45,7 @@ export function useSession(api: ApiClient): SessionHandle {
   }, []);
 
   const expire = useCallback(() => {
+    clearOfflineWorkspace();
     setState({
       kind: 'anonymous',
       notice: {

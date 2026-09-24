@@ -56,6 +56,22 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
   forbidden: { message: 'لا تملك صلاحية تنفيذ هذه العملية.', action: 'permission' },
   invalid_credentials: { message: 'بيانات الدخول غير صحيحة.', action: 'notice' },
   unavailable: { message: 'الخدمة غير متاحة حالياً. حاول بعد قليل.', action: 'retry-same' },
+  operation_in_progress: {
+    message: 'العملية نفسها ما زالت قيد الحسم. أعد التأكيد بنفس العملية دون تغيير البيانات.',
+    action: 'retry-same',
+  },
+  customer_phone_taken: {
+    message: 'رقم الجوال مستخدم لعميل آخر. راجع الرقم قبل الحفظ.',
+    action: 'notice',
+  },
+  customer_not_found: {
+    message: 'العميل لم يعد موجوداً أو غير متاح لهذه المنشأة.',
+    action: 'notice',
+  },
+  invalid_cursor: {
+    message: 'تعذّر متابعة صفحة العملاء من موضعها السابق. أعد تحميل القائمة.',
+    action: 'notice',
+  },
   branch_required: {
     message: 'لا يوجد فرع مرتبط بهذا المستخدم. راجع إعدادات المنشأة.',
     action: 'blocking',
@@ -94,7 +110,99 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
       'هناك عملية سابقة بنفس المعرّف ومحتوى مختلف. لا تُعاد المحاولة تلقائياً — راجع آخر فاتورة قبل المتابعة.',
     action: 'blocking',
   },
+  idempotency_conflict: {
+    message:
+      'معرّف العملية استُخدم سابقاً ببيانات مختلفة. لا تغيّر بيانات عملية غير محسومة؛ راجع النتيجة أولاً.',
+    action: 'blocking',
+  },
   'tenant-misconfigured': { message: 'إعدادات المنشأة غير مكتملة.', action: 'blocking' },
+  'order-type-required': { message: 'حدّد نوع الطلب قبل إتمام البيع.', action: 'amend-cart' },
+  'order-type-not-applicable': {
+    message: 'نوع الطلب مخصص لوضع المطاعم والمقاهي فقط.',
+    action: 'blocking',
+  },
+  'table-required': { message: 'اختر الطاولة للطلب المحلي.', action: 'amend-cart' },
+  'table-unavailable': {
+    message: 'الطاولة لم تعد متاحة لهذا الفرع. اختر طاولة أخرى.',
+    action: 'amend-cart',
+  },
+  'table-not-applicable': {
+    message: 'الطاولة متاحة للطلب المحلي فقط.',
+    action: 'amend-cart',
+  },
+  'restaurant-order-not-found': {
+    message: 'الطلب المفتوح لم يعد موجوداً.',
+    action: 'blocking',
+  },
+  'restaurant-order-not-open': {
+    message: 'الطلب لم يعد مفتوحاً. حدّث قائمة الطلبات قبل المتابعة.',
+    action: 'blocking',
+  },
+  'restaurant-order-stale': {
+    message: 'تغيّر الطلب المفتوح من جهاز آخر. أعد تحميله قبل المتابعة.',
+    action: 'blocking',
+  },
+  'restaurant-order-mismatch': {
+    message: 'السلة لا تطابق النسخة المحفوظة من الطلب. احفظ التعديلات أولاً.',
+    action: 'amend-cart',
+  },
+  'restaurant-order-incomplete': {
+    message: 'هذا الطلب يحتاج مراجعة قبل التسوية.',
+    action: 'blocking',
+  },
+  restaurant_order_stale: {
+    message: 'تغيّر الطلب المفتوح من جهاز آخر. أعد تحميله قبل المتابعة.',
+    action: 'blocking',
+  },
+  restaurant_order_not_found: {
+    message: 'الطلب المفتوح لم يعد موجوداً.',
+    action: 'blocking',
+  },
+  restaurant_order_not_open: {
+    message: 'الطلب لم يعد مفتوحاً.',
+    action: 'blocking',
+  },
+  restaurant_order_line_not_found: {
+    message: 'أحد أسطر الطلب تغيّر أو لم يعد موجوداً. أعد تحميل الطلب.',
+    action: 'blocking',
+  },
+  duplicate_restaurant_order_line: {
+    message: 'لا يمكن حفظ نفس سطر الطلب مرتين.',
+    action: 'amend-cart',
+  },
+  restaurant_order_preparation_started: {
+    message:
+      'بدأ تحضير هذا الطلب. لا يمكن تعديل أصنافه أو إلغاؤه من نقطة البيع حتى تتم معالجة المطبخ بأمان.',
+    action: 'blocking',
+  },
+  stale_order: {
+    message: 'تغيّرت نسخة الطلب قبل إرسالها للمطبخ. أعد تحميل الطلب ثم حاول مرة أخرى.',
+    action: 'blocking',
+  },
+  unrouted_lines: {
+    message: 'بعض أصناف الطلب غير مرتبطة بمحطة تحضير. أكمل إعداد توجيه المطبخ قبل الإرسال.',
+    action: 'blocking',
+  },
+  table_occupied: {
+    message: 'الطاولة مشغولة بطلب مفتوح آخر.',
+    action: 'amend-cart',
+  },
+  unknown_station: {
+    message: 'محطة التحضير لم تعد متاحة لهذا الفرع. حدّث شاشة المطبخ.',
+    action: 'notice',
+  },
+  unknown_task: {
+    message: 'مهمة التحضير لم تعد موجودة. سيتم تحديث قائمة المحطة.',
+    action: 'notice',
+  },
+  stale_task: {
+    message: 'تغيّرت مهمة التحضير من جهاز آخر. سيتم تحديث قائمة المحطة قبل أي إجراء جديد.',
+    action: 'notice',
+  },
+  invalid_transition: {
+    message: 'حالة مهمة التحضير تغيّرت ولا يمكن تنفيذ هذه النقلة. حدّث القائمة.',
+    action: 'notice',
+  },
 };
 
 export function describeFailure(error: unknown): Failure {

@@ -1,0 +1,199 @@
+name: Installed Cashier Android Proof
+
+on:
+  push:
+    branches:
+      - strike/product-routing-p0
+    paths:
+      - 'apps/cashier-client/**'
+      - 'apps/pos-web/**'
+      - 'packages/domain/**'
+      - 'packages/ui/**'
+      - 'scripts/verify-package-manager.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - '.github/workflows/installed-cashier-android-proof.yml'
+      - '.github/workflows/installed-cashier-windows-proof.yml'
+  pull_request:
+    paths:
+      - 'apps/cashier-client/**'
+      - 'apps/pos-web/**'
+      - 'packages/domain/**'
+      - 'packages/ui/**'
+      - 'scripts/verify-package-manager.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - '.github/workflows/installed-cashier-android-proof.yml'
+      - '.github/workflows/installed-cashier-windows-proof.yml'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Build a signed release-authorized APK instead of a non-release CI proof artifact'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-installed-cashier:
+    name: Android Keystore / signed APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+      KORVI_PROOF_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Check out exact authoritative head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.KORVI_PROOF_SHA }}
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Build Cashier workspace dependencies
+        run: |
+          npm run build -w @korvi/domain
+          npm run build -w @korvi/ui
+
+      - name: Install exact Rust toolchain and Android targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+          rustc --version
+          cargo --version
+          java -version
+          test -d "$ANDROID_HOME"
+          test -d "$ANDROID_NDK_LATEST_HOME"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: Typecheck installed Cashier
+        run: npm run typecheck -w @korvi/cashier-client
+
+      - name: Build installed Cashier frontend
+        run: npm run build -w @korvi/cashier-client
+
+      - name: Prove Android runtime compiles without release authority
+        env:
+          KORVI_NATIVE_API_ORIGIN: http://127.0.0.1:3001
+        run: npm run tauri -w @korvi/cashier-client -- android build --apk --target aarch64 --debug
+
+      - name: Bind non-release Android proof to exact SHA
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.release }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$KORVI_PROOF_SHA" || { echo 'Checked out SHA does not match authoritative proof SHA'; exit 1; }
+          mapfile -t apks < <(find apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk -type f -name '*debug*.apk' | sort)
+          test "${#apks[@]}" -eq 1 || { printf 'Expected exactly one debug APK, found %s\n' "${#apks[@]}"; printf '%s\n' "${apks[@]}"; exit 1; }
+          apk="${apks[0]}"
+          hash="$(sha256sum "$apk" | awk '{print $1}')"
+          printf 'git_sha=%s\nartifact=%s\nsha256=%s\nartifact_mode=non-release-proof\napi_origin=http://127.0.0.1:3001\nrelease_authorized=false\n' \
+            "$KORVI_PROOF_SHA" "$(basename "$apk")" "$hash" > android-artifact-sha256.txt
+          cat android-artifact-sha256.txt
+          mkdir -p android-artifact
+          cp "$apk" android-artifact/
+
+      - name: Upload non-release Android proof
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.release }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: NON-RELEASE-korvi-cashier-android-${{ env.KORVI_PROOF_SHA }}
+          path: |
+            android-artifact/*.apk
+            android-artifact-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require controlled Android release authority
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+        shell: bash
+        env:
+          KORVI_NATIVE_API_ORIGIN: ${{ vars.KORVI_NATIVE_API_ORIGIN }}
+          KORVI_ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.KORVI_ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          KORVI_ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.KORVI_ANDROID_RELEASE_STORE_PASSWORD }}
+          KORVI_ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.KORVI_ANDROID_RELEASE_KEY_ALIAS }}
+          KORVI_ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.KORVI_ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$KORVI_PROOF_SHA" || { echo 'Checked out SHA does not match authoritative proof SHA'; exit 1; }
+          test -n "$KORVI_NATIVE_API_ORIGIN" || { echo 'Missing repository variable KORVI_NATIVE_API_ORIGIN'; exit 1; }
+          case "$KORVI_NATIVE_API_ORIGIN" in https://*) ;; *) echo 'KORVI_NATIVE_API_ORIGIN must be an HTTPS origin for release'; exit 1 ;; esac
+          test -n "$KORVI_ANDROID_RELEASE_KEYSTORE_BASE64" || { echo 'Missing KORVI_ANDROID_RELEASE_KEYSTORE_BASE64'; exit 1; }
+          test -n "$KORVI_ANDROID_RELEASE_STORE_PASSWORD" || { echo 'Missing KORVI_ANDROID_RELEASE_STORE_PASSWORD'; exit 1; }
+          test -n "$KORVI_ANDROID_RELEASE_KEY_ALIAS" || { echo 'Missing KORVI_ANDROID_RELEASE_KEY_ALIAS'; exit 1; }
+          test -n "$KORVI_ANDROID_RELEASE_KEY_PASSWORD" || { echo 'Missing KORVI_ANDROID_RELEASE_KEY_PASSWORD'; exit 1; }
+          printf '%s' "$KORVI_ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/korvi-android-release.jks"
+          chmod 600 "$RUNNER_TEMP/korvi-android-release.jks"
+          keytool -list \
+            -keystore "$RUNNER_TEMP/korvi-android-release.jks" \
+            -storepass "$KORVI_ANDROID_RELEASE_STORE_PASSWORD" \
+            -alias "$KORVI_ANDROID_RELEASE_KEY_ALIAS" >/dev/null
+          cat > apps/cashier-client/src-tauri/gen/android/keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/korvi-android-release.jks
+          storePassword=$KORVI_ANDROID_RELEASE_STORE_PASSWORD
+          keyAlias=$KORVI_ANDROID_RELEASE_KEY_ALIAS
+          keyPassword=$KORVI_ANDROID_RELEASE_KEY_PASSWORD
+          EOF
+          chmod 600 apps/cashier-client/src-tauri/gen/android/keystore.properties
+          rm -rf apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk
+
+      - name: Build signed private-distribution APK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+        env:
+          KORVI_NATIVE_API_ORIGIN: ${{ vars.KORVI_NATIVE_API_ORIGIN }}
+        run: npm run tauri -w @korvi/cashier-client -- android build --apk --target aarch64
+
+      - name: Prove APK signature and bind release artifact to exact SHA
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+        shell: bash
+        env:
+          KORVI_NATIVE_API_ORIGIN: ${{ vars.KORVI_NATIVE_API_ORIGIN }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$KORVI_PROOF_SHA" || { echo 'Checked out SHA does not match authoritative proof SHA'; exit 1; }
+          mapfile -t apks < <(find apps/cashier-client/src-tauri/gen/android/app/build/outputs/apk -type f -name '*release*.apk' | sort)
+          test "${#apks[@]}" -eq 1 || { printf 'Expected exactly one release APK, found %s\n' "${#apks[@]}"; printf '%s\n' "${apks[@]}"; exit 1; }
+          apk="${apks[0]}"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk" | tee android-apk-signature.txt
+          hash="$(sha256sum "$apk" | awk '{print $1}')"
+          printf 'git_sha=%s\nartifact=%s\nsha256=%s\nartifact_mode=release\napi_origin=%s\nrelease_authorized=true\n' \
+            "$KORVI_PROOF_SHA" "$(basename "$apk")" "$hash" "$KORVI_NATIVE_API_ORIGIN" > android-artifact-sha256.txt
+          cat android-artifact-sha256.txt
+          mkdir -p android-artifact
+          cp "$apk" android-artifact/
+
+      - name: Upload exact-lineage signed Android evidence
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: korvi-cashier-android-${{ env.KORVI_PROOF_SHA }}
+          path: |
+            android-artifact/*.apk
+            android-artifact-sha256.txt
+            android-apk-signature.txt
+          if-no-files-found: error
+          retention-days: 14

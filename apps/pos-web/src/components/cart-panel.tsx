@@ -20,15 +20,20 @@ interface CartRowProps {
   readonly line: CartLine;
   readonly locked: boolean;
   readonly lineTotalMinor: string;
+  readonly quickService: boolean;
   readonly dispatch: (action: CartAction) => void;
 }
 
-function CartRow({ line, locked, lineTotalMinor, dispatch }: CartRowProps): JSX.Element {
+function CartRow({
+  line,
+  locked,
+  lineTotalMinor,
+  quickService,
+  dispatch,
+}: CartRowProps): JSX.Element {
   const [draft, setDraft] = useState(() => formatScaled(line.quantityScaled));
   const [invalid, setInvalid] = useState(false);
 
-  // The line is the authority; the field is a draft of it. Anything that
-  // changes the quantity elsewhere (a step, a re-scan) has to show up here.
   useEffect(() => {
     setDraft(formatScaled(line.quantityScaled));
     setInvalid(false);
@@ -48,29 +53,31 @@ function CartRow({ line, locked, lineTotalMinor, dispatch }: CartRowProps): JSX.
   const stepped = line.productType === 'unit';
 
   return (
-    <li className="flex flex-col gap-2 border-b border-border py-3 last:border-b-0">
+    <li className="rounded-lg border border-border bg-background p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium text-card-foreground">{line.nameAr}</span>
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            <BidiIsolate>{line.sku}</BidiIsolate>
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="truncate text-sm font-semibold text-card-foreground">{line.nameAr}</span>
+          <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <BidiIsolate className="rounded-md bg-muted px-1.5 py-0.5">{line.sku}</BidiIsolate>
             <span aria-hidden="true">·</span>
-            <Numeric value={formatMinor(line.unitPriceMinor)} />
+            <span className="flex items-baseline gap-1">
+              <Numeric value={formatMinor(line.unitPriceMinor)} />
+              <span className="text-[10px]">ر.س</span>
+            </span>
             {line.unitLabel === null ? null : <span>/ {line.unitLabel}</span>}
           </span>
         </div>
-        <Numeric
-          value={formatMinor(lineTotalMinor)}
-          className="shrink-0 text-lg font-semibold text-foreground"
-        />
+        <span className="flex shrink-0 items-baseline gap-1">
+          <Numeric
+            value={formatMinor(lineTotalMinor)}
+            className="text-lg font-bold text-foreground"
+          />
+          <span className="text-[10px] text-muted-foreground">ر.س</span>
+        </span>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5">
         <div className="flex items-center gap-1">
-          {/* Whole-unit steppers belong to whole-unit products. "One less" has
-              no meaning on 0.750 kg, and a generic implementation of it is how
-              a minus button ends up increasing a quantity. A weighed line is
-              edited in the field beside this. */}
           {stepped ? (
             <Button
               variant="outline"
@@ -105,7 +112,7 @@ function CartRow({ line, locked, lineTotalMinor, dispatch }: CartRowProps): JSX.
                 commit();
               }
             }}
-            className="numeric h-touch w-20 rounded-md border border-input bg-background text-center text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50 aria-[invalid=true]:border-destructive"
+            className="numeric h-touch w-20 rounded-md border border-input bg-background text-center text-base font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50 aria-[invalid=true]:border-destructive"
           />
 
           {stepped ? (
@@ -139,8 +146,49 @@ function CartRow({ line, locked, lineTotalMinor, dispatch }: CartRowProps): JSX.
         </Button>
       </div>
 
+      {quickService ? (
+        <div className="mt-3 grid gap-2 border-t border-border/70 pt-3 sm:grid-cols-2">
+          <label className="text-xs font-medium text-muted-foreground">
+            الخيارات
+            <input
+              value={line.preparationOptions ?? ''}
+              disabled={locked}
+              maxLength={280}
+              placeholder="مثال: بدون بصل، حار"
+              onChange={(event) => {
+                dispatch({
+                  type: 'set-preparation',
+                  productId: line.productId,
+                  options: event.target.value,
+                  note: line.preparationNote ?? '',
+                });
+              }}
+              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            />
+          </label>
+          <label className="text-xs font-medium text-muted-foreground">
+            ملاحظة التحضير
+            <input
+              value={line.preparationNote ?? ''}
+              disabled={locked}
+              maxLength={280}
+              placeholder="مثال: تغليف منفصل"
+              onChange={(event) => {
+                dispatch({
+                  type: 'set-preparation',
+                  productId: line.productId,
+                  options: line.preparationOptions ?? '',
+                  note: event.target.value,
+                });
+              }}
+              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            />
+          </label>
+        </div>
+      ) : null}
+
       {invalid ? (
-        <p className="text-xs text-destructive" role="status">
+        <p className="mt-2 text-xs text-destructive" role="status">
           كمية غير صالحة لهذا الصنف.
         </p>
       ) : null}
@@ -153,14 +201,26 @@ export interface CartPanelProps {
   /** Priced once by the workspace and passed down, so the figures cannot diverge. */
   readonly preview: PricedCart;
   readonly locked: boolean;
+  readonly quickService?: boolean;
   readonly dispatch: (action: CartAction) => void;
 }
 
-export function CartPanel({ lines, preview, locked, dispatch }: CartPanelProps): JSX.Element {
+export function CartPanel({
+  lines,
+  preview,
+  locked,
+  quickService = false,
+  dispatch,
+}: CartPanelProps): JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between pb-2">
-        <h2 className="text-base font-semibold text-card-foreground">السلة</h2>
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold text-card-foreground">السلة</h2>
+          <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            {lines.length} {lines.length === 1 ? 'صنف' : 'أصناف'}
+          </span>
+        </div>
         {lines.length === 0 ? null : (
           <Button
             variant="ghost"
@@ -170,23 +230,35 @@ export function CartPanel({ lines, preview, locked, dispatch }: CartPanelProps):
               dispatch({ type: 'clear' });
             }}
           >
-            إفراغ
+            إفراغ السلة
           </Button>
         )}
       </div>
 
       {lines.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center py-8 text-center text-sm text-muted-foreground">
-          السلة فارغة.
-        </p>
+        <div className="flex flex-1 items-center justify-center py-10 text-center">
+          <div className="max-w-56">
+            <div
+              className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-muted/50 text-lg text-muted-foreground"
+              aria-hidden="true"
+            >
+              +
+            </div>
+            <p className="text-sm font-medium text-foreground">السلة فارغة</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              امسح الباركود أو اختر صنفاً من القائمة لبدء البيع.
+            </p>
+          </div>
+        </div>
       ) : (
-        <ul className="min-h-0 flex-1 overflow-y-auto">
+        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto py-3 pe-1">
           {lines.map((line, index) => (
             <CartRow
               key={line.productId}
               line={line}
               locked={locked}
               lineTotalMinor={(preview.lines[index]?.total.minor ?? 0n).toString()}
+              quickService={quickService}
               dispatch={dispatch}
             />
           ))}

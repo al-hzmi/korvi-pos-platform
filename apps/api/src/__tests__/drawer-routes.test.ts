@@ -19,6 +19,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantFloorRepository,
   memoryReturnRepository,
   memorySaleRepository,
   memoryShiftRepository,
@@ -193,6 +194,7 @@ async function build(role: RoleName, options: { branch?: string | null } = {}) {
       tenants: memoryTenantRepository(business),
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
+      restaurantFloor: memoryRestaurantFloorRepository(),
       shifts,
       terminals,
       checkout: createCheckoutService({

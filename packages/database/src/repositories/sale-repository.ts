@@ -1,6 +1,7 @@
 import { ELECTRONIC_SCHEMES } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import { DatabaseError, OperationAlreadyRecordedError, ShiftUnusableError } from '../errors.js';
+import { RestaurantOrderRefusedError } from '../restaurant/orders.js';
 import { applyMovementWithin } from './inventory-repository.js';
 import { iso, minor, oneOf, rate, scoped, tenantParam } from './mapping.js';
 import type { TransactionClient } from '../tenant-context.js';
@@ -9,6 +10,7 @@ import type {
   InvoiceType,
   PriceMode,
   ProductType,
+  RestaurantOrderType,
   RecordSaleInput,
   SaleDiscountRecord,
   SaleLineRecord,
@@ -23,6 +25,7 @@ import type {
 import type { PrismaClient } from '../client.js';
 
 const STATUSES: readonly SaleStatus[] = ['finalized', 'voided'];
+const RESTAURANT_ORDER_TYPES: readonly RestaurantOrderType[] = ['dine-in', 'takeaway', 'delivery'];
 const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
 const TENDER_KINDS: readonly TenderKind[] = ['cash', 'card', 'mada', 'transfer', 'electronic'];
 const TENDER_SCHEMES: readonly TenderScheme[] = [...ELECTRONIC_SCHEMES];
@@ -78,8 +81,12 @@ interface SaleRow {
   shiftId: string;
   userId: string;
   customerId: string | null;
+  tableId: string | null;
+  restaurantOrderId: string | null;
   operationId: string;
   status: string;
+  /** Optional only for legacy/mocked adapters that predate the additive column. */
+  orderType?: string | null;
   sequence: number;
   priceMode: string;
   currency: string;
@@ -181,8 +188,14 @@ function saleToDomain(scope: TenantScope, row: SaleRow): SaleRecord {
     shiftId: row.shiftId,
     userId: row.userId,
     customerId: row.customerId,
+    tableId: row.tableId,
+    restaurantOrderId: row.restaurantOrderId,
     operationId: row.operationId,
     status: oneOf(STATUSES, row.status, 'sales.status'),
+    orderType:
+      row.orderType === null || row.orderType === undefined
+        ? null
+        : oneOf(RESTAURANT_ORDER_TYPES, row.orderType, 'sales.orderType'),
     sequence: row.sequence,
     priceMode: oneOf(PRICE_MODES, row.priceMode, 'sales.priceMode'),
     currency: row.currency,
@@ -303,6 +316,118 @@ async function assertShiftUsable(
   if (shift.userId !== sale.userId) throw new ShiftUnusableError('cashier-mismatch');
 }
 
+interface LockedRestaurantOrder {
+  readonly id: string;
+  readonly branchId: string;
+  readonly tableId: string | null;
+  readonly orderType: string;
+  readonly status: string;
+  readonly revision: bigint;
+  readonly priceMode: string;
+  readonly currency: string;
+}
+
+interface RestaurantOrderSnapshotLine {
+  readonly lineNumber: number;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: string;
+  readonly unitPriceMinor: bigint;
+  readonly vatBasisPoints: number;
+  readonly quantityScaled: bigint;
+}
+
+/**
+ * Lock and prove the operational order that this financial transaction claims
+ * to settle. A prior read shapes the request; only this lock makes "still open,
+ * same revision, same snapshot" authoritative.
+ */
+async function assertRestaurantOrderSettlement(
+  tx: TransactionClient,
+  tenant: string,
+  sale: RecordSaleInput['sale'],
+  settlement: NonNullable<RecordSaleInput['restaurantOrderSettlement']>,
+): Promise<void> {
+  const rows = await tx.$queryRaw<LockedRestaurantOrder[]>`
+    SELECT "id","branchId","tableId","orderType","status","revision","priceMode","currency"
+      FROM "restaurant_orders"
+     WHERE "tenantId" = ${tenant}::uuid
+       AND "id" = ${settlement.orderId}::uuid
+     FOR UPDATE`;
+  const order = rows.at(0);
+  if (order === undefined) throw new RestaurantOrderRefusedError('unknown-order');
+  if (order.status !== 'open') throw new RestaurantOrderRefusedError('order-not-open');
+
+  let expectedRevision: bigint;
+  try {
+    expectedRevision = BigInt(settlement.expectedRevision);
+  } catch {
+    throw new RestaurantOrderRefusedError('stale-revision');
+  }
+  if (expectedRevision !== order.revision) {
+    throw new RestaurantOrderRefusedError('stale-revision');
+  }
+
+  if (
+    sale.restaurantOrderId !== order.id ||
+    sale.branchId !== order.branchId ||
+    (sale.orderType ?? null) !== order.orderType ||
+    (sale.tableId ?? null) !== order.tableId ||
+    sale.priceMode !== order.priceMode ||
+    sale.currency !== order.currency
+  ) {
+    throw new DatabaseError('Restaurant order settlement context does not match the sale.');
+  }
+  if (
+    sale.discounts.length !== 0 ||
+    sale.lineDiscountMinor !== '0' ||
+    sale.basketDiscountMinor !== '0'
+  ) {
+    throw new DatabaseError('Restaurant order settlement cannot silently add checkout discounts.');
+  }
+
+  const orderLines = (await tx.restaurantOrderLine.findMany({
+    where: { tenantId: tenant, orderId: order.id },
+    orderBy: { lineNumber: 'asc' },
+    select: {
+      lineNumber: true,
+      productId: true,
+      sku: true,
+      nameAr: true,
+      nameEn: true,
+      productType: true,
+      unitPriceMinor: true,
+      vatBasisPoints: true,
+      quantityScaled: true,
+    },
+  })) as RestaurantOrderSnapshotLine[];
+
+  if (orderLines.length !== sale.lines.length) {
+    throw new DatabaseError('Restaurant order settlement line count does not match the sale.');
+  }
+  for (let index = 0; index < orderLines.length; index += 1) {
+    const orderLine = orderLines[index];
+    const saleLine = sale.lines[index];
+    if (
+      orderLine === undefined ||
+      saleLine === undefined ||
+      saleLine.lineNumber !== orderLine.lineNumber ||
+      saleLine.productId !== orderLine.productId ||
+      saleLine.sku !== orderLine.sku ||
+      saleLine.nameAr !== orderLine.nameAr ||
+      saleLine.nameEn !== orderLine.nameEn ||
+      saleLine.productType !== orderLine.productType ||
+      saleLine.unitPriceMinor !== orderLine.unitPriceMinor.toString() ||
+      Number(saleLine.vatBasisPoints) !== orderLine.vatBasisPoints ||
+      saleLine.quantityScaled !== orderLine.quantityScaled.toString()
+    ) {
+      throw new DatabaseError('Restaurant order settlement line snapshot does not match the sale.');
+    }
+  }
+}
+
 /**
  * Reserve the operation id, or discover that somebody else already did.
  *
@@ -387,7 +512,8 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
     async record(scope: TenantScope, input: RecordSaleInput): Promise<SaleRecord> {
       return withTenant(prisma, scope.tenantId, async (tx) => {
         const tenant = tenantParam(scope);
-        const { sale, invoice, inventory, cashMovement, idempotency } = input;
+        const { sale, invoice, inventory, cashMovement, restaurantOrderSettlement, idempotency } =
+          input;
 
         // First, and inside this transaction: the number is issued to a sale
         // that is about to exist, not to a request that might not finish.
@@ -402,6 +528,14 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
           branchId: sale.branchId,
           userId: sale.userId,
         });
+
+        if (restaurantOrderSettlement !== undefined) {
+          await assertRestaurantOrderSettlement(tx, tenant, sale, restaurantOrderSettlement);
+        } else if (sale.restaurantOrderId !== null && sale.restaurantOrderId !== undefined) {
+          throw new DatabaseError(
+            'A restaurantOrderId requires an atomic settlement precondition.',
+          );
+        }
 
         // The merchant's overselling policy, read inside the transaction that
         // is about to move the stock.
@@ -421,8 +555,11 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             shiftId: sale.shiftId,
             userId: sale.userId,
             customerId: sale.customerId,
+            tableId: sale.tableId ?? null,
+            restaurantOrderId: sale.restaurantOrderId ?? null,
             operationId: sale.operationId,
             status: sale.status,
+            orderType: sale.orderType ?? null,
             sequence: receipt.sequence,
             priceMode: sale.priceMode,
             currency: sale.currency,
@@ -458,6 +595,14 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
             netMinor: BigInt(line.netMinor),
             vatMinor: BigInt(line.vatMinor),
             totalMinor: BigInt(line.totalMinor),
+            // A new line has no historical ambiguity: if it does not produce a
+            // tracked-stock movement its inventory basis is explicitly unknown.
+            // Tracked lines are replaced below, in this same transaction, by
+            // the exact basis their sale movement consumed.
+            costKnownQuantityScaled: 0n,
+            costUnknownQuantityScaled: BigInt(line.quantityScaled),
+            costValueMinor: 0n,
+            costProvenance: 'unknown',
           })),
         });
 
@@ -526,11 +671,58 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
           });
         }
 
+        // A checkout already refuses duplicate product lines. Assert the
+        // same invariant again at the persistence boundary so every tracked
+        // movement has exactly one immutable sale line on which to freeze its
+        // original cost basis.
+        const saleLineByProduct = new Map(
+          sale.lines
+            .filter((line) => line.productId !== null)
+            .map((line) => [line.productId as string, line] as const),
+        );
+        if (
+          saleLineByProduct.size !== sale.lines.filter((line) => line.productId !== null).length
+        ) {
+          throw new DatabaseError('A sale cannot contain duplicate product lines at persistence.');
+        }
+
         for (const movement of inventory) {
-          // The guard is in the UPDATE, not in a prior read: two tills selling
-          // the last unit both saw one in stock, and only this can tell them
-          // apart. A refusal aborts the whole transaction.
-          await applyMovementWithin(tx, tenant, movement, allowNegativeStock);
+          const saleLine = saleLineByProduct.get(movement.productId);
+          if (saleLine === undefined) {
+            throw new DatabaseError(
+              'A sale stock movement has no matching sale line for cost basis.',
+            );
+          }
+          const movementQuantity = BigInt(movement.quantityScaled);
+          const lineQuantity = BigInt(saleLine.quantityScaled);
+          if (movementQuantity >= 0n || -movementQuantity !== lineQuantity) {
+            throw new DatabaseError(
+              'Sale movement cost basis does not reconcile to its sale line.',
+            );
+          }
+
+          // The guard is in the stock UPDATE, not in a prior read: two tills
+          // selling the last unit both saw one in stock, and only the mutation
+          // can tell them apart. Costing runs under the same locked stock row.
+          const applied = await applyMovementWithin(
+            tx,
+            tenant,
+            movement,
+            allowNegativeStock,
+            saleLine.id,
+          );
+
+          // Frozen before commit. A future return reads these four fields from
+          // the original sale line and never consults today's branch average.
+          await tx.saleLine.update({
+            where: { tenantId_id: { tenantId: tenant, id: saleLine.id } },
+            data: {
+              costKnownQuantityScaled: applied.cost.knownQuantityScaled,
+              costUnknownQuantityScaled: applied.cost.unknownQuantityScaled,
+              costValueMinor: applied.cost.knownValueMinor,
+              costProvenance: applied.cost.provenance,
+            },
+          });
         }
 
         if (cashMovement !== null) {
@@ -546,6 +738,29 @@ export function createSaleRepository(prisma: PrismaClient): SaleRepository {
               occurredAt: new Date(cashMovement.occurredAt),
             },
           });
+        }
+
+        if (restaurantOrderSettlement !== undefined) {
+          const expectedRevision = BigInt(restaurantOrderSettlement.expectedRevision);
+          const settled = await tx.restaurantOrder.updateMany({
+            where: {
+              tenantId: tenant,
+              id: restaurantOrderSettlement.orderId,
+              branchId: sale.branchId,
+              status: 'open',
+              revision: expectedRevision,
+            },
+            data: {
+              status: 'settled',
+              revision: { increment: 1n },
+              closedAt: new Date(sale.issuedAt),
+              closedReason: null,
+              updatedAt: new Date(sale.issuedAt),
+            },
+          });
+          if (settled.count !== 1) {
+            throw new RestaurantOrderRefusedError('stale-revision');
+          }
         }
 
         const row = await loadSale(tx, tenant, { id: sale.id });

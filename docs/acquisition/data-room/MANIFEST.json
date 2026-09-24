@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 4,
+  "createdFor": "Korvi acquisition due diligence",
+  "source": {
+    "branch": "release/canonical-acquisition-v1",
+    "sha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+    "frozen": true
+  },
+  "dataRoomBranch": "docs/acquisition-data-room-61dbb34",
+  "status": "CANONICAL_ACQUISITION_CANDIDATE_INTERNAL_ENGINEERING_COMPLETE_EXTERNAL_ACTIVATION_ONLY",
+  "github": {
+    "defaultBranch": "main",
+    "acquisitionPullRequest": 62,
+    "acquisitionPullRequestState": "open",
+    "sourceCommitVerified": true
+  },
+  "exactShaRuns": [
+    35788189407,
+    35788194829,
+    35788189451,
+    35788189485,
+    35788189450,
+    35788189607,
+    35788194784,
+    35788194966,
+    35788189408,
+    35788189552,
+    35788189482,
+    35788189427,
+    35788189346,
+    35788189464,
+    35788189391
+  ],
+  "staging": {
+    "provider": "Render",
+    "api": {
+      "serviceId": "srv-dafasa1t0dsc73dbumbg",
+      "deployId": "dep-daphbcek1f9s7391th4g",
+      "sha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+      "status": "live"
+    },
+    "web": {
+      "serviceId": "srv-dafashn40ujc73ag1540",
+      "deployId": "dep-daphc8mk1f9s73921c80",
+      "sha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+      "status": "live"
+    },
+    "database": {
+      "engine": "PostgreSQL",
+      "major": 17,
+      "plan": "free",
+      "ha": false,
+      "reportedExpiration": "2026-10-07"
+    }
+  },
+  "openExternalGates": [
+    "production infrastructure and HA",
+    "managed backups and measured RPO/RTO",
+    "external monitoring and on-call activation",
+    "production secret management and rotation",
+    "real Azure HSM / Production ZATCA activation",
+    "real merchant production pilot",
+    "legal IP/transaction/account transfer",
+    "final acquisition evidence manifest and review"
+  ],
+  "prohibitedClaims": [
+    "Production Proven",
+    "Production ZATCA Activated",
+    "Final Canonical Acquisition Release",
+    "Merchant Proven"
+  ],
+  "dataRoomDocuments": [
+    "README.md",
+    "15-MINUTE-BUYER-REVIEW.md",
+    "BUYER-EXECUTIVE-SUMMARY.md",
+    "CURRENT-STATUS.md",
+    "DEAL-RISK-REGISTER.md",
+    "EVIDENCE-INDEX.md",
+    "TECHNICAL-DUE-DILIGENCE-QA.md",
+    "DOCUMENTATION-DRIFT-NOTICE.md",
+    "RELEASE-PROVENANCE.md",
+    "DUE-DILIGENCE-CHECKLIST.md",
+    "THIRD-PARTY-LICENSE-TECHNICAL-INVENTORY.md",
+    "ASSET-ACCOUNT-TRANSFER-REGISTER.md",
+    "TRANSACTION-HANDOFF-CHECKLIST.md",
+    "PRIVATE-EVIDENCE-REQUEST-LIST.md",
+    "EXTERNAL-EVIDENCE-REGISTER.md",
+    "EVIDENCE-ARTIFACT-RETENTION.md",
+    "BUYER-ACCEPTANCE-TEST-PLAN.md",
+    "COMMERCIAL-ACQUISITION-BRIEF.md",
+    "SELLER-TECHNICAL-DISCLOSURE-SCHEDULE.md",
+    "POST-ACQUISITION-90-DAY-ACTIVATION-PLAN.md",
+    "FINAL-DATA-ROOM-INDEX.md",
+    "CLOSURE-RECORD.md"
+  ],
+  "repositoryGovernance": {
+    "defaultBranch": "main",
+    "mainProtected": false,
+    "repositoryRulesetsCount": 0,
+    "acquisitionPullRequest": 62,
+    "acquisitionPullRequestState": "open",
+    "note": "Governance observations are diligence items, not runtime defects."
+  },
+  "currentClaims": {
+    "allowed": [
+      "Canonical Acquisition Candidate",
+      "Internal Engineering Complete",
+      "Hosted staging aligned to canonical SHA",
+      "Engineering handoff ready"
+    ],
+    "prohibited": [
+      "Production Proven",
+      "Production ZATCA Activated",
+      "Final Canonical Acquisition Release",
+      "Merchant Proven"
+    ]
+  },
+  "preservedEvidenceArchive": {
+    "fileName": "Korvi_Acquisition_Evidence_61dbb34.zip",
+    "sha256": "eda179635f566a761aa330e674ddd96486005fd015088686350b6e4d219cf151",
+    "preparedAt": "2026-09-24",
+    "note": "Preservation copy of exact-SHA GitHub Actions artifacts; does not change evidence classification."
+  },
+  "dataRoomStatus": "COMPLETE_FOR_CURRENT_ENGINEERING_ACQUISITION_STAGE",
+  "closure": {
+    "sourceSha": "61dbb34dea08809756fd767b907b0e852b7e5978",
+    "sourceFrozen": true,
+    "internalAcquisitionPackagingComplete": true,
+    "remainingWorkType": "EXTERNAL_ACTIVATION_TRANSACTION_OR_EVIDENCE",
+    "closedAt": "2026-09-24"
+  }
+}

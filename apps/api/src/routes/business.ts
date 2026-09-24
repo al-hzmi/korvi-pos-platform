@@ -23,6 +23,7 @@ import type {
   AuthenticatedPrincipal,
   DashboardRepository,
   ProductRepository,
+  RestaurantFloorRepository,
   ShiftRepository,
   TenantRepository,
   TenantScope,
@@ -46,6 +47,7 @@ export interface BusinessDeps {
   readonly products: ProductRepository;
   readonly shifts: ShiftRepository;
   readonly terminals: TerminalRepository;
+  readonly restaurantFloor: RestaurantFloorRepository;
   readonly checkout: CheckoutService;
   readonly returns: ReturnService;
   readonly drawer: DrawerService;
@@ -81,6 +83,16 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'duplicate-line': 'الصنف مكرر في السلة. ادمج الكمية في سطر واحد.',
   'shift-invalid': 'الوردية لم تعد صالحة لهذا الصندوق. تحقّق من الوردية.',
   'tenant-misconfigured': 'إعدادات المنشأة غير مكتملة.',
+  'order-type-required': 'حدّد نوع الطلب قبل إتمام البيع.',
+  'order-type-not-applicable': 'نوع الطلب مخصص لوضع المطاعم والمقاهي فقط.',
+  'table-required': 'اختر الطاولة للطلب المحلي قبل إتمام البيع.',
+  'table-unavailable': 'الطاولة غير متاحة لهذا الفرع.',
+  'table-not-applicable': 'الطاولة متاحة للطلب المحلي فقط.',
+  'restaurant-order-not-found': 'الطلب المفتوح غير موجود في هذا الفرع.',
+  'restaurant-order-not-open': 'هذا الطلب لم يعد مفتوحاً للتسوية.',
+  'restaurant-order-stale': 'تم تعديل حالة الطلب. أعد تحميله قبل الدفع.',
+  'restaurant-order-mismatch': 'محتوى الطلب لا يطابق النسخة المفتوحة على الخادم.',
+  'restaurant-order-incomplete': 'هذا الطلب قديم ولا يحمل حقيقة مخزون كافية للتسوية الآمنة.',
 };
 
 /** 409 for the two states a retry can resolve; 422 for a request that cannot. */
@@ -103,6 +115,16 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'duplicate-line': 422,
   'shift-invalid': 409,
   'tenant-misconfigured': 409,
+  'order-type-required': 422,
+  'order-type-not-applicable': 422,
+  'table-required': 422,
+  'table-unavailable': 409,
+  'table-not-applicable': 422,
+  'restaurant-order-not-found': 404,
+  'restaurant-order-not-open': 409,
+  'restaurant-order-stale': 409,
+  'restaurant-order-mismatch': 409,
+  'restaurant-order-incomplete': 409,
 };
 
 /**
@@ -178,6 +200,21 @@ function scopeOf(principal: AuthenticatedPrincipal): TenantScope {
 }
 
 /**
+ * Resolve the only terminal this principal may address. Browser sessions do
+ * not carry a terminal binding and keep the existing branch-scoped choice. An
+ * installed session is device-bound, so a client-supplied terminal id is only
+ * an assertion: it must equal the authenticated terminal exactly.
+ */
+export function authoritativeTerminalId(
+  principal: AuthenticatedPrincipal,
+  requestedTerminalId: string,
+): string | null {
+  const bound = principal.terminalId;
+  if (bound === undefined || bound === null) return requestedTerminalId;
+  return bound === requestedTerminalId ? bound : null;
+}
+
+/**
  * The two answers a till-addressed route may give before it does any work.
  *
  * `branch_required` is a configuration problem the merchant can fix.
@@ -213,7 +250,9 @@ async function ownBranchTerminal(
   principal: AuthenticatedPrincipal,
   terminalId: string,
 ): Promise<Terminal | null> {
-  const terminal = await terminals.findById(scopeOf(principal), terminalId);
+  const authoritative = authoritativeTerminalId(principal, terminalId);
+  if (authoritative === null) return null;
+  const terminal = await terminals.findById(scopeOf(principal), authoritative);
   if (terminal === null || !terminal.isActive) return null;
   return terminal.branchId === principal.branchId ? terminal : null;
 }
@@ -244,6 +283,10 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       return reply.code(200).send({
         products: sellable.map((product) => ({
           id: product.id,
+          categoryId: product.categoryId,
+          categoryNameAr: product.categoryNameAr ?? null,
+          categorySortOrder: product.categorySortOrder ?? null,
+          imageUrl: product.imageUrl ?? null,
           sku: product.sku,
           nameAr: product.nameAr,
           nameEn: product.nameEn,
@@ -302,6 +345,46 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
   );
 
   app.get(
+    '/v1/restaurant/floor',
+    { preHandler: [guards.requireSession, guards.requirePermission('sale.create')] },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (principal.branchId === null) return reply.code(409).send(BRANCH_REQUIRED);
+
+      const scope = scopeOf(principal);
+      const settings = await deps.tenants.settings(scope);
+      if (settings === null || settings.vertical !== 'restaurant') {
+        return reply.code(409).send({
+          error: 'restaurant-mode-required',
+          message: 'مخطط الطاولات متاح في وضع المطاعم والمقاهي فقط.',
+        });
+      }
+
+      const [zones, tables] = await Promise.all([
+        deps.restaurantFloor.listZonesForBranch(scope, principal.branchId, true),
+        deps.restaurantFloor.listTablesForBranch(scope, principal.branchId, true),
+      ]);
+
+      return reply.code(200).send({
+        branchId: principal.branchId,
+        zones: zones.map((zone) => ({
+          id: zone.id,
+          nameAr: zone.nameAr,
+          sortOrder: zone.sortOrder,
+        })),
+        tables: tables.map((table) => ({
+          id: table.id,
+          zoneId: table.zoneId,
+          code: table.code,
+          nameAr: table.nameAr,
+          capacity: table.capacity,
+        })),
+      });
+    },
+  );
+
+  app.get(
     '/v1/terminals',
     { preHandler: [guards.requireSession, guards.requirePermission('shift.open')] },
     async (request, reply) => {
@@ -329,12 +412,24 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       }
 
       const terminals = await deps.terminals.listForBranch(scope, principal.branchId);
+      // Browser sessions may choose among tills in their branch. Installed sessions
+      // are cryptographically pinned to one enrolled terminal, so discovery must not
+      // invite a choice the authority layer will refuse a moment later.
+      const visibleTerminals =
+        principal.terminalId === undefined || principal.terminalId === null
+          ? terminals
+          : terminals.filter((terminal) => terminal.id === principal.terminalId);
       // A deactivated till is not offered. Selecting one would only produce a
       // 404 from the shift route a moment later.
       return reply.code(200).send({
         branchId: principal.branchId,
-        settings: { priceMode: settings.priceMode, currency: settings.currency },
-        terminals: terminals
+        settings: {
+          priceMode: settings.priceMode,
+          currency: settings.currency,
+          vertical: settings.vertical,
+          enableProductImages: settings.enableProductImages,
+        },
+        terminals: visibleTerminals
           .filter((terminal) => terminal.isActive)
           .map((terminal) => ({
             id: terminal.id,
@@ -490,10 +585,26 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = checkoutBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.checkout.checkout({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
+        ...(parsed.data.expectedShiftId === undefined
+          ? {}
+          : { expectedShiftId: parsed.data.expectedShiftId }),
+        ...(parsed.data.orderType === undefined ? {} : { orderType: parsed.data.orderType }),
+        ...(parsed.data.tableId === undefined ? {} : { tableId: parsed.data.tableId }),
+        ...(parsed.data.restaurantOrderId === undefined
+          ? {}
+          : { restaurantOrderId: parsed.data.restaurantOrderId }),
+        ...(parsed.data.expectedRestaurantOrderRevision === undefined
+          ? {}
+          : {
+              expectedRestaurantOrderRevision: parsed.data.expectedRestaurantOrderRevision,
+            }),
         lines: parsed.data.lines,
         ...(parsed.data.cashReceivedMinor === undefined
           ? {}
@@ -514,7 +625,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       // 200 rather than 201 on a replay: nothing was created this time.
       return reply
         .code(result.replayed ? 200 : 201)
-        .send({ sale: result.sale, replayed: result.replayed });
+        .send({ sale: result.sale, receipt: result.receipt, replayed: result.replayed });
     },
   );
   /**
@@ -649,10 +760,13 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = returnBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.returns.create({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
         saleId: parsed.data.saleId,
         ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
         lines: parsed.data.lines,
@@ -704,10 +818,13 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = manualMovementBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.drawer.recordMovement({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
         shiftId: parsed.data.shiftId,
         kind: parsed.data.kind,
         amountMinor: parsed.data.amountMinor,
@@ -754,10 +871,13 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const parsed = closeShiftBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
+      const terminalId = authoritativeTerminalId(principal, parsed.data.terminalId);
+      if (terminalId === null) return reply.code(404).send(UNKNOWN_TERMINAL);
+
       const result = await deps.drawer.close({
         principal,
         operationId: parsed.data.operationId,
-        terminalId: parsed.data.terminalId,
+        terminalId,
         shiftId: parsed.data.shiftId,
         declaredCashMinor: parsed.data.declaredCashMinor,
       });
