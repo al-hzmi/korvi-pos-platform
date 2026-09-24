@@ -7,6 +7,7 @@ import { TopBar } from './top-bar';
 import { ProductPanel } from './product-panel';
 import { CartPanel } from './cart-panel';
 import { CashierReturnWorkflow } from './cashier-return-workflow';
+import { NoReceiptExchangeWorkflow } from './no-receipt-exchange-workflow';
 import { CheckoutPanel } from './checkout-panel';
 import { SaleReceipt } from './sale-receipt';
 import { ShiftCloseControl } from './shift-close-control';
@@ -911,6 +912,22 @@ export function CashierScreen({
               onCommandLockChange={setOperatorCommandLocked}
               onExpired={onExpired}
               onShiftChanged={onShiftChanged}
+            />
+            <NoReceiptExchangeWorkflow
+              api={api}
+              terminalId={terminal.id}
+              shiftId={shift.id}
+              priceMode={priceMode}
+              replacementLines={cart.lines}
+              replacementTotalMinor={preview.total.minor.toString()}
+              canExchange={
+                !quickService && principal.permissions.includes('sale.exchange.no-receipt')
+              }
+              disabled={locked}
+              onCommandLockChange={setOperatorCommandLocked}
+              onExpired={onExpired}
+              onShiftChanged={onShiftChanged}
+              onCompleted={newSale}
             />
             <ShiftCloseControl
               api={api}

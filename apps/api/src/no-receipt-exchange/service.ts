@@ -59,6 +59,7 @@ export type NoReceiptExchangeFailureReason =
   | 'no-open-shift'
   | 'shift-invalid'
   | 'tenant-misconfigured'
+  | 'vertical-not-supported'
   | 'unknown-product'
   | 'product-unavailable'
   | 'duplicate-accepted-line'
@@ -236,7 +237,9 @@ export function createNoReceiptExchangeService(
   ): Promise<CheckoutReceipt | null> {
     if (deps.fiscalization === undefined) return null;
     const artifact = await deps.fiscalization.fiscalize(scope, sale, invoice);
-    return artifact === null ? null : buildCheckoutReceipt(sale, invoice, artifact);
+    return artifact === undefined || artifact === null
+      ? null
+      : buildCheckoutReceipt(sale, invoice, artifact);
   }
 
   async function replay(
@@ -327,6 +330,9 @@ export function createNoReceiptExchangeService(
       ]);
       if (tenant === null || settings === null || settings.currency !== 'SAR') {
         return fail('tenant-misconfigured');
+      }
+      if (settings.vertical === 'restaurant') {
+        return fail('vertical-not-supported');
       }
 
       const accepted = await loadProducts(deps.products, scope, input.acceptedLines);
