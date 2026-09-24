@@ -32,10 +32,11 @@ The following must **not** yet be claimed:
 
 1. `15-MINUTE-BUYER-REVIEW.md`
 2. `BUYER-EXECUTIVE-SUMMARY.md`
-3. `CURRENT-STATUS.md`
-4. `DEAL-RISK-REGISTER.md`
-5. `EVIDENCE-INDEX.md`
-6. `TECHNICAL-DUE-DILIGENCE-QA.md`
+3. `COMMERCIAL-ACQUISITION-BRIEF.md`
+4. `CURRENT-STATUS.md`
+5. `DEAL-RISK-REGISTER.md`
+6. `EVIDENCE-INDEX.md`
+7. `TECHNICAL-DUE-DILIGENCE-QA.md`
 
 ### Deep diligence path
 
@@ -85,3 +86,16 @@ Staging or synthetic evidence may never be relabeled as production or merchant e
 Do not add product code, migrations, refactors or feature work to the source release merely to improve the data room.
 
 If a material defect is discovered, open a new release lineage deliberately. Do not silently move the acquisition candidate.
+
+
+## Closure
+
+The current engineering acquisition data room is closed as complete for this stage.
+
+See:
+
+- `FINAL-DATA-ROOM-INDEX.md`
+- `CLOSURE-RECORD.md`
+- `POST-ACQUISITION-90-DAY-ACTIVATION-PLAN.md`
+
+Further progress now depends primarily on real external activation or transaction evidence, not speculative internal development.
