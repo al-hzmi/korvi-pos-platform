@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { canGiveChange, settle } from '../tender.js';
+import { assertTenderComposition, canGiveChange, settle } from '../tender.js';
 import { money } from '../../money/money.js';
-import { NonCashChangeError, UnderpaidError } from '../../errors.js';
+import { InvalidTenderError, NonCashChangeError, UnderpaidError } from '../../errors.js';
 
 describe('tender rules', () => {
   it('knows only cash returns change', () => {
@@ -81,5 +81,38 @@ describe('settle', () => {
     expect(() => settle(money(10n), [{ kind: 'cash', amount: money(-10n) }])).toThrow(
       UnderpaidError,
     );
+  });
+});
+
+describe('no-receipt exchange allowance composition', () => {
+  it('accepts one internal allowance with no payment metadata', () => {
+    expect(() =>
+      assertTenderComposition([
+        { kind: 'exchange_allowance', amount: money(4_000n) },
+        { kind: 'cash', amount: money(6_000n) },
+      ]),
+    ).not.toThrow();
+  });
+
+  it('refuses two allowances on one sale', () => {
+    expect(() =>
+      assertTenderComposition([
+        { kind: 'exchange_allowance', amount: money(2_000n) },
+        { kind: 'exchange_allowance', amount: money(2_000n) },
+      ]),
+    ).toThrow(InvalidTenderError);
+  });
+
+  it('refuses an allowance wearing an external reference or scheme', () => {
+    expect(() =>
+      assertTenderComposition([
+        {
+          kind: 'exchange_allowance',
+          amount: money(2_000n),
+          scheme: 'mada',
+          reference: 'NOT-A-PAYMENT',
+        },
+      ]),
+    ).toThrow(InvalidTenderError);
   });
 });
