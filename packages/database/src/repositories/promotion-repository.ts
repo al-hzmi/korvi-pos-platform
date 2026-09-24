@@ -1,4 +1,5 @@
 import { withTenant } from '../tenant-context.js';
+import { PromotionPolicyRefusedError } from '../errors.js';
 import { iso, minor, oneOf, tenantParam } from './mapping.js';
 import type {
   CouponPolicyRecord,
@@ -15,6 +16,7 @@ import type {
   TenantScope,
 } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
+import type { TransactionClient } from '../tenant-context.js';
 
 const PROMOTION_STATUSES: readonly PromotionPolicyStatus[] = ['draft', 'active', 'paused', 'archived'];
 const ACTIVATION_MODES: readonly PromotionActivationMode[] = ['automatic', 'coupon'];
@@ -104,74 +106,152 @@ function couponAvailable(row: CouponRow, at: Date): boolean {
 }
 
 /**
+ * Shared policy lock for checkout commit.
+ *
+ * Multiple sales may hold this lock concurrently. Promotion administration
+ * uses the matching exclusive advisory lock, so policy insert/update/target
+ * mutations cannot change the candidate set during final sale revalidation.
+ */
+export async function lockPromotionPolicySharedWithin(
+  tx: TransactionClient,
+  tenant: string,
+): Promise<void> {
+  await tx.$queryRaw`
+    SELECT pg_advisory_xact_lock_shared(
+      hashtextextended('korvi:promotion-policy:' || ${tenant}, 0)
+    )`;
+}
+
+export async function lockPromotionPolicyExclusiveWithin(
+  tx: TransactionClient,
+  tenant: string,
+): Promise<void> {
+  await tx.$queryRaw`
+    SELECT pg_advisory_xact_lock(
+      hashtextextended('korvi:promotion-policy:' || ${tenant}, 0)
+    )`;
+}
+
+async function lockPresentedCoupons(
+  tx: TransactionClient,
+  tenant: string,
+  normalizedCouponCodes: readonly string[],
+): Promise<void> {
+  for (const code of [...normalizedCouponCodes].sort()) {
+    const rows = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id"
+        FROM "coupons"
+       WHERE "tenantId" = ${tenant}::uuid
+         AND "normalizedCode" = ${code}
+       FOR UPDATE`;
+    if (rows.length !== 1) throw new PromotionPolicyRefusedError('unknown-coupon');
+  }
+}
+
+export async function resolvePromotionCheckoutWithin(
+  tx: TransactionClient,
+  tenant: string,
+  input: {
+    readonly evaluatedAt: string;
+    readonly productIds: readonly string[];
+    readonly normalizedCouponCodes: readonly string[];
+  },
+  options: { readonly commitAuthority?: boolean } = {},
+): Promise<PromotionCheckoutResolution> {
+  const at = new Date(input.evaluatedAt);
+  if (Number.isNaN(at.getTime())) throw new Error('Invalid promotion evaluation timestamp.');
+
+  const requestedCodes = [...new Set(input.normalizedCouponCodes)].sort();
+  const productIds = [...new Set(input.productIds)].sort();
+
+  if (options.commitAuthority === true) {
+    await lockPromotionPolicySharedWithin(tx, tenant);
+    await lockPresentedCoupons(tx, tenant, requestedCodes);
+  }
+
+  const automaticRows = (await tx.promotion.findMany({
+    where: {
+      tenantId: tenant,
+      status: 'active',
+      activationMode: 'automatic',
+      OR: [
+        { targetKind: 'basket' },
+        ...(productIds.length === 0
+          ? []
+          : [{ targetKind: 'products', products: { some: { productId: { in: productIds } } } }]),
+      ],
+    },
+    include: { products: { select: { productId: true } } },
+    orderBy: [{ priority: 'desc' }, { id: 'asc' }],
+  })) as PromotionRow[];
+
+  const couponRows =
+    requestedCodes.length === 0
+      ? []
+      : ((await tx.coupon.findMany({
+          where: { tenantId: tenant, normalizedCode: { in: requestedCodes } },
+          include: {
+            promotion: { include: { products: { select: { productId: true } } } },
+            _count: { select: { redemptions: true } },
+          },
+          orderBy: { normalizedCode: 'asc' },
+        })) as CouponRow[]);
+
+  const policies: PromotionCheckoutPolicy[] = [];
+  for (const row of automaticRows) {
+    if (!activeWindow(row.startsAt, row.endsAt, at)) continue;
+    policies.push({ promotion: promotionToDomain(row), coupon: null });
+  }
+
+  const couponByCode = new Map(couponRows.map((row) => [row.normalizedCode, row] as const));
+  const unavailableCouponCodes: string[] = [];
+  const promotionIds = new Set<string>();
+  for (const code of requestedCodes) {
+    const row = couponByCode.get(code);
+    if (row === undefined) {
+      if (options.commitAuthority === true) throw new PromotionPolicyRefusedError('unknown-coupon');
+      unavailableCouponCodes.push(code);
+      continue;
+    }
+    if (!couponAvailable(row, at)) {
+      if (options.commitAuthority === true) {
+        const exhausted =
+          row.totalRedemptionLimit !== null &&
+          row._count.redemptions >= row.totalRedemptionLimit;
+        throw new PromotionPolicyRefusedError(exhausted ? 'coupon-exhausted' : 'coupon-unavailable');
+      }
+      unavailableCouponCodes.push(code);
+      continue;
+    }
+    if (promotionIds.has(row.promotionId)) {
+      if (options.commitAuthority === true) {
+        throw new PromotionPolicyRefusedError('duplicate-promotion-coupon');
+      }
+      unavailableCouponCodes.push(code);
+      continue;
+    }
+    promotionIds.add(row.promotionId);
+    policies.push({
+      promotion: promotionToDomain(row.promotion),
+      coupon: couponToDomain(row),
+    });
+  }
+
+  return { policies, unavailableCouponCodes };
+}
+
+/**
  * Current promotion/coupon policy resolver.
  *
- * This is deliberately NOT redemption authority. The count seen here may be
- * stale by the time the cashier confirms payment. recordSale re-locks each
- * coupon and revalidates the exact policy revision and redemption limit inside
- * the sale transaction before any financial fact can commit (ADR-0037).
+ * This is preview only. recordSale re-runs the same resolver under the shared
+ * policy lock and row-locks presented coupons before committing money.
  */
 export function createPromotionRepository(prisma: PrismaClient): PromotionRepository {
   return {
     async resolveForCheckout(scope: TenantScope, input): Promise<PromotionCheckoutResolution> {
-      return withTenant(prisma, scope.tenantId, async (tx) => {
-        const tenant = tenantParam(scope);
-        const at = new Date(input.evaluatedAt);
-        if (Number.isNaN(at.getTime())) throw new Error('Invalid promotion evaluation timestamp.');
-
-        const requestedCodes = [...new Set(input.normalizedCouponCodes)].sort();
-        const productIds = [...new Set(input.productIds)].sort();
-
-        const automaticRows = (await tx.promotion.findMany({
-          where: {
-            tenantId: tenant,
-            status: 'active',
-            activationMode: 'automatic',
-            OR: [
-              { targetKind: 'basket' },
-              ...(productIds.length === 0
-                ? []
-                : [{ targetKind: 'products', products: { some: { productId: { in: productIds } } } }]),
-            ],
-          },
-          include: { products: { select: { productId: true } } },
-          orderBy: [{ priority: 'desc' }, { id: 'asc' }],
-        })) as PromotionRow[];
-
-        const couponRows =
-          requestedCodes.length === 0
-            ? []
-            : ((await tx.coupon.findMany({
-                where: { tenantId: tenant, normalizedCode: { in: requestedCodes } },
-                include: {
-                  promotion: { include: { products: { select: { productId: true } } } },
-                  _count: { select: { redemptions: true } },
-                },
-                orderBy: { normalizedCode: 'asc' },
-              })) as CouponRow[]);
-
-        const policies: PromotionCheckoutPolicy[] = [];
-        for (const row of automaticRows) {
-          if (!activeWindow(row.startsAt, row.endsAt, at)) continue;
-          policies.push({ promotion: promotionToDomain(row), coupon: null });
-        }
-
-        const couponByCode = new Map(couponRows.map((row) => [row.normalizedCode, row] as const));
-        const unavailableCouponCodes: string[] = [];
-        for (const code of requestedCodes) {
-          const row = couponByCode.get(code);
-          if (row === undefined || !couponAvailable(row, at)) {
-            unavailableCouponCodes.push(code);
-            continue;
-          }
-          policies.push({
-            promotion: promotionToDomain(row.promotion),
-            coupon: couponToDomain(row),
-          });
-        }
-
-        return { policies, unavailableCouponCodes };
-      });
+      return withTenant(prisma, scope.tenantId, async (tx) =>
+        resolvePromotionCheckoutWithin(tx, tenantParam(scope), input),
+      );
     },
   };
 }
