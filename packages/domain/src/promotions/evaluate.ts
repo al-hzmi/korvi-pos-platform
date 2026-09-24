@@ -333,7 +333,9 @@ export function evaluatePromotions(input: {
     }
   }
 
-  const lineTotals = new Map(input.lines.map((line) => [line.lineId, 0n] as const));
+  const lineTotals = new Map<string, bigint>(
+    input.lines.map((line) => [line.lineId, 0n] as const),
+  );
   for (const application of applications) {
     for (const allocation of application.allocations) {
       lineTotals.set(allocation.lineId, (lineTotals.get(allocation.lineId) ?? 0n) + allocation.amountMinor);
