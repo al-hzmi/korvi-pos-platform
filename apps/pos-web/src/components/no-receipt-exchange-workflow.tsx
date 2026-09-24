@@ -63,10 +63,7 @@ function parseQuantity(value: string, productType: ProductSummary['productType']
   return scaled > 0n ? scaled.toString() : null;
 }
 
-function acceptedPreview(
-  lines: readonly AcceptedDraft[],
-  priceMode: PriceMode,
-): string | null {
+function acceptedPreview(lines: readonly AcceptedDraft[], priceMode: PriceMode): string | null {
   if (lines.length === 0) return null;
   const cartLines: CartLine[] = [];
   for (const line of lines) {
@@ -145,10 +142,7 @@ export function NoReceiptExchangeWorkflow({
     };
   }, []);
 
-  const ceilingMinor = useMemo(
-    () => acceptedPreview(accepted, priceMode),
-    [accepted, priceMode],
-  );
+  const ceilingMinor = useMemo(() => acceptedPreview(accepted, priceMode), [accepted, priceMode]);
   const allowanceMinor = useMemo(() => {
     const parsed = parseSarToMinor(allowance);
     return parsed.ok ? parsed.value : null;
@@ -685,7 +679,9 @@ export function NoReceiptExchangeWorkflow({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            disabled={submitting || pending !== null || electronicTenders.length <= 1}
+                            disabled={
+                              submitting || pending !== null || electronicTenders.length <= 1
+                            }
                             onClick={() =>
                               setElectronicTenders((current) =>
                                 current.filter((_, entryIndex) => entryIndex !== index),
