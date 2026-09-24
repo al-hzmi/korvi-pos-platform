@@ -20,6 +20,15 @@ export class DiscountNotPermittedError extends DomainError {
   public override readonly name = 'DiscountNotPermittedError';
 }
 
+/**
+ * V2-2 deliberately keeps operator-authored discounts and merchant-policy
+ * promotions as different authorities. A sale may use either in this strike,
+ * never both (ADR-0037).
+ */
+export class PromotionManualDiscountConflictError extends DomainError {
+  public override readonly name = 'PromotionManualDiscountConflictError';
+}
+
 export interface FinalizeSaleInput {
   /** UUIDv7. Also the idempotency key for the whole operation. */
   readonly saleId: string;
@@ -70,6 +79,7 @@ export function finalizeSale(input: FinalizeSaleInput): FinalizedSale {
     throw new InvalidAmountError('A sale needs at least one line.');
   }
 
+  assertPromotionManualBoundary(input.cart);
   assertDiscountsPermitted(input);
 
   const priced = priceCart(input.cart);
@@ -130,6 +140,24 @@ export function finalizeSale(input: FinalizeSaleInput): FinalizedSale {
  * 4.60 reads back as exactly 2000 bp. The merchant set a rate; the rate is
  * what is checked.
  */
+function assertPromotionManualBoundary(cart: PriceCartInput): void {
+  const hasPromotion = cart.lines.some((line) => (line.promotionDiscountMinor ?? 0n) > 0n);
+  if (!hasPromotion) return;
+
+  const hasManualLine = cart.lines.some(
+    (line) => line.discount !== undefined && line.discount.kind !== 'none' && line.discount.value > 0n,
+  );
+  const basket = cart.basketDiscount;
+  const hasManualBasket =
+    basket !== undefined && basket.kind !== 'none' && basket.value > 0n;
+
+  if (hasManualLine || hasManualBasket) {
+    throw new PromotionManualDiscountConflictError(
+      'Manual discounts and promotion/coupon discounts cannot be combined in V2-2.',
+    );
+  }
+}
+
 function assertDiscountsPermitted(input: FinalizeSaleInput): void {
   const ceiling = input.maxDiscountBasisPoints;
 
@@ -225,7 +253,10 @@ function assertDiscountsPermitted(input: FinalizeSaleInput): void {
 export function saleReconciles(sale: FinalizedSale): boolean {
   const { priced, settlement } = sale;
   const discounted =
-    priced.gross.minor - priced.lineDiscountTotal.minor - priced.basketDiscountTotal.minor;
+    priced.gross.minor -
+    priced.lineDiscountTotal.minor -
+    priced.promotionDiscountTotal.minor -
+    priced.basketDiscountTotal.minor;
   const netPlusVat = priced.net.minor + priced.vat.minor;
   const lineSum = priced.lines.reduce((sum, line) => sum + line.total.minor, 0n);
   const vatSum = priced.vatBreakdown.reduce((sum, bucket) => sum + bucket.vat.minor, 0n);
