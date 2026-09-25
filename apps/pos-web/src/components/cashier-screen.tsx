@@ -49,6 +49,7 @@ import type { ApiClient } from '../lib/api';
 import type {
   Principal,
   ProductSummary,
+  CheckoutPreviewResponse,
   RestaurantFloorResponse,
   RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
@@ -163,6 +164,13 @@ export function CashierScreen({
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);
   const [cash, setCash] = useState('');
   const [couponCode, setCouponCode] = useState('');
+  const [authoritativePricing, setAuthoritativePricing] = useState<CheckoutPreviewResponse | null>(
+    null,
+  );
+  const [pricingStatus, setPricingStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>(
+    'idle',
+  );
+  const [pricingNotice, setPricingNotice] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
   const [electronicTenders, setElectronicTenders] = useState<readonly ElectronicTenderDraft[]>([
     emptyElectronicTender(),
@@ -277,9 +285,65 @@ export function CashierScreen({
   } = useDurableSaleDraft(durableScope, offlineStoreProtector);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
+
+  useEffect(() => {
+    if (quickService || cart.lines.length === 0) {
+      setAuthoritativePricing(null);
+      setPricingStatus('idle');
+      setPricingNotice(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let live = true;
+    setAuthoritativePricing(null);
+    setPricingStatus('loading');
+    setPricingNotice(null);
+
+    const timer = window.setTimeout(() => {
+      void api
+        .checkoutPreview(
+          {
+            lines: cart.lines.map((line) => ({
+              productId: line.productId,
+              quantityScaled: line.quantityScaled,
+            })),
+            ...(couponCode.trim() === '' ? {} : { couponCodes: [couponCode.trim()] }),
+          },
+          { signal: controller.signal },
+        )
+        .then((pricing) => {
+          if (!live) return;
+          setAuthoritativePricing(pricing);
+          setPricingStatus('ready');
+          setPricingNotice(null);
+        })
+        .catch((error: unknown) => {
+          if (!live) return;
+          const failure = describeFailure(error);
+          if (failure.action === 'reauthenticate') onExpired();
+          setAuthoritativePricing(null);
+          setPricingStatus('failed');
+          setPricingNotice(failure.message);
+        });
+    }, 250);
+
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, cart.lines, couponCode, onExpired, quickService]);
+
+  const effectiveTotalMinor =
+    authoritativePricing?.totalMinor ?? preview.total.minor.toString();
+  const effectiveNetMinor = authoritativePricing?.netMinor ?? preview.net.minor.toString();
+  const effectiveVatMinor = authoritativePricing?.vatMinor ?? preview.vat.minor.toString();
+  const effectivePromotionDiscountMinor = authoritativePricing?.promotionDiscountMinor ?? '0';
+
   const payment = useMemo(
-    () => planPayment(preview.total.minor.toString(), paymentMode, cash, electronicTenders),
-    [cash, electronicTenders, paymentMode, preview.total.minor],
+    () => planPayment(effectiveTotalMinor, paymentMode, cash, electronicTenders),
+    [cash, effectiveTotalMinor, electronicTenders, paymentMode],
   );
   const durabilityLoading = !draftHydrated;
   const restaurantOrderContextBlocked =
@@ -844,7 +908,17 @@ export function CashierScreen({
         : restaurantOrderDirty
           ? 'احفظ تعديلات الطلب المفتوح قبل إتمام الدفع.'
           : null;
-  const submissionBlocker = restaurantOrderSubmissionBlocker ?? tableSubmissionBlocker;
+  const pricingSubmissionBlocker =
+    quickService || (couponCode.trim() === '' && paymentMode !== 'mixed')
+      ? null
+      : pricingStatus === 'ready'
+        ? null
+        : pricingNotice ??
+          (pricingStatus === 'loading'
+            ? 'جاري التحقق من السعر والعروض على الخادم.'
+            : 'تعذّر التحقق من السعر والعروض. أعد الاتصال قبل إتمام هذا الدفع.');
+  const submissionBlocker =
+    restaurantOrderSubmissionBlocker ?? tableSubmissionBlocker ?? pricingSubmissionBlocker;
 
   const completed = checkout.state.phase === 'succeeded' ? checkout.state.sale : null;
   const orderOperationId = completed?.operationId ?? checkout.state.intent?.operationId ?? null;
@@ -1063,9 +1137,10 @@ export function CashierScreen({
                 dispatch={cart.dispatch}
               />
               <CheckoutPanel
-                totalMinor={preview.total.minor.toString()}
-                netMinor={preview.net.minor.toString()}
-                vatMinor={preview.vat.minor.toString()}
+                totalMinor={effectiveTotalMinor}
+                netMinor={effectiveNetMinor}
+                vatMinor={effectiveVatMinor}
+                promotionDiscountMinor={effectivePromotionDiscountMinor}
                 cash={cash}
                 showCoupon={!quickService}
                 couponCode={couponCode}

@@ -1084,6 +1084,30 @@ export type CheckoutTenderRequest =
  * Runtime validators enforce that exactly one payment shape is present:
  * legacy cashReceivedMinor or the explicit tender list.
  */
+export interface CheckoutPreviewRequest {
+  readonly couponCodes?: readonly string[];
+  readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
+}
+
+export interface CheckoutPreviewApplication {
+  readonly promotionId: string;
+  readonly merchantCode: string;
+  readonly name: string;
+  readonly amountMinor: string;
+  readonly couponCode: string | null;
+}
+
+export interface CheckoutPreviewResponse {
+  readonly priceMode: 'tax-inclusive' | 'tax-exclusive';
+  readonly currency: 'SAR';
+  readonly grossMinor: string;
+  readonly promotionDiscountMinor: string;
+  readonly netMinor: string;
+  readonly vatMinor: string;
+  readonly totalMinor: string;
+  readonly applications: readonly CheckoutPreviewApplication[];
+}
+
 export interface CheckoutRequest {
   readonly operationId: string;
   readonly terminalId: string;

@@ -32,6 +32,7 @@ export interface CheckoutPanelProps {
   readonly totalMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
+  readonly promotionDiscountMinor: string;
   readonly cash: string;
   readonly showCoupon: boolean;
   readonly couponCode: string;
@@ -56,6 +57,7 @@ export function CheckoutPanel({
   totalMinor,
   netMinor,
   vatMinor,
+  promotionDiscountMinor,
   cash,
   showCoupon,
   couponCode,
@@ -103,6 +105,16 @@ export function CheckoutPanel({
               <span className="text-[10px]">ر.س</span>
             </dd>
           </div>
+          {promotionDiscountMinor === '0' ? null : (
+            <div className="flex items-center justify-between text-primary">
+              <dt>خصم العروض</dt>
+              <dd className="flex items-baseline gap-1 font-semibold">
+                <span>−</span>
+                <Numeric value={formatMinor(promotionDiscountMinor)} />
+                <span className="text-[10px]">ر.س</span>
+              </dd>
+            </div>
+          )}
           <div className="mt-1 flex items-end justify-between border-t border-primary/15 pt-3">
             <dt className="text-base font-semibold text-foreground">الإجمالي المستحق</dt>
             <dd className="flex items-baseline gap-1 text-primary">
@@ -126,7 +138,7 @@ export function CheckoutPanel({
             autoComplete="off"
             disabled={paymentFrozen}
             placeholder="مثال: SAVE10"
-            hint="يُتحقق من صلاحية الكود والسعر النهائي على الخادم عند إتمام البيع."
+            hint="يتحقق Korvi من الكود ويحدّث السعر من الخادم قبل السماح بإتمام الدفع."
             onChange={(event) => onCouponCodeChange(event.currentTarget.value)}
           />
         </div>

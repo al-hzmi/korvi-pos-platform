@@ -11,6 +11,8 @@ import type {
   AdminTenantSettings,
   AdminTerminal,
   CheckoutRequest,
+  CheckoutPreviewRequest,
+  CheckoutPreviewResponse,
   CreateReturnRequest,
   CreateReturnResponse,
   NoReceiptExchangeRequest,
@@ -230,6 +232,7 @@ export interface ApiClient {
   createReturn(request: CreateReturnRequest): Promise<CreateReturnResponse>;
   createNoReceiptExchange(request: NoReceiptExchangeRequest): Promise<NoReceiptExchangeResponse>;
   closeShift(request: ShiftCloseRequest): Promise<ShiftCloseResponse>;
+  checkoutPreview(request: CheckoutPreviewRequest, options?: RequestOptions): Promise<CheckoutPreviewResponse>;
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
 
   onboardingReadiness(options?: RequestOptions): Promise<OnboardingReadiness>;
@@ -796,6 +799,20 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         },
         CHECKOUT_TIMEOUT_MS,
       );
+    },
+
+    async checkoutPreview(request, options) {
+      return (await call(
+        '/v1/checkout/preview',
+        json({
+          ...(request.couponCodes === undefined ? {} : { couponCodes: request.couponCodes }),
+          lines: request.lines.map((line) => ({
+            productId: line.productId,
+            quantityScaled: line.quantityScaled,
+          })),
+        }),
+        options,
+      )) as CheckoutPreviewResponse;
     },
 
     async checkout(request) {

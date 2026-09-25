@@ -232,6 +232,26 @@ export const openShiftBody = z.object({
  * Both normalise into one settlement engine downstream. There is no second
  * checkout path and there must never be one.
  */
+export const checkoutPreviewBody = z
+  .object({
+    couponCodes: z.array(z.string().min(1).max(64)).max(8).optional(),
+    lines: z
+      .array(
+        z
+          .object({
+            productId: UUID,
+            quantityScaled: SCALED_QUANTITY,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_CART_LINES)
+      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
+        message: 'duplicate product line',
+      }),
+  })
+  .strict();
+
 export const checkoutBody = z
   .object({
     operationId: UUID,

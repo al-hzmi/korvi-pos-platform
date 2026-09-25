@@ -2,6 +2,7 @@ import { basisPointsToColumn, tenantId as brandTenantId } from '@korvi/domain';
 import { ShiftOpenRefusedError } from '@korvi/database';
 import {
   checkoutBody,
+  checkoutPreviewBody,
   currentShiftQuery,
   carriesCardNumber,
   namesCardField,
@@ -17,6 +18,10 @@ import {
   noReceiptExchangeBody,
 } from './validation.js';
 import type { CheckoutFailureReason, CheckoutService } from '../checkout/service.js';
+import type {
+  CheckoutPreviewService,
+  CheckoutPreviewFailureReason,
+} from '../checkout/preview-service.js';
 import type { ReturnFailureReason, ReturnService } from '../returns/service.js';
 import type {
   NoReceiptExchangeFailureReason,
@@ -55,6 +60,7 @@ export interface BusinessDeps {
   readonly terminals: TerminalRepository;
   readonly restaurantFloor: RestaurantFloorRepository;
   readonly checkout: CheckoutService;
+  readonly checkoutPreview?: CheckoutPreviewService;
   readonly returns: ReturnService;
   /** V2-1, optional only so older isolated route fixtures remain narrow. */
   readonly noReceiptExchanges?: NoReceiptExchangeService;
@@ -155,6 +161,32 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
  * for a sale in another branch as well as for one that does not exist — a
  * cashier learns nothing about the rest of the merchant from a refusal.
  */
+const PREVIEW_MESSAGES: Readonly<Record<CheckoutPreviewFailureReason, string>> = {
+  'empty-cart': MESSAGES['empty-cart'],
+  'duplicate-line': MESSAGES['duplicate-line'],
+  'unknown-product': MESSAGES['unknown-product'],
+  'product-unavailable': MESSAGES['product-unavailable'],
+  'invalid-quantity': MESSAGES['invalid-quantity'],
+  'invalid-coupon': MESSAGES['invalid-coupon'],
+  'coupon-unavailable': MESSAGES['coupon-unavailable'],
+  'coupon-ineligible': MESSAGES['coupon-ineligible'],
+  'tenant-misconfigured': MESSAGES['tenant-misconfigured'],
+  'promotions-not-applicable': MESSAGES['promotions-not-applicable'],
+};
+
+const PREVIEW_STATUS: Readonly<Record<CheckoutPreviewFailureReason, number>> = {
+  'empty-cart': 422,
+  'duplicate-line': 422,
+  'unknown-product': 404,
+  'product-unavailable': 409,
+  'invalid-quantity': 422,
+  'invalid-coupon': 422,
+  'coupon-unavailable': 409,
+  'coupon-ineligible': 422,
+  'tenant-misconfigured': 409,
+  'promotions-not-applicable': 422,
+};
+
 const RETURN_MESSAGES: Readonly<Record<ReturnFailureReason, string>> = {
   'sale-not-found': 'لا توجد فاتورة بهذا الرقم في هذا الفرع.',
   'return-not-allowed': 'لا يمكن إرجاع هذه الفاتورة.',
@@ -659,6 +691,39 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
           openedAt: shift.openedAt,
         },
       });
+    },
+  );
+
+  app.post(
+    '/v1/checkout/preview',
+    { preHandler: [guards.requireSession, guards.requirePermission('sale.create')] },
+    async (request, reply: FastifyReply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      if (deps.checkoutPreview === undefined) {
+        return reply.code(503).send({ error: 'checkout_preview_unavailable' });
+      }
+
+      const forbidden = namesForbiddenField(request.body);
+      if (forbidden !== null) {
+        return reply.code(400).send({ error: 'forbidden_field', field: forbidden });
+      }
+      const parsed = checkoutPreviewBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      const result = await deps.checkoutPreview.preview({
+        principal,
+        lines: parsed.data.lines,
+        ...(parsed.data.couponCodes === undefined
+          ? {}
+          : { couponCodes: parsed.data.couponCodes }),
+      });
+      if (result.outcome === 'failure') {
+        return reply
+          .code(PREVIEW_STATUS[result.reason])
+          .send({ error: result.reason, message: PREVIEW_MESSAGES[result.reason] });
+      }
+      return reply.code(200).send(result.pricing);
     },
   );
 

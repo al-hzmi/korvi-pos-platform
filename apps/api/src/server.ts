@@ -26,6 +26,7 @@ import { createGuards } from './auth/guards.js';
 import { createOwnerBootstrapService } from './bootstrap/service.js';
 import { createMerchantProductService } from './catalog/service.js';
 import { createCheckoutService } from './checkout/service.js';
+import { createCheckoutPreviewService } from './checkout/preview-service.js';
 import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
@@ -229,6 +230,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       shifts,
       terminals,
       restaurantFloor,
+      checkoutPreview: createCheckoutPreviewService({ tenants, products, promotions }),
       checkout: createCheckoutService({
         tenants,
         products,
@@ -300,6 +302,13 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       markSeen: (scope, id, at) => resolve().terminals.markSeen(scope, id, at),
     },
     checkout: { checkout: (input) => resolve().checkout.checkout(input) },
+    checkoutPreview: {
+      preview: (input) => {
+        const service = resolve().checkoutPreview;
+        if (service === undefined) throw new Error('Checkout preview service failed to initialize.');
+        return service.preview(input);
+      },
+    },
     drawer: {
       recordMovement: (input) => resolve().drawer.recordMovement(input),
       close: (input) => resolve().drawer.close(input),
