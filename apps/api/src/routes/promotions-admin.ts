@@ -65,16 +65,12 @@ const promotionUpdateBody = z
     productIds: z.array(UUID).max(500).optional(),
   })
   .strict()
+  .refine((body) => Object.keys(body).some((key) => key !== 'expectedRevision'), {
+    message: 'empty promotion patch',
+  })
   .refine(
     (body) =>
-      Object.keys(body).some((key) => key !== 'expectedRevision'),
-    { message: 'empty promotion patch' },
-  )
-  .refine(
-    (body) =>
-      body.targetKind !== 'basket' ||
-      body.productIds === undefined ||
-      body.productIds.length === 0,
+      body.targetKind !== 'basket' || body.productIds === undefined || body.productIds.length === 0,
     { message: 'basket target cannot carry product ids' },
   );
 
@@ -98,10 +94,9 @@ const couponUpdateBody = z
     totalRedemptionLimit: LIMIT.optional(),
   })
   .strict()
-  .refine(
-    (body) => Object.keys(body).some((key) => key !== 'expectedRevision'),
-    { message: 'empty coupon patch' },
-  );
+  .refine((body) => Object.keys(body).some((key) => key !== 'expectedRevision'), {
+    message: 'empty coupon patch',
+  });
 
 const MESSAGES: Readonly<Record<PromotionAdminFailureReason, string>> = {
   'promotion-not-found': 'العرض غير موجود.',
@@ -228,26 +223,18 @@ export function registerPromotionAdminRoutes(
     return respond(reply, await service.createPromotion(principal, createInput(parsed.data)), 201);
   });
 
-  app.patch(
-    '/v1/admin/promotions/:promotionId',
-    { preHandler: manage },
-    async (request, reply) => {
-      const principal = principalOf(request);
-      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-      const params = promotionParams.safeParse(request.params);
-      const parsed = promotionUpdateBody.safeParse(request.body);
-      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
-      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
-      return respond(
-        reply,
-        await service.updatePromotion(
-          principal,
-          params.data.promotionId,
-          updateInput(parsed.data),
-        ),
-      );
-    },
-  );
+  app.patch('/v1/admin/promotions/:promotionId', { preHandler: manage }, async (request, reply) => {
+    const principal = principalOf(request);
+    if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+    const params = promotionParams.safeParse(request.params);
+    const parsed = promotionUpdateBody.safeParse(request.body);
+    if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+    return respond(
+      reply,
+      await service.updatePromotion(principal, params.data.promotionId, updateInput(parsed.data)),
+    );
+  });
 
   app.post(
     '/v1/admin/promotions/:promotionId/coupons',
