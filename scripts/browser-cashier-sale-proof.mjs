@@ -832,6 +832,27 @@ try {
 
   await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText('ابحث أو امسح الباركود', 30_000);
+
+  // newSale() clears the durable IndexedDB draft through an ordered async write
+  // chain. Navigating to Control immediately afterwards can race that delete,
+  // so a stale one-line draft may legitimately hydrate when we return. Prove
+  // the coupon from an explicitly empty cashier state instead of assuming the
+  // previous page's async cleanup completed before navigation.
+  const staleCartCleared = await evaluate(`(() => {
+    const button = [...document.querySelectorAll('button')].find(
+      (candidate) => (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'إفراغ السلة'
+    );
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  if (staleCartCleared) {
+    await waitForText('السلة فارغة', 20_000);
+    record('coupon proof cleared a legitimately restored durable draft before starting its sale');
+  } else {
+    await waitForText('السلة فارغة', 20_000);
+  }
+
   await setInput('product-search', 'BROWSER-SKU-001');
   await waitForText('صنف برهان المتصفح', 20_000);
   await clickButton('صنف برهان المتصفح');
