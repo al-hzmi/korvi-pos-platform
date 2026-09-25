@@ -167,9 +167,9 @@ export function CashierScreen({
   const [authoritativePricing, setAuthoritativePricing] = useState<CheckoutPreviewResponse | null>(
     null,
   );
-  const [pricingStatus, setPricingStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>(
-    'idle',
-  );
+  const [pricingStatus, setPricingStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'offline' | 'failed'
+  >('idle');
   const [pricingNotice, setPricingNotice] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
   const [electronicTenders, setElectronicTenders] = useState<readonly ElectronicTenderDraft[]>([
@@ -323,6 +323,17 @@ export function CashierScreen({
           const failure = describeFailure(error);
           if (failure.action === 'reauthenticate') onExpired();
           setAuthoritativePricing(null);
+
+          const transportUnavailable =
+            failure.code === 'network' || failure.code === 'timeout';
+          if (transportUnavailable && couponCode.trim() === '') {
+            setPricingStatus('offline');
+            setPricingNotice(
+              'تعذّر الوصول إلى تسعير الخادم. البيع النقدي فقط يمكن حفظه دون اتصال، وسيعيد الخادم التحقق من السعر والعروض قبل اعتماده.',
+            );
+            return;
+          }
+
           setPricingStatus('failed');
           setPricingNotice(failure.message);
         });
@@ -852,6 +863,15 @@ export function CashierScreen({
 
   const submit = useCallback(() => {
     if (!payment.valid) return;
+    if (!quickService && pricingStatus !== 'ready' && pricingStatus !== 'offline') return;
+    if (
+      !quickService &&
+      pricingStatus === 'offline' &&
+      (couponCode.trim() !== '' || paymentMode !== 'cash')
+    ) {
+      return;
+    }
+
     checkout.submit({
       terminalId: terminal.id,
       expectedShiftId: shift.id,
@@ -865,6 +885,10 @@ export function CashierScreen({
           }),
       lines: cart.lines,
       ...(!quickService && couponCode.trim() !== '' ? { couponCodes: [couponCode.trim()] } : {}),
+      ...(!quickService && authoritativePricing !== null
+        ? { expectedPricingHash: authoritativePricing.pricingHash }
+        : {}),
+      ...(!quickService && pricingStatus === 'offline' ? { offlineCaptured: true as const } : {}),
       ...(paymentMode === 'cash'
         ? { cashReceivedMinor: payment.cashMinor }
         : { tenders: payment.tenders }),
@@ -879,6 +903,8 @@ export function CashierScreen({
     activeRestaurantOrderIdentity,
     cart.lines,
     couponCode,
+    authoritativePricing,
+    pricingStatus,
     payment,
     paymentMode,
   ]);
@@ -908,14 +934,16 @@ export function CashierScreen({
           ? 'احفظ تعديلات الطلب المفتوح قبل إتمام الدفع.'
           : null;
   const pricingSubmissionBlocker =
-    quickService || (couponCode.trim() === '' && paymentMode !== 'mixed')
+    quickService || cart.lines.length === 0
       ? null
       : pricingStatus === 'ready'
         ? null
-        : (pricingNotice ??
-          (pricingStatus === 'loading'
-            ? 'جاري التحقق من السعر والعروض على الخادم.'
-            : 'تعذّر التحقق من السعر والعروض. أعد الاتصال قبل إتمام هذا الدفع.'));
+        : pricingStatus === 'offline' && couponCode.trim() === '' && paymentMode === 'cash'
+          ? null
+          : (pricingNotice ??
+            (pricingStatus === 'loading'
+              ? 'جاري التحقق من السعر والعروض على الخادم.'
+              : 'تعذّر التحقق من السعر والعروض. أعد الاتصال قبل إتمام هذا الدفع.'));
   const submissionBlocker =
     restaurantOrderSubmissionBlocker ?? tableSubmissionBlocker ?? pricingSubmissionBlocker;
 
