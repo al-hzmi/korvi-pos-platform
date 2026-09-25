@@ -801,9 +801,7 @@ export function CashierScreen({
             expectedRestaurantOrderRevision: activeRestaurantOrderIdentity.revision,
           }),
       lines: cart.lines,
-      ...(!quickService && couponCode.trim() !== ''
-        ? { couponCodes: [couponCode.trim()] }
-        : {}),
+      ...(!quickService && couponCode.trim() !== '' ? { couponCodes: [couponCode.trim()] } : {}),
       ...(paymentMode === 'cash'
         ? { cashReceivedMinor: payment.cashMinor }
         : { tenders: payment.tenders }),

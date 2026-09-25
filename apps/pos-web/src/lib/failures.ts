@@ -140,7 +140,8 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     action: 'amend-cart',
   },
   'promotion-offline-unsupported': {
-    message: 'لا يمكن اعتماد عرض أو كوبون من عملية محفوظة دون اتصال. راجع العملية عند عودة الاتصال.',
+    message:
+      'لا يمكن اعتماد عرض أو كوبون من عملية محفوظة دون اتصال. راجع العملية عند عودة الاتصال.',
     action: 'blocking',
   },
   'tenant-misconfigured': { message: 'إعدادات المنشأة غير مكتملة.', action: 'blocking' },
