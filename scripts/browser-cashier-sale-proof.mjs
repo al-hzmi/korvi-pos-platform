@@ -135,6 +135,10 @@ async function waitForText(text, timeoutMs = 20_000) {
 }
 
 async function setInput(id, value) {
+  await waitFor(
+    `document.getElementById(${jsString(id)}) instanceof HTMLInputElement`,
+    `input #${id}`,
+  );
   const changed = await evaluate(`(() => {
     const input = document.getElementById(${jsString(id)});
     if (!(input instanceof HTMLInputElement)) return false;
@@ -147,7 +151,7 @@ async function setInput(id, value) {
     input.focus();
     return true;
   })()`);
-  assert.equal(changed, true, `Input #${id} was not available.`);
+  assert.equal(changed, true, `Input #${id} disappeared before it could be edited.`);
 }
 
 async function setInputByAriaLabel(label, value) {
