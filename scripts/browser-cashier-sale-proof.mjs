@@ -833,7 +833,6 @@ try {
   await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText('ابحث أو امسح الباركود', 30_000);
   await setInput('product-search', 'BROWSER-SKU-001');
-  await pressEnter();
   await waitForText('صنف برهان المتصفح', 20_000);
   await clickButton('صنف برهان المتصفح');
 
