@@ -31,7 +31,12 @@ export const PERMISSION_CATALOGUE: Readonly<
   },
   'purchasing.receive': { ar: 'استلام بضاعة أوامر الشراء', en: 'Receive purchase order goods' },
   'promotion.manage': { ar: 'إدارة العروض والكوبونات', en: 'Manage promotions and coupons' },
+  'price-list.manage': { ar: 'إدارة قوائم الأسعار', en: 'Manage price lists' },
   'sale.create': { ar: 'إتمام عملية بيع', en: 'Complete a sale' },
+  'sale.price-context': {
+    ar: 'اختيار سياق سعر غير افتراضي',
+    en: 'Select non-default sale price context',
+  },
   'sale.discount': { ar: 'منح خصم', en: 'Grant a discount' },
   'sale.refund': { ar: 'استرجاع مبيعات', en: 'Refund a sale' },
   'sale.exchange.no-receipt': {

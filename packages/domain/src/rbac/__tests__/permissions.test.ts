@@ -22,12 +22,12 @@ const actorFor = (role: RoleName): Actor => ({
 });
 
 describe('permission catalogue', () => {
-  it('lists twenty-five distinct permissions', () => {
+  it('lists twenty-seven distinct permissions', () => {
     // Strike 5C separated cost visibility from valuation authority. V2-1 adds
     // the dedicated no-receipt exchange authority rather than reusing refund
     // permission (ADR-0036). All catalogue entries remain distinct.
-    expect(PERMISSIONS).toHaveLength(25);
-    expect(new Set(PERMISSIONS).size).toBe(25);
+    expect(PERMISSIONS).toHaveLength(27);
+    expect(new Set(PERMISSIONS).size).toBe(27);
   });
 
   it('grants the owner every permission', () => {
@@ -62,6 +62,8 @@ describe('least privilege', () => {
       'sale.exchange.no-receipt',
       'sale.void',
       'promotion.manage',
+      'price-list.manage',
+      'sale.price-context',
       'inventory.adjust',
       'product.write',
       'report.read',
@@ -103,6 +105,8 @@ describe('least privilege', () => {
     expect(can(manager, 'sale.refund')).toBe(true);
     expect(can(manager, 'sale.exchange.no-receipt')).toBe(true);
     expect(can(manager, 'promotion.manage')).toBe(true);
+    expect(can(manager, 'price-list.manage')).toBe(true);
+    expect(can(manager, 'sale.price-context')).toBe(true);
     expect(can(manager, 'inventory.cost.read')).toBe(true);
     expect(can(manager, 'inventory.cost.manage')).toBe(true);
   });

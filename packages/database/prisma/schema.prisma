@@ -87,7 +87,10 @@ model Tenant {
   categories                    Category[]
   products                      Product[]
   productBarcodes               ProductBarcode[]
+  productPackages               ProductPackage[]
   productPrices                 ProductPrice[]
+  priceLists                    PriceList[]
+  priceListEntries              PriceListEntry[]
   inventoryBalances             InventoryBalance[]
   inventoryMovements            InventoryMovement[]
   inventoryCostBalances         InventoryCostBalance[]
@@ -518,7 +521,21 @@ model RestaurantOrderLine {
   productType    String
   unitPriceMinor BigInt
   vatBasisPoints Int
+  /// Commercial selling-unit quantity. Pre-V2-3 rows are also base quantity.
   quantityScaled BigInt
+  /// Base Product stock/cost quantity. Null means legacy = quantityScaled.
+  inventoryQuantityScaled BigInt?
+
+  packageCode               String?
+  packageNameAr             String?
+  packageUnitLabel          String?
+  packageBaseQuantityScaled BigInt?
+  /// 'retail' | 'wholesale'; null on historical pre-V2-3 rows.
+  priceContext              String?
+  /// 'product-base' | 'price-list-base' | 'price-list-package'.
+  pricingProvenance         String?
+  priceListCode             String?
+  priceListRevision         BigInt?
 
   preparationNote    String?
   preparationOptions String?
@@ -890,7 +907,9 @@ model Product {
   tenant                   Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   category                 Category?                 @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: NoAction)
   barcodes                 ProductBarcode[]
+  packages                 ProductPackage[]
   prices                   ProductPrice[]
+  priceListEntries         PriceListEntry[]
   inventoryBalances        InventoryBalance[]
   inventoryMovements       InventoryMovement[]
   inventoryCostBalances    InventoryCostBalance[]
@@ -929,19 +948,106 @@ model ProductBarcode {
   id        String   @id @db.Uuid
   tenantId  String   @db.Uuid
   productId String   @db.Uuid
+  /// Null is the base Product selling unit; non-null identifies an exact package.
+  packageId String?  @db.Uuid
   barcode   String
   isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  package ProductPackage? @relation(fields: [tenantId, productId, packageId], references: [tenantId, productId, id], onDelete: NoAction)
 
   /// Unique within a tenant, not globally: two merchants may legitimately
   /// carry the same EAN, and a global constraint would make the second one
   /// fail to onboard.
   @@unique([tenantId, barcode])
   @@index([tenantId, productId])
+  @@index([tenantId, packageId])
   @@map("product_barcodes")
+}
+
+model ProductPackage {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  productId String @db.Uuid
+
+  code      String
+  nameAr    String
+  nameEn    String?
+  unitLabel String
+
+  /// Exact base Product quantity represented by one whole package.
+  baseQuantityScaled BigInt
+  isActive            Boolean @default(true)
+  revision            BigInt  @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product  Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  barcodes ProductBarcode[]
+  priceListEntries PriceListEntry[]
+  saleLines SaleLine[]
+  purchaseOrderLines PurchaseOrderLine[]
+  purchaseReceiptLines PurchaseReceiptLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, productId, id])
+  @@unique([tenantId, productId, code])
+  @@index([tenantId, productId, isActive])
+  @@map("product_packages")
+}
+
+model PriceList {
+  id       String @id @db.Uuid
+  tenantId String @db.Uuid
+
+  code    String
+  name    String
+  /// 'retail' | 'wholesale'
+  context String
+  /// 'draft' | 'active' | 'paused' | 'archived'
+  status  String @default("draft")
+  revision BigInt @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entries PriceListEntry[]
+  saleLines SaleLine[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, context, status])
+  @@map("price_lists")
+}
+
+model PriceListEntry {
+  id          String @id @db.Uuid
+  tenantId    String @db.Uuid
+  priceListId String @db.Uuid
+  productId   String @db.Uuid
+  /// Null targets the base Product commercial unit.
+  packageId   String? @db.Uuid
+
+  priceMinor BigInt
+  revision   BigInt @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  priceList PriceList       @relation(fields: [tenantId, priceListId], references: [tenantId, id], onDelete: Cascade)
+  product   Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  package   ProductPackage? @relation(fields: [tenantId, productId, packageId], references: [tenantId, productId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, priceListId, productId])
+  @@index([tenantId, productId, packageId])
+  @@map("price_list_entries")
 }
 
 /// Price history. A finalized sale never reads this table -- it snapshots the
@@ -954,6 +1060,8 @@ model ProductPrice {
   vatBasisPoints Int
   effectiveFrom  DateTime
   effectiveTo    DateTime?
+  /// 'recorded' | 'legacy-current'. Never invents an unknown historical start.
+  provenance     String    @default("recorded")
   createdAt      DateTime  @default(now())
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1366,8 +1474,15 @@ model PurchaseOrderLine {
   tenantId        String @db.Uuid
   purchaseOrderId String @db.Uuid
   productId       String @db.Uuid
+  packageId       String? @db.Uuid
 
-  /// What was asked for. Positive, scaled by 1000, fixed at creation.
+  /// Commercial package/base-unit count as sold/ordered. Legacy rows are null.
+  commercialQuantityScaled BigInt?
+  packageCode               String?
+  packageUnitLabel          String?
+  packageBaseQuantityScaled BigInt?
+
+  /// Authoritative base Product quantity. Positive, scaled by 1000, fixed at creation.
   orderedQuantityScaled  BigInt
   /// What has actually been accepted so far, accumulated one receipt at a time
   /// under this row's lock. Starts at zero: creating an order receives nothing
@@ -1380,12 +1495,14 @@ model PurchaseOrderLine {
   tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseOrder PurchaseOrder @relation(fields: [tenantId, purchaseOrderId], references: [tenantId, id], onDelete: Cascade)
   product       Product       @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  package       ProductPackage? @relation(fields: [tenantId, productId, packageId], references: [tenantId, productId, id], onDelete: NoAction)
 
   receiptLines PurchaseReceiptLine[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, purchaseOrderId, productId])
   @@index([tenantId, productId])
+  @@index([tenantId, packageId])
   @@map("purchase_order_lines")
 }
 
@@ -1436,7 +1553,15 @@ model PurchaseReceiptLine {
   purchaseOrderLineId String @db.Uuid
   /// Derived from the locked purchase-order line, never supplied by a client.
   productId           String @db.Uuid
+  packageId           String? @db.Uuid
 
+  /// Commercial accepted package/base-unit count. Legacy rows are null.
+  acceptedCommercialQuantityScaled BigInt?
+  packageCode                      String?
+  packageUnitLabel                 String?
+  packageBaseQuantityScaled        BigInt?
+
+  /// Authoritative accepted base Product quantity.
   acceptedQuantityScaled BigInt
 
   /// The accumulator either side of this receipt, and the order quantity it
@@ -1466,11 +1591,13 @@ model PurchaseReceiptLine {
   purchaseReceipt   PurchaseReceipt   @relation(fields: [tenantId, purchaseReceiptId], references: [tenantId, id], onDelete: Cascade)
   purchaseOrderLine PurchaseOrderLine @relation(fields: [tenantId, purchaseOrderLineId], references: [tenantId, id], onDelete: NoAction)
   product           Product           @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  package           ProductPackage?   @relation(fields: [tenantId, productId, packageId], references: [tenantId, productId, id], onDelete: NoAction)
 
   @@unique([tenantId, id])
   @@unique([tenantId, purchaseReceiptId, purchaseOrderLineId], map: "purchase_receipt_lines_tenantId_receiptId_orderLineId_key")
   @@index([tenantId, purchaseOrderLineId])
   @@index([tenantId, productId])
+  @@index([tenantId, packageId])
   @@map("purchase_receipt_lines")
 }
 
@@ -1666,6 +1793,8 @@ model SaleLine {
 
   /// Kept for reporting, but nothing on this row is read back from it.
   productId  String? @db.Uuid
+  packageId  String? @db.Uuid
+  priceListId String? @db.Uuid
   lineNumber Int
 
   /// Snapshot: what this product was called and cost at the moment of sale.
@@ -1680,6 +1809,12 @@ model SaleLine {
   unitPriceMinor BigInt
   vatBasisPoints Int
   quantityScaled BigInt
+  /// Base Product quantity restored by this return. Null means legacy = quantityScaled.
+  inventoryQuantityScaled BigInt?
+  packageCode               String?
+  packageNameAr             String?
+  packageUnitLabel          String?
+  packageBaseQuantityScaled BigInt?
 
   grossMinor             BigInt
   lineDiscountMinor      BigInt
@@ -1699,6 +1834,8 @@ model SaleLine {
   tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sale        Sale         @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: Cascade)
   product     Product?     @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  package     ProductPackage? @relation(fields: [tenantId, productId, packageId], references: [tenantId, productId, id], onDelete: NoAction)
+  priceList   PriceList?    @relation(fields: [tenantId, priceListId], references: [tenantId, id], onDelete: NoAction)
   returnLines ReturnLine[]
   promotionAllocations SalePromotionAllocation[]
 
@@ -1709,6 +1846,8 @@ model SaleLine {
   @@unique([tenantId, id])
   @@index([tenantId, saleId])
   @@index([tenantId, productId])
+  @@index([tenantId, packageId])
+  @@index([tenantId, priceListId])
   @@map("sale_lines")
 }
 
