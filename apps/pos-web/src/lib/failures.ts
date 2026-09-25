@@ -115,6 +115,34 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
       'معرّف العملية استُخدم سابقاً ببيانات مختلفة. لا تغيّر بيانات عملية غير محسومة؛ راجع النتيجة أولاً.',
     action: 'blocking',
   },
+  'invalid-coupon': {
+    message: 'صيغة كود الخصم غير صالحة.',
+    action: 'amend-cart',
+  },
+  'coupon-unavailable': {
+    message: 'كود الخصم غير متاح أو انتهى استخدامه.',
+    action: 'amend-cart',
+  },
+  'coupon-ineligible': {
+    message: 'كود الخصم لا ينطبق على هذه السلة.',
+    action: 'amend-cart',
+  },
+  'promotion-manual-conflict': {
+    message: 'لا يمكن الجمع بين خصم الموظف والعرض أو الكوبون في العملية نفسها.',
+    action: 'amend-cart',
+  },
+  'promotion-policy-stale': {
+    message: 'تغيّرت سياسة العرض أثناء العملية. أعد الإرسال بالسعر المحدث.',
+    action: 'amend-cart',
+  },
+  'promotions-not-applicable': {
+    message: 'العروض والكوبونات غير متاحة لمسار الطلب الحالي.',
+    action: 'amend-cart',
+  },
+  'promotion-offline-unsupported': {
+    message: 'لا يمكن اعتماد عرض أو كوبون من عملية محفوظة دون اتصال. راجع العملية عند عودة الاتصال.',
+    action: 'blocking',
+  },
   'tenant-misconfigured': { message: 'إعدادات المنشأة غير مكتملة.', action: 'blocking' },
   'order-type-required': { message: 'حدّد نوع الطلب قبل إتمام البيع.', action: 'amend-cart' },
   'order-type-not-applicable': {

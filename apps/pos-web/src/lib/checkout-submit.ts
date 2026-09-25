@@ -27,6 +27,7 @@ export interface CheckoutSubmission {
   readonly lines: readonly CartLine[];
   readonly cashReceivedMinor?: string;
   readonly tenders?: readonly CheckoutTenderRequest[];
+  readonly couponCodes?: readonly string[];
 }
 
 export interface CheckoutRunner {
@@ -75,6 +76,9 @@ export function runCheckout(
             tender.kind === 'cash' ? { ...tender } : { ...tender, reference: tender.reference },
           ),
         }),
+    ...(input.couponCodes === undefined
+      ? {}
+      : { couponCodes: input.couponCodes.map((code) => code) }),
     lines: cartToRequestLines(input.lines),
   }));
   if (intent === null) return Promise.resolve();

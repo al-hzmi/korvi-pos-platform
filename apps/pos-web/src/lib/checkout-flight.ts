@@ -94,6 +94,9 @@ function freeze(intent: CheckoutIntent): CheckoutIntent {
             ),
           ),
         }),
+    ...(intent.couponCodes === undefined
+      ? {}
+      : { couponCodes: Object.freeze(intent.couponCodes.map((code) => code)) }),
     lines: Object.freeze(
       intent.lines.map((line) =>
         Object.freeze({ productId: line.productId, quantityScaled: line.quantityScaled }),

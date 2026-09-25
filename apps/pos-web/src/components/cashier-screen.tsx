@@ -162,6 +162,7 @@ export function CashierScreen({
   const checkout = useCheckout(api, onExpired, queuePartition, offlineStoreProtector);
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);
   const [cash, setCash] = useState('');
+  const [couponCode, setCouponCode] = useState('');
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
   const [electronicTenders, setElectronicTenders] = useState<readonly ElectronicTenderDraft[]>([
     emptyElectronicTender(),
@@ -304,6 +305,7 @@ export function CashierScreen({
     if (durableState.status === 'ready' && durableState.draft !== null) {
       cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
       setCash(durableState.draft.cash);
+      setCouponCode(durableState.draft.couponCode ?? '');
       setPaymentMode(durableState.draft.paymentMode ?? 'cash');
       setElectronicTenders(
         durableState.draft.electronicTenders === undefined ||
@@ -374,7 +376,12 @@ export function CashierScreen({
       clearDraft();
       return;
     }
-    if (cart.lines.length === 0 && cash === '' && activeRestaurantOrderIdentity === null) {
+    if (
+      cart.lines.length === 0 &&
+      cash === '' &&
+      couponCode === '' &&
+      activeRestaurantOrderIdentity === null
+    ) {
       clearDraft();
       return;
     }
@@ -383,6 +390,7 @@ export function CashierScreen({
       cash,
       paymentMode,
       ...(paymentMode === 'mixed' ? { electronicTenders } : {}),
+      ...(!quickService && couponCode.trim() !== '' ? { couponCode } : {}),
       ...(quickService ? { orderType } : {}),
       ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
       ...(activeRestaurantOrderIdentity === null
@@ -397,6 +405,7 @@ export function CashierScreen({
   }, [
     cart.lines,
     cash,
+    couponCode,
     paymentMode,
     electronicTenders,
     checkout.state.phase,
@@ -458,6 +467,7 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
+    setCouponCode('');
     setPaymentMode('cash');
     setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
@@ -753,6 +763,7 @@ export function CashierScreen({
     checkout.newSale();
     cart.dispatch({ type: 'clear' });
     setCash('');
+    setCouponCode('');
     setPaymentMode('cash');
     setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
@@ -790,6 +801,9 @@ export function CashierScreen({
             expectedRestaurantOrderRevision: activeRestaurantOrderIdentity.revision,
           }),
       lines: cart.lines,
+      ...(!quickService && couponCode.trim() !== ''
+        ? { couponCodes: [couponCode.trim()] }
+        : {}),
       ...(paymentMode === 'cash'
         ? { cashReceivedMinor: payment.cashMinor }
         : { tenders: payment.tenders }),
@@ -803,6 +817,7 @@ export function CashierScreen({
     tableId,
     activeRestaurantOrderIdentity,
     cart.lines,
+    couponCode,
     payment,
     paymentMode,
   ]);
@@ -1054,6 +1069,8 @@ export function CashierScreen({
                 netMinor={preview.net.minor.toString()}
                 vatMinor={preview.vat.minor.toString()}
                 cash={cash}
+                showCoupon={!quickService}
+                couponCode={couponCode}
                 paymentMode={paymentMode}
                 electronicTenders={electronicTenders}
                 lineCount={cart.lines.length}
@@ -1062,6 +1079,7 @@ export function CashierScreen({
                 state={checkout.state}
                 cashRef={cashInput}
                 onCashChange={setCash}
+                onCouponCodeChange={setCouponCode}
                 onPaymentModeChange={setPaymentMode}
                 onElectronicTenderChange={(index, value) => {
                   setElectronicTenders((current) =>

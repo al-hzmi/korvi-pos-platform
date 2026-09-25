@@ -85,6 +85,7 @@ export function checkoutQueueOperation(
             tender.kind === 'cash' ? { ...tender } : { ...tender, reference: tender.reference },
           ),
         }),
+    ...(intent.couponCodes === undefined ? {} : { couponCodes: [...intent.couponCodes] }),
     lines: intent.lines.map((line) => ({ ...line })),
   };
   if (!isCheckoutQueuePayload(payload)) {

@@ -59,6 +59,7 @@ export interface OfflineSaleDraft {
   readonly cash: string;
   readonly paymentMode?: PaymentMode;
   readonly electronicTenders?: readonly ElectronicTenderDraft[];
+  readonly couponCode?: string;
   readonly orderType?: RestaurantOrderType;
   readonly tableId?: string;
   readonly restaurantOrderId?: string;
@@ -264,6 +265,8 @@ export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
     typeof value.cash === 'string' &&
     isOptionalPaymentMode(value.paymentMode) &&
     isOptionalElectronicTenderDrafts(value.electronicTenders) &&
+    (value.couponCode === undefined ||
+      (typeof value.couponCode === 'string' && value.couponCode.length <= 64)) &&
     (value.paymentMode !== 'mixed' ||
       (Array.isArray(value.electronicTenders) && value.electronicTenders.length > 0)) &&
     isOptionalRestaurantOrderType(value.orderType) &&
@@ -539,6 +542,11 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
   return {
     lines: value.lines,
     cash: value.cash,
+    ...(value.paymentMode === undefined ? {} : { paymentMode: value.paymentMode }),
+    ...(value.electronicTenders === undefined
+      ? {}
+      : { electronicTenders: value.electronicTenders }),
+    ...(value.couponCode === undefined ? {} : { couponCode: value.couponCode }),
     ...(value.orderType === undefined ? {} : { orderType: value.orderType }),
     ...(value.tableId === undefined ? {} : { tableId: value.tableId }),
     ...(value.restaurantOrderId === undefined

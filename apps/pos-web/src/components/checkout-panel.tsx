@@ -33,6 +33,8 @@ export interface CheckoutPanelProps {
   readonly netMinor: string;
   readonly vatMinor: string;
   readonly cash: string;
+  readonly showCoupon: boolean;
+  readonly couponCode: string;
   readonly paymentMode: PaymentMode;
   readonly electronicTenders: readonly ElectronicTenderDraft[];
   readonly lineCount: number;
@@ -41,6 +43,7 @@ export interface CheckoutPanelProps {
   readonly state: CheckoutState;
   readonly cashRef: Ref<HTMLInputElement>;
   readonly onCashChange: (value: string) => void;
+  readonly onCouponCodeChange: (value: string) => void;
   readonly onPaymentModeChange: (mode: PaymentMode) => void;
   readonly onElectronicTenderChange: (index: number, value: ElectronicTenderDraft) => void;
   readonly onAddElectronicTender: () => void;
@@ -54,6 +57,8 @@ export function CheckoutPanel({
   netMinor,
   vatMinor,
   cash,
+  showCoupon,
+  couponCode,
   paymentMode,
   electronicTenders,
   lineCount,
@@ -62,6 +67,7 @@ export function CheckoutPanel({
   state,
   cashRef,
   onCashChange,
+  onCouponCodeChange,
   onPaymentModeChange,
   onElectronicTenderChange,
   onAddElectronicTender,
@@ -109,6 +115,22 @@ export function CheckoutPanel({
           </div>
         </dl>
       </div>
+
+      {showCoupon ? (
+        <div className="rounded-lg border border-border bg-background p-3">
+          <Field
+            id="coupon-code"
+            label="كود الخصم"
+            value={couponCode}
+            maxLength={64}
+            autoComplete="off"
+            disabled={paymentFrozen}
+            placeholder="مثال: SAVE10"
+            hint="يُتحقق من صلاحية الكود والسعر النهائي على الخادم عند إتمام البيع."
+            onChange={(event) => onCouponCodeChange(event.currentTarget.value)}
+          />
+        </div>
+      ) : null}
 
       <div className="rounded-lg border border-border bg-background p-3">
         <div className="mb-3 grid grid-cols-2 gap-2" role="group" aria-label="طريقة الدفع">
