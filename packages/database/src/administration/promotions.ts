@@ -474,7 +474,9 @@ export async function updateMerchantPromotion(
     const nextActivationMode = input.activationMode ?? activationMode(row.activationMode);
     const nextStatus = input.status ?? promotionStatus(row.status);
     const productTargets = input.productTargets;
-    if (productTargets !== undefined && row.status === 'active') {
+    const targetKindChanges =
+      input.targetKind !== undefined && input.targetKind !== targetKind(row.targetKind);
+    if (row.status === 'active' && (productTargets !== undefined || targetKindChanges)) {
       throw new PromotionAdminRefusedError('invalid-state');
     }
     if (

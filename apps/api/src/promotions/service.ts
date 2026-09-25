@@ -6,7 +6,11 @@ import {
   updateMerchantCoupon,
   updateMerchantPromotion,
 } from '@korvi/database';
-import { newId as defaultNewId, tenantId as brandTenantId } from '@korvi/domain';
+import {
+  newId as defaultNewId,
+  requirePrincipalPermission,
+  tenantId as brandTenantId,
+} from '@korvi/domain';
 import type {
   CouponUpdateRequest,
   PrismaClient,
@@ -122,10 +126,12 @@ export function createMerchantPromotionAdminService(
 
   return {
     async list(principal) {
+      requirePrincipalPermission(principal, 'promotion.manage');
       return listMerchantPromotions(prisma, scopeOf(principal));
     },
 
     async createPromotion(principal, input) {
+      requirePrincipalPermission(principal, 'promotion.manage');
       const occurredAt = now().toISOString();
       return translate(() =>
         createMerchantPromotion(
@@ -154,6 +160,7 @@ export function createMerchantPromotionAdminService(
     },
 
     async updatePromotion(principal, promotionId, input) {
+      requirePrincipalPermission(principal, 'promotion.manage');
       const occurredAt = now().toISOString();
       const request: PromotionUpdateRequest = {
         expectedRevision: input.expectedRevision,
@@ -194,6 +201,7 @@ export function createMerchantPromotionAdminService(
     },
 
     async createCoupon(principal, promotionId, input) {
+      requirePrincipalPermission(principal, 'promotion.manage');
       const occurredAt = now().toISOString();
       return translate(() =>
         createMerchantCoupon(
@@ -216,6 +224,7 @@ export function createMerchantPromotionAdminService(
     },
 
     async updateCoupon(principal, couponId, input) {
+      requirePrincipalPermission(principal, 'promotion.manage');
       const occurredAt = now().toISOString();
       const request: CouponUpdateRequest = {
         expectedRevision: input.expectedRevision,
