@@ -750,6 +750,119 @@ try {
   );
   await capture('cashier-v2-1-no-receipt-success');
   await clickButton('تم وابدأ بيعاً جديداً');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
+
+  const couponPromotion = await browserRequest('/v1/admin/promotions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      merchantCode: 'BROWSER-COUPON-PROMO',
+      name: 'خصم برهان الكوبون',
+      activationMode: 'coupon',
+      priority: 500,
+      stackingMode: 'stackable',
+      effectKind: 'fixed',
+      effectValue: '100',
+      minimumEligibleSubtotalMinor: '0',
+      targetKind: 'products',
+      productIds: [beforeRow.productId],
+    }),
+  });
+  const activatedCouponPromotion = await browserRequest(
+    `/v1/admin/promotions/${encodeURIComponent(couponPromotion.id)}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        expectedRevision: couponPromotion.revision,
+        status: 'active',
+      }),
+    },
+  );
+  const proofCoupon = await browserRequest(
+    `/v1/admin/promotions/${encodeURIComponent(activatedCouponPromotion.id)}/coupons`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        code: 'BROWSER10',
+        status: 'active',
+        totalRedemptionLimit: 1,
+      }),
+    },
+  );
+  assert.equal(proofCoupon.normalizedCode, 'BROWSER10');
+  record('promotion and one-use coupon created through authenticated promotion.manage authority');
+
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+
+  const couponBaseMajor = await amountAfterLabel('الإجمالي المستحق');
+  const couponBaseMinor = majorToMinor(couponBaseMajor);
+  assert.equal(
+    couponBaseMinor,
+    exchangeReplacementTotalMinor,
+    'Coupon proof product changed base price before the coupon was entered.',
+  );
+
+  await setInput('coupon-code', 'BROWSER10');
+  await waitForText('خصم العروض', 20_000);
+  const couponTotalMajor = await amountAfterLabel('الإجمالي المستحق');
+  const couponTotalMinor = majorToMinor(couponTotalMajor);
+  assert.equal(
+    couponTotalMinor,
+    couponBaseMinor - 100n,
+    'Server-authoritative coupon preview did not reduce the sale by exactly 1.00 SAR.',
+  );
+
+  await clickButton('إلكتروني / متعدد');
+  await setInputByAriaLabel('مبلغ الدفعة الإلكترونية 1', minorToMajor(couponTotalMinor));
+  await setInputByAriaLabel('مرجع الموافقة 1', 'V22-COUPON-PROOF-001');
+  await clickButton('إتمام البيع');
+  await waitForText('تمّت العملية', 30_000);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(
+    saleRequests,
+    3,
+    'Coupon checkout must add exactly one POST /v1/sales request.',
+  );
+
+  const couponSalesPage = await browserRequest('/v1/admin/sales?limit=20');
+  let couponSaleDetail = null;
+  for (const sale of couponSalesPage.items) {
+    if (sale.terminal?.id !== terminal.id || sale.status !== 'finalized') continue;
+    const detail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(sale.id)}`);
+    if (
+      detail.tenders.some(
+        (tender) =>
+          tender.kind === 'electronic' && tender.reference === 'V22-COUPON-PROOF-001',
+      )
+    ) {
+      couponSaleDetail = detail;
+      break;
+    }
+  }
+  assert.ok(couponSaleDetail !== null, 'Coupon proof sale missing from server truth.');
+  assert.equal(couponSaleDetail.totalMinor, couponTotalMinor.toString());
+  const couponTender = couponSaleDetail.tenders.find(
+    (tender) => tender.reference === 'V22-COUPON-PROOF-001',
+  );
+  assert.equal(couponTender?.amountMinor, couponTotalMinor.toString());
+
+  const promotionTruth = await browserRequest('/v1/admin/promotions');
+  const storedPromotion = promotionTruth.promotions.find(
+    (promotion) => promotion.id === activatedCouponPromotion.id,
+  );
+  const storedCoupon = storedPromotion?.coupons.find((coupon) => coupon.id === proofCoupon.id);
+  assert.equal(storedCoupon?.observedRedemptionCount, 1);
+  record(
+    'actual Chrome cashier applied one-use coupon through server preview, finalized the discounted sale, and durable redemption count became 1',
+  );
+  await capture('cashier-v2-2-coupon-success');
+  await clickButton('عملية بيع جديدة');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
 
   await clickButton('إغلاق الوردية');
   await waitForText('إغلاق الوردية وتسوية الدرج', 20_000);
