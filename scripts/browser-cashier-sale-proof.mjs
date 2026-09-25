@@ -220,6 +220,24 @@ async function setSelect(id, value) {
   assert.equal(changed, true, `Select #${id} was not available.`);
 }
 
+async function setSelectByLabelText(labelText, value) {
+  const changed = await evaluate(`(() => {
+    const label = [...document.querySelectorAll('label')].find((candidate) =>
+      (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
+    );
+    const select = label?.querySelector('select');
+    if (!(select instanceof HTMLSelectElement)) return false;
+    select.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(select, ${jsString(value)});
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  assert.equal(changed, true, `Select under label ${labelText} was not available.`);
+}
+
 async function amountAfterLabel(label) {
   const value = await evaluate(`(() => {
     const label = [...document.querySelectorAll('dt')].find(
@@ -752,48 +770,47 @@ try {
   await clickButton('تم وابدأ بيعاً جديداً');
   await waitForText('ابحث أو امسح الباركود', 20_000);
 
-  const couponPromotion = await browserRequest('/v1/admin/promotions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      merchantCode: 'BROWSER-COUPON-PROMO',
-      name: 'خصم برهان الكوبون',
-      activationMode: 'coupon',
-      priority: 500,
-      stackingMode: 'stackable',
-      effectKind: 'fixed',
-      effectValue: '100',
-      minimumEligibleSubtotalMinor: '0',
-      targetKind: 'products',
-      productIds: [beforeRow.productId],
-    }),
-  });
-  const activatedCouponPromotion = await browserRequest(
-    `/v1/admin/promotions/${encodeURIComponent(couponPromotion.id)}`,
-    {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        expectedRevision: couponPromotion.revision,
-        status: 'active',
-      }),
-    },
-  );
-  const proofCoupon = await browserRequest(
-    `/v1/admin/promotions/${encodeURIComponent(activatedCouponPromotion.id)}/coupons`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        code: 'BROWSER10',
-        status: 'active',
-        totalRedemptionLimit: 1,
-      }),
-    },
-  );
-  assert.equal(proofCoupon.normalizedCode, 'BROWSER10');
-  record('promotion and one-use coupon created through authenticated promotion.manage authority');
+  await cdp.send('Page.navigate', { url: `${baseUrl}/control/promotions` });
+  await waitForText('العروض والكوبونات', 30_000);
+  await waitForText('إنشاء عرض', 30_000);
+  await setInput('promotion-code', 'BROWSER-COUPON-PROMO');
+  await setInput('promotion-name', 'خصم برهان الكوبون');
+  await setSelectByLabelText('طريقة التفعيل', 'coupon');
+  await setSelectByLabelText('نوع الخصم', 'fixed');
+  await setInput('promotion-effect-value', '100');
+  await setInput('promotion-priority', '500');
+  await clickButton('إنشاء كمسودة');
+  await waitForText('تم إنشاء العرض كمسودة', 30_000);
+  await waitForText('BROWSER-COUPON-PROMO', 20_000);
+  await clickButton('تفعيل');
+  await waitForText('تم تفعيل العرض', 30_000);
+  await setInputByLabelText('كود جديد', 'BROWSER10');
+  await setInputByLabelText('حد الاستخدام (اختياري)', '1');
+  await clickButton('إضافة الكوبون');
+  await waitForText('تم إنشاء كود الخصم', 30_000);
+  await waitForText('BROWSER10', 20_000);
+  await capture('control-v2-2-promotion-coupon-success');
 
+  const promotionTruthAfterControl = await browserRequest('/v1/admin/promotions');
+  const activatedCouponPromotion = promotionTruthAfterControl.promotions.find(
+    (promotion) => promotion.merchantCode === 'BROWSER-COUPON-PROMO',
+  );
+  assert.ok(
+    activatedCouponPromotion !== undefined,
+    'Promotion created through Control UI is missing from server truth.',
+  );
+  assert.equal(activatedCouponPromotion.status, 'active');
+  const proofCoupon = activatedCouponPromotion.coupons.find(
+    (coupon) => coupon.normalizedCode === 'BROWSER10',
+  );
+  assert.ok(proofCoupon !== undefined, 'Coupon created through Control UI is missing from server truth.');
+  assert.equal(proofCoupon.totalRedemptionLimit, 1);
+  record(
+    'actual Chrome Control UI created, activated and persisted a one-use coupon through promotion.manage authority',
+  );
+
+  await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
+  await waitForText('ابحث أو امسح الباركود', 30_000);
   await setInput('product-search', 'BROWSER-SKU-001');
   await pressEnter();
   await waitForText('صنف برهان المتصفح', 20_000);
