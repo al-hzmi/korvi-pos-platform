@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { tenantId as brandTenantId } from '@korvi/domain';
-import { createPrismaClient, withTenant } from '../index.js';
+import { createPrismaClient, updateMerchantCoupon, withTenant } from '../index.js';
 import type { PrismaClient } from '../index.js';
 import type { TenantScope } from '@korvi/domain';
 
@@ -379,6 +379,28 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
       tx.couponRedemption.findFirst({ where: { id: A.redemption1 } }),
     );
     expect(row?.operationId).toBe('promo-live-sale-1');
+  });
+
+  it('E. coupon administration cannot lower the lifetime limit below durable redemptions', async () => {
+    const coupon = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.coupon.findFirst({ where: { id: A.coupon1 } }),
+    );
+    expect(coupon).not.toBeNull();
+
+    await expect(
+      updateMerchantCoupon(
+        prisma,
+        scope,
+        { userId: A.user },
+        A.coupon1,
+        {
+          expectedRevision: coupon!.revision.toString(),
+          totalRedemptionLimit: 0,
+          auditId: '018fd200-0000-7000-8000-000000000261',
+          occurredAt: new Date().toISOString(),
+        },
+      ),
+    ).rejects.toThrow(/invalid-input/i);
   });
 
   it('E. RLS keeps all policy and historical rows invisible to another tenant', async () => {

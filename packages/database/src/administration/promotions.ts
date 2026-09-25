@@ -695,6 +695,14 @@ export async function updateMerchantCoupon(
     ) {
       throw new PromotionAdminRefusedError('invalid-input');
     }
+    if (input.totalRedemptionLimit !== undefined && input.totalRedemptionLimit !== null) {
+      const observedRedemptions = await tx.couponRedemption.count({
+        where: { tenantId: tenant, couponId },
+      });
+      if (input.totalRedemptionLimit < observedRedemptions) {
+        throw new PromotionAdminRefusedError('invalid-input');
+      }
+    }
 
     const normalizedCode =
       input.code === undefined ? row.normalizedCode : normalizedCoupon(input.code);
