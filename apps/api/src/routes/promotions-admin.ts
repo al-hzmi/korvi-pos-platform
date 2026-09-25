@@ -71,7 +71,10 @@ const promotionUpdateBody = z
     { message: 'empty promotion patch' },
   )
   .refine(
-    (body) => body.targetKind !== 'basket' || body.productIds === undefined || body.productIds.length === 0,
+    (body) =>
+      body.targetKind !== 'basket' ||
+      body.productIds === undefined ||
+      body.productIds.length === 0,
     { message: 'basket target cannot carry product ids' },
   );
 

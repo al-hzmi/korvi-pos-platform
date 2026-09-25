@@ -477,7 +477,11 @@ export async function updateMerchantPromotion(
     if (productTargets !== undefined && row.status === 'active') {
       throw new PromotionAdminRefusedError('invalid-state');
     }
-    if (nextTargetKind === 'basket' && productTargets !== undefined && productTargets.length !== 0) {
+    if (
+      nextTargetKind === 'basket' &&
+      productTargets !== undefined &&
+      productTargets.length !== 0
+    ) {
       throw new PromotionAdminRefusedError('invalid-input');
     }
     if (nextTargetKind === 'products') {
