@@ -203,7 +203,9 @@ async function setInputByLabelText(labelText, value) {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
     );
-    const input = label?.querySelector('input');
+    if (!(label instanceof HTMLLabelElement)) return false;
+    const byFor = label.htmlFor === '' ? null : document.getElementById(label.htmlFor);
+    const input = byFor instanceof HTMLInputElement ? byFor : label.querySelector('input');
     if (!(input instanceof HTMLInputElement)) return false;
     input.scrollIntoView({ block: 'center', inline: 'nearest' });
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
