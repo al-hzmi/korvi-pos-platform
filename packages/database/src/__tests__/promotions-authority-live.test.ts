@@ -167,6 +167,10 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
             netMinor: 913n,
             vatMinor: 137n,
             totalMinor: 1_050n,
+            costKnownQuantityScaled: 0n,
+            costUnknownQuantityScaled: 1_000n,
+            costValueMinor: 0n,
+            costProvenance: 'unknown',
           },
         });
       }
