@@ -85,7 +85,14 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
       (typeof value.expectedPricingHash === 'string' &&
         PRICING_HASH.test(value.expectedPricingHash))
     ) ||
-    value.couponCodes !== undefined ||
+    !(
+      value.couponCodes === undefined ||
+      (Array.isArray(value.couponCodes) &&
+        value.couponCodes.length <= 8 &&
+        value.couponCodes.every(
+          (code) => typeof code === 'string' && code.length > 0 && code.length <= 64,
+        ))
+    ) ||
     !(
       (value.restaurantOrderId === undefined &&
         value.expectedRestaurantOrderRevision === undefined) ||
@@ -126,7 +133,10 @@ export function createCheckoutSyncExecutor(
 ): SyncOperationExecutor {
   return {
     async execute(operation: QueuedOperation) {
-      if (operation.kind !== 'sale.checkout') {
+      if (
+        operation.kind !== 'sale.checkout' &&
+        operation.kind !== 'sale.checkout.replay'
+      ) {
         return { outcome: 'rejected', reason: 'unsupported-operation-kind' } as const;
       }
       if (!isCheckoutQueuePayload(operation.payload)) {
@@ -136,10 +146,23 @@ export function createCheckoutSyncExecutor(
         return { outcome: 'rejected', reason: 'operation-id-mismatch' } as const;
       }
 
+      const onlineReplay = operation.kind === 'sale.checkout.replay';
+      if (onlineReplay && operation.payload.offlineCaptured === true) {
+        return { outcome: 'rejected', reason: 'checkout-replay-mode-mismatch' } as const;
+      }
+      if (!onlineReplay && operation.payload.couponCodes !== undefined) {
+        return { outcome: 'rejected', reason: 'offline-coupon-unsupported' } as const;
+      }
+
       try {
-        // Legacy queue rows predate offlineCaptured; the sync boundary upgrades
-        // them in-memory so every delayed sale remains fail-closed under ADR-0037.
-        await api.checkout({ ...operation.payload, offlineCaptured: true });
+        // sale.checkout includes legacy rows and is deliberately tightened to
+        // offline semantics. sale.checkout.replay is an online request whose
+        // response was lost, so its pricing/idempotency intent must be resent unchanged.
+        await api.checkout(
+          onlineReplay
+            ? operation.payload
+            : { ...operation.payload, offlineCaptured: true },
+        );
         return { outcome: 'settled' } as const;
       } catch (error) {
         if (!(error instanceof ApiError)) {

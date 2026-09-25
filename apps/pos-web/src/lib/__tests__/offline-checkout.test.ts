@@ -38,9 +38,17 @@ describe('offline checkout ownership transfer', () => {
     const second = checkoutQueueOperation(INTENT);
     expect(second).toEqual(first);
     expect(first.id).toBe(OPERATION_ID);
-    expect(first.kind).toBe('sale.checkout');
-    expect(first.payload).toEqual({ ...INTENT, offlineCaptured: true });
+    expect(first.kind).toBe('sale.checkout.replay');
+    expect(first.payload).toEqual(INTENT);
     expect(first.enqueuedAt).toMatch(/^20\d\d-/);
+  });
+
+
+  it('keeps genuinely offline-captured intent on the restrictive legacy queue kind', () => {
+    const captured = { ...INTENT, offlineCaptured: true as const };
+    const queued = checkoutQueueOperation(captured);
+    expect(queued.kind).toBe('sale.checkout');
+    expect(queued.payload).toEqual(captured);
   });
 
   it('queues an unanswered request before unlocking the till', async () => {
@@ -114,7 +122,8 @@ describe('offline mixed tender ownership', () => {
       lines: [{ productId: PRODUCT_ID, quantityScaled: '1000' }],
     };
     const queued = checkoutQueueOperation(mixed);
-    expect(queued.payload).toEqual({ ...mixed, offlineCaptured: true });
+    expect(queued.kind).toBe('sale.checkout.replay');
+    expect(queued.payload).toEqual(mixed);
     expect(queued.id).toBe(OPERATION_ID);
   });
 });

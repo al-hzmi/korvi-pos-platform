@@ -101,6 +101,40 @@ describe('checkout queue executor', () => {
     expect(checkout).toHaveBeenCalledWith({ ...PAYLOAD, offlineCaptured: true });
   });
 
+  it('replays a sent-online ambiguous checkout without changing pricing or offline fingerprint semantics', async () => {
+    const checkout = vi.fn<CheckoutSyncApi['checkout']>().mockResolvedValue({
+      sale: SALE,
+      receipt: RECEIPT,
+      replayed: true,
+    });
+    const executor = createCheckoutSyncExecutor(apiWithCheckout(checkout));
+    const replay = { ...OPERATION, kind: 'sale.checkout.replay' };
+
+    await expect(executor.execute(replay)).resolves.toEqual({ outcome: 'settled' });
+    expect(checkout).toHaveBeenCalledWith(PAYLOAD);
+  });
+
+  it('allows coupon intent only on exact online replay, never on offline-captured replay', async () => {
+    const checkout = vi.fn<CheckoutSyncApi['checkout']>().mockResolvedValue({
+      sale: SALE,
+      receipt: RECEIPT,
+      replayed: true,
+    });
+    const executor = createCheckoutSyncExecutor(apiWithCheckout(checkout));
+    const payload = { ...PAYLOAD, couponCodes: ['SAVE10'] };
+    expect(isCheckoutQueuePayload(payload)).toBe(true);
+
+    await expect(
+      executor.execute({ ...OPERATION, kind: 'sale.checkout.replay', payload }),
+    ).resolves.toEqual({ outcome: 'settled' });
+    expect(checkout).toHaveBeenLastCalledWith(payload);
+
+    await expect(executor.execute({ ...OPERATION, payload })).resolves.toEqual({
+      outcome: 'rejected',
+      reason: 'offline-coupon-unsupported',
+    });
+  });
+
   it('retries ambiguous transport and authentication outcomes without changing operation identity', async () => {
     const network = vi
       .fn<CheckoutSyncApi['checkout']>()

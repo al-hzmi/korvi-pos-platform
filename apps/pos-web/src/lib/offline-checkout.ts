@@ -62,11 +62,12 @@ export function checkoutQueueOperation(
       'Offline checkout must be pinned to the server-authorized shift that captured the cash.',
     );
   }
+  const capturedOffline = intent.offlineCaptured === true;
   const payload: CheckoutRequest = {
     operationId: intent.operationId,
     terminalId: intent.terminalId,
     expectedShiftId: intent.expectedShiftId,
-    offlineCaptured: true,
+    ...(capturedOffline ? { offlineCaptured: true as const } : {}),
     ...(intent.orderType === undefined ? {} : { orderType: intent.orderType }),
     ...(intent.tableId === undefined ? {} : { tableId: intent.tableId }),
     ...(intent.restaurantOrderId === undefined
@@ -96,7 +97,7 @@ export function checkoutQueueOperation(
   }
   return {
     id: intent.operationId,
-    kind: 'sale.checkout',
+    kind: capturedOffline ? 'sale.checkout' : 'sale.checkout.replay',
     payload,
     enqueuedAt: uuidV7EnqueuedAt(intent.operationId),
   };
