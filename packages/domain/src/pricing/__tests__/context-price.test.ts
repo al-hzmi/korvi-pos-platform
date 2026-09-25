@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ContextPriceError,
-  resolveContextPrice,
-  type ContextPriceList,
-} from '../context-price.js';
+import { ContextPriceError, resolveContextPrice, type ContextPriceList } from '../context-price.js';
 
 const PRODUCT = '018fd100-0000-7000-8000-000000000001';
 const PACKAGE = '018fd100-0000-7000-8000-000000000002';
@@ -54,9 +50,7 @@ describe('ADR-0038 contextual price resolution', () => {
     const resolved = resolveContextPrice({
       context: 'retail',
       target: cartonTarget,
-      lists: [
-        list('retail', [{ productId: PRODUCT, packageId: PACKAGE, priceMinor: 10_001n }]),
-      ],
+      lists: [list('retail', [{ productId: PRODUCT, packageId: PACKAGE, priceMinor: 10_001n }])],
     });
     expect(resolved.unitPriceMinor).toBe(10_001n);
     expect(resolved.provenance).toBe('price-list-package');
@@ -108,9 +102,7 @@ describe('ADR-0038 contextual price resolution', () => {
     const resolved = resolveContextPrice({
       context: 'wholesale',
       target: cartonTarget,
-      lists: [
-        list('wholesale', [{ productId: PRODUCT, packageId: PACKAGE, priceMinor: 9_500n }]),
-      ],
+      lists: [list('wholesale', [{ productId: PRODUCT, packageId: PACKAGE, priceMinor: 9_500n }])],
     });
     expect(resolved.unitPriceMinor).toBe(9_500n);
     expect(resolved.priceListCode).toBe('WHOLESALE');
@@ -138,11 +130,9 @@ describe('ADR-0038 contextual price resolution', () => {
       context: 'retail',
       target: cartonTarget,
       lists: [
-        list(
-          'retail',
-          [{ productId: PRODUCT, packageId: PACKAGE, priceMinor: 1n }],
-          { status: 'paused' },
-        ),
+        list('retail', [{ productId: PRODUCT, packageId: PACKAGE, priceMinor: 1n }], {
+          status: 'paused',
+        }),
       ],
     });
     expect(resolved.unitPriceMinor).toBe(12_000n);

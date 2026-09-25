@@ -2,9 +2,7 @@ import { DomainError } from '../errors.js';
 import { QUANTITY_SCALE } from '../quantity/quantity.js';
 
 export type PackagingRefusal =
-  | 'invalid-factor'
-  | 'invalid-commercial-quantity'
-  | 'quantity-overflow';
+  'invalid-factor' | 'invalid-commercial-quantity' | 'quantity-overflow';
 
 export class PackagingError extends DomainError {
   public override readonly name = 'PackagingError';
