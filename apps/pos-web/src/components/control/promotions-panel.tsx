@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, CardSurface, Numeric } from '@korvi/ui';
 import { Field } from '../field';
 import { StatusNote } from '../status-note';
+import { CouponEditControl, PromotionEditControl } from './promotion-edit-controls';
 import { ApiError } from '../../lib/api';
 import { formatMinor } from '../../lib/money';
 import type { JSX } from 'react';
@@ -655,6 +656,13 @@ export function PromotionsPanel({
                   </div>
                 </dl>
 
+                <PromotionEditControl
+                  api={api}
+                  promotion={promotion}
+                  disabled={busy || unresolved}
+                  runCommand={runCommand}
+                />
+
                 {promotion.activationMode !== 'coupon' ? null : (
                   <div className="border-t border-border pt-4">
                     <h4 className="text-sm font-semibold">أكواد الخصم</h4>
@@ -760,6 +768,12 @@ export function PromotionsPanel({
                                         تقاعد
                                       </Button>
                                     ) : null}
+                                    <CouponEditControl
+                                      api={api}
+                                      coupon={coupon}
+                                      disabled={busy || unresolved}
+                                      runCommand={runCommand}
+                                    />
                                   </div>
                                 </td>
                               </tr>
