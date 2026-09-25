@@ -33,10 +33,7 @@ import type {
   PromotionAdminResult,
 } from '../promotions/service.js';
 import type { AuthenticatedPrincipal, RoleName } from '@korvi/domain';
-import type {
-  PromotionAdminCoupon,
-  PromotionAdminRecord,
-} from '@korvi/database';
+import type { PromotionAdminCoupon, PromotionAdminRecord } from '@korvi/database';
 import type { Fixture } from './support/memory-business.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -99,9 +96,7 @@ const coupon: PromotionAdminCoupon = {
 };
 
 function result<T>(value: T): PromotionAdminResult<T> {
-  return refuse === null
-    ? { outcome: 'success', value }
-    : { outcome: 'failure', reason: refuse };
+  return refuse === null ? { outcome: 'success', value } : { outcome: 'failure', reason: refuse };
 }
 
 function recorder(): MerchantPromotionAdminService {
@@ -219,12 +214,7 @@ async function cookieFor(server: FastifyInstance): Promise<string> {
   return header.split(';')[0] ?? '';
 }
 
-function send(
-  method: 'GET' | 'POST' | 'PATCH',
-  url: string,
-  cookie?: string,
-  payload?: unknown,
-) {
+function send(method: 'GET' | 'POST' | 'PATCH', url: string, cookie?: string, payload?: unknown) {
   return app.inject({
     method,
     url,
@@ -252,7 +242,9 @@ describe('promotion administration authorization', () => {
   it('requires a session before every promotion-management action', async () => {
     await build('owner');
     expect((await send('GET', '/v1/admin/promotions')).statusCode).toBe(401);
-    expect((await send('POST', '/v1/admin/promotions', undefined, createBody)).statusCode).toBe(401);
+    expect((await send('POST', '/v1/admin/promotions', undefined, createBody)).statusCode).toBe(
+      401,
+    );
     expect(calls).toHaveLength(0);
   });
 
