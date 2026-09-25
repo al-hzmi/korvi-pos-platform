@@ -174,6 +174,18 @@ export function PromotionsPanel({
     [selectedProducts],
   );
 
+  const updateDraft = (patch: Partial<CreateDraft>): void => {
+    setDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const updateCouponDraft = (promotionId: string, value: string): void => {
+    setCouponDrafts((current) => ({ ...current, [promotionId]: value }));
+  };
+
+  const updateCouponLimit = (promotionId: string, value: string): void => {
+    setCouponLimits((current) => ({ ...current, [promotionId]: value }));
+  };
+
   const searchProducts = async (): Promise<void> => {
     const q = productTerm.trim();
     if (q === '') {
@@ -365,18 +377,14 @@ export function PromotionsPanel({
               label="رمز العرض الداخلي"
               value={draft.merchantCode}
               maxLength={64}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, merchantCode: event.currentTarget.value }))
-              }
+              onChange={(event) => updateDraft({ merchantCode: event.currentTarget.value })}
             />
             <Field
               id="promotion-name"
               label="اسم العرض"
               value={draft.name}
               maxLength={160}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, name: event.currentTarget.value }))
-              }
+              onChange={(event) => updateDraft({ name: event.currentTarget.value })}
             />
             <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
               طريقة التفعيل
@@ -384,10 +392,9 @@ export function PromotionsPanel({
                 className="h-touch rounded-md border border-input bg-background px-3"
                 value={draft.activationMode}
                 onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
+                  updateDraft({
                     activationMode: event.currentTarget.value as 'automatic' | 'coupon',
-                  }))
+                  })
                 }
               >
                 <option value="automatic">تلقائي</option>
@@ -400,10 +407,9 @@ export function PromotionsPanel({
                 className="h-touch rounded-md border border-input bg-background px-3"
                 value={draft.stackingMode}
                 onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
+                  updateDraft({
                     stackingMode: event.currentTarget.value as 'stackable' | 'exclusive',
-                  }))
+                  })
                 }
               >
                 <option value="stackable">قابل للتكديس</option>
@@ -416,10 +422,9 @@ export function PromotionsPanel({
                 className="h-touch rounded-md border border-input bg-background px-3"
                 value={draft.effectKind}
                 onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
+                  updateDraft({
                     effectKind: event.currentTarget.value as 'fixed' | 'percentage',
-                  }))
+                  })
                 }
               >
                 <option value="percentage">نسبة — basis points</option>
@@ -435,9 +440,7 @@ export function PromotionsPanel({
               }
               inputMode="numeric"
               value={draft.effectValue}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, effectValue: event.currentTarget.value }))
-              }
+              onChange={(event) => updateDraft({ effectValue: event.currentTarget.value })}
             />
             <Field
               id="promotion-minimum"
@@ -445,10 +448,7 @@ export function PromotionsPanel({
               inputMode="numeric"
               value={draft.minimumEligibleSubtotalMinor}
               onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  minimumEligibleSubtotalMinor: event.currentTarget.value,
-                }))
+                updateDraft({ minimumEligibleSubtotalMinor: event.currentTarget.value })
               }
             />
             <Field
@@ -456,9 +456,7 @@ export function PromotionsPanel({
               label="الأولوية"
               inputMode="numeric"
               value={draft.priority}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, priority: event.currentTarget.value }))
-              }
+              onChange={(event) => updateDraft({ priority: event.currentTarget.value })}
             />
           </div>
 
@@ -470,7 +468,7 @@ export function PromotionsPanel({
                 value={draft.targetKind}
                 onChange={(event) => {
                   const targetKind = event.currentTarget.value as 'basket' | 'products';
-                  setDraft((current) => ({ ...current, targetKind }));
+                  updateDraft({ targetKind });
                   if (targetKind === 'basket') setSelectedProducts([]);
                 }}
               >
@@ -518,8 +516,9 @@ export function PromotionsPanel({
                             type="checkbox"
                             checked={checked}
                             onChange={(event) => {
+                              const checked = event.currentTarget.checked;
                               setSelectedProducts((current) =>
-                                event.currentTarget.checked
+                                checked
                                   ? [...current, product]
                                   : current.filter((entry) => entry.id !== product.id),
                               );
@@ -674,10 +673,7 @@ export function PromotionsPanel({
                           value={couponDrafts[promotion.id] ?? ''}
                           maxLength={64}
                           onChange={(event) =>
-                            setCouponDrafts((current) => ({
-                              ...current,
-                              [promotion.id]: event.currentTarget.value,
-                            }))
+                            updateCouponDraft(promotion.id, event.currentTarget.value)
                           }
                         />
                         <Field
@@ -686,10 +682,7 @@ export function PromotionsPanel({
                           inputMode="numeric"
                           value={couponLimits[promotion.id] ?? ''}
                           onChange={(event) =>
-                            setCouponLimits((current) => ({
-                              ...current,
-                              [promotion.id]: event.currentTarget.value,
-                            }))
+                            updateCouponLimit(promotion.id, event.currentTarget.value)
                           }
                         />
                         <Button

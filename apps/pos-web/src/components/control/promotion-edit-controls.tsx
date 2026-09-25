@@ -87,6 +87,10 @@ export function PromotionEditControl({
   const selected = useMemo(() => new Set(targetIds), [targetIds]);
   const editable = promotion.status === 'draft' || promotion.status === 'paused';
 
+  const updateDraft = (patch: Partial<PromotionEditDraft>): void => {
+    setDraft((current) => ({ ...current, ...patch }));
+  };
+
   if (!editable) return <></>;
 
   const search = async (): Promise<void> => {
@@ -212,27 +216,21 @@ export function PromotionEditControl({
             label="رمز العرض الداخلي"
             value={draft.merchantCode}
             maxLength={64}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, merchantCode: event.currentTarget.value }))
-            }
+            onChange={(event) => updateDraft({ merchantCode: event.currentTarget.value })}
           />
           <Field
             id={`promotion-edit-name-${promotion.id}`}
             label="اسم العرض"
             value={draft.name}
             maxLength={160}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, name: event.currentTarget.value }))
-            }
+            onChange={(event) => updateDraft({ name: event.currentTarget.value })}
           />
           <Field
             id={`promotion-edit-priority-${promotion.id}`}
             label="الأولوية"
             inputMode="numeric"
             value={draft.priority}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, priority: event.currentTarget.value }))
-            }
+            onChange={(event) => updateDraft({ priority: event.currentTarget.value })}
           />
           <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
             التكديس
@@ -240,10 +238,9 @@ export function PromotionEditControl({
               className="h-touch rounded-md border border-input bg-background px-3"
               value={draft.stackingMode}
               onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
+                updateDraft({
                   stackingMode: event.currentTarget.value as 'stackable' | 'exclusive',
-                }))
+                })
               }
             >
               <option value="stackable">قابل للتكديس</option>
@@ -257,10 +254,9 @@ export function PromotionEditControl({
               value={draft.activationMode}
               disabled={promotion.coupons.length > 0}
               onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
+                updateDraft({
                   activationMode: event.currentTarget.value as 'automatic' | 'coupon',
-                }))
+                })
               }
             >
               <option value="automatic">تلقائي</option>
@@ -278,10 +274,9 @@ export function PromotionEditControl({
               className="h-touch rounded-md border border-input bg-background px-3"
               value={draft.effectKind}
               onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
+                updateDraft({
                   effectKind: event.currentTarget.value as 'fixed' | 'percentage',
-                }))
+                })
               }
             >
               <option value="percentage">نسبة — basis points</option>
@@ -293,9 +288,7 @@ export function PromotionEditControl({
             label={draft.effectKind === 'percentage' ? 'قيمة النسبة (1000 = 10%)' : 'قيمة الخصم بالهللات'}
             inputMode="numeric"
             value={draft.effectValue}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, effectValue: event.currentTarget.value }))
-            }
+            onChange={(event) => updateDraft({ effectValue: event.currentTarget.value })}
           />
           <Field
             id={`promotion-edit-minimum-${promotion.id}`}
@@ -303,10 +296,7 @@ export function PromotionEditControl({
             inputMode="numeric"
             value={draft.minimumEligibleSubtotalMinor}
             onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                minimumEligibleSubtotalMinor: event.currentTarget.value,
-              }))
+              updateDraft({ minimumEligibleSubtotalMinor: event.currentTarget.value })
             }
           />
           <Field
@@ -314,18 +304,14 @@ export function PromotionEditControl({
             label="يبدأ في (اختياري)"
             type="datetime-local"
             value={draft.startsAt}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, startsAt: event.currentTarget.value }))
-            }
+            onChange={(event) => updateDraft({ startsAt: event.currentTarget.value })}
           />
           <Field
             id={`promotion-edit-end-${promotion.id}`}
             label="ينتهي في (اختياري)"
             type="datetime-local"
             value={draft.endsAt}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, endsAt: event.currentTarget.value }))
-            }
+            onChange={(event) => updateDraft({ endsAt: event.currentTarget.value })}
           />
         </div>
 
@@ -336,10 +322,9 @@ export function PromotionEditControl({
               className="h-touch rounded-md border border-input bg-background px-3"
               value={draft.targetKind}
               onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
+                updateDraft({
                   targetKind: event.currentTarget.value as 'basket' | 'products',
-                }))
+                })
               }
             >
               <option value="basket">السلة</option>
