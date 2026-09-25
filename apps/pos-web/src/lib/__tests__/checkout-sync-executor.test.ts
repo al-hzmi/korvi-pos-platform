@@ -98,7 +98,7 @@ describe('checkout queue executor', () => {
 
     await expect(executor.execute(OPERATION)).resolves.toEqual({ outcome: 'settled' });
     expect(checkout).toHaveBeenCalledTimes(1);
-    expect(checkout).toHaveBeenCalledWith(PAYLOAD);
+    expect(checkout).toHaveBeenCalledWith({ ...PAYLOAD, offlineCaptured: true });
   });
 
   it('retries ambiguous transport and authentication outcomes without changing operation identity', async () => {
@@ -186,6 +186,6 @@ describe('mixed tender queue validation', () => {
     await expect(executor.execute({ ...OPERATION, payload: MIXED_PAYLOAD })).resolves.toEqual({
       outcome: 'settled',
     });
-    expect(checkout).toHaveBeenCalledWith(MIXED_PAYLOAD);
+    expect(checkout).toHaveBeenCalledWith({ ...MIXED_PAYLOAD, offlineCaptured: true });
   });
 });

@@ -510,6 +510,7 @@ describe('writes that must be atomic', () => {
     currency: 'SAR',
     grossMinor: 1150n,
     lineDiscountMinor: 0n,
+    promotionDiscountMinor: 0n,
     basketDiscountMinor: 0n,
     netMinor: 1000n,
     vatMinor: 150n,

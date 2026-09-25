@@ -39,7 +39,7 @@ describe('offline checkout ownership transfer', () => {
     expect(second).toEqual(first);
     expect(first.id).toBe(OPERATION_ID);
     expect(first.kind).toBe('sale.checkout');
-    expect(first.payload).toEqual(INTENT);
+    expect(first.payload).toEqual({ ...INTENT, offlineCaptured: true });
     expect(first.enqueuedAt).toMatch(/^20\d\d-/);
   });
 
@@ -114,7 +114,7 @@ describe('offline mixed tender ownership', () => {
       lines: [{ productId: PRODUCT_ID, quantityScaled: '1000' }],
     };
     const queued = checkoutQueueOperation(mixed);
-    expect(queued.payload).toEqual(mixed);
+    expect(queued.payload).toEqual({ ...mixed, offlineCaptured: true });
     expect(queued.id).toBe(OPERATION_ID);
   });
 });
