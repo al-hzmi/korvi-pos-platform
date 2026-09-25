@@ -26,8 +26,8 @@ jobs:
       DATABASE_URL: postgresql://korvi_browser:korvi_browser_ci@localhost:5432/korvi_stage5d_browser?schema=public
       KORVI_BROWSER_TENANT_SLUG: stage5d-browser-proof
       KORVI_BROWSER_OWNER_EMAIL: owner@stage5d-browser-proof.test
-      KORVI_BROWSER_BASE_URL: http://localhost:3000
-      KORVI_API_ORIGIN: http://localhost:3001
+      KORVI_BROWSER_BASE_URL: http://127.0.0.1:3000
+      KORVI_API_ORIGIN: http://127.0.0.1:3001
       KORVI_BROWSER_ARTIFACT_DIR: artifacts/stage5d-browser
       KORVI_CHROME_DEBUG_PORT: '9222'
 
@@ -163,8 +163,8 @@ jobs:
           echo "$!" > "$KORVI_BROWSER_ARTIFACT_DIR/chrome.pid"
 
           for attempt in $(seq 1 120); do
-            if curl --fail --silent http://localhost:3001/health >/dev/null && \
-               curl --fail --silent http://localhost:3000/control >/dev/null && \
+            if curl --fail --silent http://127.0.0.1:3001/health >/dev/null && \
+               curl --fail --silent http://127.0.0.1:3000/control >/dev/null && \
                curl --fail --silent "http://127.0.0.1:$KORVI_CHROME_DEBUG_PORT/json/version" >/dev/null; then
               exit 0
             fi
