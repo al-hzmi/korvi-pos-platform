@@ -436,18 +436,12 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
     expect(coupon?._count.redemptions).toBe(2);
 
     await expect(
-      updateMerchantCoupon(
-        prisma,
-        scope,
-        { userId: A.user },
-        A.coupon1,
-        {
-          expectedRevision: coupon!.revision.toString(),
-          totalRedemptionLimit: 1,
-          auditId: '018fd200-0000-7000-8000-000000000261',
-          occurredAt: new Date().toISOString(),
-        },
-      ),
+      updateMerchantCoupon(prisma, scope, { userId: A.user }, A.coupon1, {
+        expectedRevision: coupon!.revision.toString(),
+        totalRedemptionLimit: 1,
+        auditId: '018fd200-0000-7000-8000-000000000261',
+        occurredAt: new Date().toISOString(),
+      }),
     ).rejects.toThrow(/invalid-input/i);
   });
 

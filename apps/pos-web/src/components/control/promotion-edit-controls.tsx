@@ -182,7 +182,13 @@ export function PromotionEditControl({
   if (!open) {
     return (
       <div className="flex justify-end">
-        <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+        >
           تعديل الإعدادات
         </Button>
       </div>
@@ -195,10 +201,17 @@ export function PromotionEditControl({
         <div>
           <h4 className="text-sm font-semibold text-foreground">تعديل العرض</h4>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            الحفظ مشروط بالنسخة الحالية rev {promotion.revision}. إذا سبقك تعديل آخر سيرفض الخادم الطلب بدل الكتابة فوقه.
+            الحفظ مشروط بالنسخة الحالية rev {promotion.revision}. إذا سبقك تعديل آخر سيرفض الخادم
+            الطلب بدل الكتابة فوقه.
           </p>
         </div>
-        <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={() => setOpen(false)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={disabled}
+          onClick={() => setOpen(false)}
+        >
           إغلاق
         </Button>
       </div>
@@ -285,7 +298,9 @@ export function PromotionEditControl({
           </label>
           <Field
             id={`promotion-edit-effect-${promotion.id}`}
-            label={draft.effectKind === 'percentage' ? 'قيمة النسبة (1000 = 10%)' : 'قيمة الخصم بالهللات'}
+            label={
+              draft.effectKind === 'percentage' ? 'قيمة النسبة (1000 = 10%)' : 'قيمة الخصم بالهللات'
+            }
             inputMode="numeric"
             value={draft.effectValue}
             onChange={(event) => updateDraft({ effectValue: event.currentTarget.value })}
@@ -373,7 +388,9 @@ export function PromotionEditControl({
                         type="button"
                         className="font-semibold text-muted-foreground hover:text-foreground"
                         aria-label={`إزالة ${knownProducts[id]?.nameAr ?? id}`}
-                        onClick={() => setTargetIds((current) => current.filter((entry) => entry !== id))}
+                        onClick={() =>
+                          setTargetIds((current) => current.filter((entry) => entry !== id))
+                        }
                       >
                         ×
                       </button>
@@ -406,7 +423,8 @@ export function PromotionEditControl({
               )}
 
               <p className="mt-3 text-xs text-muted-foreground">
-                الهدف المعتمد بعد الحفظ: <Numeric value={String(targetIds.length)} /> صنف. تغيير targets مسموح فقط للمسودة أو العرض الموقوف.
+                الهدف المعتمد بعد الحفظ: <Numeric value={String(targetIds.length)} /> صنف. تغيير
+                targets مسموح فقط للمسودة أو العرض الموقوف.
               </p>
             </div>
           ) : (
@@ -506,7 +524,13 @@ export function CouponEditControl({
 
   if (!open) {
     return (
-      <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
         تعديل
       </Button>
     );
@@ -551,7 +575,13 @@ export function CouponEditControl({
         />
       </div>
       <div className="mt-3 flex justify-end gap-2">
-        <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={() => setOpen(false)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={disabled}
+          onClick={() => setOpen(false)}
+        >
           إلغاء
         </Button>
         <Button type="button" size="sm" disabled={disabled} onClick={() => void save()}>
