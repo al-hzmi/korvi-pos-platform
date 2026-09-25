@@ -121,20 +121,26 @@ export async function lockPromotionPolicySharedWithin(
   tx: TransactionClient,
   tenant: string,
 ): Promise<void> {
-  await tx.$queryRaw`
-    SELECT pg_advisory_xact_lock_shared(
-      hashtextextended('korvi:promotion-policy:' || ${tenant}, 0)
-    )`;
+  await tx.$queryRaw<{ locked: number }[]>`
+    SELECT 1::int4 AS "locked"
+      FROM (
+        SELECT pg_advisory_xact_lock_shared(
+          hashtextextended('korvi:promotion-policy:' || ${tenant}, 0)
+        )
+      ) AS policy_lock`;
 }
 
 export async function lockPromotionPolicyExclusiveWithin(
   tx: TransactionClient,
   tenant: string,
 ): Promise<void> {
-  await tx.$queryRaw`
-    SELECT pg_advisory_xact_lock(
-      hashtextextended('korvi:promotion-policy:' || ${tenant}, 0)
-    )`;
+  await tx.$queryRaw<{ locked: number }[]>`
+    SELECT 1::int4 AS "locked"
+      FROM (
+        SELECT pg_advisory_xact_lock(
+          hashtextextended('korvi:promotion-policy:' || ${tenant}, 0)
+        )
+      ) AS policy_lock`;
 }
 
 async function lockPresentedCoupons(
