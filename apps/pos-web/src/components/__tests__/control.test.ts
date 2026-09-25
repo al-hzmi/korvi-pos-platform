@@ -27,6 +27,7 @@ import {
 import { MembersPanel } from '../control/members-panel';
 import { MigrationPanel } from '../control/migration-panel';
 import { ProductsPanel } from '../control/products-panel';
+import { PromotionsPanel } from '../control/promotions-panel';
 import {
   OrderDetail,
   orderLineFieldLabel,
@@ -119,6 +120,7 @@ describe('control navigation', () => {
       'المنتجات',
       'المخزون',
       'المشتريات',
+      'العروض والكوبونات',
       'العملاء',
       'الفروع والصناديق',
       'الموظفون والصلاحيات',
@@ -138,6 +140,7 @@ describe('control navigation', () => {
           'product.read',
           'inventory.read',
           'purchasing.read',
+          'promotion.manage',
           'customer.read',
           'settings.manage',
           'users.manage',
@@ -151,6 +154,7 @@ describe('control navigation', () => {
     expect(unbuilt).toEqual([]);
     expect(markup).not.toContain('غير مكتمل');
     expect(markup).not.toContain('قريباً');
+    expect(markup).toContain('/control/promotions');
     expect(markup).toContain('/control/zatca');
   });
 
@@ -307,6 +311,16 @@ describe('control centre first paint', () => {
     expect(markup).not.toContain('لا توجد أوامر شراء');
     expect(markup).not.toContain('إضافة مورد');
   });
+
+  it('does not claim an empty promotion book before the server has answered', () => {
+    const markup = renderToStaticMarkup(
+      createElement(PromotionsPanel, {
+        api: idleApi,
+      }),
+    );
+    expect(markup).toContain('جارٍ تحميل العروض والكوبونات');
+    expect(markup).not.toContain('لا توجد عروض بعد');
+  });
 });
 
 describe('who the control centre is for', () => {
@@ -317,6 +331,8 @@ describe('who the control centre is for', () => {
     expect(firstAuthorizedSection(cashier.permissions)).toBe('products');
     expect(firstAuthorizedSection(['inventory.read'])).toBe('inventory');
     expect(firstAuthorizedSection(['purchasing.read'])).toBe('purchasing');
+    expect(canOpenControlCentre(['promotion.manage'])).toBe(true);
+    expect(firstAuthorizedSection(['promotion.manage'])).toBe('promotions');
 
     const inventoryOnly = surface({ kind: 'ready', principal: principalWith(['inventory.read']) });
     expect(inventoryOnly).toContain('جارٍ تحميل فروع المخزون');

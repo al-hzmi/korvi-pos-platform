@@ -12,6 +12,7 @@ import { MigrationPanel } from './migration-panel';
 import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
 import { PurchasingPanel } from './purchasing-panel';
+import { PromotionsPanel } from './promotions-panel';
 import { ReportsPanel } from './reports-panel';
 import { SalesPanel } from './sales-panel';
 import { SettingsPanel } from './settings-panel';
@@ -68,6 +69,8 @@ function sectionTitle(section: ControlSection): string {
       return 'المخزون';
     case 'purchasing':
       return 'المشتريات';
+    case 'promotions':
+      return 'العروض والكوبونات';
     case 'customers':
       return 'العملاء';
     case 'branches':
@@ -126,6 +129,8 @@ function Section({
           onCommandLockChange={onCommandLockChange}
         />
       );
+    case 'promotions':
+      return <PromotionsPanel api={api} onCommandLockChange={onCommandLockChange} />;
     case 'customers':
       return (
         <CustomersPanel
@@ -282,6 +287,7 @@ function Workspace({
                 </p>
               ) : activeSection === 'inventory' ||
                 activeSection === 'purchasing' ||
+                activeSection === 'promotions' ||
                 activeSection === 'customers' ||
                 activeSection === 'branches' ||
                 activeSection === 'staff' ||

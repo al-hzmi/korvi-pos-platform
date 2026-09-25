@@ -4,6 +4,7 @@ export const CONTROL_SECTION_HREFS = {
   products: '/control/products',
   inventory: '/control/inventory',
   purchasing: '/control/purchasing',
+  promotions: '/control/promotions',
   customers: '/control/customers',
   branches: '/control/branches',
   staff: '/control/staff',
@@ -25,6 +26,7 @@ export function controlSectionFromSlug(slug: string): ControlSection | null {
     case 'products':
     case 'inventory':
     case 'purchasing':
+    case 'promotions':
     case 'customers':
     case 'branches':
     case 'staff':

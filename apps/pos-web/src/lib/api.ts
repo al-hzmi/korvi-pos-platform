@@ -5,6 +5,12 @@ import type {
   AdminPage,
   AdminProductBootstrap,
   AdminProductCreateInput,
+  AdminPromotion,
+  AdminPromotionCreateInput,
+  AdminPromotionUpdateInput,
+  AdminPromotionCoupon,
+  AdminCouponCreateInput,
+  AdminCouponUpdateInput,
   AdminRole,
   AdminRoleAssignmentResult,
   AdminSettingsPatch,
@@ -430,6 +436,14 @@ export interface ApiClient {
   createPurchaseOrder(request: PurchaseOrderCreateRequest): Promise<PurchaseOrderCreateResult>;
   receivePurchaseOrder(request: PurchaseReceiptCreateRequest): Promise<PurchaseReceiptResult>;
   createAdminProduct(input: AdminProductCreateInput): Promise<AdminProductBootstrap>;
+  adminPromotions(options?: RequestOptions): Promise<readonly AdminPromotion[]>;
+  createAdminPromotion(input: AdminPromotionCreateInput): Promise<AdminPromotion>;
+  updateAdminPromotion(
+    promotionId: string,
+    input: AdminPromotionUpdateInput,
+  ): Promise<AdminPromotion>;
+  createAdminCoupon(promotionId: string, input: AdminCouponCreateInput): Promise<AdminPromotionCoupon>;
+  updateAdminCoupon(couponId: string, input: AdminCouponUpdateInput): Promise<AdminPromotionCoupon>;
   adminSettings(options?: RequestOptions): Promise<AdminTenantSettings>;
   updateAdminSettings(patch: AdminSettingsPatch): Promise<AdminTenantSettings>;
   adminBranches(
@@ -1474,6 +1488,98 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           ...(input.barcode === undefined ? {} : { barcode: input.barcode }),
         }),
       )) as AdminProductBootstrap;
+    },
+
+    async adminPromotions(options) {
+      const body = (await call(
+        '/v1/admin/promotions',
+        { method: 'GET' },
+        options,
+      )) as { promotions: readonly AdminPromotion[] };
+      return body.promotions;
+    },
+
+    async createAdminPromotion(input) {
+      return (await call(
+        '/v1/admin/promotions',
+        json({
+          merchantCode: input.merchantCode,
+          name: input.name,
+          activationMode: input.activationMode,
+          priority: input.priority,
+          stackingMode: input.stackingMode,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          effectKind: input.effectKind,
+          effectValue: input.effectValue,
+          minimumEligibleSubtotalMinor: input.minimumEligibleSubtotalMinor,
+          targetKind: input.targetKind,
+          productIds: [...input.productIds],
+        }),
+      )) as AdminPromotion;
+    },
+
+    async updateAdminPromotion(promotionId, input) {
+      return (await call(
+        `/v1/admin/promotions/${encodeURIComponent(promotionId)}`,
+        json(
+          {
+            expectedRevision: input.expectedRevision,
+            ...(input.merchantCode === undefined ? {} : { merchantCode: input.merchantCode }),
+            ...(input.name === undefined ? {} : { name: input.name }),
+            ...(input.status === undefined ? {} : { status: input.status }),
+            ...(input.activationMode === undefined
+              ? {}
+              : { activationMode: input.activationMode }),
+            ...(input.priority === undefined ? {} : { priority: input.priority }),
+            ...(input.stackingMode === undefined ? {} : { stackingMode: input.stackingMode }),
+            ...(input.startsAt === undefined ? {} : { startsAt: input.startsAt }),
+            ...(input.endsAt === undefined ? {} : { endsAt: input.endsAt }),
+            ...(input.effectKind === undefined ? {} : { effectKind: input.effectKind }),
+            ...(input.effectValue === undefined ? {} : { effectValue: input.effectValue }),
+            ...(input.minimumEligibleSubtotalMinor === undefined
+              ? {}
+              : { minimumEligibleSubtotalMinor: input.minimumEligibleSubtotalMinor }),
+            ...(input.targetKind === undefined ? {} : { targetKind: input.targetKind }),
+            ...(input.productIds === undefined ? {} : { productIds: [...input.productIds] }),
+          },
+          'PATCH',
+        ),
+      )) as AdminPromotion;
+    },
+
+    async createAdminCoupon(promotionId, input) {
+      return (await call(
+        `/v1/admin/promotions/${encodeURIComponent(promotionId)}/coupons`,
+        json({
+          code: input.code,
+          ...(input.status === undefined ? {} : { status: input.status }),
+          ...(input.startsAt === undefined ? {} : { startsAt: input.startsAt }),
+          ...(input.endsAt === undefined ? {} : { endsAt: input.endsAt }),
+          ...(input.totalRedemptionLimit === undefined
+            ? {}
+            : { totalRedemptionLimit: input.totalRedemptionLimit }),
+        }),
+      )) as AdminPromotionCoupon;
+    },
+
+    async updateAdminCoupon(couponId, input) {
+      return (await call(
+        `/v1/admin/coupons/${encodeURIComponent(couponId)}`,
+        json(
+          {
+            expectedRevision: input.expectedRevision,
+            ...(input.code === undefined ? {} : { code: input.code }),
+            ...(input.status === undefined ? {} : { status: input.status }),
+            ...(input.startsAt === undefined ? {} : { startsAt: input.startsAt }),
+            ...(input.endsAt === undefined ? {} : { endsAt: input.endsAt }),
+            ...(input.totalRedemptionLimit === undefined
+              ? {}
+              : { totalRedemptionLimit: input.totalRedemptionLimit }),
+          },
+          'PATCH',
+        ),
+      )) as AdminPromotionCoupon;
     },
 
     async adminSettings(options) {

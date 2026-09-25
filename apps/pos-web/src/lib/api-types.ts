@@ -1552,6 +1552,86 @@ export interface AdminProduct extends ProductSummary {
   readonly createdAt: string;
 }
 
+export interface AdminPromotionCoupon {
+  readonly id: string;
+  readonly promotionId: string;
+  readonly normalizedCode: string;
+  readonly status: 'active' | 'paused' | 'retired';
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly totalRedemptionLimit: number | null;
+  readonly observedRedemptionCount: number;
+  readonly revision: string;
+}
+
+export interface AdminPromotion {
+  readonly id: string;
+  readonly merchantCode: string;
+  readonly name: string;
+  readonly status: 'draft' | 'active' | 'paused' | 'archived';
+  readonly activationMode: 'automatic' | 'coupon';
+  readonly priority: number;
+  readonly stackingMode: 'stackable' | 'exclusive';
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly effectKind: 'fixed' | 'percentage';
+  readonly effectValue: string;
+  readonly minimumEligibleSubtotalMinor: string;
+  readonly targetKind: 'basket' | 'products';
+  readonly productIds: readonly string[];
+  readonly revision: string;
+  readonly coupons: readonly AdminPromotionCoupon[];
+}
+
+export interface AdminPromotionCreateInput {
+  readonly merchantCode: string;
+  readonly name: string;
+  readonly activationMode: 'automatic' | 'coupon';
+  readonly priority: number;
+  readonly stackingMode: 'stackable' | 'exclusive';
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly effectKind: 'fixed' | 'percentage';
+  readonly effectValue: string;
+  readonly minimumEligibleSubtotalMinor: string;
+  readonly targetKind: 'basket' | 'products';
+  readonly productIds: readonly string[];
+}
+
+export interface AdminPromotionUpdateInput {
+  readonly expectedRevision: string;
+  readonly merchantCode?: string;
+  readonly name?: string;
+  readonly status?: 'draft' | 'active' | 'paused' | 'archived';
+  readonly activationMode?: 'automatic' | 'coupon';
+  readonly priority?: number;
+  readonly stackingMode?: 'stackable' | 'exclusive';
+  readonly startsAt?: string | null;
+  readonly endsAt?: string | null;
+  readonly effectKind?: 'fixed' | 'percentage';
+  readonly effectValue?: string;
+  readonly minimumEligibleSubtotalMinor?: string;
+  readonly targetKind?: 'basket' | 'products';
+  readonly productIds?: readonly string[];
+}
+
+export interface AdminCouponCreateInput {
+  readonly code: string;
+  readonly status?: 'active' | 'paused';
+  readonly startsAt?: string | null;
+  readonly endsAt?: string | null;
+  readonly totalRedemptionLimit?: number | null;
+}
+
+export interface AdminCouponUpdateInput {
+  readonly expectedRevision: string;
+  readonly code?: string;
+  readonly status?: 'active' | 'paused' | 'retired';
+  readonly startsAt?: string | null;
+  readonly endsAt?: string | null;
+  readonly totalRedemptionLimit?: number | null;
+}
+
 export interface AdminCustomer {
   readonly id: string;
   readonly code: string;
