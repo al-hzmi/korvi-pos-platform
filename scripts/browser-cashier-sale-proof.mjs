@@ -214,7 +214,11 @@ async function setInputByLabelText(labelText, value) {
     input.focus();
     return true;
   })()`);
-  assert.equal(changed, true, `Input under label ${labelText} disappeared before it could be edited.`);
+  assert.equal(
+    changed,
+    true,
+    `Input under label ${labelText} disappeared before it could be edited.`,
+  );
 }
 
 async function setSelect(id, value) {

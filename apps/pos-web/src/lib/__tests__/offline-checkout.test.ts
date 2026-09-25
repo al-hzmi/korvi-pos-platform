@@ -43,7 +43,6 @@ describe('offline checkout ownership transfer', () => {
     expect(first.enqueuedAt).toMatch(/^20\d\d-/);
   });
 
-
   it('keeps genuinely offline-captured intent on the restrictive legacy queue kind', () => {
     const captured = { ...INTENT, offlineCaptured: true as const };
     const queued = checkoutQueueOperation(captured);

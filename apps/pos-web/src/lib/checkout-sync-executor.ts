@@ -133,10 +133,7 @@ export function createCheckoutSyncExecutor(
 ): SyncOperationExecutor {
   return {
     async execute(operation: QueuedOperation) {
-      if (
-        operation.kind !== 'sale.checkout' &&
-        operation.kind !== 'sale.checkout.replay'
-      ) {
+      if (operation.kind !== 'sale.checkout' && operation.kind !== 'sale.checkout.replay') {
         return { outcome: 'rejected', reason: 'unsupported-operation-kind' } as const;
       }
       if (!isCheckoutQueuePayload(operation.payload)) {
@@ -159,9 +156,7 @@ export function createCheckoutSyncExecutor(
         // offline semantics. sale.checkout.replay is an online request whose
         // response was lost, so its pricing/idempotency intent must be resent unchanged.
         await api.checkout(
-          onlineReplay
-            ? operation.payload
-            : { ...operation.payload, offlineCaptured: true },
+          onlineReplay ? operation.payload : { ...operation.payload, offlineCaptured: true },
         );
         return { outcome: 'settled' } as const;
       } catch (error) {
