@@ -8,11 +8,7 @@ import { ApiError } from '../../lib/api';
 import { formatMinor } from '../../lib/money';
 import type { JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
-import type {
-  AdminPromotion,
-  AdminPromotionCoupon,
-  ProductSummary,
-} from '../../lib/api-types';
+import type { AdminPromotion, AdminPromotionCoupon, ProductSummary } from '../../lib/api-types';
 
 type PromotionStatus = AdminPromotion['status'];
 
@@ -141,9 +137,10 @@ export function PromotionsPanel({
     [busy, load, onCommandLockChange],
   );
 
-  const selectedIds = useMemo(() => new Set(selectedProducts.map((product) => product.id)), [
-    selectedProducts,
-  ]);
+  const selectedIds = useMemo(
+    () => new Set(selectedProducts.map((product) => product.id)),
+    [selectedProducts],
+  );
 
   const searchProducts = async (): Promise<void> => {
     const q = productTerm.trim();
@@ -172,30 +169,27 @@ export function PromotionsPanel({
       setFailure('اختر صنفًا واحدًا على الأقل للعرض المخصص للأصناف.');
       return;
     }
-    await runCommand(
-      async () => {
-        await api.createAdminPromotion({
-          merchantCode: draft.merchantCode.trim(),
-          name: draft.name.trim(),
-          activationMode: draft.activationMode,
-          priority,
-          stackingMode: draft.stackingMode,
-          startsAt: null,
-          endsAt: null,
-          effectKind: draft.effectKind,
-          effectValue: draft.effectValue.trim(),
-          minimumEligibleSubtotalMinor: draft.minimumEligibleSubtotalMinor.trim(),
-          targetKind: draft.targetKind,
-          productIds:
-            draft.targetKind === 'products' ? selectedProducts.map((product) => product.id) : [],
-        });
-        setDraft(INITIAL_DRAFT);
-        setSelectedProducts([]);
-        setProductResults([]);
-        setProductTerm('');
-      },
-      'تم إنشاء العرض كمسودة. راجع تفاصيله ثم فعّله عندما يصبح جاهزًا.',
-    );
+    await runCommand(async () => {
+      await api.createAdminPromotion({
+        merchantCode: draft.merchantCode.trim(),
+        name: draft.name.trim(),
+        activationMode: draft.activationMode,
+        priority,
+        stackingMode: draft.stackingMode,
+        startsAt: null,
+        endsAt: null,
+        effectKind: draft.effectKind,
+        effectValue: draft.effectValue.trim(),
+        minimumEligibleSubtotalMinor: draft.minimumEligibleSubtotalMinor.trim(),
+        targetKind: draft.targetKind,
+        productIds:
+          draft.targetKind === 'products' ? selectedProducts.map((product) => product.id) : [],
+      });
+      setDraft(INITIAL_DRAFT);
+      setSelectedProducts([]);
+      setProductResults([]);
+      setProductTerm('');
+    }, 'تم إنشاء العرض كمسودة. راجع تفاصيله ثم فعّله عندما يصبح جاهزًا.');
   };
 
   const changeStatus = async (
@@ -231,20 +225,17 @@ export function PromotionsPanel({
         return;
       }
     }
-    await runCommand(
-      async () => {
-        await api.createAdminCoupon(promotion.id, {
-          code,
-          status: 'active',
-          startsAt: null,
-          endsAt: null,
-          totalRedemptionLimit: limit,
-        });
-        setCouponDrafts((current) => ({ ...current, [promotion.id]: '' }));
-        setCouponLimits((current) => ({ ...current, [promotion.id]: '' }));
-      },
-      'تم إنشاء كود الخصم.',
-    );
+    await runCommand(async () => {
+      await api.createAdminCoupon(promotion.id, {
+        code,
+        status: 'active',
+        startsAt: null,
+        endsAt: null,
+        totalRedemptionLimit: limit,
+      });
+      setCouponDrafts((current) => ({ ...current, [promotion.id]: '' }));
+      setCouponLimits((current) => ({ ...current, [promotion.id]: '' }));
+    }, 'تم إنشاء كود الخصم.');
   };
 
   const changeCouponStatus = async (
@@ -366,7 +357,11 @@ export function PromotionsPanel({
             </label>
             <Field
               id="promotion-effect-value"
-              label={draft.effectKind === 'percentage' ? 'قيمة النسبة (1000 = 10%)' : 'قيمة الخصم بالهللات'}
+              label={
+                draft.effectKind === 'percentage'
+                  ? 'قيمة النسبة (1000 = 10%)'
+                  : 'قيمة الخصم بالهللات'
+              }
               inputMode="numeric"
               value={draft.effectValue}
               onChange={(event) =>
@@ -461,7 +456,10 @@ export function PromotionsPanel({
                           />
                           <span className="min-w-0">
                             <span className="block truncate font-medium">{product.nameAr}</span>
-                            <span className="block truncate text-xs text-muted-foreground" dir="ltr">
+                            <span
+                              className="block truncate text-xs text-muted-foreground"
+                              dir="ltr"
+                            >
                               {product.sku}
                             </span>
                           </span>

@@ -442,7 +442,10 @@ export interface ApiClient {
     promotionId: string,
     input: AdminPromotionUpdateInput,
   ): Promise<AdminPromotion>;
-  createAdminCoupon(promotionId: string, input: AdminCouponCreateInput): Promise<AdminPromotionCoupon>;
+  createAdminCoupon(
+    promotionId: string,
+    input: AdminCouponCreateInput,
+  ): Promise<AdminPromotionCoupon>;
   updateAdminCoupon(couponId: string, input: AdminCouponUpdateInput): Promise<AdminPromotionCoupon>;
   adminSettings(options?: RequestOptions): Promise<AdminTenantSettings>;
   updateAdminSettings(patch: AdminSettingsPatch): Promise<AdminTenantSettings>;
@@ -1491,11 +1494,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     },
 
     async adminPromotions(options) {
-      const body = (await call(
-        '/v1/admin/promotions',
-        { method: 'GET' },
-        options,
-      )) as { promotions: readonly AdminPromotion[] };
+      const body = (await call('/v1/admin/promotions', { method: 'GET' }, options)) as {
+        promotions: readonly AdminPromotion[];
+      };
       return body.promotions;
     },
 
@@ -1528,9 +1529,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             ...(input.merchantCode === undefined ? {} : { merchantCode: input.merchantCode }),
             ...(input.name === undefined ? {} : { name: input.name }),
             ...(input.status === undefined ? {} : { status: input.status }),
-            ...(input.activationMode === undefined
-              ? {}
-              : { activationMode: input.activationMode }),
+            ...(input.activationMode === undefined ? {} : { activationMode: input.activationMode }),
             ...(input.priority === undefined ? {} : { priority: input.priority }),
             ...(input.stackingMode === undefined ? {} : { stackingMode: input.stackingMode }),
             ...(input.startsAt === undefined ? {} : { startsAt: input.startsAt }),
