@@ -191,6 +191,14 @@ async function setInputByPlaceholder(placeholder, value) {
 }
 
 async function setInputByLabelText(labelText, value) {
+  const labelInputExpression = `(() => {
+    const label = [...document.querySelectorAll('label')].find((candidate) =>
+      (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
+    );
+    return label?.querySelector('input') instanceof HTMLInputElement;
+  })()`;
+  await waitFor(labelInputExpression, `input under label ${labelText}`);
+
   const changed = await evaluate(`(() => {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
@@ -206,7 +214,7 @@ async function setInputByLabelText(labelText, value) {
     input.focus();
     return true;
   })()`);
-  assert.equal(changed, true, `Input under label ${labelText} was not available.`);
+  assert.equal(changed, true, `Input under label ${labelText} disappeared before it could be edited.`);
 }
 
 async function setSelect(id, value) {
