@@ -30,6 +30,7 @@ import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { createNoReceiptExchangeService } from './no-receipt-exchange/service.js';
+import { createMerchantPromotionAdminService } from './promotions/service.js';
 import { createMerchantCategoryMigrationService } from './migration/category-import-service.js';
 import { createMerchantCustomerMigrationService } from './migration/customer-import-service.js';
 import { createMerchantProductMigrationService } from './migration/product-import-service.js';
@@ -62,6 +63,7 @@ import { registerProductMigrationRoutes } from './routes/product-migration.js';
 import { registerSupplierMigrationRoutes } from './routes/supplier-migration.js';
 import { registerOpeningInventoryMigrationRoutes } from './routes/opening-inventory-migration.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
+import { registerPromotionAdminRoutes } from './routes/promotions-admin.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerRestaurantPreparationRoutes } from './routes/restaurant-preparation.js';
 import { registerRestaurantRecipeRoutes } from './routes/restaurant-recipes.js';
@@ -89,6 +91,7 @@ import type { MerchantOpeningInventoryMigrationService } from './migration/openi
 import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
+import type { MerchantPromotionAdminService } from './promotions/service.js';
 import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
 import type { MerchantPreparationService } from './restaurant/preparation-service.js';
 import type { MerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
@@ -131,6 +134,8 @@ export interface ServerDeps {
   readonly inventory?: MerchantInventoryService;
   /** Purchasing and receiving authority: suppliers, orders and receipts. */
   readonly purchasing?: MerchantPurchasingService;
+  /** Merchant promotion/coupon configuration authority, guarded by promotion.manage. */
+  readonly promotionAdmin?: MerchantPromotionAdminService;
   /** Read-only onboarding readiness authority. */
   readonly onboarding?: MerchantOnboardingService;
   /** P0 customer-migration orchestration; tenant identity is session-derived. */
@@ -372,6 +377,29 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
     listRoles: (principal) => resolve().listRoles(principal),
     assignRole: (principal, userId, roleId) => resolve().assignRole(principal, userId, roleId),
     removeRole: (principal, userId, roleId) => resolve().removeRole(principal, userId, roleId),
+  };
+}
+
+function lazyPromotionAdminService(config: ApiConfig): MerchantPromotionAdminService {
+  let built: MerchantPromotionAdminService | null = null;
+
+  const resolve = (): MerchantPromotionAdminService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantPromotionAdminService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    list: (principal) => resolve().list(principal),
+    createPromotion: (principal, input) => resolve().createPromotion(principal, input),
+    updatePromotion: (principal, promotionId, input) =>
+      resolve().updatePromotion(principal, promotionId, input),
+    createCoupon: (principal, promotionId, input) =>
+      resolve().createCoupon(principal, promotionId, input),
+    updateCoupon: (principal, couponId, input) =>
+      resolve().updateCoupon(principal, couponId, input),
   };
 }
 
@@ -821,6 +849,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerPurchasingAdminRoutes(app, {
     service: deps.purchasing ?? lazyPurchasingService(config),
+    guards,
+  });
+  registerPromotionAdminRoutes(app, {
+    service: deps.promotionAdmin ?? lazyPromotionAdminService(config),
     guards,
   });
   registerBootstrapRoutes(app, {

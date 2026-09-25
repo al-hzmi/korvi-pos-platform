@@ -60,6 +60,24 @@ export { createShiftRepository } from './repositories/shift-repository.js';
 export { createSaleRepository } from './repositories/sale-repository.js';
 export { createPromotionRepository } from './repositories/promotion-repository.js';
 export {
+  PromotionAdminRefusedError,
+  listMerchantPromotions,
+  createMerchantPromotion,
+  updateMerchantPromotion,
+  createMerchantCoupon,
+  updateMerchantCoupon,
+} from './administration/promotions.js';
+export type {
+  PromotionAdminRefusal,
+  PromotionAdminActor,
+  PromotionAdminCoupon,
+  PromotionAdminRecord,
+  PromotionCreateRequest,
+  PromotionUpdateRequest,
+  CouponCreateRequest,
+  CouponUpdateRequest,
+} from './administration/promotions.js';
+export {
   MAX_MERCHANT_SALES_PAGE,
   listMerchantSales,
   readMerchantSale,
