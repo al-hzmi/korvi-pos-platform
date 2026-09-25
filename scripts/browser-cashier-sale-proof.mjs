@@ -803,7 +803,10 @@ try {
   const proofCoupon = activatedCouponPromotion.coupons.find(
     (coupon) => coupon.normalizedCode === 'BROWSER10',
   );
-  assert.ok(proofCoupon !== undefined, 'Coupon created through Control UI is missing from server truth.');
+  assert.ok(
+    proofCoupon !== undefined,
+    'Coupon created through Control UI is missing from server truth.',
+  );
   assert.equal(proofCoupon.totalRedemptionLimit, 1);
   record(
     'actual Chrome Control UI created, activated and persisted a one-use coupon through promotion.manage authority',
