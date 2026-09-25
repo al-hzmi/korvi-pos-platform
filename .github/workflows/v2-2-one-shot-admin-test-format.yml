@@ -1,0 +1,45 @@
+name: V2-2 One-Shot Admin Test Format
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-2-one-shot-admin-test-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Format test and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prettier --write apps/api/src/__tests__/promotions-admin-routes.test.ts
+          rm .github/workflows/v2-2-one-shot-admin-test-format.yml
+          git diff --check
+      - name: Commit formatter output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-format"
+          git config user.email "actions@users.noreply.github.com"
+          git add apps/api/src/__tests__/promotions-admin-routes.test.ts .github/workflows/v2-2-one-shot-admin-test-format.yml
+          git commit -m "style(v2-2): format promotion admin route evidence"
+          git push origin HEAD:mastermind/v2-strengthening
