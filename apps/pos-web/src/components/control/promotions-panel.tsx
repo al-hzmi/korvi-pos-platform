@@ -124,10 +124,7 @@ export function PromotionsPanel({
         setNotice(success);
       } catch (error) {
         setFailure(
-          messageOf(
-            error,
-            'تعذر تأكيد التغيير. ستُعاد قراءة القائمة قبل السماح بقرار آخر.',
-          ),
+          messageOf(error, 'تعذر تأكيد التغيير. ستُعاد قراءة القائمة قبل السماح بقرار آخر.'),
         );
         try {
           await load();
