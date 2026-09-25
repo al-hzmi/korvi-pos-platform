@@ -84,29 +84,49 @@ Evidence:
 
 ## 2. Promotions / coupons
 
-### Discount authority — PRESENT FOUNDATION
+### Deterministic promotions/coupons — PRESENT / V2-2 CLOSED
 
-Current repository includes deterministic discount authority/tests under pricing/sale.
+V2-2 now establishes a shared server-owned promotion/coupon authority for direct Retail / Grocery / Wholesale checkout.
 
-### General promotion engine — PARTIAL / ACCEPTED
+Repository evidence includes:
 
-No dedicated promotion/coupon/voucher domain or persistence model was found in the audited tree/schema.
+- ADR-0037 deterministic promotions/coupons contract;
+- pure deterministic promotion evaluator with priority, exclusivity, stacking, immutable-id tie-breaks and bounded application count;
+- exact integer largest-remainder allocation integrated with the existing pricing/VAT engine rather than a second tax calculator;
+- coupon normalization/lifecycle authority and immutable redemption facts;
+- separate merchant policy rows, product targets, coupons, sale application snapshots, per-line allocations and redemption facts;
+- FORCE-RLS, composite tenant foreign keys, immutable finalized promotion history and relational/financial database guards;
+- atomic checkout revalidation under promotion/coupon locks, including final-redemption concurrency and replay/idempotency authority;
+- explicit `promotion.manage` administration permission with negative cashier authorization;
+- governed Control Center administration UX and audit-backed lifecycle updates;
+- server-authoritative checkout preview and Arabic RTL cashier coupon UX;
+- fail-closed online-only promotion/coupon execution boundary while plain non-promoted checkout retains its existing offline behavior;
+- original-sale returns continue from immutable sold line truth and never re-evaluate today's promotion;
+- actual Chrome proof creating/activating a one-use coupon through Control, applying it through cashier server preview, finalizing the sale and observing durable redemption count.
 
-The accepted product scope requires:
+Scope law:
 
-- eligibility;
-- priority;
-- exclusivity;
-- stacking;
-- deterministic allocation;
-- tax/refund snapshots;
-- explainability;
-- coupons/vouchers.
+- client coupon code/cart intent is not discount authority;
+- manual operator discounts and promotion policy are refused together in V2-2;
+- coupons are activation instruments, never tender, wallet, store credit or gift-card value;
+- promotion allocation happens before VAT through the existing canonical pricing engine;
+- current promotion rows are never consulted to explain/refund finalized sales;
+- Restaurant open-order promotions remain out of scope because current order snapshots must not be bypassed;
+- category/tag/segment predicates, BOGO/bundles, loyalty coupling and offline promotion snapshots remain future extensions;
+- Production ZATCA remains the existing fail-closed invoice authority and is not reimplemented here.
 
-Current discount authority should be reused as a primitive, not replaced.
+Verified implementation HEAD:
 
-**Recommended V2-2.**
+`68a56867f189c5f5d44a82b48baebccc2fda3f45`
 
+Evidence:
+
+- full CI `36082432970` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / concurrency / full verify `36082432869` — **SUCCESS**;
+- actual Chrome Control + cashier coupon proof `36082432819` — **SUCCESS**;
+- independent PR CI `36082437825` — **SUCCESS**.
+
+**V2-2 gap is closed. Next strike: V2-3.**
 ## 3. Loyalty / customer financial instruments
 
 ### Loyalty ledger/rewards — ABSENT / ACCEPTED
@@ -253,19 +273,41 @@ Resolved decisions:
 
 The former implementation block is therefore removed.
 
-## 11. Next audit target — V2-2
+## 11. V2-2 closure reconciliation
 
-The next repository audit must begin from the existing deterministic discount/sale/return primitives and establish an architecture contract for:
+The V2-2 architecture targets were reconciled in ADR-0037 and the verified implementation at
+`68a56867f189c5f5d44a82b48baebccc2fda3f45`.
 
-- promotion eligibility;
-- priority and exclusivity;
-- stacking;
-- deterministic allocation;
-- VAT interaction;
-- immutable sale snapshots;
-- return/refund treatment of promotion allocations;
-- coupon/voucher identity, lifecycle and redemption idempotency;
-- tenant isolation, concurrency, permissions and audit;
-- offline/replay semantics.
+Resolved decisions:
 
-No coupon UI should precede the shared deterministic authority.
+- merchant policy, not cashier input, owns promotion eligibility and amount;
+- coupon codes normalize to bounded ASCII business keys and remain non-monetary activation instruments;
+- priority + immutable promotion id own deterministic ordering;
+- eligible exclusive policy suppresses stackable policy; otherwise stackable rules apply sequentially to the remaining eligible base;
+- largest-remainder allocation owns integer-money distribution before canonical VAT pricing;
+- manual discounts and promotion policy do not compose in V2-2;
+- finalized sales snapshot promotion revision, effect, coupon identity and per-line allocations;
+- returns use original sold facts and never current promotion policy;
+- coupon redemption and sale finalization are one atomic transaction under locked/revalidated policy;
+- FORCE-RLS, composite tenant references, immutable finalized facts, audit and optimistic administration revisions own isolation/history;
+- promotion/coupon checkout is online-authoritative; plain non-promoted offline behavior remains separate;
+- tax/ZATCA remains the ordinary finalized-sale authority.
+
+The former V2-2 implementation block is therefore removed.
+
+## 12. Next audit target — V2-3
+
+The next repository audit must establish a shared Retail/Grocery/Wholesale architecture contract for:
+
+- product packaging/unit/carton hierarchy and conversion authority;
+- multiple barcode ownership and ambiguity rules;
+- retail/wholesale/customer/context price-list precedence;
+- deterministic price selection and immutable sold-price truth;
+- inventory/base-unit interaction and migration compatibility;
+- purchasing/receiving compatibility;
+- operator UX for scanning/selling alternate packages;
+- tenant/RLS isolation, permissions, audit, concurrency and idempotency;
+- offline price-list/package snapshot boundary;
+- tax/ZATCA boundary.
+
+No parallel package inventory truth or client-authored price selection may be introduced.

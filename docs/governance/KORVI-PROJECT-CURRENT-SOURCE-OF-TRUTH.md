@@ -1,6 +1,6 @@
 # KORVI — PROJECT CURRENT SOURCE OF TRUTH
 
-Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT — V2-1 VERIFIED**
+Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT — V2-2 VERIFIED**
 Date: 2026-09-25
 Protected acquisition source: `61dbb34dea08809756fd767b907b0e852b7e5978`
 Acquisition branch: `release/canonical-acquisition-v1`
@@ -258,23 +258,45 @@ V2-0 baseline/drift lock: **COMPLETE**.
 
 V2-1 no-receipt exchange: **COMPLETE / EXACT-HEAD VERIFIED**.
 
-Next authorized strike: **V2-2 Deterministic Promotions + Coupons foundation**.
+V2-2 deterministic promotions/coupons: **COMPLETE / EXACT-HEAD VERIFIED**.
 
-### V2-2 — Deterministic Promotions + Coupons foundation
+Next authorized strike: **V2-3 Retail packaging + price lists**.
 
-Build shared promotion authority before adding disconnected coupon UI.
+### V2-2 — Deterministic Promotions + Coupons — VERIFIED COMPLETE
 
-Required:
-- eligibility;
-- priority;
-- exclusivity;
-- stacking;
-- deterministic allocation;
-- tax/refund snapshot;
-- historical explainability;
-- coupon/voucher instrument authority;
-- sale snapshot preservation.
+Verified implementation HEAD:
 
+`68a56867f189c5f5d44a82b48baebccc2fda3f45`
+
+Closed scope:
+
+- shared deterministic promotion/coupon authority for direct Retail/Grocery/Wholesale checkout;
+- merchant policy owns eligibility, priority, stacking/exclusivity, effect and target scope;
+- coupon is a normalized tenant-owned activation instrument, not money/tender/store credit;
+- server-only checkout preview derives current product price, VAT, policy eligibility and promotion allocation;
+- integer-money largest-remainder allocation feeds the existing canonical pricing/VAT engine;
+- manual operator discount + promotion policy is refused in V2-2 rather than ambiguously merged;
+- promotion/coupon application snapshots are immutable sale history, including promotion revision and per-line allocation;
+- original-sale returns continue from historical sold facts and do not re-evaluate today's policy;
+- coupon redemption + sale + promotion snapshots + audit commit atomically;
+- final-redemption concurrency is governed by coupon/promotion locks and immutable redemption facts;
+- retry/idempotency remains the canonical checkout operation authority;
+- promotion/coupon tables use FORCE-RLS and tenant-consistent relational guards;
+- `promotion.manage` is separate administration authority; cashier cannot mutate policy;
+- Control Center provides governed Arabic RTL promotion/coupon lifecycle management;
+- Cashier provides server-authoritative coupon preview and checkout;
+- promotion/coupon checkout is deliberately online-authoritative; the client may not guess campaign state or remaining redemption offline;
+- Restaurant open-order promotions, category/tag/segment predicates, BOGO/bundles, loyalty coupling and offline signed promotion snapshots remain outside this strike;
+- Production ZATCA remains fail-closed and receives only the ordinary finalized sale financial truth.
+
+Exact-head evidence for `68a56867f189c5f5d44a82b48baebccc2fda3f45`:
+
+- full CI: GitHub Actions run `36082432970` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / concurrency / full verify: run `36082432869` — **SUCCESS**;
+- actual Chrome Control + cashier coupon workflow: run `36082432819` — **SUCCESS**;
+- independent PR full CI: run `36082437825` — **SUCCESS**.
+
+The frozen acquisition candidate remains untouched. V2-2 exists only on the Mastermind V2 lineage.
 ### V2-3 — Retail packaging / price-list / wholesale parity
 
 Strengthen grocery/wholesale competitiveness:
