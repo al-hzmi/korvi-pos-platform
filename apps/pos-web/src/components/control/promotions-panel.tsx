@@ -74,6 +74,8 @@ export function PromotionsPanel({
   readonly onCommandLockChange?: (locked: boolean) => void;
 }): JSX.Element {
   const [promotions, setPromotions] = useState<readonly AdminPromotion[] | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [unresolved, setUnresolved] = useState(false);
   const [draft, setDraft] = useState<CreateDraft>(INITIAL_DRAFT);
   const [selectedProducts, setSelectedProducts] = useState<readonly ProductSummary[]>([]);
   const [productTerm, setProductTerm] = useState('');
@@ -89,6 +91,7 @@ export function PromotionsPanel({
     async (signal?: AbortSignal): Promise<readonly AdminPromotion[]> => {
       const value = await api.adminPromotions(signal === undefined ? undefined : { signal });
       setPromotions(value);
+      setLoadState('ready');
       return value;
     },
     [api],
@@ -97,45 +100,76 @@ export function PromotionsPanel({
   useEffect(() => {
     const controller = new AbortController();
     setFailure(null);
+    setLoadState('loading');
     void load(controller.signal).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       setFailure(messageOf(error, 'تعذر تحميل العروض والكوبونات.'));
-      setPromotions([]);
+      setLoadState('failed');
     });
     return () => controller.abort();
   }, [load]);
 
   const runCommand = useCallback(
     async (work: () => Promise<unknown>, success: string): Promise<void> => {
-      if (busy) return;
+      if (busy || unresolved) return;
       setBusy(true);
       setFailure(null);
       setNotice(null);
       onCommandLockChange?.(true);
+      let safeToUnlock = false;
       try {
         await work();
         await load();
+        safeToUnlock = true;
         setNotice(success);
       } catch (error) {
         setFailure(
           messageOf(
             error,
-            'تعذر تأكيد التغيير. أعد تحميل القائمة قبل اتخاذ قرار آخر حتى لا تعمل على نسخة قديمة.',
+            'تعذر تأكيد التغيير. ستُعاد قراءة القائمة قبل السماح بقرار آخر.',
           ),
         );
         try {
           await load();
+          safeToUnlock = true;
         } catch {
-          // Preserve the original command failure; the operator already has an
-          // explicit instruction not to make another decision from stale data.
+          setUnresolved(true);
+          setLoadState('failed');
+          setFailure(
+            'تعذر حسم نتيجة التغيير وتعذر تحديث سجل العروض. القسم مقفل حتى تنجح إعادة القراءة من الخادم.',
+          );
         }
       } finally {
         setBusy(false);
-        onCommandLockChange?.(false);
+        if (safeToUnlock) onCommandLockChange?.(false);
       }
     },
-    [busy, load, onCommandLockChange],
+    [busy, load, onCommandLockChange, unresolved],
   );
+
+  const reconcile = useCallback(async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setFailure(null);
+    onCommandLockChange?.(true);
+    try {
+      await load();
+      setUnresolved(false);
+      setNotice('تمت إعادة قراءة سجل العروض من الخادم ويمكن متابعة العمل.');
+      onCommandLockChange?.(false);
+    } catch (error) {
+      setUnresolved(true);
+      setLoadState('failed');
+      setFailure(
+        messageOf(
+          error,
+          'ما زال تعذر حسم حالة العروض. يبقى القسم مقفلًا حتى تنجح إعادة القراءة من الخادم.',
+        ),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, load, onCommandLockChange]);
 
   const selectedIds = useMemo(
     () => new Set(selectedProducts.map((product) => product.id)),
@@ -256,7 +290,7 @@ export function PromotionsPanel({
     );
   };
 
-  if (promotions === null) {
+  if (loadState === 'loading' && promotions === null) {
     return (
       <CardSurface className="p-6">
         <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
@@ -264,6 +298,33 @@ export function PromotionsPanel({
         </p>
       </CardSurface>
     );
+  }
+
+  if (loadState === 'failed' && promotions === null) {
+    return (
+      <CardSurface className="flex flex-col gap-4 p-6">
+        <StatusNote tone="danger" live>
+          {failure ?? 'تعذر تحميل سجل العروض من الخادم.'}
+        </StatusNote>
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            setLoadState('loading');
+            void load().catch((error: unknown) => {
+              setLoadState('failed');
+              setFailure(messageOf(error, 'تعذر تحميل سجل العروض من الخادم.'));
+            });
+          }}
+        >
+          إعادة المحاولة
+        </Button>
+      </CardSurface>
+    );
+  }
+
+  if (promotions === null) {
+    return <CardSurface className="p-6">تعذر عرض سجل العروض.</CardSurface>;
   }
 
   return (
@@ -278,6 +339,18 @@ export function PromotionsPanel({
           {notice}
         </StatusNote>
       )}
+      {unresolved ? (
+        <CardSurface className="flex flex-col gap-3 border-destructive/30 p-4">
+          <StatusNote tone="danger" live>
+            توجد نتيجة إدارية غير محسومة. لا تُنشئ عرضًا أو تغيّر حالة قبل إعادة القراءة.
+          </StatusNote>
+          <div>
+            <Button variant="outline" disabled={busy} onClick={() => void reconcile()}>
+              إعادة القراءة وحسم الحالة
+            </Button>
+          </div>
+        </CardSurface>
+      ) : null}
 
       <CardSurface className="p-5">
         <div className="mb-5">
@@ -287,7 +360,7 @@ export function PromotionsPanel({
           </p>
         </div>
 
-        <fieldset disabled={busy} className="grid gap-4">
+        <fieldset disabled={busy || unresolved} className="grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field
               id="promotion-code"
@@ -523,7 +596,7 @@ export function PromotionsPanel({
                     {promotion.status === 'draft' || promotion.status === 'paused' ? (
                       <Button
                         size="sm"
-                        disabled={busy}
+                        disabled={busy || unresolved}
                         onClick={() => void changeStatus(promotion, 'active')}
                       >
                         تفعيل
@@ -533,7 +606,7 @@ export function PromotionsPanel({
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy}
+                        disabled={busy || unresolved}
                         onClick={() => void changeStatus(promotion, 'paused')}
                       >
                         إيقاف
@@ -543,7 +616,7 @@ export function PromotionsPanel({
                       <Button
                         size="sm"
                         variant="ghost"
-                        disabled={busy}
+                        disabled={busy || unresolved}
                         onClick={() => void changeStatus(promotion, 'archived')}
                       >
                         أرشفة
@@ -617,7 +690,7 @@ export function PromotionsPanel({
                         <Button
                           type="button"
                           className="self-end"
-                          disabled={busy}
+                          disabled={busy || unresolved}
                           onClick={() => void createCoupon(promotion)}
                         >
                           إضافة الكوبون
@@ -664,7 +737,7 @@ export function PromotionsPanel({
                                       <Button
                                         size="sm"
                                         variant="outline"
-                                        disabled={busy}
+                                        disabled={busy || unresolved}
                                         onClick={() => void changeCouponStatus(coupon, 'active')}
                                       >
                                         تفعيل
@@ -674,7 +747,7 @@ export function PromotionsPanel({
                                       <Button
                                         size="sm"
                                         variant="outline"
-                                        disabled={busy}
+                                        disabled={busy || unresolved}
                                         onClick={() => void changeCouponStatus(coupon, 'paused')}
                                       >
                                         إيقاف
@@ -684,7 +757,7 @@ export function PromotionsPanel({
                                       <Button
                                         size="sm"
                                         variant="ghost"
-                                        disabled={busy}
+                                        disabled={busy || unresolved}
                                         onClick={() => void changeCouponStatus(coupon, 'retired')}
                                       >
                                         تقاعد
