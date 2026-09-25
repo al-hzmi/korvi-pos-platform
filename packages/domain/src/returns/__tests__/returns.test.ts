@@ -179,9 +179,11 @@ describe('sequential partial returns', () => {
 
     for (let i = 0; i < 3; i += 1) {
       const draft = planReturn({
-        available: [promoted.returnedQuantityScaled === returned && returned === 0n
-          ? promoted
-          : { ...promoted, returnedQuantityScaled: returned, refunded }],
+        available: [
+          promoted.returnedQuantityScaled === returned && returned === 0n
+            ? promoted
+            : { ...promoted, returnedQuantityScaled: returned, refunded },
+        ],
         requested: [{ saleLineId: 'line-1', quantityScaled: 1_000n }],
         refund: CASH,
       });
