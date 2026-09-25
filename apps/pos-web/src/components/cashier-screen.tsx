@@ -324,8 +324,7 @@ export function CashierScreen({
           if (failure.action === 'reauthenticate') onExpired();
           setAuthoritativePricing(null);
 
-          const transportUnavailable =
-            failure.code === 'network' || failure.code === 'timeout';
+          const transportUnavailable = failure.code === 'network' || failure.code === 'timeout';
           if (transportUnavailable && couponCode.trim() === '') {
             setPricingStatus('offline');
             setPricingNotice(

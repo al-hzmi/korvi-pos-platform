@@ -82,7 +82,8 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
     !(value.offlineCaptured === undefined || value.offlineCaptured === true) ||
     !(
       value.expectedPricingHash === undefined ||
-      (typeof value.expectedPricingHash === 'string' && PRICING_HASH.test(value.expectedPricingHash))
+      (typeof value.expectedPricingHash === 'string' &&
+        PRICING_HASH.test(value.expectedPricingHash))
     ) ||
     value.couponCodes !== undefined ||
     !(

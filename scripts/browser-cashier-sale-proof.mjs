@@ -823,11 +823,7 @@ try {
   await clickButton('إتمام البيع');
   await waitForText('تمّت العملية', 30_000);
   await new Promise((resolve) => setTimeout(resolve, 300));
-  assert.equal(
-    saleRequests,
-    3,
-    'Coupon checkout must add exactly one POST /v1/sales request.',
-  );
+  assert.equal(saleRequests, 3, 'Coupon checkout must add exactly one POST /v1/sales request.');
 
   const couponSalesPage = await browserRequest('/v1/admin/sales?limit=20');
   let couponSaleDetail = null;
@@ -836,8 +832,7 @@ try {
     const detail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(sale.id)}`);
     if (
       detail.tenders.some(
-        (tender) =>
-          tender.kind === 'electronic' && tender.reference === 'V22-COUPON-PROOF-001',
+        (tender) => tender.kind === 'electronic' && tender.reference === 'V22-COUPON-PROOF-001',
       )
     ) {
       couponSaleDetail = detail;
