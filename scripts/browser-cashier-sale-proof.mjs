@@ -195,7 +195,7 @@ async function setInputByLabelText(labelText, value) {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
     );
-    return label?.querySelector('input') instanceof HTMLInputElement;
+    if (!(label instanceof HTMLLabelElement)) return false;\n    const byFor = label.htmlFor === '' ? null : document.getElementById(label.htmlFor);\n    const input = byFor instanceof HTMLInputElement ? byFor : label.querySelector('input');\n    return input instanceof HTMLInputElement;
   })()`;
   await waitFor(labelInputExpression, `input under label ${labelText}`);
 
