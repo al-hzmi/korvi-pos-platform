@@ -382,10 +382,58 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
   });
 
   it('E. coupon administration cannot lower the lifetime limit below durable redemptions', async () => {
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      const applicationId = '018fd200-0000-7000-8000-000000000223';
+      await tx.salePromotionApplication.create({
+        data: {
+          id: applicationId,
+          tenantId: A.tenant,
+          saleId: A.sale2,
+          promotionId: A.promotion1,
+          couponId: A.coupon1,
+          promotionRevision: 1n,
+          merchantCode: 'PROMO-1',
+          name: 'عرض واحد',
+          priority: 100,
+          stackingMode: 'stackable',
+          activationMode: 'coupon',
+          effectKind: 'fixed',
+          effectValue: 100n,
+          eligibleBaseMinor: 1_150n,
+          amountMinor: 100n,
+          couponCode: 'SAVE-10',
+        },
+      });
+      await tx.salePromotionAllocation.create({
+        data: {
+          id: '018fd200-0000-7000-8000-000000000233',
+          tenantId: A.tenant,
+          applicationId,
+          saleLineId: A.line2,
+          amountMinor: 100n,
+        },
+      });
+      await tx.couponRedemption.create({
+        data: {
+          id: '018fd200-0000-7000-8000-000000000243',
+          tenantId: A.tenant,
+          couponId: A.coupon1,
+          promotionId: A.promotion1,
+          saleId: A.sale2,
+          applicationId,
+          operationId: 'promo-live-sale-2',
+          redeemedAt: new Date(),
+        },
+      });
+    });
+
     const coupon = await withTenant(prisma, scope.tenantId, async (tx) =>
-      tx.coupon.findFirst({ where: { id: A.coupon1 } }),
+      tx.coupon.findFirst({
+        where: { id: A.coupon1 },
+        include: { _count: { select: { redemptions: true } } },
+      }),
     );
-    expect(coupon).not.toBeNull();
+    expect(coupon?._count.redemptions).toBe(2);
 
     await expect(
       updateMerchantCoupon(
@@ -395,7 +443,7 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
         A.coupon1,
         {
           expectedRevision: coupon!.revision.toString(),
-          totalRedemptionLimit: 0,
+          totalRedemptionLimit: 1,
           auditId: '018fd200-0000-7000-8000-000000000261',
           occurredAt: new Date().toISOString(),
         },
@@ -403,7 +451,7 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
     ).rejects.toThrow(/invalid-input/i);
   });
 
-  it('E. RLS keeps all policy and historical rows invisible to another tenant', async () => {
+  it('F. RLS keeps all policy and historical rows invisible to another tenant', async () => {
     const counts = await withTenant(prisma, otherScope.tenantId, async (tx) => ({
       promotions: await tx.promotion.count(),
       coupons: await tx.coupon.count(),
@@ -420,7 +468,7 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
     });
   });
 
-  it('F. finalized promotion history cannot be updated or directly deleted', async () => {
+  it('G. finalized promotion history cannot be updated or directly deleted', async () => {
     await expect(
       withTenant(prisma, scope.tenantId, async (tx) =>
         tx.salePromotionApplication.update({
@@ -437,7 +485,7 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
     ).rejects.toThrow(/immutable/i);
   });
 
-  it('G. active promotion/coupon configuration uses lifecycle instead of direct delete', async () => {
+  it('H. active promotion/coupon configuration uses lifecycle instead of direct delete', async () => {
     await expect(
       withTenant(prisma, scope.tenantId, async (tx) =>
         tx.coupon.delete({ where: { id: A.coupon1 } }),
@@ -451,7 +499,7 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
     ).rejects.toThrow(/archived or retired/i);
   });
 
-  it('H. product-target edits advance policy revision and active policy cannot lose its last target', async () => {
+  it('I. product-target edits advance policy revision and active policy cannot lose its last target', async () => {
     const promotionId = '018fd200-0000-7000-8000-000000000203';
     const targetId = '018fd200-0000-7000-8000-000000000251';
 
@@ -512,7 +560,7 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
     expect(target?.productId).toBe(A.product);
   });
 
-  it('I. product-targeted policy cannot enter active state before its allow-list exists', async () => {
+  it('J. product-targeted policy cannot enter active state before its allow-list exists', async () => {
     await expect(
       withTenant(prisma, scope.tenantId, async (tx) =>
         tx.promotion.create({
