@@ -153,6 +153,55 @@ describe('sequential partial returns', () => {
     expect(totals.total).toBe(AWKWARD.totalMinor);
   });
 
+  it('prorates promotion discount cumulatively and closes the final halala exactly', () => {
+    const promoted = line({
+      original: {
+        grossMinor: 1_200n,
+        lineDiscountMinor: 0n,
+        promotionDiscountMinor: 101n,
+        basketDiscountMinor: 0n,
+        netMinor: 955n,
+        vatMinor: 144n,
+        totalMinor: 1_099n,
+      },
+    });
+
+    let returned = 0n;
+    let refunded = {
+      grossMinor: 0n,
+      netMinor: 0n,
+      lineDiscountMinor: 0n,
+      promotionDiscountMinor: 0n,
+      basketDiscountMinor: 0n,
+      vatMinor: 0n,
+    };
+    const promotionPieces: bigint[] = [];
+
+    for (let i = 0; i < 3; i += 1) {
+      const draft = planReturn({
+        available: [promoted.returnedQuantityScaled === returned && returned === 0n
+          ? promoted
+          : { ...promoted, returnedQuantityScaled: returned, refunded }],
+        requested: [{ saleLineId: 'line-1', quantityScaled: 1_000n }],
+        refund: CASH,
+      });
+
+      promotionPieces.push(draft.promotionDiscountMinor);
+      returned += 1_000n;
+      refunded = {
+        grossMinor: refunded.grossMinor + draft.grossMinor,
+        netMinor: refunded.netMinor + draft.netMinor,
+        lineDiscountMinor: refunded.lineDiscountMinor + draft.lineDiscountMinor,
+        promotionDiscountMinor: refunded.promotionDiscountMinor + draft.promotionDiscountMinor,
+        basketDiscountMinor: refunded.basketDiscountMinor + draft.basketDiscountMinor,
+        vatMinor: refunded.vatMinor + draft.vatMinor,
+      };
+    }
+
+    expect(promotionPieces).toEqual([33n, 34n, 34n]);
+    expect(refunded.promotionDiscountMinor).toBe(101n);
+  });
+
   it('never rounds the same halala twice: two then one closes exactly', () => {
     const first = planReturn({
       available: [line()],

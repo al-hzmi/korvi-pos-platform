@@ -701,6 +701,7 @@ describe.skipIf(url === '')('returns, live', () => {
     expect(sum((row) => row.quantityScaled)).toBe(original?.quantityScaled);
     expect(sum((row) => row.grossMinor)).toBe(original?.grossMinor);
     expect(sum((row) => row.lineDiscountMinor)).toBe(original?.lineDiscountMinor);
+    expect(sum((row) => row.promotionDiscountMinor)).toBe(original?.promotionDiscountMinor);
     expect(sum((row) => row.basketDiscountMinor)).toBe(original?.basketDiscountMinor);
     expect(sum((row) => row.netMinor)).toBe(original?.netMinor);
     expect(sum((row) => row.vatMinor)).toBe(original?.vatMinor);
