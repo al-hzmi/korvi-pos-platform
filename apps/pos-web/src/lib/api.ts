@@ -861,6 +861,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
                   ),
                 }),
             ...(request.couponCodes === undefined ? {} : { couponCodes: request.couponCodes }),
+            ...(request.expectedPricingHash === undefined
+              ? {}
+              : { expectedPricingHash: request.expectedPricingHash }),
             ...(request.offlineCaptured === undefined
               ? {}
               : { offlineCaptured: request.offlineCaptured }),

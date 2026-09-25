@@ -16,6 +16,7 @@ import {
   moneyToMajorString,
   newId as defaultNewId,
   normalizeCouponCode,
+  priceCart,
   quantity,
   saleReconciles,
   tenantId as brandTenantId,
@@ -29,6 +30,7 @@ import {
 } from '@korvi/database';
 import type { RestaurantOrderDetail } from '@korvi/database';
 import { fingerprintIntent } from './fingerprint.js';
+import { checkoutPricingHash } from './pricing-hash.js';
 import { buildCheckoutReceipt } from './receipt.js';
 import type { CheckoutReceipt } from './receipt.js';
 import type {
@@ -92,6 +94,7 @@ export type CheckoutFailureReason =
   | 'coupon-ineligible'
   | 'promotion-manual-conflict'
   | 'promotion-policy-stale'
+  | 'pricing-stale'
   | 'promotion-offline-unsupported'
   | 'promotions-not-applicable'
   | 'idempotency-conflict'
@@ -245,6 +248,8 @@ export interface CheckoutInput {
   readonly basketDiscount?: CheckoutDiscountInput | undefined;
   /** Coupon activation intent only; policy, amount and eligibility remain server-owned. */
   readonly couponCodes?: readonly string[] | undefined;
+  /** Server-issued read-side precondition. It may only refuse stale pricing. */
+  readonly expectedPricingHash?: string | undefined;
   /** Offline-captured is a restrictive replay precondition, never pricing authority. */
   readonly offlineCaptured?: true | undefined;
 }
@@ -387,6 +392,7 @@ function fingerprintCheckoutIntent(
     })),
     basketDiscount: describeDiscount(input.basketDiscount),
     couponCodes,
+    pricingHash: input.expectedPricingHash ?? '',
     offlineCaptured: input.offlineCaptured === true,
   });
 }
@@ -861,6 +867,21 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         input.lines.some((line) => line.discount !== undefined);
       let finalized;
       try {
+        const currentPricing = priceCart(cart);
+        if (
+          input.expectedPricingHash !== undefined &&
+          input.expectedPricingHash !==
+            checkoutPricingHash({
+              priceMode: cart.priceMode,
+              currency,
+              couponCodes,
+              priced: currentPricing,
+              promotionEvaluation,
+            })
+        ) {
+          return fail('pricing-stale');
+        }
+
         finalized = finalizeSale({
           saleId,
           operationId: input.operationId,

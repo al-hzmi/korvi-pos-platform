@@ -1,3 +1,4 @@
+import { checkoutPricingHash } from './pricing-hash.js';
 import {
   InvalidCouponCodeError,
   basisPoints,
@@ -46,6 +47,7 @@ export interface CheckoutPreviewSuccess {
   readonly pricing: {
     readonly priceMode: PriceMode;
     readonly currency: Currency;
+    readonly pricingHash: string;
     readonly grossMinor: string;
     readonly promotionDiscountMinor: string;
     readonly netMinor: string;
@@ -257,6 +259,13 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
         pricing: {
           priceMode: settings.priceMode,
           currency,
+          pricingHash: checkoutPricingHash({
+            priceMode: settings.priceMode,
+            currency,
+            couponCodes,
+            priced,
+            promotionEvaluation: evaluation,
+          }),
           grossMinor: priced.gross.minor.toString(),
           promotionDiscountMinor: priced.promotionDiscountTotal.minor.toString(),
           netMinor: priced.net.minor.toString(),

@@ -1100,6 +1100,7 @@ export interface CheckoutPreviewApplication {
 export interface CheckoutPreviewResponse {
   readonly priceMode: 'tax-inclusive' | 'tax-exclusive';
   readonly currency: 'SAR';
+  readonly pricingHash: string;
   readonly grossMinor: string;
   readonly promotionDiscountMinor: string;
   readonly netMinor: string;
@@ -1120,6 +1121,8 @@ export interface CheckoutRequest {
   readonly cashReceivedMinor?: string;
   readonly tenders?: readonly CheckoutTenderRequest[];
   readonly couponCodes?: readonly string[];
+  /** Server-issued preview precondition; never a client-authored total. */
+  readonly expectedPricingHash?: string;
   /** Restrictive marker set by offline queue/sync; never pricing authority. */
   readonly offlineCaptured?: true;
   readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];

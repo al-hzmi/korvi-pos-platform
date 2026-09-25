@@ -98,6 +98,7 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'coupon-ineligible': 'كود الخصم صالح لكنه لا ينطبق على هذه السلة.',
   'promotion-manual-conflict': 'لا يمكن الجمع بين خصم الموظف وعرض أو كوبون في نفس العملية.',
   'promotion-policy-stale': 'تغيّرت سياسة العرض أثناء العملية. أعد المحاولة بالسعر المحدث.',
+  'pricing-stale': 'تغيّر السعر منذ آخر تسعير. حدّث السلة قبل إتمام الدفع.',
   'promotion-offline-unsupported': 'تغيّر السعر أثناء الانقطاع. راجع العملية قبل اعتمادها.',
   'promotions-not-applicable': 'العروض والكوبونات غير متاحة لمسار الطلب الحالي.',
   'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
@@ -137,6 +138,7 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'coupon-ineligible': 422,
   'promotion-manual-conflict': 422,
   'promotion-policy-stale': 409,
+  'pricing-stale': 409,
   'promotion-offline-unsupported': 409,
   'promotions-not-applicable': 422,
   'idempotency-conflict': 409,
@@ -784,6 +786,9 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
           ? {}
           : { basketDiscount: parsed.data.basketDiscount }),
         ...(parsed.data.couponCodes === undefined ? {} : { couponCodes: parsed.data.couponCodes }),
+        ...(parsed.data.expectedPricingHash === undefined
+          ? {}
+          : { expectedPricingHash: parsed.data.expectedPricingHash }),
         ...(parsed.data.offlineCaptured === undefined
           ? {}
           : { offlineCaptured: parsed.data.offlineCaptured }),

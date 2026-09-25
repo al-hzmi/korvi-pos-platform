@@ -33,6 +33,7 @@ export const BASIS_POINTS = z.number().int().min(0).max(10_000);
 export const MAX_TENDERS = 8;
 export const MAX_TENDER_REFERENCE = 64;
 export const MAX_DISCOUNT_REASON = 120;
+export const PRICING_HASH = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'not a pricing hash');
 
 /**
  * A payment that happened.
@@ -275,6 +276,8 @@ export const checkoutBody = z
     basketDiscount: discountBody.optional(),
     // Intent only. Canonical normalization + eligibility + money remain server-owned.
     couponCodes: z.array(z.string().min(1).max(64)).max(8).optional(),
+    // Server-issued preview precondition. It may refuse staleness, never assert money.
+    expectedPricingHash: PRICING_HASH.optional(),
     // Restrictive replay marker only. `false` carries no meaning and is refused.
     offlineCaptured: z.literal(true).optional(),
     lines: z

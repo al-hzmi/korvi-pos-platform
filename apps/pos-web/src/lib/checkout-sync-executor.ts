@@ -5,6 +5,7 @@ import { describeFailure } from './failures';
 
 const INTEGER = /^(0|[1-9][0-9]*)$/;
 const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
+const PRICING_HASH = /^[A-Za-z0-9_-]{43}$/;
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null;
@@ -79,6 +80,10 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
       (typeof value.tableId === 'string' && isUuidV7(value.tableId))
     ) ||
     !(value.offlineCaptured === undefined || value.offlineCaptured === true) ||
+    !(
+      value.expectedPricingHash === undefined ||
+      (typeof value.expectedPricingHash === 'string' && PRICING_HASH.test(value.expectedPricingHash))
+    ) ||
     value.couponCodes !== undefined ||
     !(
       (value.restaurantOrderId === undefined &&

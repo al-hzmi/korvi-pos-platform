@@ -28,6 +28,8 @@ export interface CheckoutSubmission {
   readonly cashReceivedMinor?: string;
   readonly tenders?: readonly CheckoutTenderRequest[];
   readonly couponCodes?: readonly string[];
+  readonly expectedPricingHash?: string;
+  readonly offlineCaptured?: true;
 }
 
 export interface CheckoutRunner {
@@ -79,6 +81,10 @@ export function runCheckout(
     ...(input.couponCodes === undefined
       ? {}
       : { couponCodes: input.couponCodes.map((code) => code) }),
+    ...(input.expectedPricingHash === undefined
+      ? {}
+      : { expectedPricingHash: input.expectedPricingHash }),
+    ...(input.offlineCaptured === undefined ? {} : { offlineCaptured: input.offlineCaptured }),
     lines: cartToRequestLines(input.lines),
   }));
   if (intent === null) return Promise.resolve();

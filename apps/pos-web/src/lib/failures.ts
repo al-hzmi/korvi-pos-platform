@@ -135,6 +135,10 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'تغيّرت سياسة العرض أثناء العملية. أعد الإرسال بالسعر المحدث.',
     action: 'amend-cart',
   },
+  'pricing-stale': {
+    message: 'تغيّر السعر منذ آخر تسعير. حدّث السعر قبل إعادة الدفع.',
+    action: 'amend-cart',
+  },
   'promotions-not-applicable': {
     message: 'العروض والكوبونات غير متاحة لمسار الطلب الحالي.',
     action: 'amend-cart',

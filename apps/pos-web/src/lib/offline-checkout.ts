@@ -86,6 +86,9 @@ export function checkoutQueueOperation(
           ),
         }),
     ...(intent.couponCodes === undefined ? {} : { couponCodes: [...intent.couponCodes] }),
+    ...(intent.expectedPricingHash === undefined
+      ? {}
+      : { expectedPricingHash: intent.expectedPricingHash }),
     lines: intent.lines.map((line) => ({ ...line })),
   };
   if (!isCheckoutQueuePayload(payload)) {
