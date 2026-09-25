@@ -335,8 +335,7 @@ export function CashierScreen({
     };
   }, [api, cart.lines, couponCode, onExpired, quickService]);
 
-  const effectiveTotalMinor =
-    authoritativePricing?.totalMinor ?? preview.total.minor.toString();
+  const effectiveTotalMinor = authoritativePricing?.totalMinor ?? preview.total.minor.toString();
   const effectiveNetMinor = authoritativePricing?.netMinor ?? preview.net.minor.toString();
   const effectiveVatMinor = authoritativePricing?.vatMinor ?? preview.vat.minor.toString();
   const effectivePromotionDiscountMinor = authoritativePricing?.promotionDiscountMinor ?? '0';
@@ -913,10 +912,10 @@ export function CashierScreen({
       ? null
       : pricingStatus === 'ready'
         ? null
-        : pricingNotice ??
+        : (pricingNotice ??
           (pricingStatus === 'loading'
             ? 'جاري التحقق من السعر والعروض على الخادم.'
-            : 'تعذّر التحقق من السعر والعروض. أعد الاتصال قبل إتمام هذا الدفع.');
+            : 'تعذّر التحقق من السعر والعروض. أعد الاتصال قبل إتمام هذا الدفع.'));
   const submissionBlocker =
     restaurantOrderSubmissionBlocker ?? tableSubmissionBlocker ?? pricingSubmissionBlocker;
 

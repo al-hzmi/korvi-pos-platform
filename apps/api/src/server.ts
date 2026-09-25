@@ -305,7 +305,8 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     checkoutPreview: {
       preview: (input) => {
         const service = resolve().checkoutPreview;
-        if (service === undefined) throw new Error('Checkout preview service failed to initialize.');
+        if (service === undefined)
+          throw new Error('Checkout preview service failed to initialize.');
         return service.preview(input);
       },
     },

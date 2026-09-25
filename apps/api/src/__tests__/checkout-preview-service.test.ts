@@ -72,9 +72,7 @@ function policyResolution(
   };
 }
 
-function promotions(
-  resolve: PromotionRepository['resolveForCheckout'],
-): PromotionRepository {
+function promotions(resolve: PromotionRepository['resolveForCheckout']): PromotionRepository {
   return { resolveForCheckout: resolve };
 }
 

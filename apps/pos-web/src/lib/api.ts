@@ -232,7 +232,10 @@ export interface ApiClient {
   createReturn(request: CreateReturnRequest): Promise<CreateReturnResponse>;
   createNoReceiptExchange(request: NoReceiptExchangeRequest): Promise<NoReceiptExchangeResponse>;
   closeShift(request: ShiftCloseRequest): Promise<ShiftCloseResponse>;
-  checkoutPreview(request: CheckoutPreviewRequest, options?: RequestOptions): Promise<CheckoutPreviewResponse>;
+  checkoutPreview(
+    request: CheckoutPreviewRequest,
+    options?: RequestOptions,
+  ): Promise<CheckoutPreviewResponse>;
   checkout(request: CheckoutRequest): Promise<CheckoutResponse>;
 
   onboardingReadiness(options?: RequestOptions): Promise<OnboardingReadiness>;

@@ -194,7 +194,8 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
       const promotionLines = loaded.map(({ product, scaled }) => ({
         lineId: product.id,
         productId: product.id,
-        grossMinor: extendedPrice(money(BigInt(product.priceMinor), currency), quantity(scaled)).minor,
+        grossMinor: extendedPrice(money(BigInt(product.priceMinor), currency), quantity(scaled))
+          .minor,
       }));
 
       let policies: readonly PromotionCheckoutPolicy[] = [];

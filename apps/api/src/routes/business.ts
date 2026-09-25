@@ -714,9 +714,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const result = await deps.checkoutPreview.preview({
         principal,
         lines: parsed.data.lines,
-        ...(parsed.data.couponCodes === undefined
-          ? {}
-          : { couponCodes: parsed.data.couponCodes }),
+        ...(parsed.data.couponCodes === undefined ? {} : { couponCodes: parsed.data.couponCodes }),
       });
       if (result.outcome === 'failure') {
         return reply
