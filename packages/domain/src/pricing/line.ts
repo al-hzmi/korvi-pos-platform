@@ -1,4 +1,4 @@
-import { InvalidAmountError } from '../errors.js';
+import { InvalidAmountError, InvalidDiscountError } from '../errors.js';
 import { mulDivRound } from '../money/rounding.js';
 import { allocate } from '../money/allocate.js';
 import { QUANTITY_SCALE } from '../quantity/quantity.js';
@@ -38,6 +38,13 @@ export interface CartLineInput {
   readonly quantity: Quantity;
   readonly vatRate: BasisPoints;
   readonly discount?: Discount;
+  /**
+   * Server-authored merchant-policy discount allocated to this line.
+   *
+   * A client must never send this value. Promotion/coupon authority produces
+   * it deterministically (ADR-0037); pricing only proves the money/VAT effect.
+   */
+  readonly promotionDiscountMinor?: bigint;
   readonly isWeighted?: boolean;
 }
 
@@ -53,7 +60,9 @@ export interface PricedLine {
   /** quantity x unitPrice, before any discount. */
   readonly gross: Money;
   readonly lineDiscount: Money;
-  /** Share of a basket-level discount allocated to this line. */
+  /** Server-authored promotion/coupon policy discount for this line. */
+  readonly promotionDiscount: Money;
+  /** Share of a basket-level manual discount allocated to this line. */
   readonly basketDiscount: Money;
   /** gross - lineDiscount - basketDiscount, tax exclusive. */
   readonly net: Money;
@@ -107,6 +116,7 @@ export interface PricedCart {
   readonly lines: readonly PricedLine[];
   readonly gross: Money;
   readonly lineDiscountTotal: Money;
+  readonly promotionDiscountTotal: Money;
   readonly basketDiscountTotal: Money;
   readonly net: Money;
   readonly vat: Money;
@@ -126,9 +136,10 @@ const money = (minor: bigint, currency: Currency): Money => ({ currency, minor }
 /**
  * Price a whole cart deterministically.
  *
- * Order matters and is fixed: extend each line, apply its own discount, then
- * allocate any basket discount across the discounted line values, then compute
- * VAT per line from the final taxable base.
+ * Order matters and is fixed: extend each line, apply its manual line discount,
+ * subtract the server-authored promotion allocation, allocate any manual basket
+ * discount across the remaining line values, then compute VAT per line from the
+ * final taxable base.
  *
  * The basket discount is allocated with the same largest-remainder routine used
  * for money everywhere else, so the parts sum exactly to the discount. Applying
@@ -142,13 +153,27 @@ export function priceCart(input: PriceCartInput): PricedCart {
   const staged = input.lines.map((line) => {
     const gross = extendedPrice(line.unitPrice, line.quantity);
     const lineDiscount = applyDiscount(gross, line.discount ?? NO_DISCOUNT);
-    return { line, gross, lineDiscount, afterLine: gross.minor - lineDiscount.minor };
+    const afterLine = gross.minor - lineDiscount.minor;
+    const promotionMinor = line.promotionDiscountMinor ?? 0n;
+    if (promotionMinor < 0n || promotionMinor > afterLine) {
+      throw new InvalidDiscountError(
+        'Promotion allocation must stay within the line value remaining after manual line discount.',
+      );
+    }
+    const promotionDiscount = money(promotionMinor, currency);
+    return {
+      line,
+      gross,
+      lineDiscount,
+      promotionDiscount,
+      afterPromotion: afterLine - promotionMinor,
+    };
   });
 
-  const afterLineTotal = staged.reduce((sum, entry) => sum + entry.afterLine, 0n);
+  const afterPromotionTotal = staged.reduce((sum, entry) => sum + entry.afterPromotion, 0n);
 
   const basketDiscountTotal = applyDiscount(
-    money(afterLineTotal, currency),
+    money(afterPromotionTotal, currency),
     input.basketDiscount ?? NO_DISCOUNT,
   );
 
@@ -157,12 +182,12 @@ export function priceCart(input: PriceCartInput): PricedCart {
       ? staged.map(() => 0n)
       : allocate(
           basketDiscountTotal.minor,
-          staged.map((entry) => entry.afterLine),
+          staged.map((entry) => entry.afterPromotion),
         );
 
   const lines: PricedLine[] = staged.map((entry, index) => {
     const basketDiscount = money(basketShares[index] ?? 0n, currency);
-    const discounted = entry.afterLine - basketDiscount.minor;
+    const discounted = entry.afterPromotion - basketDiscount.minor;
 
     // Tax-inclusive prices carry VAT inside the figure the customer sees, so
     // the net is extracted rather than added.
@@ -187,6 +212,7 @@ export function priceCart(input: PriceCartInput): PricedCart {
       vatRate: entry.line.vatRate,
       gross: entry.gross,
       lineDiscount: entry.lineDiscount,
+      promotionDiscount: entry.promotionDiscount,
       basketDiscount,
       net: money(net, currency),
       vat: money(vat, currency),
@@ -212,6 +238,7 @@ export function priceCart(input: PriceCartInput): PricedCart {
     lines,
     gross: sum((line) => line.gross),
     lineDiscountTotal: sum((line) => line.lineDiscount),
+    promotionDiscountTotal: sum((line) => line.promotionDiscount),
     basketDiscountTotal: lines.length === 0 ? zero : sum((line) => line.basketDiscount),
     net: sum((line) => line.net),
     vat: sum((line) => line.vat),

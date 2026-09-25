@@ -25,6 +25,7 @@ import type {
   Product,
   ProductRepository,
   ProductSearchQuery,
+  RestaurantFloorRepository,
   RecordReturnInput,
   RecordSaleInput,
   ReturnRecord,
@@ -104,6 +105,14 @@ export function memoryTenantRepository(store: MemoryBusinessStore): TenantReposi
  * Deliberately derived rather than stubbed: a test that asserts a hardcoded
  * total proves the assertion, not the aggregate.
  */
+export function memoryRestaurantFloorRepository(): RestaurantFloorRepository {
+  return {
+    findTableById: () => Promise.resolve(null),
+    listZonesForBranch: () => Promise.resolve([]),
+    listTablesForBranch: () => Promise.resolve([]),
+  };
+}
+
 export function memoryDashboardRepository(store: MemoryBusinessStore): DashboardRepository {
   return {
     summary: (scope, since) => {
@@ -197,6 +206,10 @@ export function memoryInventoryRepository(store: MemoryBusinessStore): Inventory
               branchId,
               productId,
               quantityScaled: scaled,
+              // The fake keeps no movement history, so it reports the same
+              // "unknown history" a migrated balance carries. Nothing in the
+              // cashier paths reads it; the revision contract is proved live.
+              revision: '0',
             } satisfies InventoryBalance),
       );
     },
@@ -208,6 +221,7 @@ export function memoryInventoryRepository(store: MemoryBusinessStore): Inventory
         branchId: movement.branchId,
         productId: movement.productId,
         quantityScaled: movement.quantityScaled,
+        revision: '0',
       });
     },
   };

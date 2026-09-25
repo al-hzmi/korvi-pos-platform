@@ -79,7 +79,12 @@ export interface ReturnableLine {
   readonly original: LineComponents;
   readonly refunded: Pick<
     LineComponents,
-    'grossMinor' | 'netMinor' | 'lineDiscountMinor' | 'basketDiscountMinor' | 'vatMinor'
+    | 'grossMinor'
+    | 'netMinor'
+    | 'lineDiscountMinor'
+    | 'promotionDiscountMinor'
+    | 'basketDiscountMinor'
+    | 'vatMinor'
   >;
 }
 
@@ -154,6 +159,7 @@ export interface ReturnDraft {
   readonly lines: readonly ReturnLineDraft[];
   readonly grossMinor: bigint;
   readonly lineDiscountMinor: bigint;
+  readonly promotionDiscountMinor: bigint;
   readonly basketDiscountMinor: bigint;
   readonly netMinor: bigint;
   readonly vatMinor: bigint;
@@ -254,6 +260,7 @@ export function planReturn(input: PlanReturnInput): ReturnDraft {
     lines,
     grossMinor: sum((components) => components.grossMinor),
     lineDiscountMinor: sum((components) => components.lineDiscountMinor),
+    promotionDiscountMinor: sum((components) => components.promotionDiscountMinor ?? 0n),
     basketDiscountMinor: sum((components) => components.basketDiscountMinor),
     netMinor: sum((components) => components.netMinor),
     vatMinor: sum((components) => components.vatMinor),

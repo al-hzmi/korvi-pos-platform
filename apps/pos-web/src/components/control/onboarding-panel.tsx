@@ -19,6 +19,7 @@ const LABELS: Readonly<Record<OnboardingCheckKey, string>> = {
   'active-branch': 'يوجد فرع مفعّل',
   'active-terminal': 'يوجد صندوق مفعّل',
   'viable-administrator': 'يوجد مدير بصلاحية فعلية',
+  'pos-operator': 'يوجد مستخدم جاهز لنقطة البيع',
   'active-product': 'يوجد صنف مفعّل للبيع',
 };
 
@@ -41,11 +42,25 @@ function canOpen(section: ControlSection, permissions: readonly string[]): boole
   switch (section) {
     case 'settings':
     case 'branches':
+    case 'migration':
       return permissions.includes('settings.manage');
     case 'staff':
       return permissions.includes('users.manage');
     case 'products':
       return permissions.includes('product.write');
+    case 'inventory':
+      return permissions.includes('inventory.read');
+    case 'purchasing':
+      return permissions.includes('purchasing.read');
+    case 'promotions':
+      return permissions.includes('promotion.manage');
+    case 'customers':
+      return permissions.includes('customer.read');
+    case 'sales':
+    case 'reports':
+      return permissions.includes('report.read');
+    case 'zatca':
+      return permissions.includes('zatca.manage');
     case 'home':
       return true;
   }
@@ -182,6 +197,11 @@ export function OnboardingPanel({
                 </span>
                 <div>
                   <p className="text-sm font-medium text-foreground">{LABELS[check.key]}</p>
+                  {!check.ready && check.key === 'pos-operator' ? (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      اربط مستخدمًا نشطًا بفرع افتراضي لديه صندوق نشط وصلاحيات البيع والورديات.
+                    </p>
+                  ) : null}
                   {!check.ready && check.remediation === 'tenant-lifecycle' ? (
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       تفعيل المنشأة من صلاحيات منصة كورفي وليس من حساب التاجر.

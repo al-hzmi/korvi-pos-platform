@@ -5,38 +5,101 @@ import {
   createAuthRepository,
   createIdempotencyRepository,
   createInventoryRepository,
+  createNoReceiptExchangeRepository,
+  createPlatformAdminSessionStore,
   createPrismaClient,
   createProductRepository,
+  createPromotionRepository,
+  createRestaurantFloorRepository,
   createSaleRepository,
   createReturnRepository,
   createShiftRepository,
   createTenantRepository,
   createTerminalRepository,
+  readRestaurantOrder,
   readTenantOnboardingReadiness,
 } from '@korvi/database';
 import { newId } from '@korvi/domain';
-import { createGuards } from './auth/guards.js';
-import { createCheckoutService } from './checkout/service.js';
-import { createReturnService } from './returns/service.js';
-import { createDrawerService } from './shifts/service.js';
-import { registerBusinessRoutes } from './routes/business.js';
 import { createMerchantAdminService } from './admin/service.js';
-import { createMerchantProductService } from './catalog/service.js';
-import { createMerchantOnboardingService } from './onboarding/service.js';
-import { registerAdminRoutes } from './routes/admin.js';
-import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
-import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { createAuthService } from './auth/service.js';
-import { registerAuthRoutes } from './routes/auth.js';
-import { registerHealthRoutes } from './routes/health.js';
+import { createGuards } from './auth/guards.js';
 import { createOwnerBootstrapService } from './bootstrap/service.js';
+import { createMerchantProductService } from './catalog/service.js';
+import { createCheckoutService } from './checkout/service.js';
+import { createCheckoutPreviewService } from './checkout/preview-service.js';
+import { createMerchantCustomerService } from './customers/service.js';
+import { createMerchantInventoryService } from './inventory/service.js';
+import { createMerchantOnboardingService } from './onboarding/service.js';
+import { createNoReceiptExchangeService } from './no-receipt-exchange/service.js';
+import { createMerchantPromotionAdminService } from './promotions/service.js';
+import { createMerchantCategoryMigrationService } from './migration/category-import-service.js';
+import { createMerchantCustomerMigrationService } from './migration/customer-import-service.js';
+import { createMerchantProductMigrationService } from './migration/product-import-service.js';
+import { createMerchantSupplierMigrationService } from './migration/supplier-import-service.js';
+import { createMerchantOpeningInventoryMigrationService } from './migration/opening-inventory-import-service.js';
+import { createPlatformAuth } from './platform/auth.js';
+import { registerPlatformDeviceRoutes } from './platform/device-routes.js';
+import { registerPlatformRoutes } from './platform/routes.js';
+import { createPlatformService } from './platform/service.js';
+import { registerPlatformSupportRoutes } from './platform/support-routes.js';
+import { createPlatformSupportService } from './platform/support-service.js';
+import { createMerchantPurchasingService } from './purchasing/service.js';
+import { createMerchantRestaurantOrderService } from './restaurant/order-service.js';
+import { createMerchantPreparationService } from './restaurant/preparation-service.js';
+import { createMerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
+import { createMerchantRestaurantWasteService } from './restaurant/waste-service.js';
+import { createReturnService } from './returns/service.js';
+import { registerAdminRoutes } from './routes/admin.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { registerBootstrapRoutes } from './routes/bootstrap.js';
+import { registerBusinessRoutes } from './routes/business.js';
+import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
+import { registerCustomerRoutes } from './routes/customers.js';
+import { registerHealthRoutes } from './routes/health.js';
+import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
+import { registerOnboardingRoutes } from './routes/onboarding.js';
+import { registerCategoryMigrationRoutes } from './routes/category-migration.js';
+import { registerCustomerMigrationRoutes } from './routes/customer-migration.js';
+import { registerProductMigrationRoutes } from './routes/product-migration.js';
+import { registerSupplierMigrationRoutes } from './routes/supplier-migration.js';
+import { registerOpeningInventoryMigrationRoutes } from './routes/opening-inventory-migration.js';
+import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
+import { registerPromotionAdminRoutes } from './routes/promotions-admin.js';
+import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
+import { registerRestaurantPreparationRoutes } from './routes/restaurant-preparation.js';
+import { registerRestaurantRecipeRoutes } from './routes/restaurant-recipes.js';
+import { registerRestaurantWasteRoutes } from './routes/restaurant-waste.js';
+import { registerSalesReadRoutes } from './routes/sales-read.js';
+import { registerZatcaRoutes } from './routes/zatca.js';
+import { registerOperationalObservability } from './runtime/observability.js';
+import { createMerchantSalesReadService } from './sales/read-service.js';
+import { createDrawerService } from './shifts/service.js';
+import { createMerchantZatcaService } from './zatca/merchant-service.js';
+import { createLazyProductionCheckoutFiscalization } from './zatca/checkout-fiscalization-infrastructure.js';
+import { createStagingSimulationCheckoutFiscalization } from './zatca/staging-simulation-checkout-fiscalization.js';
+import type { MerchantAdminService } from './admin/service.js';
 import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
-import type { MerchantAdminService } from './admin/service.js';
 import type { MerchantProductService } from './catalog/service.js';
+import type { MerchantCustomerService } from './customers/service.js';
+import type { MerchantInventoryService } from './inventory/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
+import type { MerchantCategoryMigrationService } from './migration/category-import-service.js';
+import type { MerchantCustomerMigrationService } from './migration/customer-import-service.js';
+import type { MerchantProductMigrationService } from './migration/product-import-service.js';
+import type { MerchantSupplierMigrationService } from './migration/supplier-import-service.js';
+import type { MerchantOpeningInventoryMigrationService } from './migration/opening-inventory-import-service.js';
+import type { PlatformService } from './platform/service.js';
+import type { PlatformSupportService } from './platform/support-service.js';
+import type { MerchantPurchasingService } from './purchasing/service.js';
+import type { MerchantPromotionAdminService } from './promotions/service.js';
+import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
+import type { MerchantPreparationService } from './restaurant/preparation-service.js';
+import type { MerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
+import type { MerchantRestaurantWasteService } from './restaurant/waste-service.js';
 import type { BusinessDeps } from './routes/business.js';
+import type { MerchantSalesReadService } from './sales/read-service.js';
+import type { MerchantZatcaService } from './zatca/merchant-service.js';
 import type { ApiConfig } from './config.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -64,29 +127,46 @@ export interface ServerDeps {
    * route off says so.
    */
   readonly bootstrap?: OwnerBootstrapService | null;
-  /**
-   * The merchant's own administration authority.
-   *
-   * Supplied by tests; built from DATABASE_URL on first use otherwise, for the
-   * same reason the two above are. It is a separate dependency rather than a
-   * member of `business` because the till and the back office are different
-   * surfaces with different permissions, and bundling them would make it
-   * easy to hand a cashier's route an administrator's service.
-   */
+  /** Merchant settings, branches, tills, members and roles. */
   readonly admin?: MerchantAdminService;
-  /**
-   * Narrow catalogue write used by onboarding and later back-office product
-   * creation. It is separate from cashier reads and requires product.write.
-   */
+  /** Narrow catalogue write used by onboarding and back-office product creation. */
   readonly catalog?: MerchantProductService;
-
-  /**
-   * Read-only onboarding readiness authority.
-   *
-   * Kept separate from merchant mutations so this surface cannot accidentally
-   * acquire write authority while it is only meant to explain readiness.
-   */
+  /** Merchant stock authority: adjustments, counts and branch transfers. */
+  readonly inventory?: MerchantInventoryService;
+  /** Purchasing and receiving authority: suppliers, orders and receipts. */
+  readonly purchasing?: MerchantPurchasingService;
+  /** Merchant promotion/coupon configuration authority, guarded by promotion.manage. */
+  readonly promotionAdmin?: MerchantPromotionAdminService;
+  /** Read-only onboarding readiness authority. */
   readonly onboarding?: MerchantOnboardingService;
+  /** P0 customer-migration orchestration; tenant identity is session-derived. */
+  readonly productMigration?: MerchantProductMigrationService;
+  /** Category M2 migration orchestration; uses the same tenant-scoped migration ledger. */
+  readonly categoryMigration?: MerchantCategoryMigrationService;
+  /** Customer M3 migration orchestration; create-only until an explicit update policy exists. */
+  readonly customerMigration?: MerchantCustomerMigrationService;
+  /** Supplier M4 migration orchestration; supplier create semantics are name-only. */
+  readonly supplierMigration?: MerchantSupplierMigrationService;
+  /** M5 opening inventory; business keys only, explicit causal opening-stock authority. */
+  readonly openingInventoryMigration?: MerchantOpeningInventoryMigrationService;
+  /** Operational restaurant open-order authority; non-fiscal until checkout. */
+  readonly restaurantOrders?: MerchantRestaurantOrderService;
+  /** Non-fiscal preparation-station configuration and routing authority. */
+  readonly restaurantPreparation?: MerchantPreparationService;
+  /** Restaurant recipe/BOM configuration plus governed batch-production inventory authority. */
+  readonly restaurantRecipes?: MerchantRestaurantRecipeService;
+  /** Explicit waste/spoilage stock-loss authority; separate from generic inventory adjustments. */
+  readonly restaurantWaste?: MerchantRestaurantWasteService;
+  /** Merchant customer directory and mutation authority. */
+  readonly customers?: MerchantCustomerService;
+  /** Read-only merchant sales history and financial reports, authorized by report.read. */
+  readonly salesRead?: MerchantSalesReadService;
+  /** Merchant-safe ZATCA operational status, authorized by zatca.manage. */
+  readonly zatca?: MerchantZatcaService;
+  /** Korvi's own SaaS control plane, separate from merchant administration. */
+  readonly platform?: PlatformService;
+  /** Append-only internal support ledger for the SaaS control plane. */
+  readonly platformSupport?: PlatformSupportService;
 }
 
 class AuthUnavailableError extends Error {
@@ -119,14 +199,6 @@ function lazyAuthService(config: ApiConfig): AuthService {
   };
 }
 
-/**
- * The cashier's persistence, built once, on first use.
- *
- * Same shape as the auth service above and for the same reason: a process that
- * only answers /health should not open a connection, and a missing
- * DATABASE_URL is an operator's problem reported as 503 rather than a
- * credential failure.
- */
 function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
   let built: BusinessDeps | null = null;
 
@@ -140,35 +212,55 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const terminals = createTerminalRepository(prisma);
     const tenants = createTenantRepository(prisma);
     const dashboard = createDashboardRepository(prisma);
+    const restaurantFloor = createRestaurantFloorRepository(prisma);
     const idempotency = createIdempotencyRepository(prisma);
     const audit = createAuditRepository(prisma);
+    const sales = createSaleRepository(prisma);
+    const promotions = createPromotionRepository(prisma);
+    const fiscalization =
+      config.checkoutFiscalizationMode === 'simulation'
+        ? createStagingSimulationCheckoutFiscalization()
+        : config.checkoutFiscalizationMode === 'production'
+          ? createLazyProductionCheckoutFiscalization({ prisma })
+          : undefined;
     built = {
       tenants,
       dashboard,
       products,
       shifts,
       terminals,
+      restaurantFloor,
+      checkoutPreview: createCheckoutPreviewService({ tenants, products, promotions }),
       checkout: createCheckoutService({
         tenants,
         products,
         inventory: createInventoryRepository(prisma),
         shifts,
-        sales: createSaleRepository(prisma),
+        sales,
+        promotions,
+        restaurantFloor,
+        restaurantOrders: {
+          read: (scope, branchId, orderId) => readRestaurantOrder(prisma, scope, branchId, orderId),
+        },
         idempotency,
         audit,
+        ...(fiscalization === undefined ? {} : { fiscalization }),
       }),
-      drawer: createDrawerService({
-        shifts,
-        terminals,
-        idempotency,
-        audit,
-      }),
+      drawer: createDrawerService({ shifts, terminals, idempotency, audit }),
       returns: createReturnService({
         returns: createReturnRepository(prisma),
         terminals,
         shifts,
         idempotency,
         audit,
+      }),
+      noReceiptExchanges: createNoReceiptExchangeService({
+        tenants,
+        products,
+        shifts,
+        sales,
+        exchanges: createNoReceiptExchangeRepository(prisma),
+        ...(fiscalization === undefined ? {} : { fiscalization }),
       }),
     };
     return built;
@@ -196,6 +288,13 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       recordManualMovement: (scope, input) => resolve().shifts.recordManualMovement(scope, input),
       close: (scope, input) => resolve().shifts.close(scope, input),
     },
+    restaurantFloor: {
+      findTableById: (scope, id) => resolve().restaurantFloor.findTableById(scope, id),
+      listZonesForBranch: (scope, branchId, activeOnly) =>
+        resolve().restaurantFloor.listZonesForBranch(scope, branchId, activeOnly),
+      listTablesForBranch: (scope, branchId, activeOnly) =>
+        resolve().restaurantFloor.listTablesForBranch(scope, branchId, activeOnly),
+    },
     terminals: {
       findById: (scope, id) => resolve().terminals.findById(scope, id),
       findByCode: (scope, code) => resolve().terminals.findByCode(scope, code),
@@ -203,6 +302,14 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       markSeen: (scope, id, at) => resolve().terminals.markSeen(scope, id, at),
     },
     checkout: { checkout: (input) => resolve().checkout.checkout(input) },
+    checkoutPreview: {
+      preview: (input) => {
+        const service = resolve().checkoutPreview;
+        if (service === undefined)
+          throw new Error('Checkout preview service failed to initialize.');
+        return service.preview(input);
+      },
+    },
     drawer: {
       recordMovement: (input) => resolve().drawer.recordMovement(input),
       close: (input) => resolve().drawer.close(input),
@@ -212,16 +319,18 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       lookup: (principal, term, limit) => resolve().returns.lookup(principal, term, limit),
       returnable: (principal, saleId) => resolve().returns.returnable(principal, saleId),
     },
+    noReceiptExchanges: {
+      create: (input) => {
+        const service = resolve().noReceiptExchanges;
+        if (service === undefined) {
+          throw new Error('No-receipt exchange service failed to initialize.');
+        }
+        return service.create(input);
+      },
+    },
   };
 }
 
-/**
- * Merchant administration, built once, on first use.
- *
- * Reading settings goes through the same tenant repository the till uses, so
- * there is one definition of what a tenant's settings are rather than two that
- * can drift.
- */
 function lazyAdminService(config: ApiConfig): MerchantAdminService {
   let built: MerchantAdminService | null = null;
 
@@ -246,9 +355,6 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
           allowWeightedItems: settings.allowWeightedItems,
           trackInventory: settings.trackInventory,
           allowNegativeStock: settings.allowNegativeStock,
-          // The persisted value, from the one settings model. A constant here
-          // would mean PATCH true, GET false — a read that contradicts the row
-          // it claims to describe.
           enableProductImages: settings.enableProductImages,
           receiptHeaderAr: settings.receiptHeaderAr,
           receiptFooterAr: settings.receiptFooterAr,
@@ -284,11 +390,29 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
   };
 }
 
-/**
- * Product bootstrap, built once on first use. It is intentionally not part of
- * the cashier BusinessDeps: cashier reads and back-office writes must not share
- * an authority object merely because both mention products.
- */
+function lazyPromotionAdminService(config: ApiConfig): MerchantPromotionAdminService {
+  let built: MerchantPromotionAdminService | null = null;
+
+  const resolve = (): MerchantPromotionAdminService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantPromotionAdminService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    list: (principal) => resolve().list(principal),
+    createPromotion: (principal, input) => resolve().createPromotion(principal, input),
+    updatePromotion: (principal, promotionId, input) =>
+      resolve().updatePromotion(principal, promotionId, input),
+    createCoupon: (principal, promotionId, input) =>
+      resolve().createCoupon(principal, promotionId, input),
+    updateCoupon: (principal, couponId, input) =>
+      resolve().updateCoupon(principal, couponId, input),
+  };
+}
+
 function lazyCatalogService(config: ApiConfig): MerchantProductService {
   let built: MerchantProductService | null = null;
 
@@ -300,51 +424,353 @@ function lazyCatalogService(config: ApiConfig): MerchantProductService {
     return built;
   };
 
+  return { create: (principal, input) => resolve().create(principal, input) };
+}
+
+function lazyInventoryService(config: ApiConfig): MerchantInventoryService {
+  let built: MerchantInventoryService | null = null;
+
+  const resolve = (): MerchantInventoryService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantInventoryService({ prisma: createPrismaClient(url) });
+    return built;
+  };
+
   return {
-    create: (principal, input) => resolve().create(principal, input),
+    branches: (principal, query) => resolve().branches(principal, query),
+    balances: (principal, query) => resolve().balances(principal, query),
+    costBalances: (principal, query) => resolve().costBalances(principal, query),
+    bootstrapCost: (principal, request) => resolve().bootstrapCost(principal, request),
+    adjust: (principal, request) => resolve().adjust(principal, request),
+    count: (principal, request) => resolve().count(principal, request),
+    transfer: (principal, request) => resolve().transfer(principal, request),
   };
 }
 
-/**
- * Read-only onboarding authority, constructed lazily like the other database
- * services so /health never needs a database connection.
- */
+function lazyPurchasingService(config: ApiConfig): MerchantPurchasingService {
+  let built: MerchantPurchasingService | null = null;
+
+  const resolve = (): MerchantPurchasingService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantPurchasingService({ prisma: createPrismaClient(url) });
+    return built;
+  };
+
+  return {
+    listBranches: (principal, query) => resolve().listBranches(principal, query),
+    listProducts: (principal, query) => resolve().listProducts(principal, query),
+    listSuppliers: (principal, query) => resolve().listSuppliers(principal, query),
+    getSupplier: (principal, supplierId) => resolve().getSupplier(principal, supplierId),
+    createSupplier: (principal, request) => resolve().createSupplier(principal, request),
+    updateSupplier: (principal, request) => resolve().updateSupplier(principal, request),
+    listPurchaseOrders: (principal, query) => resolve().listPurchaseOrders(principal, query),
+    getPurchaseOrder: (principal, id) => resolve().getPurchaseOrder(principal, id),
+    createPurchaseOrder: (principal, request) => resolve().createPurchaseOrder(principal, request),
+    listReceipts: (principal, id, limit) => resolve().listReceipts(principal, id, limit),
+    receive: (principal, request) => resolve().receive(principal, request),
+  };
+}
+
 function lazyOnboardingService(config: ApiConfig): MerchantOnboardingService {
   let built: MerchantOnboardingService | null = null;
 
   const resolve = (): MerchantOnboardingService => {
     if (built !== null) return built;
-
     const url = config.DATABASE_URL;
-    if (url === undefined) {
-      throw new AuthUnavailableError('DATABASE_URL is not configured.');
-    }
-
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
     const prisma = createPrismaClient(url);
     built = createMerchantOnboardingService({
       readReadiness: (scope) => readTenantOnboardingReadiness(prisma, scope),
     });
+    return built;
+  };
 
+  return { readReadiness: (principal) => resolve().readReadiness(principal) };
+}
+
+function lazyCategoryMigrationService(config: ApiConfig): MerchantCategoryMigrationService {
+  let built: MerchantCategoryMigrationService | null = null;
+  const resolve = (): MerchantCategoryMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantCategoryMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
+function lazyCustomerMigrationService(config: ApiConfig): MerchantCustomerMigrationService {
+  let built: MerchantCustomerMigrationService | null = null;
+  const resolve = (): MerchantCustomerMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantCustomerMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
+function lazySupplierMigrationService(config: ApiConfig): MerchantSupplierMigrationService {
+  let built: MerchantSupplierMigrationService | null = null;
+  const resolve = (): MerchantSupplierMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantSupplierMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
+function lazyOpeningInventoryMigrationService(
+  config: ApiConfig,
+): MerchantOpeningInventoryMigrationService {
+  let built: MerchantOpeningInventoryMigrationService | null = null;
+  const resolve = (): MerchantOpeningInventoryMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantOpeningInventoryMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
+function lazyProductMigrationService(config: ApiConfig): MerchantProductMigrationService {
+  let built: MerchantProductMigrationService | null = null;
+  const resolve = (): MerchantProductMigrationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantProductMigrationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    inspectCsv: (principal, input) => resolve().inspectCsv(principal, input),
+    createCsvJob: (principal, request) => resolve().createCsvJob(principal, request),
+    inspectXlsx: (principal, input) => resolve().inspectXlsx(principal, input),
+    createXlsxJob: (principal, request) => resolve().createXlsxJob(principal, request),
+    readJob: (principal, jobId) => resolve().readJob(principal, jobId),
+    rows: (principal, jobId, options) => resolve().rows(principal, jobId, options),
+    dryRun: (principal, jobId) => resolve().dryRun(principal, jobId),
+    commit: (principal, jobId, operationId) => resolve().commit(principal, jobId, operationId),
+  };
+}
+
+function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderService {
+  let built: MerchantRestaurantOrderService | null = null;
+
+  const resolve = (): MerchantRestaurantOrderService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantOrderService(createPrismaClient(url));
     return built;
   };
 
   return {
-    readReadiness: (principal) => resolve().readReadiness(principal),
+    listOpen: (principal) => resolve().listOpen(principal),
+    detail: (principal, orderId) => resolve().detail(principal, orderId),
+    create: (principal, request) => resolve().create(principal, request),
+    cancel: (principal, orderId, request) => resolve().cancel(principal, orderId, request),
+    transferTable: (principal, orderId, request) =>
+      resolve().transferTable(principal, orderId, request),
+    replaceLines: (principal, orderId, request) =>
+      resolve().replaceLines(principal, orderId, request),
   };
 }
 
-/**
- * The public bootstrap surface, or nothing.
- *
- * Two configuration facts have to hold before this route can be served at all:
- * a database, and a signing key. Missing either is an operator's problem and
- * the route says 503 — a deployment that quietly served bootstrap without a
- * key would be serving a door with no lock.
- *
- * Built eagerly rather than lazily, because "is this configured" is the
- * question the route needs answered at registration time, not on the first
- * request from somebody holding a capability.
- */
+function lazyRestaurantPreparationService(config: ApiConfig): MerchantPreparationService {
+  let built: MerchantPreparationService | null = null;
+  const resolve = (): MerchantPreparationService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantPreparationService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    listStations: (principal, branchId, activeOnly) =>
+      resolve().listStations(principal, branchId, activeOnly),
+    operationalStations: (principal) => resolve().operationalStations(principal),
+    createStation: (principal, request) => resolve().createStation(principal, request),
+    listRoutes: (principal, branchId) => resolve().listRoutes(principal, branchId),
+    setProductRoutes: (principal, request) => resolve().setProductRoutes(principal, request),
+    routing: (principal, orderId) => resolve().routing(principal, orderId),
+    fire: (principal, orderId, request) => resolve().fire(principal, orderId, request),
+    tasks: (principal, stationId, includeServed) =>
+      resolve().tasks(principal, stationId, includeServed),
+    updateTask: (principal, taskId, request) => resolve().updateTask(principal, taskId, request),
+  };
+}
+
+function lazyRestaurantRecipeService(config: ApiConfig): MerchantRestaurantRecipeService {
+  let built: MerchantRestaurantRecipeService | null = null;
+  const resolve = (): MerchantRestaurantRecipeService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantRecipeService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    detail: (principal, productId) => resolve().detail(principal, productId),
+    set: (principal, productId, request) => resolve().set(principal, productId, request),
+    cost: (principal, branchId, productId) => resolve().cost(principal, branchId, productId),
+    produce: (principal, productId, request) => resolve().produce(principal, productId, request),
+  };
+}
+
+function lazyRestaurantWasteService(config: ApiConfig): MerchantRestaurantWasteService {
+  let built: MerchantRestaurantWasteService | null = null;
+  const resolve = (): MerchantRestaurantWasteService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantWasteService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    record: (principal, request) => resolve().record(principal, request),
+  };
+}
+
+function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
+  let built: MerchantCustomerService | null = null;
+
+  const resolve = (): MerchantCustomerService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantCustomerService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    list: (principal, query) => resolve().list(principal, query),
+    detail: (principal, customerId) => resolve().detail(principal, customerId),
+    create: (principal, request) => resolve().create(principal, request),
+    update: (principal, customerId, request) => resolve().update(principal, customerId, request),
+  };
+}
+
+function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
+  let built: MerchantSalesReadService | null = null;
+
+  const resolve = (): MerchantSalesReadService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantSalesReadService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    list: (principal, query) => resolve().list(principal, query),
+    detail: (principal, saleId) => resolve().detail(principal, saleId),
+    report: (principal, query) => resolve().report(principal, query),
+  };
+}
+
+function lazyZatcaService(config: ApiConfig): MerchantZatcaService {
+  let built: MerchantZatcaService | null = null;
+
+  const resolve = (): MerchantZatcaService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantZatcaService(createPrismaClient(url));
+    return built;
+  };
+
+  return { status: (principal, query) => resolve().status(principal, query) };
+}
+
+function lazyPlatformService(config: ApiConfig): PlatformService {
+  let built: PlatformService | null = null;
+
+  const resolve = (): PlatformService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createPlatformService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    listTenants: (actor, query) => resolve().listTenants(actor, query),
+    getTenant: (actor, tenantId) => resolve().getTenant(actor, tenantId),
+    createTenant: (actor, input) => resolve().createTenant(actor, input),
+    activateTenant: (actor, tenantId, operationId) =>
+      resolve().activateTenant(actor, tenantId, operationId),
+    suspendTenant: (actor, tenantId, operationId, reason) =>
+      resolve().suspendTenant(actor, tenantId, operationId, reason),
+    reactivateTenant: (actor, tenantId, operationId) =>
+      resolve().reactivateTenant(actor, tenantId, operationId),
+    assignPlan: (actor, tenantId, input) => resolve().assignPlan(actor, tenantId, input),
+    listAudit: (actor, tenantId, input) => resolve().listAudit(actor, tenantId, input),
+  };
+}
+
+function lazyPlatformSupportService(config: ApiConfig): PlatformSupportService {
+  let built: PlatformSupportService | null = null;
+
+  const resolve = (): PlatformSupportService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createPlatformSupportService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    list: (actor, tenantId, query) => resolve().list(actor, tenantId, query),
+    create: (actor, tenantId, input) => resolve().create(actor, tenantId, input),
+  };
+}
+
 function bootstrapServiceFor(config: ApiConfig): OwnerBootstrapService | null {
   const url = config.DATABASE_URL;
   const signingKey = config.BOOTSTRAP_SIGNING_KEY;
@@ -354,41 +780,89 @@ function bootstrapServiceFor(config: ApiConfig): OwnerBootstrapService | null {
 
 export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyInstance {
   const app = Fastify({
-    logger: { level: config.LOG_LEVEL },
-    // The central Korvi generator, not crypto.randomUUID. A v4 carries no
-    // time, so a request log line could not be ordered against a sale that was
-    // rung up offline and synced later. Every identifier in the system comes
-    // from one place (ADR-0003).
+    logger: {
+      level: config.LOG_LEVEL,
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.body.password',
+          'req.body.token',
+          'req.body.accessKey',
+          'request.headers.authorization',
+          'request.headers.cookie',
+          'request.body.password',
+          'request.body.token',
+          'request.body.accessKey',
+          'res.headers["set-cookie"]',
+        ],
+        censor: '[Redacted]',
+      },
+    },
     genReqId: () => newId(),
   });
+
+  registerOperationalObservability(app, config);
 
   const service = deps.auth ?? lazyAuthService(config);
   const guards = createGuards(service, config);
   const business = deps.business ?? lazyBusinessDeps(config);
+  const platformAuth =
+    config.DATABASE_URL === undefined
+      ? createPlatformAuth(config)
+      : createPlatformAuth(
+          config,
+          createPlatformAdminSessionStore(createPrismaClient(config.DATABASE_URL)),
+        );
 
-  // Before anything else: a state-changing request from an origin this
-  // deployment does not know never reaches a handler.
   app.addHook('onRequest', guards.enforceOrigin);
 
-  // A configuration gap must not read as a credential failure. Without a
-  // database the auth routes answer 503, which is what it is.
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     if (error instanceof AuthUnavailableError) {
-      request.log.error('authentication is not configured; DATABASE_URL is missing');
+      request.log.error('database-backed route unavailable; DATABASE_URL is missing');
       return reply.code(503).send({ error: 'unavailable' });
     }
-    // The message stays in the log. A handler that echoes it has told the
-    // caller what the database is called.
-    request.log.error(error);
+    request.log.error(
+      { errorType: error.name, statusCode: error.statusCode ?? 500 },
+      'request failed',
+    );
     return reply.code(error.statusCode ?? 500).send({ error: 'internal_error' });
   });
 
   registerHealthRoutes(app);
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
+  registerRestaurantOrderRoutes(app, {
+    service: deps.restaurantOrders ?? lazyRestaurantOrderService(config),
+    guards,
+  });
+  registerRestaurantPreparationRoutes(app, {
+    service: deps.restaurantPreparation ?? lazyRestaurantPreparationService(config),
+    guards,
+  });
+  registerRestaurantRecipeRoutes(app, {
+    service: deps.restaurantRecipes ?? lazyRestaurantRecipeService(config),
+    guards,
+  });
+  registerRestaurantWasteRoutes(app, {
+    service: deps.restaurantWaste ?? lazyRestaurantWasteService(config),
+    guards,
+  });
   registerAdminRoutes(app, { service: deps.admin ?? lazyAdminService(config), guards });
   registerCatalogAdminRoutes(app, {
     service: deps.catalog ?? lazyCatalogService(config),
+    guards,
+  });
+  registerInventoryAdminRoutes(app, {
+    service: deps.inventory ?? lazyInventoryService(config),
+    guards,
+  });
+  registerPurchasingAdminRoutes(app, {
+    service: deps.purchasing ?? lazyPurchasingService(config),
+    guards,
+  });
+  registerPromotionAdminRoutes(app, {
+    service: deps.promotionAdmin ?? lazyPromotionAdminService(config),
     guards,
   });
   registerBootstrapRoutes(app, {
@@ -397,6 +871,47 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerOnboardingRoutes(app, {
     service: deps.onboarding ?? lazyOnboardingService(config),
     guards,
+  });
+  registerProductMigrationRoutes(app, {
+    service: deps.productMigration ?? lazyProductMigrationService(config),
+    guards,
+  });
+  registerCategoryMigrationRoutes(app, {
+    service: deps.categoryMigration ?? lazyCategoryMigrationService(config),
+    guards,
+  });
+  registerCustomerMigrationRoutes(app, {
+    service: deps.customerMigration ?? lazyCustomerMigrationService(config),
+    guards,
+  });
+  registerSupplierMigrationRoutes(app, {
+    service: deps.supplierMigration ?? lazySupplierMigrationService(config),
+    guards,
+  });
+  registerOpeningInventoryMigrationRoutes(app, {
+    service: deps.openingInventoryMigration ?? lazyOpeningInventoryMigrationService(config),
+    guards,
+  });
+  registerCustomerRoutes(app, {
+    service: deps.customers ?? lazyCustomerService(config),
+    guards,
+  });
+  registerSalesReadRoutes(app, {
+    service: deps.salesRead ?? lazySalesReadService(config),
+    guards,
+  });
+  registerZatcaRoutes(app, {
+    service: deps.zatca ?? lazyZatcaService(config),
+    guards,
+  });
+  registerPlatformRoutes(app, {
+    auth: platformAuth,
+    service: deps.platform ?? lazyPlatformService(config),
+  });
+  registerPlatformDeviceRoutes(app, { auth: platformAuth });
+  registerPlatformSupportRoutes(app, {
+    auth: platformAuth,
+    service: deps.platformSupport ?? lazyPlatformSupportService(config),
   });
   return app;
 }

@@ -1,7 +1,13 @@
 export { createPrismaClient } from './client.js';
 export type { PrismaClient } from './client.js';
 
-export { withTenant, withoutTenant, withLoginSlug, normalizeTenantSlug } from './tenant-context.js';
+export {
+  withTenant,
+  withControlPlane,
+  withoutTenant,
+  withLoginSlug,
+  normalizeTenantSlug,
+} from './tenant-context.js';
 export type { TransactionClient } from './tenant-context.js';
 
 export {
@@ -18,6 +24,10 @@ export {
   MerchantAdminRefusedError,
   PlanEntitlementRefusedError,
   OwnerBootstrapRefusedError,
+  StockOperationRefusedError,
+  CostBootstrapRefusedError,
+  PurchasingRefusedError,
+  PromotionPolicyRefusedError,
 } from './errors.js';
 export type {
   TenantProvisioningRefusal,
@@ -25,12 +35,17 @@ export type {
   MerchantAdminRefusal,
   PlanEntitlementRefusal,
   OwnerBootstrapRefusal,
+  StockOperationRefusal,
+  CostBootstrapRefusal,
+  PurchasingRefusal,
+  PromotionPolicyRefusal,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';
 export { createBranchRepository } from './repositories/branch-repository.js';
 export { createDashboardRepository } from './repositories/dashboard-repository.js';
 export { createTerminalRepository } from './repositories/terminal-repository.js';
+export { createRestaurantFloorRepository } from './repositories/restaurant-floor-repository.js';
 export {
   createProductRepository,
   createGlobalCatalogRepository,
@@ -43,7 +58,39 @@ export { createInventoryRepository } from './repositories/inventory-repository.j
 export { createCustomerRepository } from './repositories/customer-repository.js';
 export { createShiftRepository } from './repositories/shift-repository.js';
 export { createSaleRepository } from './repositories/sale-repository.js';
+export { createPromotionRepository } from './repositories/promotion-repository.js';
+export {
+  PromotionAdminRefusedError,
+  listMerchantPromotions,
+  createMerchantPromotion,
+  updateMerchantPromotion,
+  createMerchantCoupon,
+  updateMerchantCoupon,
+} from './administration/promotions.js';
+export type {
+  PromotionAdminRefusal,
+  PromotionAdminActor,
+  PromotionAdminCoupon,
+  PromotionAdminRecord,
+  PromotionCreateRequest,
+  PromotionUpdateRequest,
+  CouponCreateRequest,
+  CouponUpdateRequest,
+} from './administration/promotions.js';
+export {
+  MAX_MERCHANT_SALES_PAGE,
+  listMerchantSales,
+  readMerchantSale,
+} from './sales/read-model.js';
+export type {
+  MerchantSaleStatus,
+  MerchantSalesQuery,
+  MerchantSaleSummary,
+  MerchantSalesPage,
+  MerchantSaleDetail,
+} from './sales/read-model.js';
 export { createReturnRepository } from './repositories/return-repository.js';
+export { createNoReceiptExchangeRepository } from './repositories/no-receipt-exchange-repository.js';
 export { createIdempotencyRepository } from './repositories/idempotency-repository.js';
 export { createAuditRepository } from './repositories/audit-repository.js';
 export { createAuthRepository } from './repositories/auth-repository.js';
@@ -76,6 +123,48 @@ export type {
 } from './provisioning/tenant.js';
 export { fingerprintProvisioning, fingerprintLifecycle } from './provisioning/fingerprint.js';
 export type { ProvisioningIntent, LifecycleIntent } from './provisioning/fingerprint.js';
+
+// SaaS platform control-plane reads. Tenant discovery uses the dedicated
+// SELECT-only control-plane RLS policy; every child-table detail read re-enters
+// the ordinary tenant context instead of widening RLS installation-wide.
+export {
+  MAX_PLATFORM_TENANT_PAGE,
+  MAX_PLATFORM_AUDIT_PAGE,
+  listPlatformTenants,
+  readPlatformTenant,
+  readPlatformTenantDetail,
+  listPlatformTenantAudit,
+} from './control-plane/tenant-read.js';
+export type {
+  PlatformTenantListQuery,
+  PlatformTenantSummary,
+  PlatformTenantPage,
+  PlatformOwnerSummary,
+  PlatformTenantOperations,
+  PlatformTenantDetail,
+  PlatformAuditEntry,
+  PlatformAuditPage,
+} from './control-plane/tenant-read.js';
+export {
+  MAX_PLATFORM_SUPPORT_NOTE_LENGTH,
+  MAX_PLATFORM_SUPPORT_NOTE_PAGE,
+  PlatformSupportNoteRefusedError,
+  listPlatformSupportNotes,
+  createPlatformSupportNote,
+} from './control-plane/support-notes.js';
+export type {
+  PlatformSupportNoteRefusal,
+  PlatformSupportNote,
+  PlatformSupportNotePage,
+  PlatformSupportNoteCreateRequest,
+  PlatformSupportNoteCreateResult,
+} from './control-plane/support-notes.js';
+
+export { createPlatformAdminSessionStore } from './control-plane/platform-session.js';
+export type {
+  PlatformAdminSessionRecord,
+  PlatformAdminSessionStore,
+} from './control-plane/platform-session.js';
 
 // Merchant administration (Strike 4B-1). Tenant-scoped, session-derived, and
 // deliberately separate from the control-plane functions above: nothing here
@@ -118,6 +207,140 @@ export type {
   TerminalPatch,
 } from './administration/merchant-admin.js';
 
+// Merchant customer authority. Reads and writes remain tenant-scoped; mutation
+// identity and actor authority are server-derived and every successful change
+// records its result and audit evidence in the same transaction.
+export {
+  MAX_CUSTOMER_PAGE,
+  CustomerAdminRefusedError,
+  listMerchantCustomers,
+  readMerchantCustomer,
+  createMerchantCustomer,
+  updateMerchantCustomer,
+} from './administration/customers.js';
+export type {
+  CustomerAdminRefusal,
+  CustomerActor,
+  AdminCustomer,
+  CustomerListQuery,
+  CustomerPage,
+  CustomerSaleLink,
+  CustomerDetail,
+  CustomerCreateRequest,
+  CustomerUpdateRequest,
+  CustomerMutationResult,
+} from './administration/customers.js';
+
+// Restaurant open-order authority. Rows are operational and non-fiscal; line
+// price/tax facts are server-authored snapshots for later settlement.
+export {
+  RestaurantOrderRefusedError,
+  listOpenRestaurantOrders,
+  readRestaurantOrder,
+  createRestaurantOrder,
+  cancelRestaurantOrder,
+  transferRestaurantOrderTable,
+  replaceRestaurantOrderLines,
+} from './restaurant/orders.js';
+export type {
+  RestaurantOrderRefusal,
+  RestaurantOrderActor,
+  RestaurantOrderCreateLine,
+  RestaurantOrderCreateRequest,
+  RestaurantOrderCancelRequest,
+  RestaurantOrderTransferTableRequest,
+  RestaurantOrderRetainedLine,
+  RestaurantOrderNewLine,
+  RestaurantOrderReplaceLinesRequest,
+  RestaurantOrderLine,
+  RestaurantOrderSummary,
+  RestaurantOrderDetail,
+  RestaurantOrderMutationResult,
+} from './restaurant/orders.js';
+
+// Restaurant preparation station/routing authority. Operational and non-fiscal.
+export {
+  RestaurantPreparationRefusedError,
+  listPreparationStations,
+  createPreparationStation,
+  listPreparationRoutes,
+  setProductPreparationRoutes,
+  routeRestaurantOrderForPreparation,
+  fireRestaurantOrderForPreparation,
+  listPreparationTasks,
+  updatePreparationTaskStatus,
+} from './restaurant/preparation.js';
+export type {
+  RestaurantPreparationRefusal,
+  RestaurantPreparationActor,
+  PreparationStation,
+  PreparationRoute,
+  CreatePreparationStationRequest,
+  SetProductPreparationRoutesRequest,
+  PreparationMutationResult,
+  PreparationRoutingLine,
+  PreparationRoutingGroup,
+  PreparationRoutingPlan,
+  PreparationTaskStatus,
+  PreparationTask,
+  FirePreparationRequest,
+  PreparationFireResult,
+  UpdatePreparationTaskStatusRequest,
+} from './restaurant/preparation.js';
+
+// Restaurant recipe/BOM configuration and production authority. Production reuses
+// the one inventory/cost ledger; it never creates a parallel restaurant stock truth.
+export {
+  RestaurantRecipeRefusedError,
+  readRestaurantRecipe,
+  setRestaurantRecipe,
+  readRestaurantRecipeCost,
+} from './restaurant/recipes.js';
+export {
+  RestaurantProductionRefusedError,
+  recordRestaurantRecipeProduction,
+} from './restaurant/production.js';
+export type {
+  RestaurantRecipeRefusal,
+  RestaurantRecipeActor,
+  RestaurantRecipeIngredientRecord,
+  RestaurantRecipeRecord,
+  SetRestaurantRecipeRequest,
+  RestaurantRecipeMutationResult,
+  RestaurantRecipeIngredientCost,
+  RestaurantRecipeCost,
+} from './restaurant/recipes.js';
+export type {
+  RestaurantProductionRefusal,
+  RestaurantProductionActor,
+  RestaurantRecipeProductionRequest,
+  RestaurantRecipeProductionLineResult,
+  RestaurantRecipeProductionResult,
+} from './restaurant/production.js';
+
+export { RestaurantWasteRefusedError, recordRestaurantWaste } from './restaurant/waste.js';
+export type {
+  RestaurantWasteReason,
+  RestaurantWasteRefusal,
+  RestaurantWasteActor,
+  RestaurantWasteLineRequest,
+  RestaurantWasteRequest,
+  RestaurantWasteLineResult,
+  RestaurantWasteResult,
+} from './restaurant/waste.js';
+
+// Category bootstrap. Tenant-scoped catalogue authority used by onboarding/migration.
+export {
+  CategoryBootstrapRefusedError,
+  ensureCategory,
+} from './administration/category-bootstrap.js';
+export type {
+  CategoryBootstrapRefusal,
+  CategoryBootstrapActor,
+  AdminCategoryBootstrap,
+  EnsureCategoryResult,
+} from './administration/category-bootstrap.js';
+
 // Product bootstrap (Strike 4D-4). Tenant-scoped merchant authority that creates
 // catalogue truth only; no stock movement and no onboarding-complete flag.
 export {
@@ -129,6 +352,107 @@ export type {
   ProductBootstrapActor,
   AdminProductBootstrap,
 } from './administration/product-bootstrap.js';
+
+// Customer Migration Engine — Product M1 orchestration. File parsing/mapping
+// stays in @korvi/domain/API; committed catalogue truth reuses the existing
+// product bootstrap writer rather than creating a second product authority.
+export {
+  ProductImportRefusedError,
+  createProductImportJob,
+  readProductImportJob,
+  readProductImportRows,
+  dryRunProductImport,
+  commitProductImport,
+} from './migration/product-import.js';
+export type {
+  ProductImportRefusal,
+  ProductImportActor,
+  CreateProductImportJobRequest,
+  ProductImportRowResult,
+  ProductImportSummary,
+  ProductImportRowPage,
+} from './migration/product-import.js';
+
+// Customer Migration Engine — Category M2 orchestration. Uses the same
+// tenant-scoped migration job/row ledger as Product M1 and commits only through
+// the established category bootstrap authority.
+export {
+  CategoryImportRefusedError,
+  createCategoryImportJob,
+  readCategoryImportJob,
+  readCategoryImportRows,
+  dryRunCategoryImport,
+  commitCategoryImport,
+} from './migration/category-import.js';
+export type {
+  CategoryImportRefusal,
+  CategoryImportActor,
+  CreateCategoryImportJobRequest,
+  CategoryImportRowResult,
+  CategoryImportSummary,
+  CategoryImportRowPage,
+} from './migration/category-import.js';
+
+// Customer Migration Engine — M3 baseline + M6 explicit customer conflict strategy.
+// Default remains reject. M6 may update only by the deterministic tenant-scoped
+// phone business key and still reuses the authoritative customer writer.
+export {
+  CustomerImportRefusedError,
+  createCustomerImportJob,
+  readCustomerImportJob,
+  readCustomerImportRows,
+  dryRunCustomerImport,
+  commitCustomerImport,
+} from './migration/customer-import.js';
+export type {
+  CustomerImportConflictPolicy,
+  CustomerImportRefusal,
+  CustomerImportActor,
+  CreateCustomerImportJobRequest,
+  CustomerImportRowResult,
+  CustomerImportSummary,
+  CustomerImportRowPage,
+} from './migration/customer-import.js';
+
+// Customer Migration Engine — Supplier M4 orchestration. Supplier import uses
+// the real purchasing supplier authority and deliberately carries only the
+// currently supported create field: name.
+export {
+  SupplierImportRefusedError,
+  createSupplierImportJob,
+  readSupplierImportJob,
+  readSupplierImportRows,
+  dryRunSupplierImport,
+  commitSupplierImport,
+} from './migration/supplier-import.js';
+export type {
+  SupplierImportRefusal,
+  SupplierImportActor,
+  CreateSupplierImportJobRequest,
+  SupplierImportRowResult,
+  SupplierImportSummary,
+  SupplierImportRowPage,
+} from './migration/supplier-import.js';
+
+// Customer Migration Engine — M5 opening inventory orchestration. Source files
+// carry business keys only; commit derives tenant-scoped branch/product identity
+// and posts explicit causal opening-stock movements with UNKNOWN cost.
+export {
+  OpeningInventoryImportRefusedError,
+  createOpeningInventoryImportJob,
+  readOpeningInventoryImportJob,
+  readOpeningInventoryImportRows,
+  dryRunOpeningInventoryImport,
+  commitOpeningInventoryImport,
+} from './migration/opening-inventory.js';
+export type {
+  OpeningInventoryImportRefusal,
+  OpeningInventoryImportActor,
+  CreateOpeningInventoryImportJobRequest,
+  OpeningInventoryImportRowResult,
+  OpeningInventoryImportSummary,
+  OpeningInventoryImportRowPage,
+} from './migration/opening-inventory.js';
 
 // Commercial plan/entitlement control-plane foundation (Strike 4C).
 // No merchant HTTP authority and no billing-provider semantics live here.
@@ -166,3 +490,93 @@ export type {
   OwnerBootstrapAcceptance,
 } from './bootstrap/owner-bootstrap.js';
 export { verifyOwnerBootstrapCapability } from './bootstrap/capability.js';
+
+// Merchant stock authority (Strike 5A). Each of these takes a server-derived
+// actor and opens its own tenant-scoped transaction, so there is no variant on
+// this surface that accepts a raw tenant or an open transaction — the same
+// reason `applyMovementWithin` stays internal.
+export {
+  recordInventoryAdjustment,
+  recordInventoryCount,
+  recordInventoryTransfer,
+} from './inventory/stock-ledger.js';
+export type {
+  StockActor,
+  StockLineResult,
+  AdjustmentResult,
+  CountLineResult,
+  CountResult,
+  TransferLineResult,
+  TransferResult,
+} from './inventory/stock-ledger.js';
+export { listBalancePage, MAX_BALANCE_PAGE } from './inventory/balances.js';
+export type { BalancePage, BalancePageRow } from './inventory/balances.js';
+export { listInventoryBranchPage, MAX_INVENTORY_BRANCH_PAGE } from './inventory/branches.js';
+export type { InventoryBranch, InventoryBranchPage } from './inventory/branches.js';
+
+// Prospective costing bootstrap (Strike 5C / ADR-0025). It values only the
+// currently unknown positive quantity derived under stock + cost row locks,
+// after matching the frozen read observations. It never changes stock
+// quantity/revision or rewrites historical movement evidence.
+export { recordInventoryCostBootstrap } from './costing/bootstrap.js';
+export type { CostBootstrapActor, InventoryCostBootstrapResult } from './costing/bootstrap.js';
+export { listCostBalancePage, MAX_COST_BALANCE_PAGE } from './costing/balances.js';
+export type { CostBalancePage, CostBalancePageRow } from './costing/balances.js';
+
+// Purchasing and receiving authority (Strike 5B). Same rule as above: every
+// function here derives its tenant from a server-supplied actor and opens its
+// own tenant-scoped transaction.
+//
+// `lockBranches`, `lockProducts`, `lockBalances`, `lockedOrThrow` and
+// `claimOperation` are exported from `inventory/stock-ledger.js` for these
+// modules to share, and are deliberately *not* re-exported here: each takes a
+// raw tenant string and an open transaction, which is safe only inside
+// `withTenant`.
+export {
+  createSupplier,
+  updateSupplier,
+  listSuppliers,
+  getSupplier,
+  MAX_SUPPLIER_PAGE,
+} from './purchasing/suppliers.js';
+export type {
+  SupplierActor,
+  SupplierRecord,
+  SupplierResult,
+  SupplierPage,
+} from './purchasing/suppliers.js';
+export {
+  createPurchaseOrder,
+  listPurchaseOrders,
+  getPurchaseOrder,
+  MAX_PURCHASE_ORDER_PAGE,
+} from './purchasing/purchase-orders.js';
+export type {
+  PurchasingActor,
+  PurchaseOrderLineRecord,
+  PurchaseOrderRecord,
+  PurchaseOrderResult,
+  PurchaseOrderSummary,
+  PurchaseOrderPage,
+} from './purchasing/purchase-orders.js';
+export {
+  recordPurchaseReceipt,
+  listPurchaseReceipts,
+  MAX_RECEIPT_PAGE,
+} from './purchasing/receiving.js';
+export type {
+  ReceivingActor,
+  PurchaseReceiptLineResult,
+  PurchaseReceiptResult,
+  PurchaseReceiptSummary,
+} from './purchasing/receiving.js';
+export { listPurchasingProductPage, MAX_PURCHASING_PRODUCT_PAGE } from './purchasing/catalog.js';
+export type { PurchasingProduct, PurchasingProductPage } from './purchasing/catalog.js';
+// ZATCA Compliance-CSID durable uncertainty boundary (Gate 39).
+export { createZatcaCsidProvisioningRepository } from './zatca/csid-provisioning-repository.js';
+export { createZatcaFatooraCredentialRepository } from './zatca/fatoora-credential-repository.js';
+export type {
+  ZatcaFatooraCiphertextRecord,
+  ZatcaFatooraCredentialRepository,
+} from './zatca/fatoora-credential-repository.js';
+export { createZatcaInvoiceSubmissionRepository } from './zatca/invoice-submission-repository.js';

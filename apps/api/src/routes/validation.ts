@@ -33,6 +33,7 @@ export const BASIS_POINTS = z.number().int().min(0).max(10_000);
 export const MAX_TENDERS = 8;
 export const MAX_TENDER_REFERENCE = 64;
 export const MAX_DISCOUNT_REASON = 120;
+export const PRICING_HASH = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'not a pricing hash');
 
 /**
  * A payment that happened.
@@ -232,13 +233,53 @@ export const openShiftBody = z.object({
  * Both normalise into one settlement engine downstream. There is no second
  * checkout path and there must never be one.
  */
+export const checkoutPreviewBody = z
+  .object({
+    couponCodes: z.array(z.string().min(1).max(64)).max(8).optional(),
+    lines: z
+      .array(
+        z
+          .object({
+            productId: UUID,
+            quantityScaled: SCALED_QUANTITY,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_CART_LINES)
+      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
+        message: 'duplicate product line',
+      }),
+  })
+  .strict();
+
 export const checkoutBody = z
   .object({
     operationId: UUID,
     terminalId: UUID,
+    // Replay precondition, not an authority assertion. The server derives the
+    // active shift and refuses if it no longer matches this immutable intent.
+    expectedShiftId: UUID.optional(),
+    // Operational only. Applicability is decided from tenant_settings.vertical;
+    // this value never changes VAT, invoice type or fiscalization.
+    orderType: z.enum(['dine-in', 'takeaway', 'delivery']).optional(),
+    tableId: UUID.optional(),
+    // Optional only for direct sales. Open-order settlement requires both
+    // identity and revision so a stale kitchen/table state cannot be paid.
+    restaurantOrderId: UUID.optional(),
+    expectedRestaurantOrderRevision: z
+      .string()
+      .regex(/^[1-9][0-9]{0,18}$/)
+      .optional(),
     cashReceivedMinor: MINOR.optional(),
     tenders: z.array(tenderBody).min(1).max(MAX_TENDERS).optional(),
     basketDiscount: discountBody.optional(),
+    // Intent only. Canonical normalization + eligibility + money remain server-owned.
+    couponCodes: z.array(z.string().min(1).max(64)).max(8).optional(),
+    // Server-issued preview precondition. It may refuse staleness, never assert money.
+    expectedPricingHash: PRICING_HASH.optional(),
+    // Restrictive replay marker only. `false` carries no meaning and is refused.
+    offlineCaptured: z.literal(true).optional(),
     lines: z
       .array(
         z.object({
@@ -257,7 +298,15 @@ export const checkoutBody = z
   })
   .refine((body) => (body.cashReceivedMinor === undefined) !== (body.tenders === undefined), {
     message: 'send either cashReceivedMinor or tenders, not both and not neither',
-  });
+  })
+  .refine(
+    (body) =>
+      (body.restaurantOrderId === undefined) ===
+      (body.expectedRestaurantOrderRevision === undefined),
+    {
+      message: 'restaurantOrderId and expectedRestaurantOrderRevision must be sent together',
+    },
+  );
 
 /**
  * A return, as a client may state it.
@@ -300,6 +349,49 @@ export const returnBody = z.object({
       message: 'duplicate return line',
     }),
 });
+
+export const NO_RECEIPT_EXCHANGE_REASONS = [
+  'customer-no-receipt',
+  'gift-return',
+  'receipt-unavailable',
+  'manager-exception',
+  'other',
+] as const;
+
+const noReceiptExchangeLineBody = z
+  .object({
+    productId: UUID,
+    quantityScaled: SCALED_QUANTITY,
+  })
+  .strict();
+
+export const noReceiptExchangeBody = z
+  .object({
+    operationId: UUID,
+    terminalId: UUID,
+    expectedShiftId: UUID.optional(),
+    reason: z.enum(NO_RECEIPT_EXCHANGE_REASONS),
+    evidenceNote: z.string().trim().min(1).max(500).optional(),
+    approvedAllowanceMinor: MINOR,
+    acceptedLines: z
+      .array(noReceiptExchangeLineBody)
+      .min(1)
+      .max(MAX_RETURN_LINES)
+      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
+        message: 'duplicate accepted product',
+      }),
+    replacementLines: z
+      .array(noReceiptExchangeLineBody)
+      .min(1)
+      .max(MAX_CART_LINES)
+      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
+        message: 'duplicate replacement product',
+      }),
+    // Real settlement only. exchange_allowance never crosses this boundary;
+    // the server creates it only after proving the case ceiling.
+    tenders: z.array(tenderBody).max(MAX_TENDERS).default([]),
+  })
+  .strict();
 
 export const saleLookupQuery = z.object({
   q: z.string().trim().min(1).max(64),
@@ -350,6 +442,13 @@ export const FORBIDDEN_FIELDS = [
   'vatBasisPoints',
   'currency',
   'price',
+  'referenceCeilingMinor',
+  'currentUnitReferencePriceMinor',
+  'currentReferenceTotalMinor',
+  'stockDisposition',
+  'costProvenance',
+  'linkedSaleId',
+  'caseNumber',
 ] as const;
 
 export function namesForbiddenField(body: unknown): string | null {

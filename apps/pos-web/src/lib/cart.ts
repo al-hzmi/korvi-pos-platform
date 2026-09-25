@@ -6,9 +6,10 @@ import type { CartLineInput, PriceMode, PricedCart, ProductType } from '@korvi/d
 /**
  * The basket, as local intent.
  *
- * Nothing here is persisted and nothing here is authoritative. It is a record
- * of what the cashier has said they want to sell, kept only long enough to be
- * sent as product ids and quantities.
+ * The server remains authoritative for price, tax and stock. Gate 42 persists
+ * this intent locally so a browser restart does not erase what the cashier had
+ * already scanned; only product ids, quantities and display snapshots live in
+ * that durable draft.
  *
  * One line per product, always. The server refuses a duplicate product line —
  * two lines each pass a stock check their sum fails — so a second scan of the
@@ -27,13 +28,25 @@ export interface CartLine {
   readonly unitPriceMinor: string;
   readonly vatBasisPoints: number;
   readonly quantityScaled: string;
+  /** Server-owned identity when this cart line resumes an open restaurant order. */
+  readonly restaurantOrderLineId?: string;
+  /** Operational Quick-Service metadata only; never sent to checkout authority. */
+  readonly preparationNote?: string;
+  readonly preparationOptions?: string;
 }
 
 export type CartAction =
   | { readonly type: 'add'; readonly product: ProductSummary }
   | { readonly type: 'set-quantity'; readonly productId: string; readonly quantityScaled: string }
   | { readonly type: 'step'; readonly productId: string; readonly direction: 1 | -1 }
+  | {
+      readonly type: 'set-preparation';
+      readonly productId: string;
+      readonly note: string;
+      readonly options: string;
+    }
   | { readonly type: 'remove'; readonly productId: string }
+  | { readonly type: 'replace'; readonly lines: readonly CartLine[] }
   | { readonly type: 'clear' };
 
 function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
@@ -47,6 +60,8 @@ function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
     unitPriceMinor: product.priceMinor,
     vatBasisPoints: product.vatBasisPoints,
     quantityScaled,
+    preparationNote: '',
+    preparationOptions: '',
   };
 }
 
@@ -82,8 +97,20 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
         if (line.productType !== 'unit') return line;
         return { ...line, quantityScaled: stepScaled(line.quantityScaled, action.direction) };
       });
+    case 'set-preparation':
+      return lines.map((line) =>
+        line.productId === action.productId
+          ? {
+              ...line,
+              preparationNote: action.note.slice(0, 280),
+              preparationOptions: action.options.slice(0, 280),
+            }
+          : line,
+      );
     case 'remove':
       return lines.filter((line) => line.productId !== action.productId);
+    case 'replace':
+      return action.lines;
     case 'clear':
       return [];
   }

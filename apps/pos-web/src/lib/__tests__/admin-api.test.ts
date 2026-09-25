@@ -30,6 +30,465 @@ function bodyOf(call: Recorded): Record<string, unknown> {
 }
 
 describe('merchant administration API client', () => {
+  it('inspects product migration source without sending tenant authority', async () => {
+    const wire = transport({ sourceSha256: 'a'.repeat(64), header: [], previewRows: [] });
+    await createApiClient(wire.fetch).inspectProductMigrationCsv({
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: 'Legacy POS',
+      delimiter: ',',
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/migrations/products/inspect-csv');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: 'Legacy POS',
+      delimiter: ',',
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(/tenant|actor|permission/);
+  });
+
+  it('creates a product migration review with only source, mapping and operation identity', async () => {
+    const wire = transport({ id: 'job-1', status: 'reviewed' });
+    await createApiClient(wire.fetch).createProductMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-000000000001',
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'sku' },
+        { sourceColumn: 1, targetField: 'nameAr' },
+      ],
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/migrations/products/jobs');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: '018fb700-0000-7000-8000-000000000001',
+      csvText: 'SKU,اسم الصنف\nA1,قهوة',
+      fileName: 'products.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'sku' },
+        { sourceColumn: 1, targetField: 'nameAr' },
+      ],
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(/tenant|actor|created|updated/);
+  });
+
+  it('reads only bounded migration result rows with explicit problem filtering', async () => {
+    const wire = transport({ rows: [], nextAfterSourceRow: null });
+    await createApiClient(wire.fetch).productMigrationRows('job/one', {
+      limit: 500,
+      afterSourceRow: 25,
+      problemsOnly: true,
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/migrations/products/jobs/job%2Fone/rows?limit=500&afterSourceRow=25&problemsOnly=true',
+    );
+  });
+
+  it('commits a reviewed product migration with only the stable operation id', async () => {
+    const wire = transport({ id: 'job-1', status: 'completed' });
+    await createApiClient(wire.fetch).commitProductMigration(
+      'job/one',
+      '018fb700-0000-7000-8000-000000000002',
+    );
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/migrations/products/jobs/job%2Fone/commit');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: '018fb700-0000-7000-8000-000000000002',
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /tenant|actor|records|created|failed|status/,
+    );
+  });
+
+  it('uses category migration endpoints without tenant or category id authority', async () => {
+    const wire = transport({ id: 'category-job', status: 'reviewed' });
+    const api = createApiClient(wire.fetch);
+    await api.inspectCategoryMigrationCsv({
+      csvText: 'اسم الفئة,الترتيب\\nمشروبات,10',
+      fileName: 'categories.csv',
+      sourceSystem: null,
+      delimiter: ',',
+    });
+    await api.createCategoryMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-0000000000e1',
+      csvText: 'اسم الفئة,الترتيب\\nمشروبات,10',
+      fileName: 'categories.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'nameAr' },
+        { sourceColumn: 1, targetField: 'sortOrder' },
+      ],
+    });
+    await api.commitCategoryMigration('category/job', '018fb700-0000-7000-8000-0000000000e2');
+
+    expect(wire.calls.map((call) => call.url)).toEqual([
+      '/v1/admin/migrations/categories/inspect-csv',
+      '/v1/admin/migrations/categories/jobs',
+      '/v1/admin/migrations/categories/jobs/category%2Fjob/commit',
+    ]);
+    const bodies = wire.calls.map((call) => String(call.init.body ?? ''));
+    expect(bodies.join(' ')).not.toMatch(/tenant|categoryId|actor/);
+  });
+
+  it('uses customer migration endpoints without tenant or customer id authority', async () => {
+    const wire = transport({ id: 'customer-job', status: 'reviewed' });
+    const api = createApiClient(wire.fetch);
+    await api.inspectCustomerMigrationCsv({
+      csvText: 'اسم العميل,رقم الجوال\\nمؤسسة ميم,0501234567',
+      fileName: 'customers.csv',
+      sourceSystem: null,
+      delimiter: ',',
+    });
+    await api.createCustomerMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-0000000000f1',
+      csvText: 'اسم العميل,رقم الجوال\\nمؤسسة ميم,0501234567',
+      fileName: 'customers.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'nameAr' },
+        { sourceColumn: 1, targetField: 'phone' },
+      ],
+    });
+    await api.commitCustomerMigration('customer/job', '018fb700-0000-7000-8000-0000000000f2');
+
+    expect(wire.calls.map((call) => call.url)).toEqual([
+      '/v1/admin/migrations/customers/inspect-csv',
+      '/v1/admin/migrations/customers/jobs',
+      '/v1/admin/migrations/customers/jobs/customer%2Fjob/commit',
+    ]);
+    const bodies = wire.calls.map((call) => String(call.init.body ?? ''));
+    expect(bodies.join(' ')).not.toMatch(/tenant|customerId|actor/);
+  });
+
+  it('uses supplier migration endpoints without tenant or supplier id authority', async () => {
+    const wire = transport({ id: 'supplier-job', status: 'reviewed' });
+    const api = createApiClient(wire.fetch);
+    await api.inspectSupplierMigrationCsv({
+      csvText: 'اسم المورد\\nشركة ألف',
+      fileName: 'suppliers.csv',
+      sourceSystem: null,
+      delimiter: ',',
+    });
+    await api.createSupplierMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-0000000000f3',
+      csvText: 'اسم المورد\\nشركة ألف',
+      fileName: 'suppliers.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [{ sourceColumn: 0, targetField: 'name' }],
+    });
+    await api.commitSupplierMigration('supplier/job', '018fb700-0000-7000-8000-0000000000f4');
+
+    expect(wire.calls.map((call) => call.url)).toEqual([
+      '/v1/admin/migrations/suppliers/inspect-csv',
+      '/v1/admin/migrations/suppliers/jobs',
+      '/v1/admin/migrations/suppliers/jobs/supplier%2Fjob/commit',
+    ]);
+    const bodies = wire.calls.map((call) => String(call.init.body ?? ''));
+    expect(bodies.join(' ')).not.toMatch(/tenant|supplierId|actor|isActive/);
+  });
+
+  it('uses opening inventory migration endpoints with business keys only', async () => {
+    const wire = transport({ id: 'opening-job', status: 'reviewed' });
+    const api = createApiClient(wire.fetch);
+    await api.inspectOpeningInventoryMigrationCsv({
+      csvText: 'كود الفرع,SKU,الكمية الافتتاحية\\nMAIN,A1,12',
+      fileName: 'opening-stock.csv',
+      sourceSystem: null,
+      delimiter: ',',
+    });
+    await api.createOpeningInventoryMigrationCsvJob({
+      operationId: '018fb700-0000-7000-8000-0000000000f5',
+      csvText: 'كود الفرع,SKU,الكمية الافتتاحية\\nMAIN,A1,12',
+      fileName: 'opening-stock.csv',
+      sourceSystem: null,
+      delimiter: ',',
+      mapping: [
+        { sourceColumn: 0, targetField: 'branchCode' },
+        { sourceColumn: 1, targetField: 'sku' },
+        { sourceColumn: 2, targetField: 'openingQuantity' },
+      ],
+    });
+    await api.commitOpeningInventoryMigration(
+      'opening/job',
+      '018fb700-0000-7000-8000-0000000000f6',
+    );
+
+    expect(wire.calls.map((call) => call.url)).toEqual([
+      '/v1/admin/migrations/opening-inventory/inspect-csv',
+      '/v1/admin/migrations/opening-inventory/jobs',
+      '/v1/admin/migrations/opening-inventory/jobs/opening%2Fjob/commit',
+    ]);
+    const bodies = wire.calls.map((call) => String(call.init.body ?? ''));
+    expect(bodies.join(' ')).not.toMatch(
+      /tenantId|branchId|productId|categoryId|inventoryValueMinor|costMinor|actorUserId/,
+    );
+  });
+
+  it('reads bounded inventory branches without borrowing settings authority', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    await createApiClient(wire.fetch).inventoryBranches({
+      limit: 50,
+      cursor: '018fb000-0000-7000-8000-0000000000a1',
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/inventory/branches?limit=50&cursor=018fb000-0000-7000-8000-0000000000a1',
+    );
+    expect(wire.calls[0]!.url).not.toContain('tenant');
+  });
+
+  it('reads exact balance pages with branch, limit and cursor as the only filters', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    await createApiClient(wire.fetch).inventoryBalances({
+      branchId: '018fb000-0000-7000-8000-0000000000a1',
+      limit: 100,
+      cursor: '018fb000-0000-7000-8000-0000000000a5',
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/inventory/balances?limit=100&cursor=018fb000-0000-7000-8000-0000000000a5&branchId=018fb000-0000-7000-8000-0000000000a1',
+    );
+    expect(wire.calls[0]!.url).not.toMatch(/tenant|actor|quantity|revision/);
+  });
+
+  it('reads bounded valuation facts with no tenant or output fields in the query', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    await createApiClient(wire.fetch).inventoryCostBalances({
+      branchId: '018fb000-0000-7000-8000-0000000000a1',
+      limit: 50,
+      cursor: '018fb000-0000-7000-8000-0000000000a5',
+    });
+
+    expect(wire.calls[0]!.url).toBe(
+      '/v1/admin/inventory/cost-balances?limit=50&cursor=018fb000-0000-7000-8000-0000000000a5&branchId=018fb000-0000-7000-8000-0000000000a1',
+    );
+    expect(wire.calls[0]!.url).not.toMatch(/tenant|known|unknown|value|revision/);
+  });
+
+  it('posts valuation identity, exact value and only frozen observation guards', async () => {
+    const wire = transport({ id: 'cost-1', replayed: false });
+    await createApiClient(wire.fetch).inventoryCostBootstrap({
+      operationId: 'cost-op',
+      branchId: 'branch-1',
+      productId: 'product-1',
+      totalValueMinor: '9007199254740993',
+      expectedStockRevision: '12',
+      expectedCostRevision: '8',
+      expectedUnknownPositiveQuantityScaled: '3000',
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/cost-bootstrap');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: 'cost-op',
+      branchId: 'branch-1',
+      productId: 'product-1',
+      totalValueMinor: '9007199254740993',
+      expectedStockRevision: '12',
+      expectedCostRevision: '8',
+      expectedUnknownPositiveQuantityScaled: '3000',
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /knownValue|valuedQuantity|tenant|actor|resultRevision|currentRevision/,
+    );
+  });
+
+  it('posts only adjustment intent and exact scaled text', async () => {
+    const wire = transport({ id: 'adjustment-1', lines: [] });
+    await createApiClient(wire.fetch).inventoryAdjust({
+      operationId: 'op-adjust',
+      branchId: 'branch-1',
+      reason: 'تلف',
+      lines: [{ productId: 'product-1', deltaQuantityScaled: '-1250' }],
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/adjustments');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: 'op-adjust',
+      branchId: 'branch-1',
+      reason: 'تلف',
+      lines: [{ productId: 'product-1', deltaQuantityScaled: '-1250' }],
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /tenant|actor|before|after|revision/,
+    );
+  });
+
+  it('binds a count to the exact server revision and never sends a delta', async () => {
+    const wire = transport({ id: 'count-1', lines: [] });
+    await createApiClient(wire.fetch).inventoryCount({
+      operationId: 'op-count',
+      branchId: 'branch-1',
+      reason: null,
+      lines: [
+        {
+          productId: 'product-1',
+          countedQuantityScaled: '0',
+          expectedRevision: '9007199254740993',
+        },
+      ],
+    });
+
+    const body = bodyOf(wire.calls[0]!);
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/counts');
+    expect(body).toMatchObject({
+      lines: [{ countedQuantityScaled: '0', expectedRevision: '9007199254740993' }],
+    });
+    expect(JSON.stringify(body)).not.toMatch(/delta|currentRevision|resultRevision/);
+  });
+
+  it('posts transfer direction and requested quantity without resulting balances', async () => {
+    const wire = transport({ id: 'transfer-1', lines: [] });
+    await createApiClient(wire.fetch).inventoryTransfer({
+      operationId: 'op-transfer',
+      fromBranchId: 'branch-1',
+      toBranchId: 'branch-2',
+      reason: 'إعادة توزيع',
+      lines: [{ productId: 'product-1', quantityScaled: '1000' }],
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/inventory/transfers');
+    expect(bodyOf(wire.calls[0]!)).toEqual({
+      operationId: 'op-transfer',
+      fromBranchId: 'branch-1',
+      toBranchId: 'branch-2',
+      reason: 'إعادة توزيع',
+      lines: [{ productId: 'product-1', quantityScaled: '1000' }],
+    });
+  });
+
+  it('reads bounded purchasing identity and order filters without tenant scope', async () => {
+    const wire = transport({ rows: [], nextCursor: null });
+    const api = createApiClient(wire.fetch);
+    await api.purchasingProducts({ limit: 100, cursor: 'product/2' });
+    await api.purchasingOrders({
+      limit: 50,
+      status: 'partially_received',
+      supplierId: 'supplier-1',
+      branchId: 'branch-1',
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/products?limit=100&cursor=product%2F2');
+    expect(wire.calls[1]!.url).toBe(
+      '/v1/admin/purchasing/orders?limit=50&branchId=branch-1&supplierId=supplier-1&status=partially_received',
+    );
+    expect(wire.calls.map((call) => call.url).join(' ')).not.toContain('tenant');
+  });
+
+  it('takes supplier update identity from the path and sends changed fields only', async () => {
+    const wire = transport({ supplier: {}, replayed: false });
+    await createApiClient(wire.fetch).updatePurchasingSupplier({
+      operationId: 'supplier-op',
+      supplierId: 'supplier/one',
+      isActive: false,
+    });
+
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/suppliers/supplier%2Fone');
+    expect(wire.calls[0]!.init.method).toBe('PATCH');
+    expect(bodyOf(wire.calls[0]!)).toEqual({ operationId: 'supplier-op', isActive: false });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(/supplierId|tenant|actor/);
+  });
+
+  it('posts immutable order intent without received, status or result authority', async () => {
+    const wire = transport({ order: {}, replayed: false });
+    await createApiClient(wire.fetch).createPurchaseOrder({
+      operationId: 'order-op',
+      supplierId: 'supplier-1',
+      branchId: 'branch-1',
+      reference: null,
+      lines: [{ productId: 'product-1', orderedQuantityScaled: '900719925474099300' }],
+    });
+
+    const body = bodyOf(wire.calls[0]!);
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/orders');
+    expect(body).toEqual({
+      operationId: 'order-op',
+      supplierId: 'supplier-1',
+      branchId: 'branch-1',
+      reference: null,
+      lines: [{ productId: 'product-1', orderedQuantityScaled: '900719925474099300' }],
+    });
+    expect(JSON.stringify(body)).not.toMatch(/tenant|actor|received|remaining|status|result/);
+  });
+
+  it('posts receipt line identity and accepted quantity with no cost or stock authority', async () => {
+    const wire = transport({ id: 'receipt-1', lines: [] });
+    await createApiClient(wire.fetch).receivePurchaseOrder({
+      operationId: 'receipt-op',
+      purchaseOrderId: 'order-1',
+      reference: 'DN-4',
+      lines: [{ purchaseOrderLineId: 'line-1', acceptedQuantityScaled: '30000' }],
+    });
+
+    const body = bodyOf(wire.calls[0]!);
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/receipts');
+    expect(body).toEqual({
+      operationId: 'receipt-op',
+      purchaseOrderId: 'order-1',
+      reference: 'DN-4',
+      lines: [{ purchaseOrderLineId: 'line-1', acceptedQuantityScaled: '30000' }],
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /tenant|actor|supplierId|branchId|productId|inventoryValue|cost|before|after|status|revision/,
+    );
+  });
+
+  it('preserves mixed valued and unknown receipt lines, including known zero', async () => {
+    const wire = transport({ id: 'receipt-2', lines: [] });
+    await createApiClient(wire.fetch).receivePurchaseOrder({
+      operationId: 'receipt-cost-op',
+      purchaseOrderId: 'order-1',
+      reference: null,
+      lines: [
+        {
+          purchaseOrderLineId: 'line-1',
+          acceptedQuantityScaled: '1000',
+          inventoryValueMinor: '0',
+        },
+        { purchaseOrderLineId: 'line-2', acceptedQuantityScaled: '2500' },
+        {
+          purchaseOrderLineId: 'line-3',
+          acceptedQuantityScaled: '3000',
+          inventoryValueMinor: '9007199254740993',
+        },
+      ],
+    });
+
+    expect(bodyOf(wire.calls[0]!)).toMatchObject({
+      lines: [
+        {
+          purchaseOrderLineId: 'line-1',
+          acceptedQuantityScaled: '1000',
+          inventoryValueMinor: '0',
+        },
+        { purchaseOrderLineId: 'line-2', acceptedQuantityScaled: '2500' },
+        {
+          purchaseOrderLineId: 'line-3',
+          acceptedQuantityScaled: '3000',
+          inventoryValueMinor: '9007199254740993',
+        },
+      ],
+    });
+    expect(JSON.stringify(bodyOf(wire.calls[0]!))).not.toMatch(
+      /unitCost|tax|price|knownQuantity|stockRevision|costRevision|tenant|actor/,
+    );
+  });
+
+  it('reads a bounded receipt history for one encoded order identity', async () => {
+    const wire = transport({ receipts: [] });
+    await createApiClient(wire.fetch).purchasingReceipts('order/one');
+    expect(wire.calls[0]!.url).toBe('/v1/admin/purchasing/orders/order%2Fone/receipts?limit=100');
+  });
+
   it('uses the authenticated admin settings route and PATCHes only editable fields', async () => {
     const wire = transport({});
     const api = createApiClient(wire.fetch);

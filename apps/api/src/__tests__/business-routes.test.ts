@@ -19,6 +19,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantFloorRepository,
   memoryReturnRepository,
   memorySaleRepository,
   memoryShiftRepository,
@@ -91,6 +92,7 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
       tenants: memoryTenantRepository(business),
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
+      restaurantFloor: memoryRestaurantFloorRepository(),
       shifts: memoryShiftRepository(business),
       terminals: memoryTerminalRepository(business),
       checkout: createCheckoutService({
@@ -546,8 +548,20 @@ describe('GET /v1/terminals', () => {
     const cookie = await cookieFor(app);
     const response = await app.inject({ method: 'GET', url: '/v1/terminals', headers: { cookie } });
 
-    const body = response.json<{ settings: { priceMode: string; currency: string } }>();
-    expect(body.settings).toEqual({ priceMode: 'tax-inclusive', currency: 'SAR' });
+    const body = response.json<{
+      settings: {
+        priceMode: string;
+        currency: string;
+        vertical: string;
+        enableProductImages: boolean;
+      };
+    }>();
+    expect(body.settings).toEqual({
+      priceMode: 'tax-inclusive',
+      currency: 'SAR',
+      vertical: 'retail',
+      enableProductImages: false,
+    });
   });
 
   it('reports a tenant with no settings rather than inventing a price mode', async () => {
@@ -569,12 +583,21 @@ describe('GET /v1/terminals', () => {
       url: '/v1/terminals?priceMode=tax-exclusive&currency=USD',
       headers: { cookie },
     });
-    expect(response.json<{ settings: { priceMode: string; currency: string } }>().settings).toEqual(
-      {
-        priceMode: 'tax-inclusive',
-        currency: 'SAR',
-      },
-    );
+    expect(
+      response.json<{
+        settings: {
+          priceMode: string;
+          currency: string;
+          vertical: string;
+          enableProductImages: boolean;
+        };
+      }>().settings,
+    ).toEqual({
+      priceMode: 'tax-inclusive',
+      currency: 'SAR',
+      vertical: 'retail',
+      enableProductImages: false,
+    });
   });
 
   it('refuses a caller without shift.open', async () => {
@@ -1351,5 +1374,61 @@ describe('POST /v1/sales', () => {
       lines: Array.from({ length: 500 }, () => ({ productId: A.milk, quantityScaled: '1000' })),
     });
     expect(response.statusCode).toBe(400);
+  });
+});
+
+describe('restaurant order context route', () => {
+  it('requires the mode for restaurants and returns the persisted mode when supplied', async () => {
+    app = await build('cashier');
+    business.settings[0] = { ...business.settings[0]!, vertical: 'restaurant' };
+    const cookie = await cookieFor(app);
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000007a1',
+        terminalId: A.terminal,
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '1000' }],
+      },
+    });
+    expect(missing.statusCode).toBe(422);
+    expect(missing.json()).toMatchObject({ error: 'order-type-required' });
+
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000007a2',
+        terminalId: A.terminal,
+        orderType: 'delivery',
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '1000' }],
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json<{ sale: { orderType: string } }>().sale.orderType).toBe('delivery');
+  });
+
+  it('does not allow restaurant context to leak into a retail sale', async () => {
+    app = await build('cashier');
+    const cookie = await cookieFor(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/sales',
+      headers: { cookie, origin: ORIGIN },
+      payload: {
+        operationId: '018f2000-0000-7000-8000-0000000007a3',
+        terminalId: A.terminal,
+        orderType: 'takeaway',
+        cashReceivedMinor: '5000',
+        lines: [{ productId: A.milk, quantityScaled: '1000' }],
+      },
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: 'order-type-not-applicable' });
   });
 });

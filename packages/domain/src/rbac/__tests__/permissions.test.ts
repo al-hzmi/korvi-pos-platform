@@ -22,9 +22,12 @@ const actorFor = (role: RoleName): Actor => ({
 });
 
 describe('permission catalogue', () => {
-  it('lists seventeen distinct permissions', () => {
-    expect(PERMISSIONS).toHaveLength(17);
-    expect(new Set(PERMISSIONS).size).toBe(17);
+  it('lists twenty-seven distinct permissions', () => {
+    // Strike 5C separated cost visibility from valuation authority. V2-1 adds
+    // the dedicated no-receipt exchange authority rather than reusing refund
+    // permission (ADR-0036). All catalogue entries remain distinct.
+    expect(PERMISSIONS).toHaveLength(27);
+    expect(new Set(PERMISSIONS).size).toBe(27);
   });
 
   it('grants the owner every permission', () => {
@@ -56,11 +59,22 @@ describe('least privilege', () => {
       'zatca.manage',
       'sale.discount',
       'sale.refund',
+      'sale.exchange.no-receipt',
       'sale.void',
+      'promotion.manage',
+      'price-list.manage',
+      'sale.price-context',
       'inventory.adjust',
       'product.write',
       'report.read',
       'shift.cash-movement',
+      'inventory.transfer',
+      'inventory.cost.read',
+      'inventory.cost.manage',
+      // A till neither orders from suppliers nor signs for a delivery.
+      'purchasing.read',
+      'purchasing.manage',
+      'purchasing.receive',
     ] as const) {
       expect(can(cashier, forbidden), forbidden).toBe(false);
       expect(() => requirePermission(cashier, forbidden)).toThrow(PermissionDeniedError);
@@ -83,12 +97,18 @@ describe('least privilege', () => {
     }
   });
 
-  it('keeps a manager out of settings and user administration', () => {
+  it('grants manager costing authority but keeps settings and users administrative', () => {
     const manager = actorFor('manager');
     expect(can(manager, 'settings.manage')).toBe(false);
     expect(can(manager, 'users.manage')).toBe(false);
     expect(can(manager, 'zatca.manage')).toBe(false);
     expect(can(manager, 'sale.refund')).toBe(true);
+    expect(can(manager, 'sale.exchange.no-receipt')).toBe(true);
+    expect(can(manager, 'promotion.manage')).toBe(true);
+    expect(can(manager, 'price-list.manage')).toBe(true);
+    expect(can(manager, 'sale.price-context')).toBe(true);
+    expect(can(manager, 'inventory.cost.read')).toBe(true);
+    expect(can(manager, 'inventory.cost.manage')).toBe(true);
   });
 
   it('gives an admin everything except what only an owner holds', () => {

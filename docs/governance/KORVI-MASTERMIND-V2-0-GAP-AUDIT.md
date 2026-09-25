@@ -1,0 +1,313 @@
+# KORVI — MASTERMIND V2-0 CURRENT REPOSITORY GAP AUDIT
+
+Status: **UPDATED REPOSITORY-GROUNDED AUDIT — V2-1 CLOSED**
+Date: 2026-09-25
+Branch: `mastermind/v2-strengthening`
+Base acquisition SHA: `61dbb34dea08809756fd767b907b0e852b7e5978`
+
+## Audit law
+
+This document does not reuse the historical 88/100 score.
+
+It classifies selected high-value accepted capabilities from the current repository state.
+
+Legend:
+
+- **PRESENT** — repository contains current product/domain/database/operator implementation evidence.
+- **PARTIAL** — foundations exist, but accepted capability is not complete.
+- **ABSENT / ACCEPTED** — product constitution accepts it, but no current implementation authority was found in the audited surfaces.
+- **EXTERNAL** — depends on real provider/merchant/transaction activation.
+
+## 1. Returns / refunds
+
+### Original-sale return/refund — PRESENT
+
+Current evidence includes:
+
+- ADR-0016;
+- domain return/proration authority;
+- API return service/routes/tests;
+- PostgreSQL return repository/migration/live proof;
+- cashier return workflow.
+
+Key current law:
+
+- original sale snapshot is pricing/tax authority;
+- cumulative proration preserves exact historical totals;
+- return serializes on the sale transaction boundary;
+- stock reversal is based on original sale stock effect;
+- refund is cash or recorded electronic approval reference;
+- cardholder data is refused.
+
+### No-receipt return/exchange — PRESENT / V2-1 CLOSED
+
+V2-1 is now a separate authority from original-sale returns.
+
+Repository evidence includes:
+
+- ADR-0036 no-receipt return/exchange contract;
+- deterministic current-policy valuation domain and unit tests;
+- dedicated `sale.exchange.no-receipt` permission;
+- explicit internal `exchange_allowance` tender boundary;
+- PostgreSQL case/line persistence, FORCE-RLS, immutability, idempotency and deterministic locking;
+- canonical stock/cost intake with unknown cost provenance;
+- atomic reuse of the canonical sale authority for replacement merchandise;
+- strict API schemas that reject client-authored price/VAT/cost/ceiling/allowance-tender facts;
+- negative authorization and tenant-isolation tests;
+- live PostgreSQL concurrency/rollback/replay/immutability proof;
+- Arabic RTL online-only cashier workflow;
+- actual Chrome operator proof.
+
+Scope law:
+
+- no original sale fact is inferred;
+- no cash refund is issued from this capability;
+- no store-credit counter/balance was invented;
+- current catalogue facts are policy inputs only, never historical evidence;
+- accepted tracked stock returns as sellable with historical cost **unknown**;
+- replacement sale tax/fiscalization remains the ordinary sale authority;
+- no synthetic credit note or original invoice provenance exists;
+- V2-1 is Retail scope and is deliberately online-authoritative.
+
+Verified implementation HEAD:
+
+`a1d640f3b3d30faf4c4c04e90c1c5fa04412971a`
+
+Evidence:
+
+- CI `36070419973` — **SUCCESS**;
+- PostgreSQL 17 / RLS live proof `36070419982` — **SUCCESS**;
+- Chrome cashier proof `36070420015` — **SUCCESS**;
+- independent PR CI `36070424151` — **SUCCESS**.
+
+**V2-1 gap is closed. Next strike: V2-2.**
+
+## 2. Promotions / coupons
+
+### Deterministic promotions/coupons — PRESENT / V2-2 CLOSED
+
+V2-2 now establishes a shared server-owned promotion/coupon authority for direct Retail / Grocery / Wholesale checkout.
+
+Repository evidence includes:
+
+- ADR-0037 deterministic promotions/coupons contract;
+- pure deterministic promotion evaluator with priority, exclusivity, stacking, immutable-id tie-breaks and bounded application count;
+- exact integer largest-remainder allocation integrated with the existing pricing/VAT engine rather than a second tax calculator;
+- coupon normalization/lifecycle authority and immutable redemption facts;
+- separate merchant policy rows, product targets, coupons, sale application snapshots, per-line allocations and redemption facts;
+- FORCE-RLS, composite tenant foreign keys, immutable finalized promotion history and relational/financial database guards;
+- atomic checkout revalidation under promotion/coupon locks, including final-redemption concurrency and replay/idempotency authority;
+- explicit `promotion.manage` administration permission with negative cashier authorization;
+- governed Control Center administration UX and audit-backed lifecycle updates;
+- server-authoritative checkout preview and Arabic RTL cashier coupon UX;
+- fail-closed online-only promotion/coupon execution boundary while plain non-promoted checkout retains its existing offline behavior;
+- original-sale returns continue from immutable sold line truth and never re-evaluate today's promotion;
+- actual Chrome proof creating/activating a one-use coupon through Control, applying it through cashier server preview, finalizing the sale and observing durable redemption count.
+
+Scope law:
+
+- client coupon code/cart intent is not discount authority;
+- manual operator discounts and promotion policy are refused together in V2-2;
+- coupons are activation instruments, never tender, wallet, store credit or gift-card value;
+- promotion allocation happens before VAT through the existing canonical pricing engine;
+- current promotion rows are never consulted to explain/refund finalized sales;
+- Restaurant open-order promotions remain out of scope because current order snapshots must not be bypassed;
+- category/tag/segment predicates, BOGO/bundles, loyalty coupling and offline promotion snapshots remain future extensions;
+- Production ZATCA remains the existing fail-closed invoice authority and is not reimplemented here.
+
+Verified implementation HEAD:
+
+`68a56867f189c5f5d44a82b48baebccc2fda3f45`
+
+Evidence:
+
+- full CI `36082432970` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / concurrency / full verify `36082432869` — **SUCCESS**;
+- actual Chrome Control + cashier coupon proof `36082432819` — **SUCCESS**;
+- independent PR CI `36082437825` — **SUCCESS**.
+
+**V2-2 gap is closed. Next strike: V2-3.**
+## 3. Loyalty / customer financial instruments
+
+### Loyalty ledger/rewards — ABSENT / ACCEPTED
+
+No loyalty domain/module was found in the current domain export tree.
+
+### Gift card / wallet — ABSENT / ACCEPTED
+
+No dedicated explicit-value ledger authority found.
+
+### Customer credit/balance — NOT CLOSED
+
+Schema contains limited uses of the word "credit", but no audited dedicated customer-credit ledger authority was found.
+
+The constitution requires these to exist only as explicit financial ledgers.
+
+**Do not build mutable counters.**
+
+Recommended after promotion/retail parity foundations.
+
+## 4. Batch / lot / expiry
+
+### Batch/lot/expiry inventory authority — ABSENT / ACCEPTED
+
+No dedicated batch/lot/expiry domain/persistence implementation was found in the audited source tree.
+
+The only filename match discovered outside schema wording was acquisition/pilot documentation.
+
+The Master Product Directive explicitly accepts batch/lot/expiry where required.
+
+**Recommended V2-4.**
+
+## 5. Retail / grocery packaging and price lists
+
+### Core product/catalog/inventory — PRESENT
+
+Current product/catalogue, migration, inventory, purchasing and costing authorities are substantial.
+
+### Unit/carton/packaging hierarchy — NOT FOUND AS CLOSED AUTHORITY
+
+No dedicated packaging/carton model was identified in current schema/path audit.
+
+### Retail/wholesale/customer/context price-list engine — NOT FOUND AS CLOSED AUTHORITY
+
+No dedicated `PriceList` schema authority was found.
+
+These remain accepted Retail/Grocery parity requirements.
+
+**Recommended V2-3.**
+
+## 6. Restaurant
+
+### Current strong foundations — PRESENT
+
+Current source contains:
+
+- restaurant order context;
+- dine-in/takeaway/delivery order type;
+- floor zones/tables;
+- table occupancy/transfer authority;
+- open orders;
+- settlement;
+- preparation routing;
+- KDS;
+- recipe/BOM;
+- production;
+- waste;
+- server-authored order line snapshots.
+
+### Modifiers/options — PARTIAL
+
+Current restaurant order lines include bounded `preparationOptions` text, but no dedicated Modifier domain/schema authority was found.
+
+This is not equivalent to a governed modifier/options/bundle pricing engine.
+
+### Dining modes — PRESENT FOUNDATION
+
+`dine-in | takeaway | delivery` exists in current order authority.
+
+### Tables/zones — PRESENT FOUNDATION
+
+Current DB/order/UI paths include restaurant table/zone support.
+
+### Broader waiter/kiosk/QR/online/delivery adapters — ACCEPTED, NOT CLOSED
+
+These remain later product scope.
+
+**Recommended V2-5 for modifiers/operator parity before kiosk/QR.**
+
+## 7. Attention / intelligence layer
+
+No dedicated current Attention Center, Explainable Reorder, Expiry Intelligence, Branch Rebalancing or Watchdog authority was identified in this initial path audit.
+
+These remain accepted Korvi Advantage engines.
+
+They should consume trusted domain facts and recommend/explain; they must not become transactional authority.
+
+## 8. External/provider-dependent scope
+
+Still external/deferred:
+
+- Production ZATCA activation;
+- real PSP acquiring adapters;
+- real delivery platform connections;
+- real Salla/Zid activation;
+- production monitoring/provider evidence;
+- real merchant production pilot.
+
+Adapter architecture may advance internally, but no provider-dependent production claim may be fabricated.
+
+## 9. Priority decision
+
+Initial evidence supports this order:
+
+1. **V2-1 No-receipt return/exchange**
+2. **V2-2 Deterministic promotions/coupons**
+3. **V2-3 Retail packaging + price lists**
+4. **V2-4 Batch/lot/expiry**
+5. **V2-5 Restaurant modifiers/operator parity**
+6. **V2-6 Loyalty/credit explicit ledgers**
+7. **V2-7 Attention Center**
+8. **V2-8 Explainable Reorder / Expiry Intelligence**
+9. **V2-9 Omnichannel adapter contracts**
+10. **V2-10 Kiosk/QR/customer display**
+
+## 10. V2-1 closure reconciliation
+
+The V2-1 discovery targets were reconciled in ADR-0036 and the implementation at
+`a1d640f3b3d30faf4c4c04e90c1c5fa04412971a`.
+
+Resolved decisions:
+
+- original-sale return semantics remain owned by ADR-0016 and are not reused when historical evidence is absent;
+- no-receipt scope is exchange-only;
+- current-policy reference value is bounded and explicitly non-historical;
+- cash refund/store credit are outside V2-1;
+- stock disposition is sellable for accepted tracked products;
+- missing historical cost enters costing as unknown;
+- manager-class permission, reason/evidence, audit and immutable snapshots govern abuse risk;
+- operation-id fingerprinting owns replay/conflict behavior;
+- PostgreSQL owns tenant isolation and transaction/concurrency truth;
+- offline execution is prohibited in this strike;
+- tax/ZATCA authority belongs only to the new replacement sale, never to invented historical provenance.
+
+The former implementation block is therefore removed.
+
+## 11. V2-2 closure reconciliation
+
+The V2-2 architecture targets were reconciled in ADR-0037 and the verified implementation at
+`68a56867f189c5f5d44a82b48baebccc2fda3f45`.
+
+Resolved decisions:
+
+- merchant policy, not cashier input, owns promotion eligibility and amount;
+- coupon codes normalize to bounded ASCII business keys and remain non-monetary activation instruments;
+- priority + immutable promotion id own deterministic ordering;
+- eligible exclusive policy suppresses stackable policy; otherwise stackable rules apply sequentially to the remaining eligible base;
+- largest-remainder allocation owns integer-money distribution before canonical VAT pricing;
+- manual discounts and promotion policy do not compose in V2-2;
+- finalized sales snapshot promotion revision, effect, coupon identity and per-line allocations;
+- returns use original sold facts and never current promotion policy;
+- coupon redemption and sale finalization are one atomic transaction under locked/revalidated policy;
+- FORCE-RLS, composite tenant references, immutable finalized facts, audit and optimistic administration revisions own isolation/history;
+- promotion/coupon checkout is online-authoritative; plain non-promoted offline behavior remains separate;
+- tax/ZATCA remains the ordinary finalized-sale authority.
+
+The former V2-2 implementation block is therefore removed.
+
+## 12. Next audit target — V2-3
+
+The next repository audit must establish a shared Retail/Grocery/Wholesale architecture contract for:
+
+- product packaging/unit/carton hierarchy and conversion authority;
+- multiple barcode ownership and ambiguity rules;
+- retail/wholesale/customer/context price-list precedence;
+- deterministic price selection and immutable sold-price truth;
+- inventory/base-unit interaction and migration compatibility;
+- purchasing/receiving compatibility;
+- operator UX for scanning/selling alternate packages;
+- tenant/RLS isolation, permissions, audit, concurrency and idempotency;
+- offline price-list/package snapshot boundary;
+- tax/ZATCA boundary.
+
+No parallel package inventory truth or client-authored price selection may be introduced.

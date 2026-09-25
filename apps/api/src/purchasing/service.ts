@@ -1,0 +1,269 @@
+import {
+  CostingCapacityError,
+  PurchasingRequestError,
+  requirePrincipalPermission,
+  tenantId as brandTenantId,
+} from '@korvi/domain';
+import {
+  PurchasingRefusedError,
+  createPurchaseOrder,
+  createSupplier,
+  getPurchaseOrder,
+  getSupplier,
+  listInventoryBranchPage,
+  listPurchaseOrders,
+  listPurchaseReceipts,
+  listPurchasingProductPage,
+  listSuppliers,
+  recordPurchaseReceipt,
+  updateSupplier,
+} from '@korvi/database';
+import {
+  fingerprintPurchaseOrder,
+  fingerprintPurchaseReceipt,
+  fingerprintSupplierCreate,
+  fingerprintSupplierUpdate,
+} from './fingerprint.js';
+import type {
+  AuthenticatedPrincipal,
+  PurchaseOrderRequest,
+  PurchaseOrderStatus,
+  PurchaseReceiptRequest,
+  PurchasingRequestRefusal,
+  SupplierCreateRequest,
+  SupplierUpdateRequest,
+} from '@korvi/domain';
+import type {
+  PrismaClient,
+  InventoryBranchPage,
+  PurchaseOrderPage,
+  PurchaseOrderRecord,
+  PurchaseOrderResult,
+  PurchaseReceiptResult,
+  PurchaseReceiptSummary,
+  PurchasingProductPage,
+  PurchasingRefusal,
+  SupplierPage,
+  SupplierRecord,
+  SupplierResult,
+} from '@korvi/database';
+
+/**
+ * The purchasing surface, as the API layer sees it.
+ *
+ * Every method takes the authenticated principal as its first argument and
+ * derives the tenant and the actor from it. There is deliberately no parameter
+ * on this interface into which a caller could thread a tenant id, a user id, a
+ * received quantity, a purchase-order status or a resulting balance — the
+ * compiler enforces here what a handler would otherwise have to remember
+ * (ADR-0024 §4).
+ */
+
+export type PurchasingFailureReason = PurchasingRequestRefusal | PurchasingRefusal;
+
+export type PurchasingResult<T> =
+  | { readonly outcome: 'success'; readonly value: T }
+  | {
+      readonly outcome: 'failure';
+      readonly reason: PurchasingFailureReason;
+      readonly subjectId: string | null;
+    };
+
+export interface SupplierQuery {
+  readonly limit: number;
+  readonly cursor: string | null;
+  readonly activeOnly: boolean;
+}
+
+export interface PurchaseOrderQuery {
+  readonly limit: number;
+  readonly cursor: string | null;
+  readonly status: PurchaseOrderStatus | null;
+  readonly supplierId: string | null;
+  readonly branchId: string | null;
+}
+
+export interface MerchantPurchasingService {
+  listBranches(
+    principal: AuthenticatedPrincipal,
+    query: { readonly limit: number; readonly cursor: string | null },
+  ): Promise<InventoryBranchPage>;
+  listProducts(
+    principal: AuthenticatedPrincipal,
+    query: { readonly limit: number; readonly cursor: string | null },
+  ): Promise<PurchasingProductPage>;
+  listSuppliers(principal: AuthenticatedPrincipal, query: SupplierQuery): Promise<SupplierPage>;
+  getSupplier(
+    principal: AuthenticatedPrincipal,
+    supplierId: string,
+  ): Promise<SupplierRecord | null>;
+  createSupplier(
+    principal: AuthenticatedPrincipal,
+    request: SupplierCreateRequest,
+  ): Promise<PurchasingResult<SupplierResult>>;
+  updateSupplier(
+    principal: AuthenticatedPrincipal,
+    request: SupplierUpdateRequest,
+  ): Promise<PurchasingResult<SupplierResult>>;
+
+  listPurchaseOrders(
+    principal: AuthenticatedPrincipal,
+    query: PurchaseOrderQuery,
+  ): Promise<PurchaseOrderPage>;
+  getPurchaseOrder(
+    principal: AuthenticatedPrincipal,
+    purchaseOrderId: string,
+  ): Promise<PurchaseOrderRecord | null>;
+  createPurchaseOrder(
+    principal: AuthenticatedPrincipal,
+    request: PurchaseOrderRequest,
+  ): Promise<PurchasingResult<PurchaseOrderResult>>;
+
+  listReceipts(
+    principal: AuthenticatedPrincipal,
+    purchaseOrderId: string,
+    limit: number,
+  ): Promise<readonly PurchaseReceiptSummary[]>;
+  receive(
+    principal: AuthenticatedPrincipal,
+    request: PurchaseReceiptRequest,
+  ): Promise<PurchasingResult<PurchaseReceiptResult>>;
+}
+
+/**
+ * Turn deliberate request, capacity and locked-operation refusals into one
+ * result value.
+ *
+ * `PurchasingRequestError` is a malformed request, decided before anything is
+ * locked; `CostingCapacityError` and `PurchasingRefusedError` are refusals
+ * decided under the row locks. All are answers. Anything else is rethrown,
+ * because an unexpected failure must not be laundered into a tidy "your
+ * request was invalid" — that is how a database outage gets reported to a
+ * merchant as a typo.
+ */
+async function attempt<T>(work: () => Promise<T>): Promise<PurchasingResult<T>> {
+  try {
+    return { outcome: 'success', value: await work() };
+  } catch (error) {
+    if (error instanceof PurchasingRequestError) {
+      return { outcome: 'failure', reason: error.detail, subjectId: null };
+    }
+    if (error instanceof CostingCapacityError) {
+      return { outcome: 'failure', reason: 'invalid-money', subjectId: null };
+    }
+    if (error instanceof PurchasingRefusedError) {
+      return { outcome: 'failure', reason: error.detail, subjectId: error.subjectId };
+    }
+    throw error;
+  }
+}
+
+export function createMerchantPurchasingService(deps: {
+  readonly prisma: PrismaClient;
+}): MerchantPurchasingService {
+  const { prisma } = deps;
+
+  return {
+    async listBranches(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return listInventoryBranchPage(
+        prisma,
+        { tenantId: brandTenantId(principal.tenantId) },
+        query.limit,
+        query.cursor,
+      );
+    },
+
+    async listProducts(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return listPurchasingProductPage(
+        prisma,
+        { tenantId: brandTenantId(principal.tenantId) },
+        query.limit,
+        query.cursor,
+      );
+    },
+
+    async listSuppliers(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      // The tenant is the session's, always. Under RLS a filter is a filter
+      // and never a way to reach another merchant's list.
+      return listSuppliers(prisma, principal.tenantId, query);
+    },
+
+    async getSupplier(principal, supplierId) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return getSupplier(prisma, principal.tenantId, supplierId);
+    },
+
+    async createSupplier(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.manage');
+      return attempt(() =>
+        createSupplier(
+          prisma,
+          { tenantId: principal.tenantId, userId: principal.userId },
+          request,
+          fingerprintSupplierCreate(request, principal.userId),
+        ),
+      );
+    },
+
+    async updateSupplier(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.manage');
+      return attempt(() =>
+        updateSupplier(
+          prisma,
+          { tenantId: principal.tenantId, userId: principal.userId },
+          request,
+          fingerprintSupplierUpdate(request, principal.userId),
+        ),
+      );
+    },
+
+    async listPurchaseOrders(principal, query) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return listPurchaseOrders(prisma, principal.tenantId, query);
+    },
+
+    async getPurchaseOrder(principal, purchaseOrderId) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return getPurchaseOrder(prisma, principal.tenantId, purchaseOrderId);
+    },
+
+    async createPurchaseOrder(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.manage');
+      return attempt(() =>
+        createPurchaseOrder(
+          prisma,
+          { tenantId: principal.tenantId, userId: principal.userId },
+          request,
+          fingerprintPurchaseOrder(request, principal.userId),
+        ),
+      );
+    },
+
+    async listReceipts(principal, purchaseOrderId, limit) {
+      requirePrincipalPermission(principal, 'purchasing.read');
+      return listPurchaseReceipts(prisma, principal.tenantId, purchaseOrderId, limit);
+    },
+
+    async receive(principal, request) {
+      requirePrincipalPermission(principal, 'purchasing.receive');
+      // Defense in depth: the HTTP route enforces this too, but the service is
+      // an authority boundary in its own right. An internal caller must not be
+      // able to establish acquisition value merely by bypassing the route.
+      if (request.lines.some((line) => line.inventoryValueMinor !== undefined)) {
+        requirePrincipalPermission(principal, 'inventory.cost.manage');
+      }
+
+      return attempt(() =>
+        recordPurchaseReceipt(
+          prisma,
+          { tenantId: principal.tenantId, userId: principal.userId },
+          request,
+          fingerprintPurchaseReceipt(request, principal.userId),
+        ),
+      );
+    },
+  };
+}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ROLE_PERMISSIONS } from '@korvi/domain';
+import { CostingCapacityError, ROLE_PERMISSIONS } from '@korvi/domain';
 import { buildServer } from '../server.js';
 import { loadConfig } from '../config.js';
 import { createAuthService } from '../auth/service.js';
@@ -19,6 +19,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantFloorRepository,
   memoryReturnRepository,
   memorySaleRepository,
   memoryShiftRepository,
@@ -71,9 +72,13 @@ function nextId(): string {
 
 async function build(
   role: RoleName,
-  options: { openShift?: boolean; branch?: string | null } = {},
+  options: {
+    openShift?: boolean;
+    branch?: string | null;
+    returnRecordError?: Error;
+  } = {},
 ) {
-  const { openShift = true, branch = A.branch } = options;
+  const { openShift = true, branch = A.branch, returnRecordError } = options;
   ids = 0;
   business = new MemoryBusinessStore();
   seedStore(business, A, openShift);
@@ -116,6 +121,7 @@ async function build(
     permissions: [...ROLE_PERMISSIONS[role]],
   });
 
+  const returnRepository = memoryReturnRepository(business);
   const server = buildServer(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'fatal' }), {
     auth: createAuthService({
       repository: memoryAuthRepository(auth),
@@ -127,6 +133,7 @@ async function build(
       tenants: memoryTenantRepository(business),
       dashboard: memoryDashboardRepository(business),
       products: memoryProductRepository(business),
+      restaurantFloor: memoryRestaurantFloorRepository(),
       shifts: memoryShiftRepository(business),
       terminals: memoryTerminalRepository(business),
       checkout: createCheckoutService({
@@ -140,7 +147,15 @@ async function build(
         newId: nextId,
       }),
       returns: createReturnService({
-        returns: memoryReturnRepository(business),
+        returns:
+          returnRecordError === undefined
+            ? returnRepository
+            : {
+                ...returnRepository,
+                async record() {
+                  throw returnRecordError;
+                },
+              },
         terminals: memoryTerminalRepository(business),
         shifts: memoryShiftRepository(business),
         idempotency: memoryIdempotencyRepository(business),
@@ -334,6 +349,25 @@ describe('a return the server accepts', () => {
     expect(reversals).toHaveLength(1);
     expect(reversals[0]!.quantityScaled).toBe('1000');
     expect(reversals[0]!.kind).toBe('return');
+  });
+
+  it('reports cost capacity as a deliberate refusal and records no partial return', async () => {
+    await build('manager', { returnRecordError: new CostingCapacityError() });
+    const cookie = await cookieFor(app);
+    const sale = await sell(cookie);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/returns',
+      headers: { cookie, origin: ORIGIN },
+      payload: returnPayload(sale),
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(response.payload).error).toBe('return-not-allowed');
+    expect(business.returns).toHaveLength(0);
+    expect(business.movements.filter((row) => row.sourceType === 'return')).toHaveLength(0);
+    expect(business.cashMovements.filter((row) => row.kind === 'refund')).toHaveLength(0);
   });
 
   it('records an electronic refund against its external approval, and moves no cash', async () => {

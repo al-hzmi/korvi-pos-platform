@@ -3,31 +3,52 @@
 import { Button, Numeric } from '@korvi/ui';
 import { Field } from './field';
 import { StatusNote } from './status-note';
-import { changeMinor, formatMinor } from '../lib/money';
-import type { JSX, Ref } from 'react';
+import { formatMinor } from '../lib/money';
 import type { CheckoutState } from '../lib/checkout';
+import {
+  MAX_ELECTRONIC_TENDERS,
+  planPayment,
+  type ElectronicTenderDraft,
+  type PaymentMode,
+} from '../lib/payment-tenders';
+import type { JSX, Ref } from 'react';
+
+const SCHEMES = [
+  ['mada', 'مدى'],
+  ['visa', 'Visa'],
+  ['mastercard', 'Mastercard'],
+  ['amex', 'Amex'],
+  ['apple-pay', 'Apple Pay'],
+  ['other', 'أخرى'],
+] as const;
 
 /**
- * Cash, and what is owed back.
+ * Cashier payment composition.
  *
- * The total shown here is a preview computed by the domain from the catalogue
- * prices the server sent. It is never what gets printed: the sale that comes
- * back from POST /v1/sales carries the figures, and those replace these.
- *
- * The button stays disabled while a request is in flight. That is the whole
- * defence against a double charge on this screen, and it is not optional.
+ * The panel only prepares intent. Server/domain settlement remains the financial
+ * authority and independently validates tender composition, amounts and change.
  */
 export interface CheckoutPanelProps {
   readonly totalMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
+  readonly promotionDiscountMinor: string;
   readonly cash: string;
-  readonly cashMinor: string | null;
+  readonly showCoupon: boolean;
+  readonly couponCode: string;
+  readonly paymentMode: PaymentMode;
+  readonly electronicTenders: readonly ElectronicTenderDraft[];
   readonly lineCount: number;
   readonly locked: boolean;
+  readonly submissionBlocker?: string | null;
   readonly state: CheckoutState;
   readonly cashRef: Ref<HTMLInputElement>;
   readonly onCashChange: (value: string) => void;
+  readonly onCouponCodeChange: (value: string) => void;
+  readonly onPaymentModeChange: (mode: PaymentMode) => void;
+  readonly onElectronicTenderChange: (index: number, value: ElectronicTenderDraft) => void;
+  readonly onAddElectronicTender: () => void;
+  readonly onRemoveElectronicTender: (index: number) => void;
   readonly onSubmit: () => void;
   readonly onDismiss: () => void;
 }
@@ -36,81 +57,251 @@ export function CheckoutPanel({
   totalMinor,
   netMinor,
   vatMinor,
+  promotionDiscountMinor,
   cash,
-  cashMinor,
+  showCoupon,
+  couponCode,
+  paymentMode,
+  electronicTenders,
   lineCount,
   locked,
+  submissionBlocker,
   state,
   cashRef,
   onCashChange,
+  onCouponCodeChange,
+  onPaymentModeChange,
+  onElectronicTenderChange,
+  onAddElectronicTender,
+  onRemoveElectronicTender,
   onSubmit,
   onDismiss,
 }: CheckoutPanelProps): JSX.Element {
-  const change = cashMinor === null ? null : changeMinor(totalMinor, cashMinor);
+  const payment = planPayment(totalMinor, paymentMode, cash, electronicTenders);
   const submitting = state.phase === 'submitting';
   const blocked = state.failure?.action === 'blocking';
-  const canSubmit = lineCount > 0 && cashMinor !== null && change !== null && !blocked;
-  // The cash amount is part of the fingerprint the server compares. Editing it
-  // while an attempt is outstanding would turn the retry into a different
-  // intent, which the server would correctly refuse as a conflict.
-  const cashFrozen = locked;
+  const canSubmit =
+    lineCount > 0 &&
+    payment.valid &&
+    !blocked &&
+    (submissionBlocker === null || submissionBlocker === undefined);
+  const paymentFrozen = locked;
 
   return (
-    <div className="flex shrink-0 flex-col gap-3 border-t border-border pt-3">
-      <dl className="flex flex-col gap-1 text-sm">
-        <div className="flex items-center justify-between text-muted-foreground">
-          <dt>الإجمالي قبل الضريبة</dt>
-          <dd>
-            <Numeric value={formatMinor(netMinor)} />
-          </dd>
-        </div>
-        <div className="flex items-center justify-between text-muted-foreground">
-          <dt>ضريبة القيمة المضافة</dt>
-          <dd>
-            <Numeric value={formatMinor(vatMinor)} />
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between pt-1">
-          <dt className="text-base font-semibold text-card-foreground">المطلوب</dt>
-          <dd>
-            <Numeric
-              value={formatMinor(totalMinor)}
-              className="text-3xl font-bold text-foreground"
-            />
-          </dd>
-        </div>
-      </dl>
+    <div className="flex shrink-0 flex-col gap-3 border-t border-border pt-4">
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm">
+        <dl className="flex flex-col gap-2 text-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <dt>الإجمالي قبل الضريبة</dt>
+            <dd className="flex items-baseline gap-1">
+              <Numeric value={formatMinor(netMinor)} />
+              <span className="text-[10px]">ر.س</span>
+            </dd>
+          </div>
+          <div className="flex items-center justify-between text-muted-foreground">
+            <dt>ضريبة القيمة المضافة</dt>
+            <dd className="flex items-baseline gap-1">
+              <Numeric value={formatMinor(vatMinor)} />
+              <span className="text-[10px]">ر.س</span>
+            </dd>
+          </div>
+          {promotionDiscountMinor === '0' ? null : (
+            <div className="flex items-center justify-between text-primary">
+              <dt>خصم العروض</dt>
+              <dd className="flex items-baseline gap-1 font-semibold">
+                <span>−</span>
+                <Numeric value={formatMinor(promotionDiscountMinor)} />
+                <span className="text-[10px]">ر.س</span>
+              </dd>
+            </div>
+          )}
+          <div className="mt-1 flex items-end justify-between border-t border-primary/15 pt-3">
+            <dt className="text-base font-semibold text-foreground">الإجمالي المستحق</dt>
+            <dd className="flex items-baseline gap-1 text-primary">
+              <Numeric
+                value={formatMinor(totalMinor)}
+                className="text-4xl font-bold tracking-tight"
+              />
+              <span className="text-xs font-semibold">ر.س</span>
+            </dd>
+          </div>
+        </dl>
+      </div>
 
-      <Field
-        id="cash-received"
-        label="النقد المستلم (ريال)"
-        inputMode="decimal"
-        autoComplete="off"
-        dir="ltr"
-        disabled={cashFrozen}
-        invalid={cash.trim() !== '' && cashMinor === null}
-        value={cash}
-        inputRef={cashRef}
-        className="h-touch-lg text-lg"
-        onChange={(event) => {
-          onCashChange(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && canSubmit && !submitting && !cashFrozen) {
-            event.preventDefault();
-            onSubmit();
-          }
-        }}
-      />
+      {showCoupon ? (
+        <div className="rounded-lg border border-border bg-background p-3">
+          <Field
+            id="coupon-code"
+            label="كود الخصم"
+            value={couponCode}
+            maxLength={64}
+            autoComplete="off"
+            disabled={paymentFrozen}
+            placeholder="مثال: SAVE10"
+            hint="يتحقق Korvi من الكود ويحدّث السعر من الخادم قبل السماح بإتمام الدفع."
+            onChange={(event) => onCouponCodeChange(event.currentTarget.value)}
+          />
+        </div>
+      ) : null}
 
-      <div className="flex items-baseline justify-between rounded-md bg-muted px-3 py-2 text-sm">
-        <span className="text-muted-foreground">الباقي</span>
-        {change === null ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          <Numeric value={formatMinor(change)} className="text-lg font-semibold text-foreground" />
+      <div className="rounded-lg border border-border bg-background p-3">
+        <div className="mb-3 grid grid-cols-2 gap-2" role="group" aria-label="طريقة الدفع">
+          <Button
+            type="button"
+            variant={paymentMode === 'cash' ? 'secondary' : 'outline'}
+            disabled={paymentFrozen}
+            onClick={() => onPaymentModeChange('cash')}
+          >
+            نقدي
+          </Button>
+          <Button
+            type="button"
+            variant={paymentMode === 'mixed' ? 'secondary' : 'outline'}
+            disabled={paymentFrozen}
+            onClick={() => onPaymentModeChange('mixed')}
+          >
+            إلكتروني / متعدد
+          </Button>
+        </div>
+
+        <Field
+          id="cash-received"
+          label={paymentMode === 'cash' ? 'النقد المستلم (ريال)' : 'الجزء النقدي — اختياري (ريال)'}
+          inputMode="decimal"
+          autoComplete="off"
+          dir="ltr"
+          disabled={paymentFrozen}
+          invalid={cash.trim() !== '' && payment.cashMinor === '0' && cash.trim() !== '0'}
+          value={cash}
+          inputRef={cashRef}
+          className="h-touch-lg text-xl font-semibold"
+          onChange={(event) => {
+            onCashChange(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && canSubmit && !submitting && !paymentFrozen) {
+              event.preventDefault();
+              onSubmit();
+            }
+          }}
+        />
+
+        {paymentMode === 'mixed' ? (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground">الدفعات الإلكترونية</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={paymentFrozen || electronicTenders.length >= MAX_ELECTRONIC_TENDERS}
+                onClick={onAddElectronicTender}
+              >
+                إضافة دفعة
+              </Button>
+            </div>
+
+            {electronicTenders.map((tender, index) => (
+              <div
+                key={index}
+                className="grid grid-cols-[minmax(5.5rem,0.7fr)_minmax(5rem,0.7fr)_minmax(7rem,1fr)_auto] gap-2 rounded-md border border-border p-2"
+              >
+                <select
+                  aria-label={`شبكة الدفع ${String(index + 1)}`}
+                  value={tender.scheme}
+                  disabled={paymentFrozen}
+                  onChange={(event) => {
+                    onElectronicTenderChange(index, {
+                      ...tender,
+                      scheme: event.target.value as ElectronicTenderDraft['scheme'],
+                    });
+                  }}
+                  className="h-touch min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  {SCHEMES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  aria-label={`مبلغ الدفعة الإلكترونية ${String(index + 1)}`}
+                  inputMode="decimal"
+                  dir="ltr"
+                  value={tender.amount}
+                  disabled={paymentFrozen}
+                  placeholder="0.00"
+                  onChange={(event) => {
+                    onElectronicTenderChange(index, { ...tender, amount: event.target.value });
+                  }}
+                  className="h-touch min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+                />
+                <input
+                  aria-label={`مرجع الموافقة ${String(index + 1)}`}
+                  dir="ltr"
+                  value={tender.reference}
+                  maxLength={64}
+                  disabled={paymentFrozen}
+                  placeholder="مرجع الموافقة"
+                  onChange={(event) => {
+                    onElectronicTenderChange(index, { ...tender, reference: event.target.value });
+                  }}
+                  className="h-touch min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={paymentFrozen || electronicTenders.length <= 1}
+                  onClick={() => onRemoveElectronicTender(index)}
+                  aria-label={`حذف الدفعة الإلكترونية ${String(index + 1)}`}
+                >
+                  حذف
+                </Button>
+              </div>
+            ))}
+            <p className="text-[11px] text-muted-foreground">
+              أدخل مرجع الموافقة فقط. لا تدخل رقم البطاقة أو CVV أو بيانات حامل البطاقة.
+            </p>
+          </div>
+        ) : null}
+
+        <dl className="mt-3 space-y-2 rounded-md bg-muted px-3 py-2.5 text-sm">
+          {paymentMode === 'mixed' ? (
+            <>
+              <div className="flex items-center justify-between">
+                <dt className="font-medium text-muted-foreground">إجمالي المدفوع</dt>
+                <dd className="flex items-baseline gap-1">
+                  <Numeric value={formatMinor(payment.tenderedMinor)} className="font-bold" />
+                  <span className="text-[10px] text-muted-foreground">ر.س</span>
+                </dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="font-medium text-muted-foreground">المتبقي</dt>
+                <dd className="flex items-baseline gap-1">
+                  <Numeric value={formatMinor(payment.remainingMinor)} className="font-bold" />
+                  <span className="text-[10px] text-muted-foreground">ر.س</span>
+                </dd>
+              </div>
+            </>
+          ) : null}
+          <div className="flex items-center justify-between">
+            <dt className="font-medium text-muted-foreground">الباقي للعميل</dt>
+            <dd className="flex items-baseline gap-1">
+              <Numeric value={formatMinor(payment.changeMinor)} className="text-xl font-bold" />
+              <span className="text-[10px] text-muted-foreground">ر.س</span>
+            </dd>
+          </div>
+        </dl>
+
+        {payment.message === null ? null : (
+          <p className="mt-2 text-xs text-muted-foreground">{payment.message}</p>
         )}
       </div>
+
+      {submissionBlocker === null || submissionBlocker === undefined ? null : (
+        <StatusNote tone="warning">{submissionBlocker}</StatusNote>
+      )}
 
       {state.failure === null ? null : (
         <StatusNote tone={state.failure.action === 'blocking' ? 'danger' : 'warning'} live>
@@ -120,15 +311,15 @@ export function CheckoutPanel({
 
       {state.attemptOutstanding ? (
         <StatusNote tone="warning">
-          لم تصل نتيجة العملية. السلة مقفلة كما هي — أعد الإرسال بنفس العملية، ولا تُنشئ عملية
-          جديدة.
+          لم تصل نتيجة العملية. السلة والدفع مقفلان كما هما — أعد الإرسال بنفس العملية، ولا تُنشئ
+          عملية جديدة.
         </StatusNote>
       ) : null}
 
       <div className="flex gap-2">
         <Button
           size="lg"
-          className="flex-1"
+          className="h-touch-lg flex-1 text-base font-semibold shadow-sm"
           loading={submitting}
           disabled={!canSubmit}
           onClick={onSubmit}
@@ -140,7 +331,7 @@ export function CheckoutPanel({
               : 'إتمام البيع'}
         </Button>
         {state.failure === null || state.attemptOutstanding ? null : (
-          <Button variant="outline" size="lg" onClick={onDismiss}>
+          <Button variant="outline" size="lg" className="h-touch-lg" onClick={onDismiss}>
             إخفاء
           </Button>
         )}

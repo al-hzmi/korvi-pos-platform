@@ -1,0 +1,41 @@
+export const CONTROL_SECTION_HREFS = {
+  home: '/control',
+  sales: '/control/sales',
+  products: '/control/products',
+  inventory: '/control/inventory',
+  purchasing: '/control/purchasing',
+  promotions: '/control/promotions',
+  customers: '/control/customers',
+  branches: '/control/branches',
+  staff: '/control/staff',
+  reports: '/control/reports',
+  settings: '/control/settings',
+  migration: '/control/migration',
+  zatca: '/control/zatca',
+} as const;
+
+export type ControlSection = keyof typeof CONTROL_SECTION_HREFS;
+
+export function controlSectionHref(section: ControlSection): string {
+  return CONTROL_SECTION_HREFS[section];
+}
+
+export function controlSectionFromSlug(slug: string): ControlSection | null {
+  switch (slug) {
+    case 'sales':
+    case 'products':
+    case 'inventory':
+    case 'purchasing':
+    case 'promotions':
+    case 'customers':
+    case 'branches':
+    case 'staff':
+    case 'reports':
+    case 'settings':
+    case 'migration':
+    case 'zatca':
+      return slug;
+    default:
+      return null;
+  }
+}

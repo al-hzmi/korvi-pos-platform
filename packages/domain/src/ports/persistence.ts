@@ -152,6 +152,10 @@ export interface Product {
   readonly id: string;
   readonly tenantId: TenantId;
   readonly categoryId: string | null;
+  /** Optional read-side catalogue metadata; persisted adapters populate it. */
+  readonly categoryNameAr?: string | null;
+  readonly categorySortOrder?: number | null;
+  readonly imageUrl?: string | null;
   readonly sku: string;
   readonly nameAr: string;
   readonly nameEn: string | null;
@@ -183,10 +187,81 @@ export interface GlobalCatalogItem {
 }
 
 // ---------------------------------------------------------------------------
+// Promotions and coupons (ADR-0037)
+// ---------------------------------------------------------------------------
+
+export type PromotionActivationMode = 'automatic' | 'coupon';
+export type PromotionPolicyStatus = 'draft' | 'active' | 'paused' | 'archived';
+export type PromotionPolicyStackingMode = 'stackable' | 'exclusive';
+export type PromotionPolicyEffectKind = 'fixed' | 'percentage';
+export type PromotionPolicyTargetKind = 'basket' | 'products';
+export type CouponPolicyStatus = 'active' | 'paused' | 'retired';
+
+export interface PromotionPolicyRecord {
+  readonly id: string;
+  readonly merchantCode: string;
+  readonly name: string;
+  readonly status: PromotionPolicyStatus;
+  readonly activationMode: PromotionActivationMode;
+  readonly priority: number;
+  readonly stackingMode: PromotionPolicyStackingMode;
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly effectKind: PromotionPolicyEffectKind;
+  readonly effectValue: string;
+  readonly minimumEligibleSubtotalMinor: string;
+  readonly targetKind: PromotionPolicyTargetKind;
+  readonly productIds: readonly string[];
+  readonly revision: string;
+}
+
+export interface CouponPolicyRecord {
+  readonly id: string;
+  readonly promotionId: string;
+  readonly normalizedCode: string;
+  readonly status: CouponPolicyStatus;
+  readonly startsAt: string | null;
+  readonly endsAt: string | null;
+  readonly totalRedemptionLimit: number | null;
+  readonly revision: string;
+  /** Preview only; final usage is re-counted under lock at sale commit. */
+  readonly observedRedemptionCount: number;
+}
+
+export interface PromotionCheckoutPolicy {
+  readonly promotion: PromotionPolicyRecord;
+  readonly coupon: CouponPolicyRecord | null;
+}
+
+export interface PromotionCheckoutResolution {
+  readonly policies: readonly PromotionCheckoutPolicy[];
+  readonly unavailableCouponCodes: readonly string[];
+}
+
+export interface PromotionRepository {
+  resolveForCheckout(
+    scope: TenantScope,
+    input: {
+      readonly evaluatedAt: string;
+      readonly productIds: readonly string[];
+      readonly normalizedCouponCodes: readonly string[];
+    },
+  ): Promise<PromotionCheckoutResolution>;
+}
+
+// ---------------------------------------------------------------------------
 // Inventory
 // ---------------------------------------------------------------------------
 
-export type InventoryMovementKind = 'sale' | 'return' | 'adjustment' | 'receipt' | 'transfer';
+export type InventoryMovementKind =
+  | 'sale'
+  | 'return'
+  | 'adjustment'
+  | 'receipt'
+  | 'transfer'
+  | 'production-consumption'
+  | 'production-output'
+  | 'no-receipt-exchange-intake';
 
 export interface InventoryBalance {
   readonly tenantId: TenantId;
@@ -194,6 +269,15 @@ export interface InventoryBalance {
   readonly productId: string;
   /** Scaled by 1000, signed. A negative balance is an oversell. */
   readonly quantityScaled: string;
+  /**
+   * Monotonic counter, one step per committed quantity-changing movement.
+   *
+   * A decimal integer string like every other quantity here. A stock count
+   * submits the revision it observed and the server compares it under the row
+   * lock, which is what stops an absolute observation from erasing a sale that
+   * happened mid-count (ADR-0024 §5).
+   */
+  readonly revision: string;
 }
 
 export interface InventoryMovementInput {
@@ -354,6 +438,9 @@ export interface CloseShiftRequest {
 
 export type SaleStatus = 'finalized' | 'voided';
 
+/** Operational service mode for restaurant sales; never a fiscal classification. */
+export type RestaurantOrderType = 'dine-in' | 'takeaway' | 'delivery';
+
 /**
  * A sale line as stored.
  *
@@ -388,6 +475,8 @@ export interface SaleLineRecord {
   readonly quantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  /** Optional only for pre-V2 fixtures; real persisted rows always carry it. */
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -429,13 +518,21 @@ export interface SaleRecord {
   readonly shiftId: string;
   readonly userId: string;
   readonly customerId: string | null;
+  /** Operational dine-in table context. Historical and non-dine-in sales remain null. */
+  readonly tableId?: string | null;
+  /** Open restaurant order settled by this sale; null for direct/historical sales. */
+  readonly restaurantOrderId?: string | null;
   readonly operationId: string;
   readonly status: SaleStatus;
+  /** Null/absent means no immutable service-mode fact was recorded for this sale. */
+  readonly orderType?: RestaurantOrderType | null;
   readonly sequence: number;
   readonly priceMode: PriceMode;
   readonly currency: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  /** Optional only for pre-V2 fixtures; real persisted rows always carry it. */
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -483,6 +580,43 @@ export interface InvoiceRecord {
  * or stock decremented for a sale that never existed — so the port takes them
  * together and the adapter commits them in one transaction.
  */
+export interface SalePromotionApplicationInput {
+  readonly id: string;
+  readonly promotionId: string;
+  readonly promotionRevision: string;
+  readonly merchantCode: string;
+  readonly name: string;
+  readonly priority: number;
+  readonly stackingMode: 'stackable' | 'exclusive';
+  readonly activationMode: 'automatic' | 'coupon';
+  readonly effectKind: 'fixed' | 'percentage';
+  readonly effectValue: string;
+  readonly eligibleBaseMinor: string;
+  readonly amountMinor: string;
+  readonly couponId: string | null;
+  readonly couponCode: string | null;
+  /**
+   * Commit-time precondition only. It is intentionally not persisted as a
+   * historical financial field; the redemption fact points to the coupon.
+   */
+  readonly expectedCouponRevision: string | null;
+  readonly allocations: readonly {
+    readonly id: string;
+    readonly saleLineId: string;
+    readonly amountMinor: string;
+  }[];
+  readonly redemptionId: string | null;
+}
+
+export interface PromotionSettlementInput {
+  readonly evaluatedAt: string;
+  /** Canonical normalized codes, sorted/deduplicated by the server. */
+  readonly presentedCouponCodes: readonly string[];
+  readonly applications: readonly SalePromotionApplicationInput[];
+  /** Null only when evaluation applied no promotion; applied promotions audit atomically. */
+  readonly audit: AuditEventInput | null;
+}
+
 export interface RecordSaleInput {
   /**
    * `sequence` is absent on purpose, and so is the invoice number.
@@ -497,6 +631,23 @@ export interface RecordSaleInput {
   readonly invoice: Omit<InvoiceRecord, 'tenantId' | 'invoiceNumber'>;
   readonly inventory: readonly InventoryMovementInput[];
   readonly cashMovement: CashMovementRecord | null;
+  /**
+   * Optional open-order lifecycle precondition. Persistence locks and proves
+   * the order snapshot before writing any financial fact, then marks it
+   * settled in this same transaction.
+   */
+  readonly restaurantOrderSettlement?:
+    | {
+        readonly orderId: string;
+        readonly expectedRevision: string;
+      }
+    | undefined;
+  /**
+   * Present only when this direct checkout applied merchant promotion policy.
+   * Persistence re-locks/revalidates policy and writes immutable application,
+   * allocation and redemption facts in this same sale transaction.
+   */
+  readonly promotionSettlement?: PromotionSettlementInput | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 
@@ -595,9 +746,43 @@ export interface DashboardRepository {
   summary(scope: TenantScope, since: string): Promise<DashboardSummary>;
 }
 
+export interface RestaurantZone {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly nameAr: string;
+  readonly sortOrder: number;
+  readonly isActive: boolean;
+}
+
+export interface RestaurantTable {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly zoneId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly capacity: number | null;
+  readonly isActive: boolean;
+}
+
 export interface BranchRepository {
   findById(scope: TenantScope, id: string): Promise<Branch | null>;
   list(scope: TenantScope): Promise<readonly Branch[]>;
+}
+
+export interface RestaurantFloorRepository {
+  findTableById(scope: TenantScope, id: string): Promise<RestaurantTable | null>;
+  listZonesForBranch(
+    scope: TenantScope,
+    branchId: string,
+    activeOnly: boolean,
+  ): Promise<readonly RestaurantZone[]>;
+  listTablesForBranch(
+    scope: TenantScope,
+    branchId: string,
+    activeOnly: boolean,
+  ): Promise<readonly RestaurantTable[]>;
 }
 
 export interface TerminalRepository {
@@ -694,6 +879,73 @@ export interface SaleRepository {
 }
 
 // ---------------------------------------------------------------------------
+// No-receipt exchanges (ADR-0036)
+// ---------------------------------------------------------------------------
+
+export type NoReceiptExchangeStatus = 'finalized';
+
+export interface NoReceiptExchangeLineRecord {
+  readonly id: string;
+  readonly lineNumber: number;
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly productType: ProductType;
+  readonly quantityScaled: string;
+  readonly currentUnitReferencePriceMinor: string;
+  readonly currentVatBasisPoints: BasisPoints;
+  readonly currentReferenceTotalMinor: string;
+  readonly trackInventory: boolean;
+  readonly stockDisposition: 'sellable';
+  readonly costProvenance: 'unknown';
+}
+
+export interface NoReceiptExchangeRecord {
+  readonly id: string;
+  readonly tenantId: TenantId;
+  readonly branchId: string;
+  readonly terminalId: string;
+  readonly shiftId: string;
+  readonly actorUserId: string;
+  readonly operationId: string;
+  readonly requestHash: string;
+  readonly status: NoReceiptExchangeStatus;
+  readonly sequence: number;
+  readonly caseNumber: string;
+  readonly reason: string;
+  readonly evidenceNote: string | null;
+  readonly currency: string;
+  readonly referenceCeilingMinor: string;
+  readonly approvedAllowanceMinor: string;
+  readonly linkedSaleId: string;
+  readonly issuedAt: string;
+  readonly lines: readonly NoReceiptExchangeLineRecord[];
+}
+
+export interface RecordNoReceiptExchangeInput {
+  readonly exchange: Omit<
+    NoReceiptExchangeRecord,
+    'tenantId' | 'sequence' | 'caseNumber' | 'linkedSaleId' | 'lines'
+  >;
+  readonly lines: readonly NoReceiptExchangeLineRecord[];
+  readonly intake: readonly {
+    readonly movement: InventoryMovementInput;
+    readonly caseLineId: string;
+  }[];
+  readonly replacementSale: RecordSaleInput;
+  readonly audits: readonly AuditEventInput[];
+}
+
+export interface NoReceiptExchangeRepository {
+  findByOperationId(
+    scope: TenantScope,
+    operationId: string,
+  ): Promise<NoReceiptExchangeRecord | null>;
+  record(scope: TenantScope, input: RecordNoReceiptExchangeInput): Promise<NoReceiptExchangeRecord>;
+}
+
+// ---------------------------------------------------------------------------
 // Returns and refunds
 // ---------------------------------------------------------------------------
 
@@ -732,6 +984,7 @@ export interface ReturnLineRecord {
   readonly quantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -754,6 +1007,7 @@ export interface ReturnRecord {
   readonly currency: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -787,6 +1041,7 @@ export interface ReturnableSaleLine {
   readonly remainingQuantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor?: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;
@@ -794,6 +1049,7 @@ export interface ReturnableSaleLine {
   readonly refundedGrossMinor: string;
   readonly refundedNetMinor: string;
   readonly refundedLineDiscountMinor: string;
+  readonly refundedPromotionDiscountMinor?: string;
   readonly refundedBasketDiscountMinor: string;
   readonly refundedVatMinor: string;
 }
@@ -852,6 +1108,7 @@ export interface RecordReturnPlan {
     readonly quantityScaled: string;
     readonly grossMinor: string;
     readonly lineDiscountMinor: string;
+    readonly promotionDiscountMinor: string;
     readonly basketDiscountMinor: string;
     readonly netMinor: string;
     readonly vatMinor: string;
@@ -859,6 +1116,7 @@ export interface RecordReturnPlan {
   }[];
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
+  readonly promotionDiscountMinor: string;
   readonly basketDiscountMinor: string;
   readonly netMinor: string;
   readonly vatMinor: string;

@@ -34,8 +34,22 @@ export interface CheckoutIntentTender {
 export interface CheckoutIntent {
   readonly branchId: string;
   readonly terminalId: string;
+  /** Empty string for non-restaurant checkout; otherwise the recorded operational service mode. */
+  readonly orderType: string;
+  /** Empty except for a dine-in sale bound to a table. */
+  readonly tableId: string;
+  /** Empty for direct sales; otherwise the open operational order being settled. */
+  readonly restaurantOrderId: string;
+  /** Empty for direct sales; optimistic lifecycle precondition for an open order. */
+  readonly restaurantOrderRevision: string;
   readonly lines: readonly CheckoutIntentLine[];
   readonly tenders: readonly CheckoutIntentTender[];
+  /** Canonical normalized coupon codes. Order is not material. */
+  readonly couponCodes?: readonly string[];
+  /** Server-issued pricing precondition; never client price authority. */
+  readonly pricingHash?: string;
+  /** True only when this intent was captured offline; it can only tighten authority. */
+  readonly offlineCaptured?: boolean;
   /** Canonical description of the basket discount, or the empty string. */
   readonly basketDiscount: string;
 }
@@ -59,8 +73,23 @@ export interface CheckoutIntent {
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
  *
- * `v2` because the payment fields joined the canonical form. A key minted
- * under v1 hashes differently and is treated as a different intent, which is
+ * `v8` because the server-issued pricing precondition joined the canonical form.
+ * Changing the quote under one operation id is a different intent.
+ *
+ * `v7` because the offline-captured boundary joined the canonical form. A
+ * delayed sale cannot replay as an ordinary online sale under the same key.
+ *
+ * `v6` because coupon activation intent joined the canonical form. Server-owned
+ * automatic promotion policy is deliberately absent: policy is authority, not
+ * client intent.
+ *
+ * `v5` because open-order identity + revision joined the canonical form. An
+ * order settlement cannot replay as a direct sale, or against a later revision.
+ *
+ * `v4` introduced dine-in table identity after service mode.
+ *
+ * `v3` introduced restaurant service mode after payment
+ * composition. A key minted under an earlier version hashes differently and is
  * the safe direction: a conflict is visible, a false replay is not.
  */
 export function fingerprintIntent(intent: CheckoutIntent): string {
@@ -96,11 +125,20 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
     ])
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
+  const couponCodes = [...(intent.couponCodes ?? [])].sort();
+
   const canonical = JSON.stringify([
-    'v2',
+    'v8',
     intent.branchId,
     intent.terminalId,
+    intent.orderType,
+    intent.tableId,
+    intent.restaurantOrderId,
+    intent.restaurantOrderRevision,
     intent.basketDiscount,
+    couponCodes,
+    intent.pricingHash ?? '',
+    intent.offlineCaptured === true,
     tenders,
     lines,
   ]);

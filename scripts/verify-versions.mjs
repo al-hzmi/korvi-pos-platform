@@ -1,18 +1,19 @@
 /**
- * Assert every pinned dependency is a real, published, non-prerelease version.
+ * Assert every pinned dependency and root override leaf is a real, published,
+ * production-stable version.
  *
  * A pin is only a guarantee if something checks it. This runs in `verify` and
  * in CI, so a dependency can never quietly drift onto a preview, beta or canary
- * build — including through a transitive bump or a hand edit.
+ * build — including through a transitive security override or a hand edit.
  *
- * Deliberate departures from `latest` are listed in ALLOWED_BEHIND with the ADR
- * that justifies each. Anything else lagging `latest` FAILS: an undocumented
- * stale pin is how a project drifts onto an unmaintained line without anyone
- * deciding to, and "review when convenient" is a message nobody acts on.
+ * Deliberate departures from the newest production-stable release are listed in
+ * ALLOWED_BEHIND with the ADR that justifies each. Anything else lagging the
+ * newest stable release FAILS.
  */
 import { readFileSync } from 'node:fs';
 import { globSync } from 'node:fs';
 
+const EXACT_STABLE = /^\d+\.\d+\.\d+$/;
 const PRERELEASE = /-(alpha|beta|rc|canary|preview|next|dev|insiders|experimental|nightly)/i;
 
 /**
@@ -24,10 +25,21 @@ const PRERELEASE = /-(alpha|beta|rc|canary|preview|next|dev|insiders|experimenta
  */
 const REGISTRY = process.env.NPM_PUBLIC_REGISTRY ?? 'https://registry.npmjs.org';
 
-/** Pin -> the ADR explaining why it is not `latest`. */
+/** Pin -> the ADR explaining why it is not the newest production-stable version. */
 const ALLOWED_BEHIND = {
+  '@tauri-apps/cli':
+    'Post-V1 parallel product-development baseline (2026-09-20): retain the exact 2.11.4 installed-client toolchain already proven on the current lineage; upgrade to 2.11.5 only in a dedicated installed-client dependency-maintenance change, not inside Restaurant or Migration feature work.',
+  eslint:
+    'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
+  prettier:
+    'Commercial V1 RC freeze directive (2026-09-18): keep the verified 3.9.7 formatter baseline until post-RC to avoid unrelated repository-wide formatting churn.',
+  next: 'Canonical Acquisition Release freeze (2026-09-22): retain the exact 16.3.5 baseline already proven on the canonical lineage; evaluate 16.3.6 in a dedicated dependency-maintenance change rather than coupling framework churn to AR-1 security integration.',
   typescript: 'ADR-0007: typescript-eslint declares `typescript <6.1.0`.',
+  'typescript-eslint':
+    'Post-V1 parallel product-development baseline (2026-09-21): retain the verified 8.70.0 lint/parser toolchain during Migration M2/M3 work; upgrade to 8.70.1 only in a dedicated dependency-maintenance change, not inside a migration vertical slice.',
   tailwindcss: 'ADR-0007: the design system ships a verified v3 config (v3-lts).',
+  tsx: 'Post-V1 parallel product-development baseline (2026-09-20): retain the verified 4.23.13 TypeScript execution tool during Restaurant/Migration feature work; upgrade to 4.23.15 only in a dedicated dependency-maintenance change.',
+  vite: 'Mastermind V2 feature-work baseline (2026-09-24): retain the frozen acquisition-candidate Vite 8.3.0 toolchain while V2-1 changes financial/inventory authority; evaluate 8.3.1 only in a dedicated dependency-maintenance change.',
   '@types/node':
     'ADR-0007: typings track the Node 24 runtime. A newer major describes APIs ' +
     'the runtime does not have, so code typechecks and then fails at run time.',
@@ -39,7 +51,40 @@ const manifests = [
   ...globSync('apps/*/package.json'),
 ];
 
+function compareStableVersions(a, b) {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    const delta = left[index] - right[index];
+    if (delta !== 0) return delta;
+  }
+  return 0;
+}
+
+function newestPublishedStable(versions) {
+  return Object.keys(versions ?? {})
+    .filter((version) => EXACT_STABLE.test(version))
+    .sort(compareStableVersions)
+    .at(-1);
+}
+
+function collectOverrideLeaves(node, pins, path = []) {
+  for (const [name, value] of Object.entries(node ?? {})) {
+    const nextPath = [...path, name];
+    if (typeof value === 'string') {
+      pins.set(name, value);
+      continue;
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      collectOverrideLeaves(value, pins, nextPath);
+      continue;
+    }
+    throw new TypeError(`Unsupported override value at ${nextPath.join(' > ')}`);
+  }
+}
+
 const pins = new Map();
+let manifestShapeFailures = 0;
 for (const file of manifests) {
   const json = JSON.parse(readFileSync(file, 'utf8'));
   for (const field of ['dependencies', 'devDependencies']) {
@@ -48,13 +93,24 @@ for (const file of manifests) {
       pins.set(name, range);
     }
   }
+
+  if (file === 'package.json') {
+    try {
+      collectOverrideLeaves(json.overrides, pins);
+    } catch (error) {
+      console.error(
+        `FAIL  root overrides: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      manifestShapeFailures += 1;
+    }
+  }
 }
 
-let failures = 0;
+let failures = manifestShapeFailures;
 
 for (const [name, pin] of [...pins].sort()) {
-  if (!/^\d+\.\d+\.\d+$/.test(pin)) {
-    console.error(`FAIL  ${name}: "${pin}" is not an exact version.`);
+  if (!EXACT_STABLE.test(pin)) {
+    console.error(`FAIL  ${name}: "${pin}" is not an exact production-stable version.`);
     failures += 1;
     continue;
   }
@@ -92,16 +148,38 @@ for (const [name, pin] of [...pins].sort()) {
     continue;
   }
 
-  if (tags.latest !== pin) {
+  // Registry publishers can temporarily point `latest` at an RC/preview. Korvi's
+  // policy is production-stable, so a prerelease/non-triplet latest tag is never
+  // an upgrade target. In that case compare against the newest published stable
+  // x.y.z instead of teaching CI to chase a prerelease.
+  const taggedLatest = tags.latest;
+  const latestStable =
+    typeof taggedLatest === 'string' && EXACT_STABLE.test(taggedLatest)
+      ? taggedLatest
+      : newestPublishedStable(meta.versions);
+
+  if (latestStable === undefined) {
+    console.error(`FAIL  ${name}: registry exposes no production-stable release.`);
+    failures += 1;
+    continue;
+  }
+
+  if (taggedLatest !== latestStable) {
+    console.log(
+      `note  ${name}: latest dist-tag is ${String(taggedLatest)}; production-stable target is ${latestStable}.`,
+    );
+  }
+
+  if (latestStable !== pin) {
     const reason = ALLOWED_BEHIND[name];
     if (reason === undefined) {
       console.error(
-        `FAIL  ${name}@${pin} is behind latest (${tags.latest}) with no recorded reason.\n` +
+        `FAIL  ${name}@${pin} is behind newest stable (${latestStable}) with no recorded reason.\n` +
           '      Upgrade it, or add an ALLOWED_BEHIND entry naming the ADR that justifies the pin.',
       );
       failures += 1;
     } else {
-      console.log(`ok    ${name}@${pin} — behind ${tags.latest} on purpose. ${reason}`);
+      console.log(`ok    ${name}@${pin} — behind ${latestStable} on purpose. ${reason}`);
     }
     continue;
   }
@@ -113,4 +191,4 @@ if (failures > 0) {
   console.error(`\n${failures} version check(s) failed.`);
   process.exit(1);
 }
-console.log('\nAll pins verified: published, stable, no prerelease tags.');
+console.log('\nAll pins verified: published, production-stable, no prerelease targets.');
