@@ -838,15 +838,24 @@ try {
   // so a stale one-line draft may legitimately hydrate when we return. Prove
   // the coupon from an explicitly empty cashier state instead of assuming the
   // previous page's async cleanup completed before navigation.
-  const staleCartCleared = await evaluate(`(() => {
+  const staleCartPresent = await evaluate(`(() => {
     const button = [...document.querySelectorAll('button')].find(
       (candidate) => (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'إفراغ السلة'
     );
-    if (!(button instanceof HTMLButtonElement)) return false;
-    button.click();
-    return true;
+    return button instanceof HTMLButtonElement;
   })()`);
-  if (staleCartCleared) {
+  if (staleCartPresent) {
+    await waitFor(
+      `(() => {
+        const button = [...document.querySelectorAll('button')].find(
+          (candidate) => (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'إفراغ السلة'
+        );
+        return button instanceof HTMLButtonElement && !button.disabled;
+      })()`,
+      'restored durable cart to unlock before clearing',
+      20_000,
+    );
+    await clickButton('إفراغ السلة');
     await waitForText('السلة فارغة', 20_000);
     record('coupon proof cleared a legitimately restored durable draft before starting its sale');
   } else {
