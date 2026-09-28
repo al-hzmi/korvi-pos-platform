@@ -220,7 +220,10 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
                   : 'package-unavailable',
             };
           }
-        } else if ((line.packageId !== null && line.packageId !== undefined) || priceContext !== 'retail') {
+        } else if (
+          (line.packageId !== null && line.packageId !== undefined) ||
+          priceContext !== 'retail'
+        ) {
           return {
             outcome: 'failure',
             reason:

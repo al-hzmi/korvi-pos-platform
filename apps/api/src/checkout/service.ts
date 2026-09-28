@@ -771,7 +771,10 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                 ? fail('product-unavailable')
                 : fail('package-unavailable');
             }
-          } else if ((line.packageId !== null && line.packageId !== undefined) || priceContext !== 'retail') {
+          } else if (
+            (line.packageId !== null && line.packageId !== undefined) ||
+            priceContext !== 'retail'
+          ) {
             return fail(
               line.packageId !== null && line.packageId !== undefined
                 ? 'package-unavailable'
