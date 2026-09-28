@@ -225,7 +225,7 @@ export interface CartPanelProps {
   readonly lines: readonly CartLine[];
   /** Priced once by the workspace and passed down, so the figures cannot diverge. */
   readonly preview: PricedCart;
-  readonly authoritativeLines?: CheckoutPreviewResponse['lines'];
+  readonly authoritativeLines?: CheckoutPreviewResponse['lines'] | undefined;
   readonly locked: boolean;
   readonly quickService?: boolean;
   readonly dispatch: (action: CartAction) => void;

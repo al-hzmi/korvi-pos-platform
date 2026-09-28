@@ -25,7 +25,7 @@ export interface CartLine {
   readonly productType: ProductType;
   readonly unitLabel: string | null;
   /** Commercial package identity. Null/absent means the base Product selling unit. */
-  readonly packageId?: string | null;
+  readonly packageId?: string | null | undefined;
   readonly packageCode?: string | null;
   readonly packageNameAr?: string | null;
   readonly packageUnitLabel?: string | null;
@@ -46,19 +46,19 @@ export type CartAction =
   | {
       readonly type: 'set-quantity';
       readonly productId: string;
-      readonly packageId?: string | null;
+      readonly packageId?: string | null | undefined;
       readonly quantityScaled: string;
     }
   | {
       readonly type: 'step';
       readonly productId: string;
-      readonly packageId?: string | null;
+      readonly packageId?: string | null | undefined;
       readonly direction: 1 | -1;
     }
   | {
       readonly type: 'set-preparation';
       readonly productId: string;
-      readonly packageId?: string | null;
+      readonly packageId?: string | null | undefined;
       readonly note: string;
       readonly options: string;
     }
@@ -209,7 +209,7 @@ export function previewCart(lines: readonly CartLine[], priceMode: PriceMode): P
 /** Ids and quantities. The whole of what a basket is allowed to assert. */
 export function cartToRequestLines(lines: readonly CartLine[]): readonly {
   readonly productId: string;
-  readonly packageId?: string | null;
+  readonly packageId?: string | null | undefined;
   readonly quantityScaled: string;
 }[] {
   return lines.map((line) => ({
