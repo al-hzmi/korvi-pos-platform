@@ -707,7 +707,17 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               allocation.unknownQuantityScaled,
             ),
           };
-          return { id, line, cost };
+          return {
+            id,
+            line,
+            cost,
+            packageSnapshot: {
+              code: original.packageCode,
+              nameAr: original.packageNameAr,
+              unitLabel: original.packageUnitLabel,
+              baseQuantityScaled: original.packageBaseQuantityScaled,
+            },
+          };
         });
 
         const number = await allocateReturnNumber(tx, tenant, input.branchId);
@@ -749,7 +759,7 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
         });
 
         await tx.returnLine.createMany({
-          data: preparedReturnLines.map(({ id, line, cost }) => ({
+          data: preparedReturnLines.map(({ id, line, cost, packageSnapshot }) => ({
             id,
             tenantId: tenant,
             returnId: input.returnId,
@@ -763,10 +773,10 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
             vatBasisPoints: Number(line.vatBasisPoints),
             quantityScaled: BigInt(line.quantityScaled),
             inventoryQuantityScaled: BigInt(line.inventoryQuantityScaled),
-            packageCode: original.packageCode,
-            packageNameAr: original.packageNameAr,
-            packageUnitLabel: original.packageUnitLabel,
-            packageBaseQuantityScaled: original.packageBaseQuantityScaled,
+            packageCode: packageSnapshot.code,
+            packageNameAr: packageSnapshot.nameAr,
+            packageUnitLabel: packageSnapshot.unitLabel,
+            packageBaseQuantityScaled: packageSnapshot.baseQuantityScaled,
             grossMinor: BigInt(line.grossMinor),
             lineDiscountMinor: BigInt(line.lineDiscountMinor),
             promotionDiscountMinor: BigInt(line.promotionDiscountMinor),
