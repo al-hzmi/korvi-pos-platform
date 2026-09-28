@@ -226,6 +226,8 @@ function toReturnableLines(state: ReturnableSale): readonly ReturnableLine[] {
     vatBasisPoints: line.vatBasisPoints,
     soldQuantityScaled: BigInt(line.soldQuantityScaled),
     returnedQuantityScaled: BigInt(line.returnedQuantityScaled),
+    soldInventoryQuantityScaled: BigInt(line.soldInventoryQuantityScaled),
+    returnedInventoryQuantityScaled: BigInt(line.returnedInventoryQuantityScaled),
     original: {
       grossMinor: BigInt(line.grossMinor),
       lineDiscountMinor: BigInt(line.lineDiscountMinor),
@@ -445,6 +447,7 @@ export function createReturnService(deps: ReturnDeps): ReturnService {
                 productType: line.productType,
                 vatBasisPoints: line.vatBasisPoints,
                 quantityScaled: line.quantityScaled.toString(),
+                inventoryQuantityScaled: line.inventoryQuantityScaled.toString(),
                 grossMinor: line.components.grossMinor.toString(),
                 lineDiscountMinor: line.components.lineDiscountMinor.toString(),
                 promotionDiscountMinor: (line.components.promotionDiscountMinor ?? 0n).toString(),

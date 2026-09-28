@@ -2293,7 +2293,9 @@ model ReturnLine {
   productType    String?
   vatBasisPoints Int?
 
-  quantityScaled BigInt
+  quantityScaled          BigInt
+  /// Base Product quantity restored by this commercial return quantity.
+  inventoryQuantityScaled BigInt
 
   grossMinor             BigInt @default(0)
   lineDiscountMinor      BigInt @default(0)

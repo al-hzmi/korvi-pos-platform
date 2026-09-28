@@ -1089,6 +1089,8 @@ export interface ReturnLineRecord {
   readonly productType: ProductType | null;
   readonly vatBasisPoints: BasisPoints;
   readonly quantityScaled: string;
+  /** Base Product quantity restored by this return line. */
+  readonly inventoryQuantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
   readonly promotionDiscountMinor?: string;
@@ -1146,6 +1148,9 @@ export interface ReturnableSaleLine {
   readonly soldQuantityScaled: string;
   readonly returnedQuantityScaled: string;
   readonly remainingQuantityScaled: string;
+  readonly soldInventoryQuantityScaled: string;
+  readonly returnedInventoryQuantityScaled: string;
+  readonly remainingInventoryQuantityScaled: string;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
   readonly promotionDiscountMinor?: string;
@@ -1213,6 +1218,7 @@ export interface RecordReturnPlan {
     readonly productType: ProductType | null;
     readonly vatBasisPoints: BasisPoints;
     readonly quantityScaled: string;
+    readonly inventoryQuantityScaled: string;
     readonly grossMinor: string;
     readonly lineDiscountMinor: string;
     readonly promotionDiscountMinor: string;

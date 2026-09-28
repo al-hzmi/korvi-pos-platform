@@ -76,6 +76,10 @@ export interface ReturnableLine {
   readonly vatBasisPoints: BasisPoints;
   readonly soldQuantityScaled: bigint;
   readonly returnedQuantityScaled: bigint;
+  /** Immutable base Product quantity consumed by the original sale line. */
+  readonly soldInventoryQuantityScaled: bigint;
+  /** Base Product quantity already restored by finalized returns. */
+  readonly returnedInventoryQuantityScaled: bigint;
   readonly original: LineComponents;
   readonly refunded: Pick<
     LineComponents,
@@ -152,6 +156,8 @@ export interface ReturnLineDraft {
   readonly productType: ProductType | null;
   readonly vatBasisPoints: BasisPoints;
   readonly quantityScaled: bigint;
+  /** Base Product quantity restored by this commercial return quantity. */
+  readonly inventoryQuantityScaled: bigint;
   readonly components: LineComponents;
 }
 
@@ -233,6 +239,34 @@ export function planReturn(input: PlanReturnInput): ReturnDraft {
       throw new OverReturnError('That is more than the line has left to return.');
     }
 
+    if (
+      line.soldQuantityScaled <= 0n ||
+      line.soldInventoryQuantityScaled <= 0n ||
+      line.returnedInventoryQuantityScaled < 0n ||
+      line.returnedInventoryQuantityScaled > line.soldInventoryQuantityScaled
+    ) {
+      throw new InvalidReturnQuantityError(
+        'The historical sale line carries an invalid inventory conversion snapshot.',
+      );
+    }
+    const inventoryNumerator =
+      request.quantityScaled * line.soldInventoryQuantityScaled;
+    if (inventoryNumerator % line.soldQuantityScaled !== 0n) {
+      throw new InvalidReturnQuantityError(
+        'That return quantity cannot be converted exactly from the historical sale snapshot.',
+      );
+    }
+    const inventoryQuantityScaled = inventoryNumerator / line.soldQuantityScaled;
+    if (
+      inventoryQuantityScaled <= 0n ||
+      line.returnedInventoryQuantityScaled + inventoryQuantityScaled >
+        line.soldInventoryQuantityScaled
+    ) {
+      throw new OverReturnError(
+        'That return would restore more base inventory than the original sale consumed.',
+      );
+    }
+
     lines.push({
       saleLineId: line.saleLineId,
       lineNumber: line.lineNumber,
@@ -243,6 +277,7 @@ export function planReturn(input: PlanReturnInput): ReturnDraft {
       productType: line.productType,
       vatBasisPoints: line.vatBasisPoints,
       quantityScaled: request.quantityScaled,
+      inventoryQuantityScaled,
       components: prorateLine({
         original: line.original,
         soldQuantityScaled: line.soldQuantityScaled,

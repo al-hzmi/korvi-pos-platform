@@ -85,6 +85,7 @@ interface ReturnLineRow {
   productType: string | null;
   vatBasisPoints: number | null;
   quantityScaled: bigint;
+  inventoryQuantityScaled: bigint;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
   promotionDiscountMinor: bigint;
@@ -141,6 +142,7 @@ function lineToDomain(row: ReturnLineRow): ReturnLineRecord {
     productType: productType(row.productType),
     vatBasisPoints: rate(row.vatBasisPoints ?? 0),
     quantityScaled: minor(row.quantityScaled),
+    inventoryQuantityScaled: minor(row.inventoryQuantityScaled),
     grossMinor: minor(row.grossMinor),
     lineDiscountMinor: minor(row.lineDiscountMinor),
     promotionDiscountMinor: minor(row.promotionDiscountMinor),
@@ -231,6 +233,7 @@ interface SaleLineRow {
   vatBasisPoints: number;
   unitPriceMinor: bigint;
   quantityScaled: bigint;
+  inventoryQuantityScaled: bigint | null;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
   promotionDiscountMinor: bigint;
@@ -247,6 +250,7 @@ interface SaleLineRow {
 interface ReturnedAggregateRow {
   saleLineId: string;
   quantityScaled: bigint | null;
+  inventoryQuantityScaled: bigint | null;
   grossMinor: bigint | null;
   netMinor: bigint | null;
   lineDiscountMinor: bigint | null;
@@ -300,6 +304,7 @@ async function returnedSoFar(
   const rows = await tx.$queryRaw<ReturnedAggregateRow[]>`
     SELECT rl."saleLineId"                            AS "saleLineId",
            SUM(rl."quantityScaled")::bigint           AS "quantityScaled",
+           SUM(rl."inventoryQuantityScaled")::bigint  AS "inventoryQuantityScaled",
            SUM(rl."grossMinor")::bigint               AS "grossMinor",
            SUM(rl."netMinor")::bigint                 AS "netMinor",
            SUM(rl."lineDiscountMinor")::bigint        AS "lineDiscountMinor",
@@ -327,8 +332,11 @@ function stateFrom(
   const mapped: ReturnableSaleLine[] = lines.map((line) => {
     const prior = returned.get(line.id);
     const returnedQuantity = big(prior?.quantityScaled ?? null);
+    const soldInventoryQuantity = line.inventoryQuantityScaled ?? line.quantityScaled;
+    const returnedInventoryQuantity = big(prior?.inventoryQuantityScaled ?? null);
     refundedTotal += big(prior?.totalMinor ?? null);
     const remaining = line.quantityScaled - returnedQuantity;
+    const remainingInventory = soldInventoryQuantity - returnedInventoryQuantity;
     return {
       saleLineId: line.id,
       lineNumber: line.lineNumber,
@@ -342,6 +350,11 @@ function stateFrom(
       soldQuantityScaled: minor(line.quantityScaled),
       returnedQuantityScaled: minor(returnedQuantity),
       remainingQuantityScaled: minor(remaining > 0n ? remaining : 0n),
+      soldInventoryQuantityScaled: minor(soldInventoryQuantity),
+      returnedInventoryQuantityScaled: minor(returnedInventoryQuantity),
+      remainingInventoryQuantityScaled: minor(
+        remainingInventory > 0n ? remainingInventory : 0n,
+      ),
       grossMinor: minor(line.grossMinor),
       lineDiscountMinor: minor(line.lineDiscountMinor),
       promotionDiscountMinor: minor(line.promotionDiscountMinor),
@@ -644,12 +657,15 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
           if (line.productId !== original.productId) {
             throw new DatabaseError('A return plan changed the product identity of its sale line.');
           }
+          const originalInventoryQuantity =
+            original.inventoryQuantityScaled ?? original.quantityScaled;
           if (
+            originalInventoryQuantity <= 0n ||
             original.costKnownQuantityScaled < 0n ||
             original.costUnknownQuantityScaled < 0n ||
             original.costValueMinor < 0n ||
             original.costKnownQuantityScaled + original.costUnknownQuantityScaled !==
-              original.quantityScaled ||
+              originalInventoryQuantity ||
             (original.costKnownQuantityScaled === 0n && original.costValueMinor !== 0n)
           ) {
             throw new DatabaseError(
@@ -657,7 +673,9 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
             );
           }
 
-          const previousQuantity = big(returned.get(line.saleLineId)?.quantityScaled ?? null);
+          const previousQuantity = big(
+            returned.get(line.saleLineId)?.inventoryQuantityScaled ?? null,
+          );
           const allocation = allocateOriginalSaleReturnBasis(
             {
               knownQuantityScaled: original.costKnownQuantityScaled,
@@ -665,7 +683,7 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               knownValueMinor: original.costValueMinor,
             },
             previousQuantity,
-            BigInt(line.quantityScaled),
+            BigInt(line.inventoryQuantityScaled),
           );
           const cost = {
             knownQuantityScaled: allocation.knownQuantityScaled,
@@ -732,6 +750,7 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
             productType: line.productType,
             vatBasisPoints: Number(line.vatBasisPoints),
             quantityScaled: BigInt(line.quantityScaled),
+            inventoryQuantityScaled: BigInt(line.inventoryQuantityScaled),
             grossMinor: BigInt(line.grossMinor),
             lineDiscountMinor: BigInt(line.lineDiscountMinor),
             promotionDiscountMinor: BigInt(line.promotionDiscountMinor),
@@ -781,8 +800,8 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               branchId: input.branchId,
               productId: line.productId,
               kind: 'return',
-              // Positive: the goods are back on the shelf.
-              quantityScaled: line.quantityScaled,
+              // Positive base Product quantity from the immutable sale snapshot.
+              quantityScaled: line.inventoryQuantityScaled,
               reason: null,
               sourceType: 'return',
               sourceId: input.returnId,

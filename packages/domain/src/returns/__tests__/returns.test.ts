@@ -60,6 +60,8 @@ function line(overrides: Partial<ReturnableLine> = {}): ReturnableLine {
     vatBasisPoints: basisPoints(1500),
     soldQuantityScaled: 3_000n,
     returnedQuantityScaled: 0n,
+    soldInventoryQuantityScaled: 3_000n,
+    returnedInventoryQuantityScaled: 0n,
     original: AWKWARD,
     refunded: NOTHING_REFUNDED,
     ...overrides,
@@ -120,7 +122,11 @@ describe('sequential partial returns', () => {
 
     for (let i = 0; i < 3; i += 1) {
       const draft = planReturn({
-        available: [line({ returnedQuantityScaled: returned, refunded })],
+        available: [line({
+          returnedQuantityScaled: returned,
+          returnedInventoryQuantityScaled: returned,
+          refunded,
+        })],
         requested: [{ saleLineId: 'line-1', quantityScaled: 1_000n }],
         refund: CASH,
       });
@@ -214,6 +220,7 @@ describe('sequential partial returns', () => {
       available: [
         line({
           returnedQuantityScaled: 2_000n,
+          returnedInventoryQuantityScaled: 2_000n,
           refunded: {
             grossMinor: first.grossMinor,
             netMinor: first.netMinor,
@@ -255,7 +262,12 @@ describe('sequential partial returns', () => {
         available: [
           weighted.returnedQuantityScaled === returned && returned === 0n
             ? weighted
-            : { ...weighted, returnedQuantityScaled: returned, refunded },
+            : {
+                ...weighted,
+                returnedQuantityScaled: returned,
+                returnedInventoryQuantityScaled: returned,
+                refunded,
+              },
         ],
         requested: [{ saleLineId: 'line-1', quantityScaled: piece }],
         refund: CASH,
@@ -276,6 +288,60 @@ describe('sequential partial returns', () => {
     expect(refunded.netMinor).toBe(4_122n);
     expect(refunded.basketDiscountMinor).toBe(199n);
     expect(refunded.vatMinor).toBe(618n);
+  });
+});
+
+describe('V2-3 package inventory restoration', () => {
+  it('restores base inventory from the immutable sale snapshot, not commercial package count', () => {
+    const carton = line({
+      soldQuantityScaled: 2_000n,
+      soldInventoryQuantityScaled: 48_000n,
+      original: {
+        grossMinor: 20_000n,
+        lineDiscountMinor: 0n,
+        promotionDiscountMinor: 0n,
+        basketDiscountMinor: 0n,
+        netMinor: 17_391n,
+        vatMinor: 2_609n,
+        totalMinor: 20_000n,
+      },
+    });
+
+    const oneCarton = planReturn({
+      available: [carton],
+      requested: [{ saleLineId: 'line-1', quantityScaled: 1_000n }],
+      refund: CASH,
+    });
+
+    expect(oneCarton.lines[0]?.quantityScaled).toBe(1_000n);
+    expect(oneCarton.lines[0]?.inventoryQuantityScaled).toBe(24_000n);
+  });
+
+  it('uses prior returned base quantity when a package return is split', () => {
+    const carton = line({
+      soldQuantityScaled: 2_000n,
+      soldInventoryQuantityScaled: 48_000n,
+    });
+    const second = planReturn({
+      available: [
+        {
+          ...carton,
+          returnedQuantityScaled: 1_000n,
+          returnedInventoryQuantityScaled: 24_000n,
+          refunded: {
+            grossMinor: 500n,
+            netMinor: 446n,
+            lineDiscountMinor: 50n,
+            promotionDiscountMinor: 0n,
+            basketDiscountMinor: 3n,
+            vatMinor: 66n,
+          },
+        },
+      ],
+      requested: [{ saleLineId: 'line-1', quantityScaled: 1_000n }],
+      refund: CASH,
+    });
+    expect(second.lines[0]?.inventoryQuantityScaled).toBe(24_000n);
   });
 });
 
