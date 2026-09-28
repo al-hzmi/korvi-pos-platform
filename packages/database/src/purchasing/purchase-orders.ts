@@ -245,7 +245,9 @@ function orderFromSnapshot(value: unknown): PurchaseOrderResult {
       lines: snapshotRows(order, 'lines').map((line) => ({
         id: snapshotString(line, 'id'),
         productId: snapshotString(line, 'productId'),
-        packageId: Object.hasOwn(line, 'packageId') ? snapshotNullableString(line, 'packageId') : null,
+        packageId: Object.hasOwn(line, 'packageId')
+          ? snapshotNullableString(line, 'packageId')
+          : null,
         commercialQuantityScaled: Object.hasOwn(line, 'commercialQuantityScaled')
           ? snapshotNullableString(line, 'commercialQuantityScaled')
           : null,
@@ -302,9 +304,7 @@ async function lockPackages(
   lines: readonly { readonly productId: string; readonly packageId: string | null }[],
 ): Promise<Map<string, LockedPackageFact>> {
   const ids = [
-    ...new Set(
-      lines.flatMap((line) => (line.packageId === null ? [] : [line.packageId])),
-    ),
+    ...new Set(lines.flatMap((line) => (line.packageId === null ? [] : [line.packageId]))),
   ].sort();
   const facts = new Map<string, LockedPackageFact>();
 

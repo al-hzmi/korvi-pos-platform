@@ -270,7 +270,9 @@ function receiptFromSnapshot(value: unknown): PurchaseReceiptResult {
       id: snapshotString(line, 'id'),
       purchaseOrderLineId: snapshotString(line, 'purchaseOrderLineId'),
       productId: snapshotString(line, 'productId'),
-      packageId: Object.hasOwn(line, 'packageId') ? snapshotNullableString(line, 'packageId') : null,
+      packageId: Object.hasOwn(line, 'packageId')
+        ? snapshotNullableString(line, 'packageId')
+        : null,
       acceptedCommercialQuantityScaled: Object.hasOwn(line, 'acceptedCommercialQuantityScaled')
         ? snapshotNullableString(line, 'acceptedCommercialQuantityScaled')
         : null,
@@ -710,7 +712,9 @@ export async function listPurchaseReceipts(
         packageCode: line.packageCode,
         packageUnitLabel: line.packageUnitLabel,
         packageBaseQuantityScaled:
-          line.packageBaseQuantityScaled === null ? null : line.packageBaseQuantityScaled.toString(),
+          line.packageBaseQuantityScaled === null
+            ? null
+            : line.packageBaseQuantityScaled.toString(),
         acceptedQuantityScaled: line.acceptedQuantityScaled.toString(),
         orderedQuantityScaled: line.orderedQuantityScaled.toString(),
         beforeReceivedQuantityScaled: line.beforeReceivedQuantityScaled.toString(),

@@ -16,13 +16,7 @@ describe('V2-3 purchasing package intent', () => {
         reference: null,
         lines: [{ productId: PRODUCT, orderedQuantityScaled: '24000' }],
       }),
-    ).toEqual([
-      'purchasing-order-create.v1',
-      SUPPLIER,
-      BRANCH,
-      null,
-      [[PRODUCT, '24000']],
-    ]);
+    ).toEqual(['purchasing-order-create.v1', SUPPLIER, BRANCH, null, [[PRODUCT, '24000']]]);
   });
 
   it('uses v2 for package intent and binds package identity', () => {

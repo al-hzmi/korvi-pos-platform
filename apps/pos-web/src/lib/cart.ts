@@ -62,7 +62,11 @@ export type CartAction =
       readonly note: string;
       readonly options: string;
     }
-  | { readonly type: 'remove'; readonly productId: string; readonly packageId?: string | null | undefined }
+  | {
+      readonly type: 'remove';
+      readonly productId: string;
+      readonly packageId?: string | null | undefined;
+    }
   | { readonly type: 'replace'; readonly lines: readonly CartLine[] }
   | { readonly type: 'clear' };
 
