@@ -32,17 +32,13 @@ describe('lot calendar semantics', () => {
 
   it('blocks expired expiry but keeps past best-before as a distinct fact', () => {
     expect(lotDateState('expiry', '2026-09-28', '2026-09-29')).toBe('expired');
-    expect(lotDateState('best-before', '2026-09-28', '2026-09-29')).toBe(
-      'past-best-before',
-    );
+    expect(lotDateState('best-before', '2026-09-28', '2026-09-29')).toBe('past-best-before');
     expect(lotDateState('expiry', '2026-09-29', '2026-09-29')).toBe('eligible');
     expect(lotDateState(null, null, '2026-09-29')).toBe('unknown');
   });
 
   it('refuses half-known date identity', () => {
-    expect(refusal(() => lotDateState('expiry', null, '2026-09-29'))).toBe(
-      'invalid-date-shape',
-    );
+    expect(refusal(() => lotDateState('expiry', null, '2026-09-29'))).toBe('invalid-date-shape');
   });
 });
 
@@ -163,9 +159,7 @@ describe('canonical movement reconciliation', () => {
     ).toBe('allocation-sign-mismatch');
 
     expect(
-      refusal(() =>
-        assertLotEntriesReconcile(5_000n, [{ lotId: LOT_A, quantityScaled: 4_000n }]),
-      ),
+      refusal(() => assertLotEntriesReconcile(5_000n, [{ lotId: LOT_A, quantityScaled: 4_000n }])),
     ).toBe('allocation-total-mismatch');
   });
 

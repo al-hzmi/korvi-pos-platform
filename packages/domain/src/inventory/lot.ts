@@ -152,11 +152,7 @@ export function selectLotAllocations(input: {
     }
     seen.add(parsed.id);
     if (candidate.availableQuantityScaled === 0n || candidate.status !== 'active') return [];
-    if (
-      candidate.dateKind === 'expiry' &&
-      parsed.day !== null &&
-      parsed.day < businessDay
-    ) {
+    if (candidate.dateKind === 'expiry' && parsed.day !== null && parsed.day < businessDay) {
       return [];
     }
     return [{ candidate, id: parsed.id, day: parsed.day }];
@@ -225,7 +221,7 @@ export function assertLotEntriesReconcile(
     if (entry.quantityScaled === 0n) {
       throw new LotDomainError('zero-allocation', 'A lot allocation cannot be zero.');
     }
-    if ((entry.quantityScaled > 0n) !== positive) {
+    if (entry.quantityScaled > 0n !== positive) {
       throw new LotDomainError(
         'allocation-sign-mismatch',
         'Every lot allocation must use the canonical movement sign.',
@@ -241,10 +237,7 @@ export function assertLotEntriesReconcile(
   }
 }
 
-function observationMap(
-  rows: readonly LotCountObservation[],
-  field: string,
-): Map<string, bigint> {
+function observationMap(rows: readonly LotCountObservation[], field: string): Map<string, bigint> {
   const result = new Map<string, bigint>();
   for (const row of rows) {
     const id = canonicalUuid(row.lotId, 'lotId');
