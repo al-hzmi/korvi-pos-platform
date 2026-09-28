@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { Currency, PriceMode, PricedCart, PromotionEvaluation } from '@korvi/domain';
+import type {
+  Currency,
+  PriceMode,
+  PricedCart,
+  PromotionEvaluation,
+  RetailPriceAuthority,
+} from '@korvi/domain';
 
 /**
  * Hash of the exact server-computed price a cashier was shown.
@@ -18,12 +24,28 @@ export function checkoutPricingHash(input: {
   readonly couponCodes: readonly string[];
   readonly priced: PricedCart;
   readonly promotionEvaluation: PromotionEvaluation;
+  /** V2-3 server-owned package/list provenance in cart order. */
+  readonly retailAuthorities?: readonly RetailPriceAuthority[];
 }): string {
   const canonical = JSON.stringify([
-    'v1',
+    'v2',
     input.priceMode,
     input.currency,
     [...input.couponCodes].sort(),
+    (input.retailAuthorities ?? []).map((authority) => [
+      authority.product.id,
+      authority.package?.id ?? '',
+      authority.package?.revision ?? '',
+      authority.context,
+      authority.unitPriceMinor,
+      authority.inventoryFactorScaled,
+      authority.provenance,
+      authority.priceListId ?? '',
+      authority.priceListCode ?? '',
+      authority.priceListRevision ?? '',
+      authority.priceListEntryId ?? '',
+      authority.priceListEntryRevision ?? '',
+    ]),
     input.priced.lines.map((line) => [
       line.productId,
       line.quantity.toString(),

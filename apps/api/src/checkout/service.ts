@@ -1,4 +1,5 @@
 import {
+  ContextPriceError,
   DiscountNotPermittedError,
   InvalidAmountError,
   InvalidCouponCodeError,
@@ -7,6 +8,7 @@ import {
   PromotionManualDiscountConflictError,
   NonCashChangeError,
   UnderpaidError,
+  baseInventoryQuantityScaled,
   basisPoints,
   evaluatePromotions,
   extendedPrice,
@@ -16,6 +18,7 @@ import {
   moneyToMajorString,
   newId as defaultNewId,
   normalizeCouponCode,
+  packageInventoryQuantityScaled,
   priceCart,
   quantity,
   saleReconciles,
@@ -25,6 +28,7 @@ import {
   InsufficientStockError,
   OperationAlreadyRecordedError,
   PromotionPolicyRefusedError,
+  RetailPricingPolicyRefusedError,
   RestaurantOrderRefusedError,
   ShiftUnusableError,
 } from '@korvi/database';
@@ -47,9 +51,12 @@ import type {
   InvoiceRecord,
   InventoryMovementInput,
   InventoryRepository,
+  PriceContext,
   PriceMode,
   PromotionCheckoutPolicy,
   PromotionRepository,
+  RetailPriceAuthority,
+  RetailPricingRepository,
   RestaurantOrderType,
   RestaurantFloorRepository,
   ProductRepository,
@@ -95,6 +102,12 @@ export type CheckoutFailureReason =
   | 'promotion-manual-conflict'
   | 'promotion-policy-stale'
   | 'pricing-stale'
+  | 'unknown-package'
+  | 'package-unavailable'
+  | 'wholesale-price-incomplete'
+  | 'price-context-not-authorized'
+  | 'retail-pricing-policy-stale'
+  | 'retail-pricing-not-applicable'
   | 'promotion-offline-unsupported'
   | 'promotions-not-applicable'
   | 'idempotency-conflict'
@@ -212,6 +225,8 @@ export type CheckoutTenderInput =
 
 export interface CheckoutLineInput {
   readonly productId: string;
+  /** Null/absent selects the base Product commercial unit. */
+  readonly packageId?: string | null | undefined;
   /** Scaled by 1000, as a string. Never a float (ADR-0002). */
   readonly quantityScaled: string;
   // `| undefined` rather than a bare optional: these arrive straight from a
@@ -236,6 +251,8 @@ export interface CheckoutInput {
   readonly restaurantOrderId?: string | undefined;
   readonly expectedRestaurantOrderRevision?: string | undefined;
   readonly lines: readonly CheckoutLineInput[];
+  /** Retail is the default. Wholesale requires explicit authority. */
+  readonly priceContext?: PriceContext | undefined;
   /**
    * The cash-only shape the production till sends today.
    *
@@ -262,6 +279,8 @@ export interface CheckoutDeps {
   readonly sales: SaleRepository;
   /** Production direct checkout promotion/coupon resolver (ADR-0037). */
   readonly promotions?: PromotionRepository;
+  /** V2-3 package conversion + contextual price authority. */
+  readonly retailPricing?: RetailPricingRepository;
   /** Required only for dine-in table validation. */
   readonly restaurantFloor?: RestaurantFloorRepository;
   /** Pre-flight read; the sale repository re-proves the same snapshot under lock. */
@@ -381,9 +400,11 @@ function fingerprintCheckoutIntent(
     restaurantOrderRevision: input.expectedRestaurantOrderRevision ?? '',
     lines: input.lines.map((line) => ({
       productId: line.productId,
+      packageId: line.packageId ?? '',
       quantityScaled: line.quantityScaled,
       discount: describeDiscount(line.discount),
     })),
+    priceContext: input.priceContext ?? 'retail',
     tenders: payment.map((tender) => ({
       kind: tender.kind,
       amountMinor: tender.amountMinor,
@@ -406,6 +427,15 @@ interface CheckoutProductSnapshot {
   readonly priceMinor: string;
   readonly vatBasisPoints: number;
   readonly trackInventory: boolean;
+}
+
+interface CheckoutLoadedEntry {
+  readonly product: CheckoutProductSnapshot;
+  /** Commercial quantity as keyed by the cashier. */
+  readonly scaled: bigint;
+  /** Canonical base Product stock/cost quantity. */
+  readonly inventoryScaled: bigint;
+  readonly retailAuthority: RetailPriceAuthority | null;
 }
 
 const IDEMPOTENCY_SCOPE = 'checkout';
@@ -524,6 +554,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       const scope: TenantScope = { tenantId: brandTenantId(input.principal.tenantId) };
       if (input.lines.length === 0) return fail('empty-cart');
 
+      const priceContext: PriceContext = input.priceContext ?? 'retail';
+      if (
+        priceContext !== 'retail' &&
+        !input.principal.permissions.includes('sale.price-context')
+      ) {
+        return fail('price-context-not-authorized');
+      }
+
       let couponCodes: readonly string[];
       try {
         couponCodes = normalizeCouponCodes(input.couponCodes);
@@ -532,15 +570,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         throw error;
       }
 
-      // A cash sale needs somewhere for the cash to go. The shift also supplies
-      // the branch, so the client never names one.
-      // Two lines for one product would each pass a stock check the sum fails.
-      // Aggregating them silently would also change what the cashier sees, so
-      // the request is refused and the client asked to send one line.
+      // V2-3 commercial identity is (Product, Package). One Product may appear
+      // once as a base unit and once as a carton, but the same commercial unit
+      // twice is still a duplicate request.
       const seen = new Set<string>();
       for (const line of input.lines) {
-        if (seen.has(line.productId)) return fail('duplicate-line');
-        seen.add(line.productId);
+        const identity = line.productId + '\u0000' + (line.packageId ?? '');
+        if (seen.has(identity)) return fail('duplicate-line');
+        seen.add(identity);
       }
 
       const payment = normalizePayment(input);
@@ -609,6 +646,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       }
 
       let restaurantOrder: RestaurantOrderDetail | null = null;
+      if (
+        settings.vertical === 'restaurant' &&
+        (priceContext !== 'retail' || input.lines.some((line) => line.packageId != null))
+      ) {
+        return fail('retail-pricing-not-applicable');
+      }
       if (hasRestaurantOrder) {
         if (settings.vertical !== 'restaurant' || deps.restaurantOrders === undefined) {
           return fail('restaurant-order-mismatch');
@@ -676,7 +719,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
 
       // Direct sales use current catalogue truth. Open-order settlement uses
       // the server-authored snapshot captured when the order was opened.
-      const loaded: { product: CheckoutProductSnapshot; scaled: bigint }[] = [];
+      const loaded: CheckoutLoadedEntry[] = [];
       if (restaurantOrder !== null) {
         for (const line of restaurantOrder.lines) {
           if (line.trackInventory === null) return fail('restaurant-order-incomplete');
@@ -692,6 +735,8 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               trackInventory: line.trackInventory,
             },
             scaled: BigInt(line.quantityScaled),
+            inventoryScaled: BigInt(line.quantityScaled),
+            retailAuthority: null,
           });
         }
       } else {
@@ -700,6 +745,37 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           if (product === null) return fail('unknown-product');
           if (!product.isActive) return fail('product-unavailable');
 
+          let authority: RetailPriceAuthority | null = null;
+          if (deps.retailPricing !== undefined) {
+            try {
+              authority = await deps.retailPricing.resolve(scope, {
+                productId: line.productId,
+                packageId: line.packageId ?? null,
+                context: priceContext,
+              });
+            } catch (error) {
+              if (
+                error instanceof ContextPriceError &&
+                error.detail === 'wholesale-price-incomplete'
+              ) {
+                return fail('wholesale-price-incomplete');
+              }
+              if (error instanceof ContextPriceError) {
+                return fail('retail-pricing-policy-stale');
+              }
+              throw error;
+            }
+            if (authority === null) {
+              return line.packageId == null
+                ? fail('product-unavailable')
+                : fail('package-unavailable');
+            }
+          } else if (line.packageId != null || priceContext !== 'retail') {
+            return fail(
+              line.packageId != null ? 'package-unavailable' : 'wholesale-price-incomplete',
+            );
+          }
+
           let scaled: bigint;
           try {
             scaled = quantity(BigInt(line.quantityScaled));
@@ -707,11 +783,30 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             return fail('invalid-quantity');
           }
           if (scaled <= 0n) return fail('invalid-quantity');
-          // A unit product cannot be sold in thirds. The scale is 1000, so a
-          // whole unit is a multiple of it.
-          if (product.productType === 'unit' && scaled % 1_000n !== 0n) {
+
+          if (
+            (authority?.package === null || authority === null) &&
+            product.productType === 'unit' &&
+            scaled % 1_000n !== 0n
+          ) {
             return fail('invalid-quantity');
           }
+
+          let inventoryScaled: bigint;
+          try {
+            inventoryScaled =
+              authority?.package === undefined || authority.package === null
+                ? baseInventoryQuantityScaled(scaled)
+                : packageInventoryQuantityScaled({
+                    commercialQuantityScaled: scaled,
+                    packageBaseQuantityScaled: BigInt(
+                      authority.package.baseQuantityScaled,
+                    ),
+                  });
+          } catch {
+            return fail('invalid-quantity');
+          }
+
           loaded.push({
             product: {
               id: product.id,
@@ -719,23 +814,33 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               nameAr: product.nameAr,
               nameEn: product.nameEn,
               productType: product.productType,
-              priceMinor: product.priceMinor,
+              priceMinor: authority?.unitPriceMinor ?? product.priceMinor,
               vatBasisPoints: Number(product.vatBasisPoints),
               trackInventory: product.trackInventory,
             },
             scaled,
+            inventoryScaled,
+            retailAuthority: authority,
           });
         }
       }
 
-      // Stock is still checked immediately before money moves. An order can sit
-      // open while another operation consumes inventory.
+      // Distinct packages still consume one Product stock truth. Aggregate the
+      // base quantity first, otherwise one each + one carton could each pass an
+      // independent read while their sum exceeds the shelf.
       if (!settings.allowNegativeStock) {
+        const requiredByProduct = new Map<string, bigint>();
         for (const entry of loaded) {
           if (!entry.product.trackInventory) continue;
-          const balance = await deps.inventory.balance(scope, shift.branchId, entry.product.id);
+          requiredByProduct.set(
+            entry.product.id,
+            (requiredByProduct.get(entry.product.id) ?? 0n) + entry.inventoryScaled,
+          );
+        }
+        for (const [productId, required] of requiredByProduct) {
+          const balance = await deps.inventory.balance(scope, shift.branchId, productId);
           const available = balance === null ? 0n : BigInt(balance.quantityScaled);
-          if (available < entry.scaled) return fail('insufficient-stock');
+          if (available < required) return fail('insufficient-stock');
         }
       }
 
@@ -810,6 +915,15 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         }
       }
 
+      if (
+        input.offlineCaptured === true &&
+        input.expectedPricingHash === undefined &&
+        (priceContext !== 'retail' ||
+          loaded.some((entry) => entry.retailAuthority?.package !== null))
+      ) {
+        return fail('pricing-stale');
+      }
+
       const manuallyDiscounted =
         input.basketDiscount !== undefined ||
         input.lines.some((line) => line.discount !== undefined);
@@ -877,6 +991,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               couponCodes,
               priced: currentPricing,
               promotionEvaluation,
+              retailAuthorities: loaded
+                .map((entry) => entry.retailAuthority)
+                .filter((authority): authority is RetailPriceAuthority => authority !== null),
             })
         ) {
           return fail('pricing-stale');
@@ -1042,6 +1159,19 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               unitPriceMinor: line.unitPrice.minor.toString(),
               vatBasisPoints: line.vatRate,
               quantityScaled: line.quantity.toString(),
+              inventoryQuantityScaled:
+                loaded[index]?.inventoryScaled.toString() ?? line.quantity.toString(),
+              packageId: loaded[index]?.retailAuthority?.package?.id ?? null,
+              packageCode: loaded[index]?.retailAuthority?.package?.code ?? null,
+              packageNameAr: loaded[index]?.retailAuthority?.package?.nameAr ?? null,
+              packageUnitLabel: loaded[index]?.retailAuthority?.package?.unitLabel ?? null,
+              packageBaseQuantityScaled:
+                loaded[index]?.retailAuthority?.package?.baseQuantityScaled ?? null,
+              priceContext: loaded[index]?.retailAuthority?.context ?? null,
+              pricingProvenance: loaded[index]?.retailAuthority?.provenance ?? null,
+              priceListId: loaded[index]?.retailAuthority?.priceListId ?? null,
+              priceListCode: loaded[index]?.retailAuthority?.priceListCode ?? null,
+              priceListRevision: loaded[index]?.retailAuthority?.priceListRevision ?? null,
               grossMinor: line.gross.minor.toString(),
               lineDiscountMinor: line.lineDiscount.minor.toString(),
               promotionDiscountMinor: line.promotionDiscount.minor.toString(),
@@ -1075,21 +1205,25 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               vatMinor: bucket.vat.minor.toString(),
             })),
           },
-          inventory: loaded
-            .filter((entry) => entry.product.trackInventory)
-            .map((entry): InventoryMovementInput => ({
-              id: newId(),
-              branchId: shift.branchId,
-              productId: entry.product.id,
-              kind: 'sale',
-              // Negative: stock leaves the shelf.
-              quantityScaled: (-entry.scaled).toString(),
-              reason: null,
-              sourceType: 'sale',
-              sourceId: saleId,
-              actorUserId: input.principal.userId,
-              occurredAt: issuedAt,
-            })),
+          inventory: loaded.flatMap((entry, index): InventoryMovementInput[] =>
+            entry.product.trackInventory
+              ? [
+                  {
+                    id: newId(),
+                    branchId: shift.branchId,
+                    productId: entry.product.id,
+                    kind: 'sale',
+                    quantityScaled: (-entry.inventoryScaled).toString(),
+                    reason: null,
+                    sourceType: 'sale',
+                    sourceId: saleId,
+                    saleLineId: saleLineIds[index] ?? null,
+                    actorUserId: input.principal.userId,
+                    occurredAt: issuedAt,
+                  },
+                ]
+              : [],
+          ),
           // What the drawer actually gained.
           //
           // The sale total was right only while every sale was cash. On a
@@ -1186,6 +1320,36 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                         },
                 },
               }),
+          ...(restaurantOrder === null &&
+          loaded.every((entry) => entry.retailAuthority !== null)
+            ? {
+                retailPricingSettlement: {
+                  context: priceContext,
+                  lines: loaded.map((entry, index) => {
+                    const authority = entry.retailAuthority;
+                    if (authority === null) {
+                      throw new Error('V2-3 retail authority disappeared before persistence.');
+                    }
+                    return {
+                      saleLineId: saleLineIds[index] ?? '',
+                      productId: authority.product.id,
+                      packageId: authority.package?.id ?? null,
+                      packageRevision: authority.package?.revision ?? null,
+                      commercialQuantityScaled: entry.scaled.toString(),
+                      inventoryQuantityScaled: entry.inventoryScaled.toString(),
+                      context: authority.context,
+                      unitPriceMinor: authority.unitPriceMinor,
+                      provenance: authority.provenance,
+                      priceListId: authority.priceListId,
+                      priceListCode: authority.priceListCode,
+                      priceListRevision: authority.priceListRevision,
+                      priceListEntryId: authority.priceListEntryId,
+                      priceListEntryRevision: authority.priceListEntryRevision,
+                    };
+                  }),
+                },
+              }
+            : {}),
           idempotency: {
             id: newId(),
             scope: IDEMPOTENCY_SCOPE,
@@ -1199,6 +1363,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         // transaction back; none of them reaches the client as a driver error.
         if (error instanceof InsufficientStockError) return fail('insufficient-stock');
         if (error instanceof ShiftUnusableError) return fail('shift-invalid');
+        if (error instanceof RetailPricingPolicyRefusedError) {
+          if (error.detail === 'unknown-package') return fail('unknown-package');
+          if (error.detail === 'package-unavailable') return fail('package-unavailable');
+          if (error.detail === 'wholesale-price-incomplete') {
+            return fail('wholesale-price-incomplete');
+          }
+          return fail('retail-pricing-policy-stale');
+        }
         if (error instanceof PromotionPolicyRefusedError) {
           if (error.detail === 'unknown-coupon') return fail('coupon-unavailable');
           if (error.detail === 'coupon-unavailable') return fail('coupon-unavailable');

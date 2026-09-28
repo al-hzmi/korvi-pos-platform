@@ -241,15 +241,20 @@ export const checkoutPreviewBody = z
         z
           .object({
             productId: UUID,
+            packageId: UUID.nullable().optional(),
             quantityScaled: SCALED_QUANTITY,
           })
           .strict(),
       )
       .min(1)
       .max(MAX_CART_LINES)
-      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
-        message: 'duplicate product line',
-      }),
+      .refine(
+        (lines) =>
+          new Set(lines.map((line) => line.productId + '\u0000' + (line.packageId ?? '')))
+            .size === lines.length,
+        { message: 'duplicate commercial line' },
+      ),
+    priceContext: z.enum(['retail', 'wholesale']).optional(),
   })
   .strict();
 
@@ -284,6 +289,7 @@ export const checkoutBody = z
       .array(
         z.object({
           productId: UUID,
+          packageId: UUID.nullable().optional(),
           quantityScaled: SCALED_QUANTITY,
           discount: discountBody.optional(),
         }),
@@ -292,9 +298,13 @@ export const checkoutBody = z
       .max(MAX_CART_LINES)
       // Two lines for one product would each pass a stock check their sum
       // fails. One line per product, with the quantity summed by the client.
-      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
-        message: 'duplicate product line',
-      }),
+      .refine(
+        (lines) =>
+          new Set(lines.map((line) => line.productId + '\u0000' + (line.packageId ?? '')))
+            .size === lines.length,
+        { message: 'duplicate commercial line' },
+      ),
+    priceContext: z.enum(['retail', 'wholesale']).optional(),
   })
   .refine((body) => (body.cashReceivedMinor === undefined) !== (body.tenders === undefined), {
     message: 'send either cashReceivedMinor or tenders, not both and not neither',

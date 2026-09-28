@@ -1,11 +1,14 @@
 import { checkoutPricingHash } from './pricing-hash.js';
 import {
+  ContextPriceError,
   InvalidCouponCodeError,
+  baseInventoryQuantityScaled,
   basisPoints,
   evaluatePromotions,
   extendedPrice,
   money,
   normalizeCouponCode,
+  packageInventoryQuantityScaled,
   priceCart,
   quantity,
   tenantId as brandTenantId,
@@ -13,10 +16,13 @@ import {
 import type {
   AuthenticatedPrincipal,
   Currency,
+  PriceContext,
   PriceMode,
   ProductRepository,
   PromotionCheckoutPolicy,
   PromotionRepository,
+  RetailPriceAuthority,
+  RetailPricingRepository,
   TenantRepository,
   TenantScope,
 } from '@korvi/domain';
@@ -30,6 +36,11 @@ export type CheckoutPreviewFailureReason =
   | 'invalid-coupon'
   | 'coupon-unavailable'
   | 'coupon-ineligible'
+  | 'unknown-package'
+  | 'package-unavailable'
+  | 'wholesale-price-incomplete'
+  | 'price-context-not-authorized'
+  | 'retail-pricing-policy-stale'
   | 'tenant-misconfigured'
   | 'promotions-not-applicable';
 
@@ -37,8 +48,10 @@ export interface CheckoutPreviewInput {
   readonly principal: AuthenticatedPrincipal;
   readonly lines: readonly {
     readonly productId: string;
+    readonly packageId?: string | null | undefined;
     readonly quantityScaled: string;
   }[];
+  readonly priceContext?: PriceContext | undefined;
   readonly couponCodes?: readonly string[] | undefined;
 }
 
@@ -73,6 +86,7 @@ export type CheckoutPreviewResult = CheckoutPreviewSuccess | CheckoutPreviewFail
 export interface CheckoutPreviewDeps {
   readonly tenants: TenantRepository;
   readonly products: ProductRepository;
+  readonly retailPricing?: RetailPricingRepository;
   readonly promotions?: PromotionRepository;
   readonly now?: () => Date;
 }
@@ -122,10 +136,19 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
     async preview(input) {
       if (input.lines.length === 0) return { outcome: 'failure', reason: 'empty-cart' };
 
+      const priceContext: PriceContext = input.priceContext ?? 'retail';
+      if (
+        priceContext !== 'retail' &&
+        !input.principal.permissions.includes('sale.price-context')
+      ) {
+        return { outcome: 'failure', reason: 'price-context-not-authorized' };
+      }
+
       const seen = new Set<string>();
       for (const line of input.lines) {
-        if (seen.has(line.productId)) return { outcome: 'failure', reason: 'duplicate-line' };
-        seen.add(line.productId);
+        const identity = line.productId + '\u0000' + (line.packageId ?? '');
+        if (seen.has(identity)) return { outcome: 'failure', reason: 'duplicate-line' };
+        seen.add(identity);
       }
 
       let couponCodes: readonly string[];
@@ -144,9 +167,7 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
         return { outcome: 'failure', reason: 'tenant-misconfigured' };
       }
       if (settings.vertical === 'restaurant') {
-        return couponCodes.length > 0
-          ? { outcome: 'failure', reason: 'promotions-not-applicable' }
-          : { outcome: 'failure', reason: 'promotions-not-applicable' };
+        return { outcome: 'failure', reason: 'promotions-not-applicable' };
       }
 
       const loaded: {
@@ -160,12 +181,48 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
           readonly productType: 'unit' | 'weighted';
         };
         readonly scaled: bigint;
+        readonly inventoryScaled: bigint;
+        readonly authority: RetailPriceAuthority | null;
+        readonly lineId: string;
       }[] = [];
 
-      for (const line of input.lines) {
+      for (const [index, line] of input.lines.entries()) {
         const product = await deps.products.findById(scope, line.productId);
         if (product === null) return { outcome: 'failure', reason: 'unknown-product' };
         if (!product.isActive) return { outcome: 'failure', reason: 'product-unavailable' };
+
+        let authority: RetailPriceAuthority | null = null;
+        if (deps.retailPricing !== undefined) {
+          try {
+            authority = await deps.retailPricing.resolve(scope, {
+              productId: line.productId,
+              packageId: line.packageId ?? null,
+              context: priceContext,
+            });
+          } catch (error) {
+            if (
+              error instanceof ContextPriceError &&
+              error.detail === 'wholesale-price-incomplete'
+            ) {
+              return { outcome: 'failure', reason: 'wholesale-price-incomplete' };
+            }
+            if (error instanceof ContextPriceError) {
+              return { outcome: 'failure', reason: 'retail-pricing-policy-stale' };
+            }
+            throw error;
+          }
+          if (authority === null) {
+            return {
+              outcome: 'failure',
+              reason: line.packageId == null ? 'product-unavailable' : 'package-unavailable',
+            };
+          }
+        } else if (line.packageId != null || priceContext !== 'retail') {
+          return {
+            outcome: 'failure',
+            reason: line.packageId != null ? 'package-unavailable' : 'wholesale-price-incomplete',
+          };
+        }
 
         let scaled: bigint;
         try {
@@ -173,7 +230,25 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
         } catch {
           return { outcome: 'failure', reason: 'invalid-quantity' };
         }
-        if (scaled <= 0n || (product.productType === 'unit' && scaled % 1_000n !== 0n)) {
+        if (
+          scaled <= 0n ||
+          ((authority?.package === null || authority === null) &&
+            product.productType === 'unit' &&
+            scaled % 1_000n !== 0n)
+        ) {
+          return { outcome: 'failure', reason: 'invalid-quantity' };
+        }
+
+        let inventoryScaled: bigint;
+        try {
+          inventoryScaled =
+            authority?.package === undefined || authority.package === null
+              ? baseInventoryQuantityScaled(scaled)
+              : packageInventoryQuantityScaled({
+                  commercialQuantityScaled: scaled,
+                  packageBaseQuantityScaled: BigInt(authority.package.baseQuantityScaled),
+                });
+        } catch {
           return { outcome: 'failure', reason: 'invalid-quantity' };
         }
 
@@ -183,18 +258,21 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
             sku: product.sku,
             nameAr: product.nameAr,
             nameEn: product.nameEn,
-            priceMinor: product.priceMinor,
+            priceMinor: authority?.unitPriceMinor ?? product.priceMinor,
             vatBasisPoints: Number(product.vatBasisPoints),
             productType: product.productType,
           },
           scaled,
+          inventoryScaled,
+          authority,
+          lineId: 'preview-' + String(index + 1),
         });
       }
 
       const currency: Currency = 'SAR';
       const evaluatedAt = now().toISOString();
-      const promotionLines = loaded.map(({ product, scaled }) => ({
-        lineId: product.id,
+      const promotionLines = loaded.map(({ product, scaled, lineId }) => ({
+        lineId,
         productId: product.id,
         grossMinor: extendedPrice(money(BigInt(product.priceMinor), currency), quantity(scaled))
           .minor,
@@ -238,8 +316,8 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
       const priced = priceCart({
         priceMode: settings.priceMode,
         currency,
-        lines: loaded.map(({ product, scaled }) => ({
-          lineId: product.id,
+        lines: loaded.map(({ product, scaled, lineId }) => ({
+          lineId,
           productId: product.id,
           sku: product.sku,
           nameAr: product.nameAr,
@@ -248,9 +326,9 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
           quantity: quantity(scaled),
           vatRate: basisPoints(product.vatBasisPoints),
           isWeighted: product.productType === 'weighted',
-          ...((promotionByLine.get(product.id) ?? 0n) === 0n
+          ...((promotionByLine.get(lineId) ?? 0n) === 0n
             ? {}
-            : { promotionDiscountMinor: promotionByLine.get(product.id) ?? 0n }),
+            : { promotionDiscountMinor: promotionByLine.get(lineId) ?? 0n }),
         })),
       });
 
@@ -265,6 +343,9 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
             couponCodes,
             priced,
             promotionEvaluation: evaluation,
+            retailAuthorities: loaded
+              .map((entry) => entry.authority)
+              .filter((authority): authority is RetailPriceAuthority => authority !== null),
           }),
           grossMinor: priced.gross.minor.toString(),
           promotionDiscountMinor: priced.promotionDiscountTotal.minor.toString(),

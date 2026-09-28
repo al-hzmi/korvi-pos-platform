@@ -19,6 +19,8 @@ import { createHash } from 'node:crypto';
  */
 export interface CheckoutIntentLine {
   readonly productId: string;
+  /** Empty string denotes the base Product commercial unit. */
+  readonly packageId?: string;
   readonly quantityScaled: string;
   /** Canonical description of the line discount, or the empty string. */
   readonly discount: string;
@@ -43,6 +45,8 @@ export interface CheckoutIntent {
   /** Empty for direct sales; optimistic lifecycle precondition for an open order. */
   readonly restaurantOrderRevision: string;
   readonly lines: readonly CheckoutIntentLine[];
+  /** Retail by default; wholesale is a materially different commercial intent. */
+  readonly priceContext?: string;
   readonly tenders: readonly CheckoutIntentTender[];
   /** Canonical normalized coupon codes. Order is not material. */
   readonly couponCodes?: readonly string[];
@@ -72,6 +76,9 @@ export interface CheckoutIntent {
  * external approval reference — exactly what the sale row itself will hold in
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
+ *
+ * `v9` because V2-3 package identity and price context joined the canonical form.
+ * A carton and a base unit of the same Product are different commercial intent.
  *
  * `v8` because the server-issued pricing precondition joined the canonical form.
  * Changing the quote under one operation id is a different intent.
@@ -113,7 +120,14 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
    * things themselves still do.
    */
   const lines = intent.lines
-    .map((line): readonly string[] => [line.productId, line.quantityScaled, line.discount])
+    .map(
+      (line): readonly string[] => [
+        line.productId,
+        line.packageId ?? '',
+        line.quantityScaled,
+        line.discount,
+      ],
+    )
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
   const tenders = intent.tenders
@@ -128,13 +142,14 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
   const couponCodes = [...(intent.couponCodes ?? [])].sort();
 
   const canonical = JSON.stringify([
-    'v8',
+    'v9',
     intent.branchId,
     intent.terminalId,
     intent.orderType,
     intent.tableId,
     intent.restaurantOrderId,
     intent.restaurantOrderRevision,
+    intent.priceContext ?? 'retail',
     intent.basketDiscount,
     couponCodes,
     intent.pricingHash ?? '',

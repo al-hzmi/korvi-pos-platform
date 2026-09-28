@@ -10,6 +10,7 @@ import {
   createPrismaClient,
   createProductRepository,
   createPromotionRepository,
+  createRetailPricingRepository,
   createRestaurantFloorRepository,
   createSaleRepository,
   createReturnRepository,
@@ -217,6 +218,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const audit = createAuditRepository(prisma);
     const sales = createSaleRepository(prisma);
     const promotions = createPromotionRepository(prisma);
+    const retailPricing = createRetailPricingRepository(prisma);
     const fiscalization =
       config.checkoutFiscalizationMode === 'simulation'
         ? createStagingSimulationCheckoutFiscalization()

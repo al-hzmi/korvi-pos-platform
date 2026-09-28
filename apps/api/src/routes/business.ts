@@ -99,6 +99,12 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'promotion-manual-conflict': 'لا يمكن الجمع بين خصم الموظف وعرض أو كوبون في نفس العملية.',
   'promotion-policy-stale': 'تغيّرت سياسة العرض أثناء العملية. أعد المحاولة بالسعر المحدث.',
   'pricing-stale': 'تغيّر السعر منذ آخر تسعير. حدّث السلة قبل إتمام الدفع.',
+  'unknown-package': 'وحدة البيع المختارة غير معروفة.',
+  'package-unavailable': 'وحدة البيع المختارة لم تعد متاحة.',
+  'wholesale-price-incomplete': 'لا يوجد سعر جملة معتمد لهذه الوحدة.',
+  'price-context-not-authorized': 'هذا المستخدم غير مخول باختيار سياق سعر غير افتراضي.',
+  'retail-pricing-policy-stale': 'تغيّرت وحدة البيع أو قائمة الأسعار. حدّث السلة.',
+  'retail-pricing-not-applicable': 'وحدات البيع وسياق السعر هذا غير متاحان لمسار المطعم الحالي.',
   'promotion-offline-unsupported': 'تغيّر السعر أثناء الانقطاع. راجع العملية قبل اعتمادها.',
   'promotions-not-applicable': 'العروض والكوبونات غير متاحة لمسار الطلب الحالي.',
   'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
@@ -139,6 +145,12 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'promotion-manual-conflict': 422,
   'promotion-policy-stale': 409,
   'pricing-stale': 409,
+  'unknown-package': 404,
+  'package-unavailable': 409,
+  'wholesale-price-incomplete': 409,
+  'price-context-not-authorized': 403,
+  'retail-pricing-policy-stale': 409,
+  'retail-pricing-not-applicable': 422,
   'promotion-offline-unsupported': 409,
   'promotions-not-applicable': 422,
   'idempotency-conflict': 409,
@@ -172,6 +184,11 @@ const PREVIEW_MESSAGES: Readonly<Record<CheckoutPreviewFailureReason, string>> =
   'invalid-coupon': MESSAGES['invalid-coupon'],
   'coupon-unavailable': MESSAGES['coupon-unavailable'],
   'coupon-ineligible': MESSAGES['coupon-ineligible'],
+  'unknown-package': MESSAGES['unknown-package'],
+  'package-unavailable': MESSAGES['package-unavailable'],
+  'wholesale-price-incomplete': MESSAGES['wholesale-price-incomplete'],
+  'price-context-not-authorized': MESSAGES['price-context-not-authorized'],
+  'retail-pricing-policy-stale': MESSAGES['retail-pricing-policy-stale'],
   'tenant-misconfigured': MESSAGES['tenant-misconfigured'],
   'promotions-not-applicable': MESSAGES['promotions-not-applicable'],
 };
@@ -185,6 +202,11 @@ const PREVIEW_STATUS: Readonly<Record<CheckoutPreviewFailureReason, number>> = {
   'invalid-coupon': 422,
   'coupon-unavailable': 409,
   'coupon-ineligible': 422,
+  'unknown-package': 404,
+  'package-unavailable': 409,
+  'wholesale-price-incomplete': 409,
+  'price-context-not-authorized': 403,
+  'retail-pricing-policy-stale': 409,
   'tenant-misconfigured': 409,
   'promotions-not-applicable': 422,
 };
@@ -716,6 +738,9 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
       const result = await deps.checkoutPreview.preview({
         principal,
         lines: parsed.data.lines,
+        ...(parsed.data.priceContext === undefined
+          ? {}
+          : { priceContext: parsed.data.priceContext }),
         ...(parsed.data.couponCodes === undefined ? {} : { couponCodes: parsed.data.couponCodes }),
       });
       if (result.outcome === 'failure') {
@@ -778,6 +803,9 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
               expectedRestaurantOrderRevision: parsed.data.expectedRestaurantOrderRevision,
             }),
         lines: parsed.data.lines,
+        ...(parsed.data.priceContext === undefined
+          ? {}
+          : { priceContext: parsed.data.priceContext }),
         ...(parsed.data.cashReceivedMinor === undefined
           ? {}
           : { cashReceivedMinor: parsed.data.cashReceivedMinor }),
