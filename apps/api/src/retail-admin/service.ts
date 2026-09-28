@@ -35,16 +35,14 @@ export type RetailAdminResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
   | { readonly outcome: 'failure'; readonly reason: RetailAdminFailureReason };
 
-export interface PackageCreateInput extends Omit<CreatePackageRequest, 'occurredAt'> {}
-export interface PackageUpdateInput extends Omit<UpdatePackageRequest, 'occurredAt'> {}
-export interface BarcodeCreateInput extends Omit<AddBarcodeRequest, 'occurredAt'> {}
-export interface BasePriceUpdateInput extends Omit<UpdateBasePriceRequest, 'occurredAt'> {}
-export interface PriceListCreateInput extends Omit<CreatePriceListRequest, 'occurredAt'> {}
-export interface PriceListUpdateInput extends Omit<UpdatePriceListRequest, 'occurredAt'> {}
-export interface PriceListEntryCreateInput
-  extends Omit<CreatePriceListEntryRequest, 'occurredAt'> {}
-export interface PriceListEntryUpdateInput
-  extends Omit<UpdatePriceListEntryRequest, 'occurredAt'> {}
+export type PackageCreateInput = Omit<CreatePackageRequest, 'occurredAt'>;
+export type PackageUpdateInput = Omit<UpdatePackageRequest, 'occurredAt'>;
+export type BarcodeCreateInput = Omit<AddBarcodeRequest, 'occurredAt'>;
+export type BasePriceUpdateInput = Omit<UpdateBasePriceRequest, 'occurredAt'>;
+export type PriceListCreateInput = Omit<CreatePriceListRequest, 'occurredAt'>;
+export type PriceListUpdateInput = Omit<UpdatePriceListRequest, 'occurredAt'>;
+export type PriceListEntryCreateInput = Omit<CreatePriceListEntryRequest, 'occurredAt'>;
+export type PriceListEntryUpdateInput = Omit<UpdatePriceListEntryRequest, 'occurredAt'>;
 
 export interface MerchantRetailAdminService {
   productCommercial(
