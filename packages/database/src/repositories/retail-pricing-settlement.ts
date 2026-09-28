@@ -51,13 +51,13 @@ async function lockRetailPricingPolicyShared(
   tx: TransactionClient,
   tenant: string,
 ): Promise<void> {
-  await tx.$queryRaw<{ locked: number }[]>\`
+  await tx.$queryRaw<{ locked: number }[]>`
     SELECT 1::int4 AS "locked"
       FROM (
         SELECT pg_advisory_xact_lock_shared(
           hashtextextended('korvi:retail-pricing-policy:' || ${tenant}, 0)
         )
-      ) AS policy_lock\`;
+      ) AS policy_lock`;
 }
 
 async function lockProduct(
@@ -65,12 +65,12 @@ async function lockProduct(
   tenant: string,
   productId: string,
 ): Promise<ProductPolicyRow | null> {
-  const rows = await tx.$queryRaw<ProductPolicyRow[]>\`
+  const rows = await tx.$queryRaw<ProductPolicyRow[]>`
     SELECT "id","productType","priceMinor","isActive"
       FROM "products"
      WHERE "tenantId" = ${tenant}::uuid
        AND "id" = ${productId}::uuid
-     FOR SHARE\`;
+     FOR SHARE`;
   return rows.at(0) ?? null;
 }
 
@@ -80,13 +80,13 @@ async function lockPackage(
   productId: string,
   packageId: string,
 ): Promise<PackagePolicyRow | null> {
-  const rows = await tx.$queryRaw<PackagePolicyRow[]>\`
+  const rows = await tx.$queryRaw<PackagePolicyRow[]>`
     SELECT "id","productId","code","nameAr","unitLabel","baseQuantityScaled","isActive","revision"
       FROM "product_packages"
      WHERE "tenantId" = ${tenant}::uuid
        AND "productId" = ${productId}::uuid
        AND "id" = ${packageId}::uuid
-     FOR SHARE\`;
+     FOR SHARE`;
   return rows.at(0) ?? null;
 }
 
@@ -95,14 +95,14 @@ async function lockActiveLists(
   tenant: string,
   context: PriceContext,
 ): Promise<PriceListPolicyRow[]> {
-  return tx.$queryRaw<PriceListPolicyRow[]>\`
+  return tx.$queryRaw<PriceListPolicyRow[]>`
     SELECT "id","code","context","status","revision"
       FROM "price_lists"
      WHERE "tenantId" = ${tenant}::uuid
        AND "context" = ${context}
        AND "status" = 'active'
      ORDER BY "id"
-     FOR SHARE\`;
+     FOR SHARE`;
 }
 
 async function lockEntries(
@@ -111,14 +111,14 @@ async function lockEntries(
   priceListId: string,
   productId: string,
 ): Promise<PriceEntryPolicyRow[]> {
-  return tx.$queryRaw<PriceEntryPolicyRow[]>\`
+  return tx.$queryRaw<PriceEntryPolicyRow[]>`
     SELECT "id","productId","packageId","priceMinor","revision"
       FROM "price_list_entries"
      WHERE "tenantId" = ${tenant}::uuid
        AND "priceListId" = ${priceListId}::uuid
        AND "productId" = ${productId}::uuid
      ORDER BY "packageId" NULLS FIRST, "id"
-     FOR SHARE\`;
+     FOR SHARE`;
 }
 
 function selectedEntry(
