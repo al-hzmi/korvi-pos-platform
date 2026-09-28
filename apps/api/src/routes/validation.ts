@@ -250,8 +250,8 @@ export const checkoutPreviewBody = z
       .max(MAX_CART_LINES)
       .refine(
         (lines) =>
-          new Set(lines.map((line) => line.productId + '\u0000' + (line.packageId ?? '')))
-            .size === lines.length,
+          new Set(lines.map((line) => line.productId + '\u0000' + (line.packageId ?? ''))).size ===
+          lines.length,
         { message: 'duplicate commercial line' },
       ),
     priceContext: z.enum(['retail', 'wholesale']).optional(),
@@ -300,8 +300,8 @@ export const checkoutBody = z
       // fails. One line per product, with the quantity summed by the client.
       .refine(
         (lines) =>
-          new Set(lines.map((line) => line.productId + '\u0000' + (line.packageId ?? '')))
-            .size === lines.length,
+          new Set(lines.map((line) => line.productId + '\u0000' + (line.packageId ?? ''))).size ===
+          lines.length,
         { message: 'duplicate commercial line' },
       ),
     priceContext: z.enum(['retail', 'wholesale']).optional(),

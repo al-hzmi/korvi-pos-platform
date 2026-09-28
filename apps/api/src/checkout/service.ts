@@ -799,9 +799,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                 ? baseInventoryQuantityScaled(scaled)
                 : packageInventoryQuantityScaled({
                     commercialQuantityScaled: scaled,
-                    packageBaseQuantityScaled: BigInt(
-                      authority.package.baseQuantityScaled,
-                    ),
+                    packageBaseQuantityScaled: BigInt(authority.package.baseQuantityScaled),
                   });
           } catch {
             return fail('invalid-quantity');
@@ -1320,8 +1318,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                         },
                 },
               }),
-          ...(restaurantOrder === null &&
-          loaded.every((entry) => entry.retailAuthority !== null)
+          ...(restaurantOrder === null && loaded.every((entry) => entry.retailAuthority !== null)
             ? {
                 retailPricingSettlement: {
                   context: priceContext,

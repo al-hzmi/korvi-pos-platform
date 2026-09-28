@@ -352,9 +352,7 @@ function stateFrom(
       remainingQuantityScaled: minor(remaining > 0n ? remaining : 0n),
       soldInventoryQuantityScaled: minor(soldInventoryQuantity),
       returnedInventoryQuantityScaled: minor(returnedInventoryQuantity),
-      remainingInventoryQuantityScaled: minor(
-        remainingInventory > 0n ? remainingInventory : 0n,
-      ),
+      remainingInventoryQuantityScaled: minor(remainingInventory > 0n ? remainingInventory : 0n),
       grossMinor: minor(line.grossMinor),
       lineDiscountMinor: minor(line.lineDiscountMinor),
       promotionDiscountMinor: minor(line.promotionDiscountMinor),

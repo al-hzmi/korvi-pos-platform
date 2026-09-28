@@ -249,8 +249,7 @@ export function planReturn(input: PlanReturnInput): ReturnDraft {
         'The historical sale line carries an invalid inventory conversion snapshot.',
       );
     }
-    const inventoryNumerator =
-      request.quantityScaled * line.soldInventoryQuantityScaled;
+    const inventoryNumerator = request.quantityScaled * line.soldInventoryQuantityScaled;
     if (inventoryNumerator % line.soldQuantityScaled !== 0n) {
       throw new InvalidReturnQuantityError(
         'That return quantity cannot be converted exactly from the historical sale snapshot.',

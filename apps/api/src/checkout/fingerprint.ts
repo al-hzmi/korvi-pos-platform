@@ -120,14 +120,12 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
    * things themselves still do.
    */
   const lines = intent.lines
-    .map(
-      (line): readonly string[] => [
-        line.productId,
-        line.packageId ?? '',
-        line.quantityScaled,
-        line.discount,
-      ],
-    )
+    .map((line): readonly string[] => [
+      line.productId,
+      line.packageId ?? '',
+      line.quantityScaled,
+      line.discount,
+    ])
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
 
   const tenders = intent.tenders

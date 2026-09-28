@@ -122,11 +122,13 @@ describe('sequential partial returns', () => {
 
     for (let i = 0; i < 3; i += 1) {
       const draft = planReturn({
-        available: [line({
-          returnedQuantityScaled: returned,
-          returnedInventoryQuantityScaled: returned,
-          refunded,
-        })],
+        available: [
+          line({
+            returnedQuantityScaled: returned,
+            returnedInventoryQuantityScaled: returned,
+            refunded,
+          }),
+        ],
         requested: [{ saleLineId: 'line-1', quantityScaled: 1_000n }],
         refund: CASH,
       });
