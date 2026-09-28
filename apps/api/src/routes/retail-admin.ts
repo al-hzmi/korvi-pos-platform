@@ -147,10 +147,12 @@ function failure(reply: FastifyReply, reason: RetailAdminFailureReason): Fastify
 
 function respond<T>(
   reply: FastifyReply,
-  result: { readonly outcome: 'success'; readonly value: T } | {
-    readonly outcome: 'failure';
-    readonly reason: RetailAdminFailureReason;
-  },
+  result:
+    | { readonly outcome: 'success'; readonly value: T }
+    | {
+        readonly outcome: 'failure';
+        readonly reason: RetailAdminFailureReason;
+      },
   successCode = 200,
 ): FastifyReply {
   return result.outcome === 'failure'
@@ -207,7 +209,10 @@ export function registerRetailAdminRoutes(
       const params = packageParams.safeParse(request.params);
       const body = packageUpdateBody.safeParse(request.body);
       if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
-      return respond(reply, await service.updatePackage(principal, params.data.packageId, body.data));
+      return respond(
+        reply,
+        await service.updatePackage(principal, params.data.packageId, body.data),
+      );
     },
   );
 
@@ -319,7 +324,8 @@ export function registerRetailAdminRoutes(
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
       const params = entryParams.safeParse(request.params);
       const query = entryDeleteQuery.safeParse(request.query);
-      if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_query' });
+      if (!params.success || !query.success)
+        return reply.code(400).send({ error: 'invalid_query' });
       return respond(
         reply,
         await service.deletePriceListEntry(

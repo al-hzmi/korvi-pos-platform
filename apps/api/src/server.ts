@@ -438,8 +438,7 @@ function lazyRetailAdminService(config: ApiConfig): MerchantRetailAdminService {
   };
 
   return {
-    productCommercial: (principal, productId) =>
-      resolve().productCommercial(principal, productId),
+    productCommercial: (principal, productId) => resolve().productCommercial(principal, productId),
     createPackage: (principal, input) => resolve().createPackage(principal, input),
     updatePackage: (principal, packageId, input) =>
       resolve().updatePackage(principal, packageId, input),
