@@ -4,6 +4,7 @@ import type { BasisPoints } from '../tax/basis-points.js';
 // would be free to disagree tomorrow, and the two would sit on either side of
 // the persistence boundary.
 import type { PriceMode } from '../pricing/line.js';
+import type { PriceContext, PricingProvenance } from '../pricing/context-price.js';
 import type { TenantLifecycleState } from '../tenancy/lifecycle.js';
 import type { TenderKind, TenderScheme } from '../tender/tender.js';
 
@@ -184,6 +185,67 @@ export interface GlobalCatalogItem {
   readonly nameAr: string;
   readonly nameEn: string | null;
   readonly vatBasisPoints: BasisPoints;
+}
+
+// ---------------------------------------------------------------------------
+// Retail packaging and contextual pricing (ADR-0038)
+// ---------------------------------------------------------------------------
+
+export interface RetailPackageRecord {
+  readonly id: string;
+  readonly productId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly unitLabel: string;
+  readonly baseQuantityScaled: string;
+  readonly isActive: boolean;
+  readonly revision: string;
+}
+
+export interface RetailBarcodeResolution {
+  readonly barcode: string;
+  readonly product: Product;
+  readonly package: RetailPackageRecord | null;
+}
+
+export interface RetailPriceAuthority {
+  readonly product: Product;
+  readonly package: RetailPackageRecord | null;
+  readonly context: PriceContext;
+  /** Price per commercial selling unit in integer minor units. */
+  readonly unitPriceMinor: string;
+  /** Exact base Product quantity represented by one commercial unit. */
+  readonly inventoryFactorScaled: string;
+  readonly provenance: PricingProvenance;
+  readonly priceListId: string | null;
+  readonly priceListCode: string | null;
+  readonly priceListRevision: string | null;
+  /**
+   * Commit-time precondition for the exact entry that produced the price.
+   * Null only for product-base fallback.
+   */
+  readonly priceListEntryId: string | null;
+  readonly priceListEntryRevision: string | null;
+}
+
+export interface RetailPricingRepository {
+  /** Resolves active package + current context price under tenant scope. */
+  resolve(
+    scope: TenantScope,
+    input: {
+      readonly productId: string;
+      readonly packageId: string | null;
+      readonly context: PriceContext;
+    },
+  ): Promise<RetailPriceAuthority | null>;
+  /** Exact barcode -> base or package selling unit. */
+  resolveBarcode(scope: TenantScope, barcode: string): Promise<RetailBarcodeResolution | null>;
+  /** Active packages for a Product, ordered deterministically by code. */
+  listPackagesForProduct(
+    scope: TenantScope,
+    productId: string,
+  ): Promise<readonly RetailPackageRecord[]>;
 }
 
 // ---------------------------------------------------------------------------

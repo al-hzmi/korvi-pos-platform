@@ -50,6 +50,7 @@ export {
   createProductRepository,
   createGlobalCatalogRepository,
 } from './repositories/product-repository.js';
+export { createRetailPricingRepository } from './repositories/retail-pricing-repository.js';
 // `applyMovementWithin` is deliberately not re-exported. It takes a raw tenant
 // string and an open transaction, which is safe only because the sale
 // repository calls it from inside withTenant. On the public surface it would
