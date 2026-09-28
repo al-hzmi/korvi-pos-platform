@@ -1815,6 +1815,10 @@ model SaleLine {
   packageNameAr             String?
   packageUnitLabel          String?
   packageBaseQuantityScaled BigInt?
+  priceContext              String?
+  pricingProvenance         String?
+  priceListCode             String?
+  priceListRevision         BigInt?
 
   grossMinor             BigInt
   lineDiscountMinor      BigInt

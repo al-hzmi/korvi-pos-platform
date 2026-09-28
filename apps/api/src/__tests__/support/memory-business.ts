@@ -597,8 +597,15 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
       const sum = (pick: (row: (typeof prior)[number]) => string): bigint =>
         prior.reduce((total, row) => total + BigInt(pick(row)), 0n);
       const returned = sum((row) => row.quantityScaled);
+      const returnedInventory = prior.reduce(
+        (total, row) =>
+          total + BigInt(row.inventoryQuantityScaled ?? row.quantityScaled),
+        0n,
+      );
+      const soldInventory = BigInt(line.inventoryQuantityScaled ?? line.quantityScaled);
       refundedTotal += sum((row) => row.totalMinor);
       const remaining = BigInt(line.quantityScaled) - returned;
+      const remainingInventory = soldInventory - returnedInventory;
       return {
         saleLineId: line.id,
         lineNumber: line.lineNumber,
@@ -612,8 +619,13 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         soldQuantityScaled: line.quantityScaled,
         returnedQuantityScaled: returned.toString(),
         remainingQuantityScaled: (remaining > 0n ? remaining : 0n).toString(),
+        soldInventoryQuantityScaled: soldInventory.toString(),
+        returnedInventoryQuantityScaled: returnedInventory.toString(),
+        remainingInventoryQuantityScaled:
+          (remainingInventory > 0n ? remainingInventory : 0n).toString(),
         grossMinor: line.grossMinor,
         lineDiscountMinor: line.lineDiscountMinor,
+        promotionDiscountMinor: line.promotionDiscountMinor ?? '0',
         basketDiscountMinor: line.basketDiscountMinor,
         netMinor: line.netMinor,
         vatMinor: line.vatMinor,
@@ -621,6 +633,9 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         refundedGrossMinor: sum((row) => row.grossMinor).toString(),
         refundedNetMinor: sum((row) => row.netMinor).toString(),
         refundedLineDiscountMinor: sum((row) => row.lineDiscountMinor).toString(),
+        refundedPromotionDiscountMinor: prior
+          .reduce((total, row) => total + BigInt(row.promotionDiscountMinor ?? '0'), 0n)
+          .toString(),
         refundedBasketDiscountMinor: sum((row) => row.basketDiscountMinor).toString(),
         refundedVatMinor: sum((row) => row.vatMinor).toString(),
       };
@@ -741,6 +756,7 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         currency: input.currency,
         grossMinor: plan.grossMinor,
         lineDiscountMinor: plan.lineDiscountMinor,
+        promotionDiscountMinor: plan.promotionDiscountMinor,
         basketDiscountMinor: plan.basketDiscountMinor,
         netMinor: plan.netMinor,
         vatMinor: plan.vatMinor,
@@ -757,8 +773,10 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
           productType: line.productType,
           vatBasisPoints: line.vatBasisPoints,
           quantityScaled: line.quantityScaled,
+          inventoryQuantityScaled: line.inventoryQuantityScaled,
           grossMinor: line.grossMinor,
           lineDiscountMinor: line.lineDiscountMinor,
+          promotionDiscountMinor: line.promotionDiscountMinor,
           basketDiscountMinor: line.basketDiscountMinor,
           netMinor: line.netMinor,
           vatMinor: line.vatMinor,

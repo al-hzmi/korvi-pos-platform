@@ -246,6 +246,7 @@ describe('sequential partial returns', () => {
     const weighted = line({
       productType: 'weighted',
       soldQuantityScaled: 1_234n,
+      soldInventoryQuantityScaled: 1_234n,
       original: {
         grossMinor: 4_321n,
         lineDiscountMinor: 0n,
