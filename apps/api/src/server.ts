@@ -232,7 +232,12 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       shifts,
       terminals,
       restaurantFloor,
-      checkoutPreview: createCheckoutPreviewService({ tenants, products, promotions }),
+      checkoutPreview: createCheckoutPreviewService({
+        tenants,
+        products,
+        retailPricing,
+        promotions,
+      }),
       checkout: createCheckoutService({
         tenants,
         products,
@@ -240,6 +245,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         shifts,
         sales,
         promotions,
+        retailPricing,
         restaurantFloor,
         restaurantOrders: {
           read: (scope, branchId, orderId) => readRestaurantOrder(prisma, scope, branchId, orderId),

@@ -214,13 +214,19 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
           if (authority === null) {
             return {
               outcome: 'failure',
-              reason: line.packageId == null ? 'product-unavailable' : 'package-unavailable',
+              reason:
+                line.packageId === null || line.packageId === undefined
+                  ? 'product-unavailable'
+                  : 'package-unavailable',
             };
           }
-        } else if (line.packageId != null || priceContext !== 'retail') {
+        } else if ((line.packageId !== null && line.packageId !== undefined) || priceContext !== 'retail') {
           return {
             outcome: 'failure',
-            reason: line.packageId != null ? 'package-unavailable' : 'wholesale-price-incomplete',
+            reason:
+              line.packageId !== null && line.packageId !== undefined
+                ? 'package-unavailable'
+                : 'wholesale-price-incomplete',
           };
         }
 

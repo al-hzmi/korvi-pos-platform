@@ -648,7 +648,8 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       let restaurantOrder: RestaurantOrderDetail | null = null;
       if (
         settings.vertical === 'restaurant' &&
-        (priceContext !== 'retail' || input.lines.some((line) => line.packageId != null))
+        (priceContext !== 'retail' ||
+          input.lines.some((line) => line.packageId !== null && line.packageId !== undefined))
       ) {
         return fail('retail-pricing-not-applicable');
       }
@@ -766,13 +767,15 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               throw error;
             }
             if (authority === null) {
-              return line.packageId == null
+              return line.packageId === null || line.packageId === undefined
                 ? fail('product-unavailable')
                 : fail('package-unavailable');
             }
-          } else if (line.packageId != null || priceContext !== 'retail') {
+          } else if ((line.packageId !== null && line.packageId !== undefined) || priceContext !== 'retail') {
             return fail(
-              line.packageId != null ? 'package-unavailable' : 'wholesale-price-incomplete',
+              line.packageId !== null && line.packageId !== undefined
+                ? 'package-unavailable'
+                : 'wholesale-price-incomplete',
             );
           }
 

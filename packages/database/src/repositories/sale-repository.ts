@@ -775,7 +775,6 @@ export async function recordSaleWithin(
     cashMovement,
     restaurantOrderSettlement,
     promotionSettlement,
-    retailPricingSettlement,
     idempotency,
   } = input;
 
