@@ -1107,7 +1107,7 @@ export interface CheckoutPreviewRequest {
   readonly priceContext?: CheckoutPriceContext;
   readonly lines: readonly {
     readonly productId: string;
-    readonly packageId?: string | null;
+    readonly packageId?: string | null | undefined;
     readonly quantityScaled: string;
   }[];
 }
@@ -1163,7 +1163,7 @@ export interface CheckoutRequest {
   readonly offlineCaptured?: true;
   readonly lines: readonly {
     readonly productId: string;
-    readonly packageId?: string | null;
+    readonly packageId?: string | null | undefined;
     readonly quantityScaled: string;
   }[];
 }
