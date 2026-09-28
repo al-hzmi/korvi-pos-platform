@@ -1,7 +1,7 @@
 # KORVI — MASTERMIND V2-0 CURRENT REPOSITORY GAP AUDIT
 
-Status: **UPDATED REPOSITORY-GROUNDED AUDIT — V2-1 CLOSED**
-Date: 2026-09-25
+Status: **UPDATED REPOSITORY-GROUNDED AUDIT — V2-3 CLOSED**
+Date: 2026-09-29
 Branch: `mastermind/v2-strengthening`
 Base acquisition SHA: `61dbb34dea08809756fd767b907b0e852b7e5978`
 
@@ -163,19 +163,19 @@ The Master Product Directive explicitly accepts batch/lot/expiry where required.
 
 ### Core product/catalog/inventory — PRESENT
 
-Current product/catalogue, migration, inventory, purchasing and costing authorities are substantial.
+Current product/catalogue, migration, inventory, purchasing and costing authorities remain the shared foundation.
 
-### Unit/carton/packaging hierarchy — NOT FOUND AS CLOSED AUTHORITY
+### Unit/carton/packaging hierarchy — PRESENT / V2-3 CLOSED
 
-No dedicated packaging/carton model was identified in current schema/path audit.
+ADR-0038 and the verified implementation establish fixed unit-product packages, immutable package-to-base conversion, package-aware barcode identity, server checkout/return provenance, package-aware purchasing/receiving and Arabic RTL operator surfaces without creating package stock or package costing.
 
-### Retail/wholesale/customer/context price-list engine — NOT FOUND AS CLOSED AUTHORITY
+### Retail/wholesale contextual price-list engine — PRESENT / V2-3 CLOSED
 
-No dedicated `PriceList` schema authority was found.
+The repository now contains governed `PriceList` / `PriceListEntry` authority, deterministic retail/wholesale selection and precedence, stale-price protection, immutable SaleLine provenance, least-privilege administration and exact-head PostgreSQL/browser evidence.
 
-These remain accepted Retail/Grocery parity requirements.
+Customer-specific automatic assignment is deliberately not claimed: direct checkout still has no authoritative customer identity.
 
-**Recommended V2-3.**
+**V2-3 gap is closed. Next strike: V2-4.**
 
 ## 6. Restaurant
 
@@ -241,10 +241,10 @@ Adapter architecture may advance internally, but no provider-dependent productio
 
 Initial evidence supports this order:
 
-1. **V2-1 No-receipt return/exchange**
-2. **V2-2 Deterministic promotions/coupons**
-3. **V2-3 Retail packaging + price lists**
-4. **V2-4 Batch/lot/expiry**
+1. **V2-1 No-receipt return/exchange — CLOSED**
+2. **V2-2 Deterministic promotions/coupons — CLOSED**
+3. **V2-3 Retail packaging + price lists — CLOSED**
+4. **V2-4 Batch/lot/expiry — NEXT**
 5. **V2-5 Restaurant modifiers/operator parity**
 6. **V2-6 Loyalty/credit explicit ledgers**
 7. **V2-7 Attention Center**
@@ -295,19 +295,50 @@ Resolved decisions:
 
 The former V2-2 implementation block is therefore removed.
 
-## 12. Next audit target — V2-3
+## 12. V2-3 closure reconciliation
 
-The next repository audit must establish a shared Retail/Grocery/Wholesale architecture contract for:
+The V2-3 architecture targets were reconciled in ADR-0038 and the verified implementation at
+`2bcd8dcede3cec8ecf2808831a99670030cfdf0b`.
 
-- product packaging/unit/carton hierarchy and conversion authority;
-- multiple barcode ownership and ambiguity rules;
-- retail/wholesale/customer/context price-list precedence;
-- deterministic price selection and immutable sold-price truth;
-- inventory/base-unit interaction and migration compatibility;
-- purchasing/receiving compatibility;
-- operator UX for scanning/selling alternate packages;
-- tenant/RLS isolation, permissions, audit, concurrency and idempotency;
-- offline price-list/package snapshot boundary;
-- tax/ZATCA boundary.
+Resolved decisions:
 
-No parallel package inventory truth or client-authored price selection may be introduced.
+- Product remains the only inventory/cost identity; package is commercial-unit metadata only;
+- package conversion is flat, exact, positive and immutable for unit products;
+- ProductBarcode remains the single barcode authority and may identify one exact package;
+- retail/wholesale context is client-selectable only within permission, while list identity/price/conversion remain server-owned;
+- deterministic price precedence refuses missing wholesale authority rather than silently falling back to retail;
+- finalized SaleLine rows snapshot package, inventory quantity and price-list provenance;
+- original-sale return stock/cost restoration uses immutable historical snapshots only;
+- purchasing/receiving records commercial package quantity while stock/cost ledger effects remain base Product quantity;
+- product/list/package administration is optimistic-revisioned, audited and database-constrained;
+- offline intent preserves package/context identity and cannot force stale/current pricing acceptance;
+- FORCE-RLS and composite tenant guards own isolation;
+- Production ZATCA/tax authority remains the canonical finalized sale path.
+
+Evidence:
+
+- full CI `36498993747` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / live suite / full verify `36498993701` — **SUCCESS**;
+- actual Chrome operator workflow `36498993748` — **SUCCESS**;
+- independent PR CI `36498997779` — **SUCCESS**.
+
+**V2-3 gap is closed.**
+
+## 13. Next audit target — V2-4
+
+The next repository audit must establish the smallest shared Batch/Lot/Expiry authority that preserves one inventory truth while supporting:
+
+- tenant-owned lot/batch identity and immutable received provenance;
+- expiry / best-before facts without fabricating dates;
+- receiving allocation into lots where policy requires;
+- sale/consumption selection policy only where configured and deterministic;
+- transfer, adjustment and count compatibility;
+- return/restoration treatment from original immutable lot facts where available;
+- base stock/cost reconciliation across lot allocations;
+- concurrency, idempotency, audit and FORCE-RLS isolation;
+- explicit offline boundaries;
+- Arabic RTL operator workflows;
+- Expiry Intelligence-ready facts without autonomous inventory authority;
+- unchanged Production ZATCA fail-closed boundary.
+
+No parallel stock/cost ledger and no mutable “lot balance counter” may become the primary inventory truth.

@@ -1,7 +1,7 @@
 # KORVI — PROJECT CURRENT SOURCE OF TRUTH
 
-Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT — V2-2 VERIFIED**
-Date: 2026-09-25
+Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT — V2-3 VERIFIED**
+Date: 2026-09-29
 Protected acquisition source: `61dbb34dea08809756fd767b907b0e852b7e5978`
 Acquisition branch: `release/canonical-acquisition-v1`
 Active future-development branch: `mastermind/v2-strengthening`
@@ -129,16 +129,15 @@ The Master Product Directive still accepts substantial product growth beyond the
 
 Still accepted where not already fully closed:
 
-- packaging/unit/carton relationships;
-- weighted/scale-driven workflows;
-- multiple barcodes;
-- retail/wholesale/customer/context price lists;
-- labels/price lookup/printing;
+- weighted/scale-driven workflows beyond V2-3's fixed unit-product packages;
+- customer-specific price assignment once checkout owns customer identity;
+- labels/price lookup/printing where not already covered by the current catalogue/control surfaces;
 - batch/lot/expiry;
-- deterministic promotions/coupons;
 - stronger replenishment;
 - explicit customer credit/balance capability;
 - supported device integration.
+
+V2-3 has closed fixed unit/carton packaging, package-aware barcode identity, governed retail/wholesale contextual price lists, immutable sale provenance, package-aware purchasing/receiving and the corresponding cashier/control authority.
 
 ### Restaurant / cafe parity
 
@@ -158,14 +157,14 @@ Still accepted where not already fully closed:
 
 ### Customer / loyalty / promotions
 
-Accepted:
+Still accepted where not already closed:
 
 - tags/segments;
 - governed credit/balance;
 - loyalty ledger/rewards;
-- gift-card/wallet only as explicit financial ledgers;
-- deterministic promotion engine;
-- coupon/voucher instruments.
+- gift-card/wallet only as explicit financial ledgers.
+
+Deterministic promotions/coupons are closed by V2-2. Customer-specific price assignment remains a future seam because direct checkout does not yet own customer identity.
 
 ### Omnichannel / integrations
 
@@ -260,7 +259,9 @@ V2-1 no-receipt exchange: **COMPLETE / EXACT-HEAD VERIFIED**.
 
 V2-2 deterministic promotions/coupons: **COMPLETE / EXACT-HEAD VERIFIED**.
 
-Next authorized strike: **V2-3 Retail packaging + price lists**.
+V2-3 retail packaging + price lists: **COMPLETE / EXACT-HEAD VERIFIED**.
+
+Next authorized strike: **V2-4 Batch/Lot/Expiry**.
 
 ### V2-2 — Deterministic Promotions + Coupons — VERIFIED COMPLETE
 
@@ -297,14 +298,37 @@ Exact-head evidence for `68a56867f189c5f5d44a82b48baebccc2fda3f45`:
 - independent PR full CI: run `36082437825` — **SUCCESS**.
 
 The frozen acquisition candidate remains untouched. V2-2 exists only on the Mastermind V2 lineage.
-### V2-3 — Retail packaging / price-list / wholesale parity
+### V2-3 — Retail Packaging + Price Lists — VERIFIED COMPLETE
 
-Strengthen grocery/wholesale competitiveness:
+Verified implementation HEAD:
 
-- unit/carton hierarchy;
-- retail/wholesale/customer/context price lists;
-- multiple barcode authority where incomplete;
-- operator UX and migration compatibility.
+`2bcd8dcede3cec8ecf2808831a99670030cfdf0b`
+
+Closed scope:
+
+- one base Product remains the only stock/cost identity; packages never create parallel balances or cost pools;
+- fixed packages/cartons for unit products use immutable package-to-base conversion factors;
+- the existing ProductBarcode authority now resolves either the base selling unit or one exact package without duplicate barcode truth;
+- deterministic retail/wholesale context pricing uses governed PriceList/PriceListEntry authority with explicit fallback/refusal rules;
+- checkout preview and finalization re-resolve package ownership, conversion, price context and stale-price authority on the server;
+- SaleLine snapshots immutable commercial package, inventory quantity, price-context/list provenance and money/VAT/cost facts;
+- original-sale returns restore stock/cost from historical sale snapshots and never re-resolve current package/list policy;
+- purchasing/receiving accepts package commercial quantities while stock/cost accumulators remain base Product quantity;
+- base price history, package/list lifecycle and revisions are governed/audited; active policy concurrency is database-backed;
+- `product.write`, `price-list.manage` and `sale.price-context` remain separate least-privilege authorities;
+- Control Center and Arabic RTL Cashier expose package/price-context workflows without client-authored price or conversion;
+- offline/durable intent preserves package/context identity and fails closed when authoritative contextual pricing cannot be proved;
+- FORCE-RLS, composite tenant guards and immutable historical snapshots preserve tenant isolation and history;
+- Production ZATCA remains fail-closed and consumes only the ordinary finalized sale tax truth.
+
+Exact-head evidence for `2bcd8dcede3cec8ecf2808831a99670030cfdf0b`:
+
+- full CI: GitHub Actions run `36498993747` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / live suite / full verify: run `36498993701` — **SUCCESS**;
+- actual Chrome Control + cashier/package/promotion workflow: run `36498993748` — **SUCCESS**;
+- independent PR full CI: run `36498997779` — **SUCCESS**.
+
+The frozen acquisition candidate remains untouched. V2-3 exists only on the Mastermind V2 lineage.
 
 ### V2-4 — Batch/Lot/Expiry foundation
 
