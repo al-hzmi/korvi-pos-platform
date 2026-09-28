@@ -27,10 +27,14 @@ const REGISTRY = process.env.NPM_PUBLIC_REGISTRY ?? 'https://registry.npmjs.org'
 
 /** Pin -> the ADR explaining why it is not the newest production-stable version. */
 const ALLOWED_BEHIND = {
+  '@tauri-apps/api':
+    'Mastermind V2-3 execution freeze (2026-09-28): retain the currently proven 2.11.1 native runtime API while package/price-list financial authority is being implemented; evaluate 2.12.0 only in a dedicated installed-client dependency-maintenance change.',
   '@tauri-apps/cli':
     'Post-V1 parallel product-development baseline (2026-09-20): retain the exact 2.11.4 installed-client toolchain already proven on the current lineage; upgrade to 2.11.5 only in a dedicated installed-client dependency-maintenance change, not inside Restaurant or Migration feature work.',
   eslint:
     'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
+  '@vitest/coverage-v8':
+    'Mastermind V2-3 execution freeze (2026-09-28): keep coverage-v8 5.0.1 aligned with the currently proven Vitest 5.0.1 test stack during package/price-list authority work; upgrade both together only in a dedicated dependency-maintenance change.',
   prettier:
     'Commercial V1 RC freeze directive (2026-09-18): keep the verified 3.9.7 formatter baseline until post-RC to avoid unrelated repository-wide formatting churn.',
   next: 'Canonical Acquisition Release freeze (2026-09-22): retain the exact 16.3.5 baseline already proven on the canonical lineage; evaluate 16.3.6 in a dedicated dependency-maintenance change rather than coupling framework churn to AR-1 security integration.',
@@ -40,6 +44,8 @@ const ALLOWED_BEHIND = {
   tailwindcss: 'ADR-0007: the design system ships a verified v3 config (v3-lts).',
   tsx: 'Post-V1 parallel product-development baseline (2026-09-20): retain the verified 4.23.13 TypeScript execution tool during Restaurant/Migration feature work; upgrade to 4.23.15 only in a dedicated dependency-maintenance change.',
   vite: 'Mastermind V2 feature-work baseline (2026-09-24): retain the frozen acquisition-candidate Vite 8.3.0 toolchain while V2-1 changes financial/inventory authority; evaluate 8.3.1 only in a dedicated dependency-maintenance change.',
+  vitest:
+    'Mastermind V2-3 execution freeze (2026-09-28): retain the currently proven Vitest 5.0.1 runner while package/price-list financial authority is being implemented; evaluate 5.0.2 together with coverage-v8 only in a dedicated dependency-maintenance change.',
   '@types/node':
     'ADR-0007: typings track the Node 24 runtime. A newer major describes APIs ' +
     'the runtime does not have, so code typechecks and then fails at run time.',
