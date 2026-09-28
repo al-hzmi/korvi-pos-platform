@@ -112,7 +112,7 @@ export function buildPurchaseOrderIntent(
     readonly reference: string;
     readonly lines: readonly {
       readonly product: PurchasingProduct;
-      readonly packageId: string | null;
+      readonly packageId?: string | null;
       readonly quantity: string;
     }[];
   },
@@ -143,11 +143,12 @@ export function buildPurchaseOrderIntent(
       return { ok: false, message: 'أحد الأصناف لم يعد مفعّلًا أو متتبعًا للمخزون.' };
     }
 
+    const packageId = line.packageId ?? null;
     const packageRow =
-      line.packageId === null
+      packageId === null
         ? null
-        : (line.product.packages ?? []).find((candidate) => candidate.id === line.packageId);
-    if (line.packageId !== null) {
+        : (line.product.packages ?? []).find((candidate) => candidate.id === packageId);
+    if (packageId !== null) {
       if (line.product.productType !== 'unit' || packageRow === undefined || !packageRow.isActive) {
         return { ok: false, message: 'وحدة التعبئة المختارة لم تعد متاحة لهذا الصنف.' };
       }
@@ -155,12 +156,12 @@ export function buildPurchaseOrderIntent(
 
     const quantity = parseInventoryQuantityToScaled(
       line.quantity,
-      line.packageId === null ? line.product.productType : 'unit',
+      packageId === null ? line.product.productType : 'unit',
     );
     if (!quantity.ok) return { ok: false, message: quantityMessage(quantity.reason) };
     lines.push({
       productId: line.product.id,
-      packageId: line.packageId,
+      packageId,
       orderedQuantityScaled: quantity.value,
     });
   }
@@ -222,11 +223,12 @@ export function buildPurchaseReceiptIntent(
       commercialPackage ? 'unit' : product.productType,
     );
     if (!quantity.ok) return { ok: false, message: quantityMessage(quantity.reason) };
+    const remainingCommercial = line.remainingCommercialQuantityScaled ?? null;
     const remaining =
-      commercialPackage && line.remainingCommercialQuantityScaled !== null
-        ? line.remainingCommercialQuantityScaled
+      commercialPackage && remainingCommercial !== null
+        ? remainingCommercial
         : line.remainingQuantityScaled;
-    if (commercialPackage && line.remainingCommercialQuantityScaled === null) {
+    if (commercialPackage && remainingCommercial === null) {
       return {
         ok: false,
         message: 'تعذر إثبات كمية وحدة التعبئة التاريخية. حدّث تفاصيل أمر الشراء.',
