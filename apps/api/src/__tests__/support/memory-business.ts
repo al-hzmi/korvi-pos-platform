@@ -598,8 +598,7 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         prior.reduce((total, row) => total + BigInt(pick(row)), 0n);
       const returned = sum((row) => row.quantityScaled);
       const returnedInventory = prior.reduce(
-        (total, row) =>
-          total + BigInt(row.inventoryQuantityScaled ?? row.quantityScaled),
+        (total, row) => total + BigInt(row.inventoryQuantityScaled ?? row.quantityScaled),
         0n,
       );
       const soldInventory = BigInt(line.inventoryQuantityScaled ?? line.quantityScaled);
@@ -621,8 +620,10 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         remainingQuantityScaled: (remaining > 0n ? remaining : 0n).toString(),
         soldInventoryQuantityScaled: soldInventory.toString(),
         returnedInventoryQuantityScaled: returnedInventory.toString(),
-        remainingInventoryQuantityScaled:
-          (remainingInventory > 0n ? remainingInventory : 0n).toString(),
+        remainingInventoryQuantityScaled: (remainingInventory > 0n
+          ? remainingInventory
+          : 0n
+        ).toString(),
         grossMinor: line.grossMinor,
         lineDiscountMinor: line.lineDiscountMinor,
         promotionDiscountMinor: line.promotionDiscountMinor ?? '0',
