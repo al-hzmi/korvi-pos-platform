@@ -832,6 +832,14 @@ try {
 
   await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText('ابحث أو امسح الباركود', 30_000);
+  await waitFor(
+    `(() => {
+      const input = document.getElementById('product-search');
+      return input instanceof HTMLInputElement && !input.disabled;
+    })()`,
+    'cashier durable draft hydration before coupon proof',
+    20_000,
+  );
 
   // newSale() clears the durable IndexedDB draft through an ordered async write
   // chain. Navigating to Control immediately afterwards can race that delete,

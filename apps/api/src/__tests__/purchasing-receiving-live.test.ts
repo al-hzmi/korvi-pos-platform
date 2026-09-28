@@ -2518,11 +2518,26 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     expect(ids).not.toContain(OTHER.product);
     expect(page.rows.find((row) => row.id === T.inactive)?.isActive).toBe(false);
     expect(page.rows.find((row) => row.id === T.untracked)?.trackInventory).toBe(false);
+    for (const row of page.rows) {
+      expect(
+        row.packages.every(
+          (pack) =>
+            typeof pack.id === 'string' &&
+            typeof pack.code === 'string' &&
+            typeof pack.nameAr === 'string' &&
+            typeof pack.unitLabel === 'string' &&
+            typeof pack.baseQuantityScaled === 'string' &&
+            typeof pack.isActive === 'boolean',
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(row.packages)).not.toMatch(/price|stock|cost/i);
+    }
     expect(Object.keys(page.rows[0] ?? {}).sort()).toEqual([
       'id',
       'isActive',
       'nameAr',
       'nameEn',
+      'packages',
       'productType',
       'sku',
       'trackInventory',

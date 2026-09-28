@@ -218,7 +218,9 @@ export function cartToRequestLines(lines: readonly CartLine[]): readonly {
 }[] {
   return lines.map((line) => ({
     productId: line.productId,
-    ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
+    ...(line.packageId === undefined || line.packageId === null
+      ? {}
+      : { packageId: line.packageId }),
     quantityScaled: line.quantityScaled,
   }));
 }

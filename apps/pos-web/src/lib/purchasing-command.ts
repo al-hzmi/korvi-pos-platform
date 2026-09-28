@@ -135,7 +135,7 @@ export function buildPurchaseOrderIntent(
 
   const lines: {
     productId: string;
-    packageId: string | null;
+    packageId?: string;
     orderedQuantityScaled: string;
   }[] = [];
   for (const line of input.lines) {
@@ -166,7 +166,7 @@ export function buildPurchaseOrderIntent(
     if (!quantity.ok) return { ok: false, message: quantityMessage(quantity.reason) };
     lines.push({
       productId: line.product.id,
-      packageId,
+      ...(packageId === null ? {} : { packageId }),
       orderedQuantityScaled: quantity.value,
     });
   }
