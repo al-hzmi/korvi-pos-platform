@@ -28,6 +28,7 @@ export {
   CostBootstrapRefusedError,
   PurchasingRefusedError,
   PromotionPolicyRefusedError,
+  RetailPricingPolicyRefusedError,
 } from './errors.js';
 export type {
   TenantProvisioningRefusal,
@@ -39,6 +40,7 @@ export type {
   CostBootstrapRefusal,
   PurchasingRefusal,
   PromotionPolicyRefusal,
+  RetailPricingPolicyRefusal,
 } from './errors.js';
 
 export { createTenantRepository } from './repositories/tenant-repository.js';

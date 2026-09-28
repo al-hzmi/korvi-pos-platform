@@ -352,6 +352,11 @@ export interface InventoryMovementInput {
   readonly reason: string | null;
   readonly sourceType: string | null;
   readonly sourceId: string | null;
+  /**
+   * Optional immutable sale-line correlation. V2-3 requires it whenever one
+   * Product can appear as multiple commercial units in the same sale.
+   */
+  readonly saleLineId?: string | null;
   readonly actorUserId: string | null;
   readonly occurredAt: string;
 }
@@ -534,7 +539,20 @@ export interface SaleLineRecord {
   readonly productType: ProductType | null;
   readonly unitPriceMinor: string;
   readonly vatBasisPoints: BasisPoints;
+  /** Commercial selling-unit quantity. */
   readonly quantityScaled: string;
+  /** Base Product stock/cost quantity. Null/absent means legacy = quantityScaled. */
+  readonly inventoryQuantityScaled?: string | null;
+  readonly packageId?: string | null;
+  readonly packageCode?: string | null;
+  readonly packageNameAr?: string | null;
+  readonly packageUnitLabel?: string | null;
+  readonly packageBaseQuantityScaled?: string | null;
+  readonly priceContext?: PriceContext | null;
+  readonly pricingProvenance?: PricingProvenance | null;
+  readonly priceListId?: string | null;
+  readonly priceListCode?: string | null;
+  readonly priceListRevision?: string | null;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
   /** Optional only for pre-V2 fixtures; real persisted rows always carry it. */
@@ -679,6 +697,28 @@ export interface PromotionSettlementInput {
   readonly audit: AuditEventInput | null;
 }
 
+export interface RetailPricingSettlementLineInput {
+  readonly saleLineId: string;
+  readonly productId: string;
+  readonly packageId: string | null;
+  readonly packageRevision: string | null;
+  readonly commercialQuantityScaled: string;
+  readonly inventoryQuantityScaled: string;
+  readonly context: PriceContext;
+  readonly unitPriceMinor: string;
+  readonly provenance: PricingProvenance;
+  readonly priceListId: string | null;
+  readonly priceListCode: string | null;
+  readonly priceListRevision: string | null;
+  readonly priceListEntryId: string | null;
+  readonly priceListEntryRevision: string | null;
+}
+
+export interface RetailPricingSettlementInput {
+  readonly context: PriceContext;
+  readonly lines: readonly RetailPricingSettlementLineInput[];
+}
+
 export interface RecordSaleInput {
   /**
    * `sequence` is absent on purpose, and so is the invoice number.
@@ -710,6 +750,11 @@ export interface RecordSaleInput {
    * allocation and redemption facts in this same sale transaction.
    */
   readonly promotionSettlement?: PromotionSettlementInput | undefined;
+  /**
+   * Server-derived package/context pricing precondition. Persistence re-locks
+   * current commercial policy and proves these facts before financial writes.
+   */
+  readonly retailPricingSettlement?: RetailPricingSettlementInput | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 

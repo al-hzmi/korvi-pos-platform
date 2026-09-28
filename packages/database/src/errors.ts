@@ -394,3 +394,24 @@ export class PromotionPolicyRefusedError extends DatabaseError {
     this.detail = detail;
   }
 }
+
+/**
+ * V2-3 commercial selling-unit / contextual pricing policy changed or cannot
+ * authorize the requested commercial unit. These are tenant-scoped business
+ * refusals, never client-authored price decisions.
+ */
+export type RetailPricingPolicyRefusal =
+  | 'unknown-package'
+  | 'package-unavailable'
+  | 'wholesale-price-incomplete'
+  | 'policy-stale';
+
+export class RetailPricingPolicyRefusedError extends DatabaseError {
+  public override readonly name = 'RetailPricingPolicyRefusedError';
+  public readonly detail: RetailPricingPolicyRefusal;
+
+  public constructor(detail: RetailPricingPolicyRefusal) {
+    super(`Retail pricing policy refused: ${detail}`);
+    this.detail = detail;
+  }
+}

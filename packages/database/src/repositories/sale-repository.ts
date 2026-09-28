@@ -9,12 +9,15 @@ import {
 import { RestaurantOrderRefusedError } from '../restaurant/orders.js';
 import { applyMovementWithin } from './inventory-repository.js';
 import { resolvePromotionCheckoutWithin } from './promotion-repository.js';
+import { proveRetailPricingSettlementWithin } from './retail-pricing-settlement.js';
 import { iso, minor, oneOf, rate, scoped, tenantParam } from './mapping.js';
 import type { TransactionClient } from '../tenant-context.js';
 import type {
   InvoiceRecord,
   InvoiceType,
+  PriceContext,
   PriceMode,
+  PricingProvenance,
   ProductType,
   PromotionCheckoutPolicy,
   RestaurantOrderType,
@@ -34,6 +37,12 @@ import type { PrismaClient } from '../client.js';
 const STATUSES: readonly SaleStatus[] = ['finalized', 'voided'];
 const RESTAURANT_ORDER_TYPES: readonly RestaurantOrderType[] = ['dine-in', 'takeaway', 'delivery'];
 const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
+const PRICE_CONTEXTS: readonly PriceContext[] = ['retail', 'wholesale'];
+const PRICING_PROVENANCE: readonly PricingProvenance[] = [
+  'product-base',
+  'price-list-base',
+  'price-list-package',
+];
 const TENDER_KINDS: readonly TenderKind[] = [
   'cash',
   'card',
@@ -59,6 +68,17 @@ interface LineRow {
   unitPriceMinor: bigint;
   vatBasisPoints: number;
   quantityScaled: bigint;
+  inventoryQuantityScaled?: bigint | null;
+  packageId?: string | null;
+  packageCode?: string | null;
+  packageNameAr?: string | null;
+  packageUnitLabel?: string | null;
+  packageBaseQuantityScaled?: bigint | null;
+  priceContext?: string | null;
+  pricingProvenance?: string | null;
+  priceListId?: string | null;
+  priceListCode?: string | null;
+  priceListRevision?: bigint | null;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
   promotionDiscountMinor: bigint;
@@ -162,6 +182,32 @@ function lineToDomain(row: LineRow): SaleLineRecord {
     unitPriceMinor: minor(row.unitPriceMinor),
     vatBasisPoints: rate(row.vatBasisPoints),
     quantityScaled: minor(row.quantityScaled),
+    inventoryQuantityScaled:
+      row.inventoryQuantityScaled === undefined || row.inventoryQuantityScaled === null
+        ? null
+        : minor(row.inventoryQuantityScaled),
+    packageId: row.packageId ?? null,
+    packageCode: row.packageCode ?? null,
+    packageNameAr: row.packageNameAr ?? null,
+    packageUnitLabel: row.packageUnitLabel ?? null,
+    packageBaseQuantityScaled:
+      row.packageBaseQuantityScaled === undefined || row.packageBaseQuantityScaled === null
+        ? null
+        : minor(row.packageBaseQuantityScaled),
+    priceContext:
+      row.priceContext === undefined || row.priceContext === null
+        ? null
+        : oneOf(PRICE_CONTEXTS, row.priceContext, 'sale_lines.priceContext'),
+    pricingProvenance:
+      row.pricingProvenance === undefined || row.pricingProvenance === null
+        ? null
+        : oneOf(PRICING_PROVENANCE, row.pricingProvenance, 'sale_lines.pricingProvenance'),
+    priceListId: row.priceListId ?? null,
+    priceListCode: row.priceListCode ?? null,
+    priceListRevision:
+      row.priceListRevision === undefined || row.priceListRevision === null
+        ? null
+        : minor(row.priceListRevision),
     grossMinor: minor(row.grossMinor),
     lineDiscountMinor: minor(row.lineDiscountMinor),
     promotionDiscountMinor: minor(row.promotionDiscountMinor),
@@ -729,6 +775,7 @@ export async function recordSaleWithin(
     cashMovement,
     restaurantOrderSettlement,
     promotionSettlement,
+    retailPricingSettlement,
     idempotency,
   } = input;
 
@@ -768,10 +815,11 @@ export async function recordSaleWithin(
      WHERE "tenantId" = ${tenant}::uuid`;
   const allowNegativeStock = settingsRows.at(0)?.allowNegativeStock ?? false;
 
-  // Promotion policy is re-proven under commit-time locks before any financial
-  // row is inserted. A stale revision or final coupon redemption rolls the
-  // whole sale back rather than silently changing the customer's price.
+  // Promotion and V2-3 retail pricing policy are both re-proven under
+  // commit-time locks before any financial row is inserted. A stale package,
+  // list/entry revision or final coupon redemption rolls the whole sale back.
   await provePromotionSettlementWithin(tx, tenant, input);
+  await proveRetailPricingSettlementWithin(tx, tenant, input);
 
   if (!options.skipIdempotencyReservation) {
     await reserveOperation(tx, tenant, idempotency, sale.id, new Date(sale.issuedAt));
@@ -821,6 +869,26 @@ export async function recordSaleWithin(
       unitPriceMinor: BigInt(line.unitPriceMinor),
       vatBasisPoints: Number(line.vatBasisPoints),
       quantityScaled: BigInt(line.quantityScaled),
+      inventoryQuantityScaled:
+        line.inventoryQuantityScaled === undefined || line.inventoryQuantityScaled === null
+          ? null
+          : BigInt(line.inventoryQuantityScaled),
+      packageId: line.packageId ?? null,
+      packageCode: line.packageCode ?? null,
+      packageNameAr: line.packageNameAr ?? null,
+      packageUnitLabel: line.packageUnitLabel ?? null,
+      packageBaseQuantityScaled:
+        line.packageBaseQuantityScaled === undefined || line.packageBaseQuantityScaled === null
+          ? null
+          : BigInt(line.packageBaseQuantityScaled),
+      priceContext: line.priceContext ?? null,
+      pricingProvenance: line.pricingProvenance ?? null,
+      priceListId: line.priceListId ?? null,
+      priceListCode: line.priceListCode ?? null,
+      priceListRevision:
+        line.priceListRevision === undefined || line.priceListRevision === null
+          ? null
+          : BigInt(line.priceListRevision),
       grossMinor: BigInt(line.grossMinor),
       lineDiscountMinor: BigInt(line.lineDiscountMinor),
       promotionDiscountMinor: BigInt(line.promotionDiscountMinor ?? '0'),
@@ -833,7 +901,9 @@ export async function recordSaleWithin(
       // Tracked lines are replaced below, in this same transaction, by
       // the exact basis their sale movement consumed.
       costKnownQuantityScaled: 0n,
-      costUnknownQuantityScaled: BigInt(line.quantityScaled),
+      costUnknownQuantityScaled: BigInt(
+        line.inventoryQuantityScaled ?? line.quantityScaled,
+      ),
       costValueMinor: 0n,
       costProvenance: 'unknown',
     })),
@@ -977,33 +1047,48 @@ export async function recordSaleWithin(
     });
   }
 
-  // A checkout already refuses duplicate product lines. Assert the
-  // same invariant again at the persistence boundary so every tracked
-  // movement has exactly one immutable sale line on which to freeze its
-  // original cost basis.
-  const saleLineByProduct = new Map(
-    sale.lines
-      .filter((line) => line.productId !== null)
-      .map((line) => [line.productId as string, line] as const),
-  );
-  if (saleLineByProduct.size !== sale.lines.filter((line) => line.productId !== null).length) {
-    throw new DatabaseError('A sale cannot contain duplicate product lines at persistence.');
+  // V2-3 allows the same Product to appear as distinct commercial units
+  // (for example one base each + one carton). New sale movements therefore
+  // correlate to an immutable saleLineId. The product-only lookup remains only
+  // as a backward-compatible fallback when exactly one historical line exists.
+  const saleLineById = new Map(sale.lines.map((line) => [line.id, line] as const));
+  const saleLinesByProduct = new Map<string, typeof sale.lines>();
+  for (const line of sale.lines) {
+    if (line.productId === null) continue;
+    const bucket = saleLinesByProduct.get(line.productId) ?? [];
+    saleLinesByProduct.set(line.productId, [...bucket, line]);
   }
 
   for (const movement of inventory) {
-    const saleLine = saleLineByProduct.get(movement.productId);
-    if (saleLine === undefined) {
-      throw new DatabaseError('A sale stock movement has no matching sale line for cost basis.');
-    }
-    const movementQuantity = BigInt(movement.quantityScaled);
-    const lineQuantity = BigInt(saleLine.quantityScaled);
-    if (movementQuantity >= 0n || -movementQuantity !== lineQuantity) {
-      throw new DatabaseError('Sale movement cost basis does not reconcile to its sale line.');
+    const correlated =
+      movement.saleLineId === undefined || movement.saleLineId === null
+        ? null
+        : saleLineById.get(movement.saleLineId) ?? null;
+    const candidates = saleLinesByProduct.get(movement.productId) ?? [];
+    const saleLine = correlated ?? (candidates.length === 1 ? candidates[0] ?? null : null);
+
+    if (
+      saleLine === null ||
+      saleLine.productId !== movement.productId ||
+      (movement.saleLineId !== undefined &&
+        movement.saleLineId !== null &&
+        movement.saleLineId !== saleLine.id)
+    ) {
+      throw new DatabaseError(
+        'A sale stock movement has no unambiguous matching sale line for cost basis.',
+      );
     }
 
-    // The guard is in the stock UPDATE, not in a prior read: two tills
-    // selling the last unit both saw one in stock, and only the mutation
-    // can tell them apart. Costing runs under the same locked stock row.
+    const movementQuantity = BigInt(movement.quantityScaled);
+    const lineInventoryQuantity = BigInt(
+      saleLine.inventoryQuantityScaled ?? saleLine.quantityScaled,
+    );
+    if (movementQuantity >= 0n || -movementQuantity !== lineInventoryQuantity) {
+      throw new DatabaseError(
+        'Sale movement cost basis does not reconcile to its base inventory quantity.',
+      );
+    }
+
     const applied = await applyMovementWithin(
       tx,
       tenant,
