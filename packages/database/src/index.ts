@@ -80,6 +80,38 @@ export type {
   CouponCreateRequest,
   CouponUpdateRequest,
 } from './administration/promotions.js';
+
+export {
+  RetailAdminRefusedError,
+  readRetailProductCommercialConfig,
+  createRetailProductPackage,
+  updateRetailProductPackage,
+  addRetailProductBarcode,
+  updateRetailBasePrice,
+  listRetailPriceLists,
+  createRetailPriceList,
+  updateRetailPriceList,
+  createRetailPriceListEntry,
+  updateRetailPriceListEntry,
+  deleteRetailPriceListEntry,
+} from './administration/retail-pricing.js';
+export type {
+  RetailAdminRefusal,
+  RetailAdminActor,
+  RetailAdminBarcode,
+  RetailAdminPackage,
+  RetailProductCommercialConfig,
+  RetailPriceListEntry,
+  RetailPriceList,
+  CreatePackageRequest,
+  UpdatePackageRequest,
+  AddBarcodeRequest,
+  UpdateBasePriceRequest,
+  CreatePriceListRequest,
+  UpdatePriceListRequest,
+  CreatePriceListEntryRequest,
+  UpdatePriceListEntryRequest,
+} from './administration/retail-pricing.js';
 export {
   MAX_MERCHANT_SALES_PAGE,
   listMerchantSales,

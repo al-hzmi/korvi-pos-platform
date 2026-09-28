@@ -57,6 +57,19 @@ async function lockRetailPricingPolicyShared(tx: TransactionClient, tenant: stri
       ) AS policy_lock`;
 }
 
+export async function lockRetailPricingPolicyExclusiveWithin(
+  tx: TransactionClient,
+  tenant: string,
+): Promise<void> {
+  await tx.$queryRaw<{ locked: number }[]>`
+    SELECT 1::int4 AS "locked"
+      FROM (
+        SELECT pg_advisory_xact_lock(
+          hashtextextended('korvi:retail-pricing-policy:' || ${tenant}, 0)
+        )
+      ) AS policy_lock`;
+}
+
 async function lockProduct(
   tx: TransactionClient,
   tenant: string,

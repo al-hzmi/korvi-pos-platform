@@ -33,6 +33,7 @@ import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { createNoReceiptExchangeService } from './no-receipt-exchange/service.js';
 import { createMerchantPromotionAdminService } from './promotions/service.js';
+import { createMerchantRetailAdminService } from './retail-admin/service.js';
 import { createMerchantCategoryMigrationService } from './migration/category-import-service.js';
 import { createMerchantCustomerMigrationService } from './migration/customer-import-service.js';
 import { createMerchantProductMigrationService } from './migration/product-import-service.js';
@@ -66,6 +67,7 @@ import { registerSupplierMigrationRoutes } from './routes/supplier-migration.js'
 import { registerOpeningInventoryMigrationRoutes } from './routes/opening-inventory-migration.js';
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerPromotionAdminRoutes } from './routes/promotions-admin.js';
+import { registerRetailAdminRoutes } from './routes/retail-admin.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerRestaurantPreparationRoutes } from './routes/restaurant-preparation.js';
 import { registerRestaurantRecipeRoutes } from './routes/restaurant-recipes.js';
@@ -94,6 +96,7 @@ import type { PlatformService } from './platform/service.js';
 import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantPromotionAdminService } from './promotions/service.js';
+import type { MerchantRetailAdminService } from './retail-admin/service.js';
 import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
 import type { MerchantPreparationService } from './restaurant/preparation-service.js';
 import type { MerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
@@ -138,6 +141,8 @@ export interface ServerDeps {
   readonly purchasing?: MerchantPurchasingService;
   /** Merchant promotion/coupon configuration authority, guarded by promotion.manage. */
   readonly promotionAdmin?: MerchantPromotionAdminService;
+  /** V2-3 package, barcode, base-price and contextual price-list administration. */
+  readonly retailAdmin?: MerchantRetailAdminService;
   /** Read-only onboarding readiness authority. */
   readonly onboarding?: MerchantOnboardingService;
   /** P0 customer-migration orchestration; tenant identity is session-derived. */
@@ -418,6 +423,39 @@ function lazyPromotionAdminService(config: ApiConfig): MerchantPromotionAdminSer
       resolve().createCoupon(principal, promotionId, input),
     updateCoupon: (principal, couponId, input) =>
       resolve().updateCoupon(principal, couponId, input),
+  };
+}
+
+function lazyRetailAdminService(config: ApiConfig): MerchantRetailAdminService {
+  let built: MerchantRetailAdminService | null = null;
+
+  const resolve = (): MerchantRetailAdminService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRetailAdminService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    productCommercial: (principal, productId) =>
+      resolve().productCommercial(principal, productId),
+    createPackage: (principal, input) => resolve().createPackage(principal, input),
+    updatePackage: (principal, packageId, input) =>
+      resolve().updatePackage(principal, packageId, input),
+    addBarcode: (principal, input) => resolve().addBarcode(principal, input),
+    updateBasePrice: (principal, productId, input) =>
+      resolve().updateBasePrice(principal, productId, input),
+    priceLists: (principal) => resolve().priceLists(principal),
+    createPriceList: (principal, input) => resolve().createPriceList(principal, input),
+    updatePriceList: (principal, priceListId, input) =>
+      resolve().updatePriceList(principal, priceListId, input),
+    createPriceListEntry: (principal, priceListId, input) =>
+      resolve().createPriceListEntry(principal, priceListId, input),
+    updatePriceListEntry: (principal, entryId, input) =>
+      resolve().updatePriceListEntry(principal, entryId, input),
+    deletePriceListEntry: (principal, entryId, expectedRevision) =>
+      resolve().deletePriceListEntry(principal, entryId, expectedRevision),
   };
 }
 
@@ -871,6 +909,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerPromotionAdminRoutes(app, {
     service: deps.promotionAdmin ?? lazyPromotionAdminService(config),
+    guards,
+  });
+  registerRetailAdminRoutes(app, {
+    service: deps.retailAdmin ?? lazyRetailAdminService(config),
     guards,
   });
   registerBootstrapRoutes(app, {
