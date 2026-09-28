@@ -96,8 +96,10 @@ function purchaseLineRemainingDisplay(line: PurchaseOrderLine): string {
 function purchaseLineReceivedDisplay(line: PurchaseOrderLine): string {
   if (
     (line.packageId ?? null) !== null &&
-    line.commercialQuantityScaled != null &&
-    line.remainingCommercialQuantityScaled != null
+    line.commercialQuantityScaled !== null &&
+    line.commercialQuantityScaled !== undefined &&
+    line.remainingCommercialQuantityScaled !== null &&
+    line.remainingCommercialQuantityScaled !== undefined
   ) {
     return (
       BigInt(line.commercialQuantityScaled) - BigInt(line.remainingCommercialQuantityScaled)
