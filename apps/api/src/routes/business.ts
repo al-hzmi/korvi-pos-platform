@@ -33,6 +33,7 @@ import type {
   AuthenticatedPrincipal,
   DashboardRepository,
   ProductRepository,
+  RetailPricingRepository,
   RestaurantFloorRepository,
   NoReceiptExchangeRecord,
   ShiftRepository,
@@ -56,6 +57,8 @@ export interface BusinessDeps {
   readonly tenants: TenantRepository;
   readonly dashboard: DashboardRepository;
   readonly products: ProductRepository;
+  /** V2-3 commercial selling-unit read authority. */
+  readonly retailPricing?: RetailPricingRepository;
   readonly shifts: ShiftRepository;
   readonly terminals: TerminalRepository;
   readonly restaurantFloor: RestaurantFloorRepository;
@@ -435,14 +438,44 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
 
       const scope = scopeOf(principal);
       const term = (parsed.data.q ?? '').trim();
-      const products =
-        term === ''
-          ? await deps.products.list(scope, parsed.data.limit)
-          : await deps.products.search(scope, { term, limit: parsed.data.limit });
+      const scannedCode = /^[0-9]{6,14}$/.test(term);
+      const exactSellingUnit =
+        term === '' || deps.retailPricing === undefined
+          ? null
+          : await deps.retailPricing.resolveBarcode(scope, term);
+
+      let products;
+      if (exactSellingUnit !== null) {
+        products = [exactSellingUnit.product];
+      } else if (scannedCode && deps.retailPricing !== undefined) {
+        // Under V2-3 an inactive package barcode must never fall through and be
+        // interpreted as the base product. A numeric SKU is still a valid exact
+        // base-unit lookup.
+        const exactSku = await deps.products.findBySku(scope, term);
+        products = exactSku === null ? [] : [exactSku];
+      } else {
+        products =
+          term === ''
+            ? await deps.products.list(scope, parsed.data.limit)
+            : await deps.products.search(scope, { term, limit: parsed.data.limit });
+      }
 
       // Listing is not filtered by the repository, so an inactive product that
       // is no longer sellable is dropped here rather than offered to a cashier.
       const sellable = products.filter((product) => product.isActive);
+      const packages =
+        deps.retailPricing === undefined
+          ? []
+          : await deps.retailPricing.listPackagesForProducts(
+              scope,
+              sellable.map((product) => product.id),
+            );
+      const packagesByProduct = new Map<string, typeof packages>();
+      for (const packageRow of packages) {
+        const current = packagesByProduct.get(packageRow.productId) ?? [];
+        packagesByProduct.set(packageRow.productId, [...current, packageRow]);
+      }
+
       return reply.code(200).send({
         products: sellable.map((product) => ({
           id: product.id,
@@ -458,6 +491,20 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
           priceMinor: product.priceMinor,
           vatBasisPoints: Number(product.vatBasisPoints),
           primaryBarcode: product.primaryBarcode,
+          barcodes: product.barcodes,
+          packages: (packagesByProduct.get(product.id) ?? []).map((packageRow) => ({
+            id: packageRow.id,
+            code: packageRow.code,
+            nameAr: packageRow.nameAr,
+            nameEn: packageRow.nameEn,
+            unitLabel: packageRow.unitLabel,
+            baseQuantityScaled: packageRow.baseQuantityScaled,
+            barcodes: packageRow.barcodes,
+            revision: packageRow.revision,
+          })),
+          ...(exactSellingUnit?.product.id === product.id
+            ? { matchedPackageId: exactSellingUnit.package?.id ?? null }
+            : {}),
           trackInventory: product.trackInventory,
         })),
         limit: parsed.data.limit,

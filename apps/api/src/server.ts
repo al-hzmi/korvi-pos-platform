@@ -234,6 +234,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       tenants,
       dashboard,
       products,
+      retailPricing,
       shifts,
       terminals,
       restaurantFloor,
@@ -291,6 +292,14 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
       findByBarcode: (scope, barcode) => resolve().products.findByBarcode(scope, barcode),
       search: (scope, query) => resolve().products.search(scope, query),
       list: (scope, limit) => resolve().products.list(scope, limit),
+    },
+    retailPricing: {
+      resolve: (scope, input) => resolve().retailPricing!.resolve(scope, input),
+      resolveBarcode: (scope, barcode) => resolve().retailPricing!.resolveBarcode(scope, barcode),
+      listPackagesForProduct: (scope, productId) =>
+        resolve().retailPricing!.listPackagesForProduct(scope, productId),
+      listPackagesForProducts: (scope, productIds) =>
+        resolve().retailPricing!.listPackagesForProducts(scope, productIds),
     },
     shifts: {
       findById: (scope, id) => resolve().shifts.findById(scope, id),

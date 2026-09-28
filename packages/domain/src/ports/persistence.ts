@@ -199,6 +199,8 @@ export interface RetailPackageRecord {
   readonly nameEn: string | null;
   readonly unitLabel: string;
   readonly baseQuantityScaled: string;
+  /** Every tenant-unique barcode that selects this exact commercial package. */
+  readonly barcodes: readonly string[];
   readonly isActive: boolean;
   readonly revision: string;
 }
@@ -245,6 +247,11 @@ export interface RetailPricingRepository {
   listPackagesForProduct(
     scope: TenantScope,
     productId: string,
+  ): Promise<readonly RetailPackageRecord[]>;
+  /** Active package metadata for a bounded product set, in one tenant transaction. */
+  listPackagesForProducts(
+    scope: TenantScope,
+    productIds: readonly string[],
   ): Promise<readonly RetailPackageRecord[]>;
 }
 

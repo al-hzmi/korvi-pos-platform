@@ -53,6 +53,7 @@ interface PackageRow {
   baseQuantityScaled: bigint;
   isActive: boolean;
   revision: bigint;
+  barcodes: { barcode: string }[];
 }
 
 function productToDomain(scope: TenantScope, row: ProductRow): Product {
@@ -87,6 +88,7 @@ function packageToDomain(row: PackageRow): RetailPackageRecord {
     nameEn: row.nameEn,
     unitLabel: row.unitLabel,
     baseQuantityScaled: row.baseQuantityScaled.toString(),
+    barcodes: row.barcodes.map((entry) => entry.barcode),
     isActive: row.isActive,
     revision: row.revision.toString(),
   };
@@ -114,6 +116,9 @@ export function createRetailPricingRepository(prisma: PrismaClient): RetailPrici
                   id: input.packageId,
                   productId: input.productId,
                   isActive: true,
+                },
+                include: {
+                  barcodes: { select: { barcode: true }, orderBy: { barcode: 'asc' } },
                 },
               });
         if (input.packageId !== null && packageRow === null) return null;
@@ -203,7 +208,11 @@ export function createRetailPricingRepository(prisma: PrismaClient): RetailPrici
           where: { tenantId: tenant, barcode: normalized },
           include: {
             product: { include: PRODUCT_INCLUDE },
-            package: true,
+            package: {
+              include: {
+                barcodes: { select: { barcode: true }, orderBy: { barcode: 'asc' } },
+              },
+            },
           },
         });
         if (row === null || !row.product.isActive) return null;
@@ -222,7 +231,26 @@ export function createRetailPricingRepository(prisma: PrismaClient): RetailPrici
         const tenant = tenantParam(scope);
         const rows = await tx.productPackage.findMany({
           where: { tenantId: tenant, productId, isActive: true },
+          include: {
+            barcodes: { select: { barcode: true }, orderBy: { barcode: 'asc' } },
+          },
           orderBy: [{ code: 'asc' }, { id: 'asc' }],
+        });
+        return rows.map(packageToDomain);
+      });
+    },
+
+    async listPackagesForProducts(scope, productIds) {
+      const ids = [...new Set(productIds)];
+      if (ids.length === 0) return [];
+      return withTenant(prisma, scope.tenantId, async (tx) => {
+        const tenant = tenantParam(scope);
+        const rows = await tx.productPackage.findMany({
+          where: { tenantId: tenant, productId: { in: ids }, isActive: true },
+          include: {
+            barcodes: { select: { barcode: true }, orderBy: { barcode: 'asc' } },
+          },
+          orderBy: [{ productId: 'asc' }, { code: 'asc' }, { id: 'asc' }],
         });
         return rows.map(packageToDomain);
       });
