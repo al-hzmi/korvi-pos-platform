@@ -51,7 +51,7 @@ describe('deterministic outgoing lot selection', () => {
     {
       lotId: LOT_A,
       availableQuantityScaled: 2_000n,
-      firstReceivedAtMs: 100,
+      firstObservedAtMs: 100,
       dateKind: 'expiry' as const,
       dateValue: '2026-10-05',
       status: 'active' as const,
@@ -59,7 +59,7 @@ describe('deterministic outgoing lot selection', () => {
     {
       lotId: LOT_B,
       availableQuantityScaled: 3_000n,
-      firstReceivedAtMs: 200,
+      firstObservedAtMs: 200,
       dateKind: 'best-before' as const,
       dateValue: '2026-10-01',
       status: 'active' as const,
@@ -67,7 +67,7 @@ describe('deterministic outgoing lot selection', () => {
     {
       lotId: LOT_C,
       availableQuantityScaled: 5_000n,
-      firstReceivedAtMs: 50,
+      firstObservedAtMs: 50,
       dateKind: null,
       dateValue: null,
       status: 'active' as const,
@@ -127,8 +127,8 @@ describe('deterministic outgoing lot selection', () => {
 
   it('uses lot id as the final deterministic tie break', () => {
     const equal = [
-      { ...base[1]!, lotId: LOT_B, firstReceivedAtMs: 100, dateValue: '2026-10-01' },
-      { ...base[1]!, lotId: LOT_A, firstReceivedAtMs: 100, dateValue: '2026-10-01' },
+      { ...base[1]!, lotId: LOT_B, firstObservedAtMs: 100, dateValue: '2026-10-01' },
+      { ...base[1]!, lotId: LOT_A, firstObservedAtMs: 100, dateValue: '2026-10-01' },
     ];
     expect(
       selectLotAllocations({

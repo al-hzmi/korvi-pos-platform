@@ -29,7 +29,7 @@ export class LotDomainError extends DomainError {
 export interface LotAvailabilityCandidate {
   readonly lotId: string;
   readonly availableQuantityScaled: bigint;
-  readonly firstReceivedAtMs: number;
+  readonly firstObservedAtMs: number;
   readonly dateKind: LotDateKind | null;
   readonly dateValue: string | null;
   readonly status: LotLifecycleStatus;
@@ -113,10 +113,10 @@ function assertCandidate(candidate: LotAvailabilityCandidate): {
       'Lot availability cannot be negative in an automatic-selection candidate.',
     );
   }
-  if (!Number.isSafeInteger(candidate.firstReceivedAtMs) || candidate.firstReceivedAtMs < 0) {
+  if (!Number.isSafeInteger(candidate.firstObservedAtMs) || candidate.firstObservedAtMs < 0) {
     throw new LotDomainError(
       'invalid-received-at',
-      'firstReceivedAtMs must be a non-negative safe integer.',
+      'firstObservedAtMs must be a non-negative safe integer.',
     );
   }
   if ((candidate.dateKind === null) !== (candidate.dateValue === null)) {
@@ -171,8 +171,8 @@ export function selectLotAllocations(input: {
         return left.day - right.day;
       }
     }
-    if (left.candidate.firstReceivedAtMs !== right.candidate.firstReceivedAtMs) {
-      return left.candidate.firstReceivedAtMs - right.candidate.firstReceivedAtMs;
+    if (left.candidate.firstObservedAtMs !== right.candidate.firstObservedAtMs) {
+      return left.candidate.firstObservedAtMs - right.candidate.firstObservedAtMs;
     }
     return left.id.localeCompare(right.id);
   });

@@ -81,7 +81,9 @@ Required facts:
 - dateValue: date-only, nullable;
 - status: `active | blocked | closed`;
 - revision for status changes;
-- createdAt / firstReceivedAt.
+- createdAt / firstObservedAt.
+
+firstObservedAt is the first time Korvi observed that lot identity. For a historical-unknown baseline it is **not** claimed to be an actual receipt time.
 
 Product, external batch reference and date facts are immutable after lot creation.
 
@@ -194,14 +196,14 @@ FEFO:
 2. exclude expired `expiry` lots;
 3. known dateValue ascending;
 4. unknown date last;
-5. firstReceivedAt ascending;
+5. firstObservedAt ascending;
 6. lot id ascending as final tie-break.
 
 FIFO:
 
 1. exclude blocked/closed lots;
 2. exclude expired `expiry` lots;
-3. firstReceivedAt ascending;
+3. firstObservedAt ascending;
 4. lot id ascending.
 
 Allocation consumes each candidate up to its derived available quantity until the requested base quantity is satisfied.
