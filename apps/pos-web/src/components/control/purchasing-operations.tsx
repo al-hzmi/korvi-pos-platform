@@ -82,20 +82,20 @@ function productName(products: readonly PurchasingProduct[], id: string): string
 }
 
 function purchaseLineOrderedDisplay(line: PurchaseOrderLine): string {
-  return line.packageId === null
+  return (line.packageId ?? null) === null
     ? line.orderedQuantityScaled
     : (line.commercialQuantityScaled ?? line.orderedQuantityScaled);
 }
 
 function purchaseLineRemainingDisplay(line: PurchaseOrderLine): string {
-  return line.packageId === null
+  return (line.packageId ?? null) === null
     ? line.remainingQuantityScaled
     : (line.remainingCommercialQuantityScaled ?? line.remainingQuantityScaled);
 }
 
 function purchaseLineReceivedDisplay(line: PurchaseOrderLine): string {
   if (
-    line.packageId !== null &&
+    (line.packageId ?? null) !== null &&
     line.commercialQuantityScaled !== null &&
     line.remainingCommercialQuantityScaled !== null
   ) {
@@ -107,7 +107,7 @@ function purchaseLineReceivedDisplay(line: PurchaseOrderLine): string {
 }
 
 function purchaseLineUnitSuffix(line: PurchaseOrderLine): string {
-  return line.packageId === null
+  return (line.packageId ?? null) === null
     ? ''
     : ` — ${line.packageCode ?? 'تعبئة'} / ${line.packageUnitLabel ?? 'وحدة'}`;
 }
@@ -484,12 +484,12 @@ export function OrderDetail({
                 {productName(products, line.productId)}:
                 <Numeric
                   value={formatScaled(
-                    line.packageId === null
+                    (line.packageId ?? null) === null
                       ? line.acceptedQuantityScaled
                       : (line.acceptedCommercialQuantityScaled ?? line.acceptedQuantityScaled),
                   )}
                 />
-                {line.packageId === null
+                {(line.packageId ?? null) === null
                   ? ''
                   : ` — ${line.packageCode ?? 'تعبئة'} / ${line.packageUnitLabel ?? 'وحدة'}`}
               </span>
@@ -1070,10 +1070,10 @@ export function PurchasingOperations({
               const selected = resolveOrderLineProduct(activeProducts, line.productId, index);
               const activePackages =
                 selected?.productType === 'unit'
-                  ? selected.packages.filter((packageRow) => packageRow.isActive)
+                  ? (selected.packages ?? []).filter((packageRow) => packageRow.isActive)
                   : [];
               const selectedPackage =
-                line.packageId === null
+                (line.packageId ?? null) === null
                   ? null
                   : activePackages.find((packageRow) => packageRow.id === line.packageId);
               return (

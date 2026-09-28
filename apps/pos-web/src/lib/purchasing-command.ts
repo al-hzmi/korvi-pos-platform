@@ -146,7 +146,7 @@ export function buildPurchaseOrderIntent(
     const packageRow =
       line.packageId === null
         ? null
-        : line.product.packages.find((candidate) => candidate.id === line.packageId);
+        : (line.product.packages ?? []).find((candidate) => candidate.id === line.packageId);
     if (line.packageId !== null) {
       if (line.product.productType !== 'unit' || packageRow === undefined || !packageRow.isActive) {
         return { ok: false, message: 'وحدة التعبئة المختارة لم تعد متاحة لهذا الصنف.' };
@@ -216,7 +216,7 @@ export function buildPurchaseReceiptIntent(
     if (product === undefined) {
       return { ok: false, message: 'تعذر إثبات نوع أحد أصناف الأمر. حدّث بيانات المشتريات.' };
     }
-    const commercialPackage = line.packageId !== null;
+    const commercialPackage = (line.packageId ?? null) !== null;
     const quantity = parseInventoryQuantityToScaled(
       draft,
       commercialPackage ? 'unit' : product.productType,

@@ -1131,7 +1131,7 @@ export interface CheckoutPreviewResponse {
   readonly totalMinor: string;
   readonly lines: readonly {
     readonly productId: string;
-    readonly packageId: string | null;
+    readonly packageId?: string | null;
     readonly unitPriceMinor: string;
     readonly quantityScaled: string;
     readonly inventoryQuantityScaled: string;
@@ -1421,7 +1421,8 @@ export interface PurchasingProduct {
   readonly unitLabel: string;
   readonly isActive: boolean;
   readonly trackInventory: boolean;
-  readonly packages: readonly PurchasingProductPackage[];
+  /** Additive V2-3 field; absent on legacy cached/test DTOs. */
+  readonly packages?: readonly PurchasingProductPackage[];
 }
 
 export interface PurchasingSupplier {
@@ -1442,16 +1443,16 @@ export type PurchaseOrderStatus = 'open' | 'partially_received' | 'received';
 export interface PurchaseOrderLine {
   readonly id: string;
   readonly productId: string;
-  readonly packageId: string | null;
-  readonly commercialQuantityScaled: string | null;
-  readonly packageCode: string | null;
-  readonly packageUnitLabel: string | null;
-  readonly packageBaseQuantityScaled: string | null;
+  readonly packageId?: string | null;
+  readonly commercialQuantityScaled?: string | null;
+  readonly packageCode?: string | null;
+  readonly packageUnitLabel?: string | null;
+  readonly packageBaseQuantityScaled?: string | null;
   /** Base Product inventory quantities. */
   readonly orderedQuantityScaled: string;
   readonly receivedQuantityScaled: string;
   readonly remainingQuantityScaled: string;
-  readonly remainingCommercialQuantityScaled: string | null;
+  readonly remainingCommercialQuantityScaled?: string | null;
 }
 
 export interface PurchaseOrder {
@@ -1524,11 +1525,11 @@ export interface PurchaseReceiptLineResult {
   readonly id: string;
   readonly purchaseOrderLineId: string;
   readonly productId: string;
-  readonly packageId: string | null;
-  readonly acceptedCommercialQuantityScaled: string | null;
-  readonly packageCode: string | null;
-  readonly packageUnitLabel: string | null;
-  readonly packageBaseQuantityScaled: string | null;
+  readonly packageId?: string | null;
+  readonly acceptedCommercialQuantityScaled?: string | null;
+  readonly packageCode?: string | null;
+  readonly packageUnitLabel?: string | null;
+  readonly packageBaseQuantityScaled?: string | null;
   /** Base Product inventory quantities. */
   readonly acceptedQuantityScaled: string;
   readonly orderedQuantityScaled: string;
