@@ -6,6 +6,7 @@ import {
   assertPurchasingQuantityShape,
   derivePurchaseOrderStatus,
   newId,
+  packageInventoryQuantityScaled,
   validatePurchaseReceiptRequest,
 } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
@@ -104,6 +105,13 @@ export interface PurchaseReceiptLineResult {
   readonly id: string;
   readonly purchaseOrderLineId: string;
   readonly productId: string;
+  readonly packageId: string | null;
+  /** Commercial quantity accepted. Null only on pre-V2-3 frozen snapshots. */
+  readonly acceptedCommercialQuantityScaled: string | null;
+  readonly packageCode: string | null;
+  readonly packageUnitLabel: string | null;
+  readonly packageBaseQuantityScaled: string | null;
+  /** Authoritative base Product quantity accepted. */
   readonly acceptedQuantityScaled: string;
   readonly orderedQuantityScaled: string;
   readonly beforeReceivedQuantityScaled: string;
@@ -135,6 +143,11 @@ interface LockedOrder {
 interface LockedOrderLine {
   readonly id: string;
   readonly productId: string;
+  readonly packageId: string | null;
+  readonly commercialQuantityScaled: bigint | null;
+  readonly packageCode: string | null;
+  readonly packageUnitLabel: string | null;
+  readonly packageBaseQuantityScaled: bigint | null;
   readonly orderedQuantityScaled: bigint;
   readonly receivedQuantityScaled: bigint;
 }
@@ -188,9 +201,20 @@ async function lockOrderLines(
   const locked = new Map<string, LockedOrderLine>();
   for (const { id } of ids) {
     const rows = await tx.$queryRaw<
-      { productId: string; orderedQuantityScaled: bigint; receivedQuantityScaled: bigint }[]
+      {
+        productId: string;
+        packageId: string | null;
+        commercialQuantityScaled: bigint | null;
+        packageCode: string | null;
+        packageUnitLabel: string | null;
+        packageBaseQuantityScaled: bigint | null;
+        orderedQuantityScaled: bigint;
+        receivedQuantityScaled: bigint;
+      }[]
     >`
-      SELECT "productId", "orderedQuantityScaled", "receivedQuantityScaled"
+      SELECT "productId","packageId","commercialQuantityScaled","packageCode",
+             "packageUnitLabel","packageBaseQuantityScaled",
+             "orderedQuantityScaled","receivedQuantityScaled"
         FROM "purchase_order_lines"
        WHERE "tenantId" = ${tenant}::uuid AND "id" = ${id}::uuid
        FOR UPDATE`;
@@ -204,6 +228,11 @@ async function lockOrderLines(
     locked.set(id, {
       id,
       productId: row.productId,
+      packageId: row.packageId,
+      commercialQuantityScaled: row.commercialQuantityScaled,
+      packageCode: row.packageCode,
+      packageUnitLabel: row.packageUnitLabel,
+      packageBaseQuantityScaled: row.packageBaseQuantityScaled,
       orderedQuantityScaled: row.orderedQuantityScaled,
       receivedQuantityScaled: row.receivedQuantityScaled,
     });
@@ -241,6 +270,19 @@ function receiptFromSnapshot(value: unknown): PurchaseReceiptResult {
       id: snapshotString(line, 'id'),
       purchaseOrderLineId: snapshotString(line, 'purchaseOrderLineId'),
       productId: snapshotString(line, 'productId'),
+      packageId: Object.hasOwn(line, 'packageId') ? snapshotNullableString(line, 'packageId') : null,
+      acceptedCommercialQuantityScaled: Object.hasOwn(line, 'acceptedCommercialQuantityScaled')
+        ? snapshotNullableString(line, 'acceptedCommercialQuantityScaled')
+        : null,
+      packageCode: Object.hasOwn(line, 'packageCode')
+        ? snapshotNullableString(line, 'packageCode')
+        : null,
+      packageUnitLabel: Object.hasOwn(line, 'packageUnitLabel')
+        ? snapshotNullableString(line, 'packageUnitLabel')
+        : null,
+      packageBaseQuantityScaled: Object.hasOwn(line, 'packageBaseQuantityScaled')
+        ? snapshotNullableString(line, 'packageBaseQuantityScaled')
+        : null,
       acceptedQuantityScaled: snapshotString(line, 'acceptedQuantityScaled'),
       orderedQuantityScaled: snapshotString(line, 'orderedQuantityScaled'),
       beforeReceivedQuantityScaled: snapshotString(line, 'beforeReceivedQuantityScaled'),
@@ -319,8 +361,29 @@ export async function recordPurchaseReceipt(
         if (held === undefined) {
           throw new PurchasingRefusedError('unknown-purchase-order-line', line.purchaseOrderLineId);
         }
+        const acceptedCommercial = line.acceptedQuantityScaled;
+        let acceptedInventory: bigint;
+
+        if (held.packageId === null) {
+          acceptedInventory = acceptedCommercial;
+        } else {
+          if (
+            held.packageBaseQuantityScaled === null ||
+            held.packageCode === null ||
+            held.packageUnitLabel === null ||
+            held.commercialQuantityScaled === null
+          ) {
+            throw new Error('Purchase-order package snapshot invariant failure.');
+          }
+          acceptedInventory = packageInventoryQuantityScaled({
+            commercialQuantityScaled: acceptedCommercial,
+            packageBaseQuantityScaled: held.packageBaseQuantityScaled,
+          });
+        }
+
         return {
-          accepted: line.acceptedQuantityScaled,
+          acceptedCommercial,
+          acceptedInventory,
           inventoryValueMinor: line.inventoryValueMinor,
           line: held,
         };
@@ -342,7 +405,11 @@ export async function recordPurchaseReceipt(
         if (fact === undefined) {
           throw new PurchasingRefusedError('unknown-product', entry.line.productId);
         }
-        assertPurchasingQuantityShape(entry.accepted, fact.productType, 'acceptedQuantityScaled');
+        assertPurchasingQuantityShape(
+          entry.acceptedInventory,
+          fact.productType,
+          'acceptedQuantityScaled',
+        );
 
         /*
          * The over-receipt rule, decided here and nowhere else.
@@ -358,7 +425,7 @@ export async function recordPurchaseReceipt(
          * over-receipt policy until one is separately designed and approved.
          */
         const remaining = entry.line.orderedQuantityScaled - entry.line.receivedQuantityScaled;
-        if (entry.accepted > remaining) {
+        if (entry.acceptedInventory > remaining) {
           throw new PurchasingRefusedError('over-receipt', entry.line.id);
         }
       }
@@ -397,7 +464,7 @@ export async function recordPurchaseReceipt(
       const results: PurchaseReceiptLineResult[] = [];
       for (const entry of requested) {
         const beforeReceived = entry.line.receivedQuantityScaled;
-        const afterReceived = beforeReceived + entry.accepted;
+        const afterReceived = beforeReceived + entry.acceptedInventory;
         const balance = lockedOrThrow(balances, {
           branchId: order.branchId,
           productId: entry.line.productId,
@@ -422,7 +489,7 @@ export async function recordPurchaseReceipt(
           entry.inventoryValueMinor === null
             ? undefined
             : {
-                knownQuantityScaled: entry.accepted,
+                knownQuantityScaled: entry.acceptedInventory,
                 unknownQuantityScaled: 0n,
                 knownValueMinor: entry.inventoryValueMinor,
               };
@@ -434,7 +501,7 @@ export async function recordPurchaseReceipt(
             branchId: order.branchId,
             productId: entry.line.productId,
             kind: PURCHASING_MOVEMENT_KIND,
-            quantityScaled: entry.accepted.toString(),
+            quantityScaled: entry.acceptedInventory.toString(),
             reason: null,
             sourceType: PURCHASING_SOURCE_TYPES.purchaseReceipt,
             sourceId: receiptId,
@@ -455,7 +522,12 @@ export async function recordPurchaseReceipt(
             purchaseReceiptId: receiptId,
             purchaseOrderLineId: entry.line.id,
             productId: entry.line.productId,
-            acceptedQuantityScaled: entry.accepted,
+            packageId: entry.line.packageId,
+            acceptedCommercialQuantityScaled: entry.acceptedCommercial,
+            packageCode: entry.line.packageCode,
+            packageUnitLabel: entry.line.packageUnitLabel,
+            packageBaseQuantityScaled: entry.line.packageBaseQuantityScaled,
+            acceptedQuantityScaled: entry.acceptedInventory,
             orderedQuantityScaled: entry.line.orderedQuantityScaled,
             beforeReceivedQuantityScaled: beforeReceived,
             afterReceivedQuantityScaled: afterReceived,
@@ -474,7 +546,15 @@ export async function recordPurchaseReceipt(
           id: receiptLineId,
           purchaseOrderLineId: entry.line.id,
           productId: entry.line.productId,
-          acceptedQuantityScaled: entry.accepted.toString(),
+          packageId: entry.line.packageId,
+          acceptedCommercialQuantityScaled: entry.acceptedCommercial.toString(),
+          packageCode: entry.line.packageCode,
+          packageUnitLabel: entry.line.packageUnitLabel,
+          packageBaseQuantityScaled:
+            entry.line.packageBaseQuantityScaled === null
+              ? null
+              : entry.line.packageBaseQuantityScaled.toString(),
+          acceptedQuantityScaled: entry.acceptedInventory.toString(),
           orderedQuantityScaled: entry.line.orderedQuantityScaled.toString(),
           beforeReceivedQuantityScaled: beforeReceived.toString(),
           afterReceivedQuantityScaled: afterReceived.toString(),
@@ -521,6 +601,7 @@ export async function recordPurchaseReceipt(
           supplierId: order.supplierId,
           branchId: order.branchId,
           lineCount: results.length,
+          packageLineCount: results.filter((line) => line.packageId !== null).length,
           purchaseOrderStatus: status,
           reference: plan.reference,
         },
@@ -621,6 +702,15 @@ export async function listPurchaseReceipts(
         id: line.id,
         purchaseOrderLineId: line.purchaseOrderLineId,
         productId: line.productId,
+        packageId: line.packageId,
+        acceptedCommercialQuantityScaled:
+          line.acceptedCommercialQuantityScaled === null
+            ? null
+            : line.acceptedCommercialQuantityScaled.toString(),
+        packageCode: line.packageCode,
+        packageUnitLabel: line.packageUnitLabel,
+        packageBaseQuantityScaled:
+          line.packageBaseQuantityScaled === null ? null : line.packageBaseQuantityScaled.toString(),
         acceptedQuantityScaled: line.acceptedQuantityScaled.toString(),
         orderedQuantityScaled: line.orderedQuantityScaled.toString(),
         beforeReceivedQuantityScaled: line.beforeReceivedQuantityScaled.toString(),

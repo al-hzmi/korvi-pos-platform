@@ -286,7 +286,19 @@ export function validateSupplierUpdate(request: SupplierUpdateRequest): Validate
 
 export interface PurchaseOrderLineRequest {
   readonly productId: string;
-  /** Positive, scaled by 1000. What was asked for, not what arrived. */
+  /**
+   * Optional commercial package identity. Null/omitted means the base Product
+   * selling unit. The server resolves and snapshots the package conversion;
+   * callers never submit a conversion factor.
+   */
+  readonly packageId?: string | null;
+  /**
+   * Positive commercial selling-unit quantity, scaled by 1000.
+   *
+   * For a base Product this is also the base inventory quantity. For a package,
+   * 1000 means one package and persistence derives the base ordered quantity
+   * from the locked package factor (ADR-0038).
+   */
   readonly orderedQuantityScaled: string;
 }
 
@@ -302,6 +314,8 @@ export interface PurchaseOrderRequest {
 
 export interface ValidatedPurchaseOrderLine {
   readonly productId: string;
+  readonly packageId: string | null;
+  /** Commercial selling-unit quantity; persistence derives base quantity. */
   readonly orderedQuantityScaled: bigint;
 }
 
@@ -328,20 +342,25 @@ export function validatePurchaseOrderRequest(
   const branchId = purchasingUuid(request.branchId, 'branchId');
   const reference = normalizedReference(request.reference);
 
-  const products = request.lines.map((line) => purchasingUuid(line.productId, 'productId'));
-  assertLineCount(products.length);
-  if (new Set(products).size !== products.length) {
+  const normalizedLines = request.lines.map((line) => ({
+    ...line,
+    productId: purchasingUuid(line.productId, 'productId'),
+    packageId:
+      line.packageId === undefined || line.packageId === null
+        ? null
+        : purchasingUuid(line.packageId, 'packageId'),
+  }));
+  assertLineCount(normalizedLines.length);
+  if (new Set(normalizedLines.map((line) => line.productId)).size !== normalizedLines.length) {
     throw new PurchasingRequestError(
       'duplicate-product',
       'A product may appear at most once in a purchase order.',
     );
   }
 
-  const lines = byKey(
-    request.lines.map((line, index) => ({ ...line, productId: products[index] ?? '' })),
-    (line) => line.productId,
-  ).map((line) => ({
+  const lines = byKey(normalizedLines, (line) => line.productId).map((line) => ({
     productId: line.productId,
+    packageId: line.packageId,
     orderedQuantityScaled: parsePositiveScaled(line.orderedQuantityScaled, 'orderedQuantityScaled'),
   }));
 
@@ -528,12 +547,29 @@ export function canonicalSupplierUpdateForm(request: SupplierUpdateRequest): rea
 
 export function canonicalPurchaseOrderForm(request: PurchaseOrderRequest): readonly unknown[] {
   const validated = validatePurchaseOrderRequest(request);
+
+  // Backward compatibility is idempotency authority. A base-unit retry created
+  // before V2-3 must hash byte-for-byte as it did before package support.
+  if (validated.lines.every((line) => line.packageId === null)) {
+    return [
+      'purchasing-order-create.v1',
+      validated.supplierId,
+      validated.branchId,
+      validated.reference,
+      validated.lines.map((line) => [line.productId, line.orderedQuantityScaled.toString()]),
+    ];
+  }
+
   return [
-    'purchasing-order-create.v1',
+    'purchasing-order-create.v2',
     validated.supplierId,
     validated.branchId,
     validated.reference,
-    validated.lines.map((line) => [line.productId, line.orderedQuantityScaled.toString()]),
+    validated.lines.map((line) => [
+      line.productId,
+      line.packageId,
+      line.orderedQuantityScaled.toString(),
+    ]),
   ];
 }
 

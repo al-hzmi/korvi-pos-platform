@@ -1,5 +1,6 @@
 import {
   CostingCapacityError,
+  PackagingError,
   PurchasingRequestError,
   requirePrincipalPermission,
   tenantId as brandTenantId,
@@ -150,6 +151,9 @@ async function attempt<T>(work: () => Promise<T>): Promise<PurchasingResult<T>> 
     }
     if (error instanceof CostingCapacityError) {
       return { outcome: 'failure', reason: 'invalid-money', subjectId: null };
+    }
+    if (error instanceof PackagingError) {
+      return { outcome: 'failure', reason: 'invalid-quantity', subjectId: null };
     }
     if (error instanceof PurchasingRefusedError) {
       return { outcome: 'failure', reason: error.detail, subjectId: error.subjectId };

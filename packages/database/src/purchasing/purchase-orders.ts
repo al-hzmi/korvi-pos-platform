@@ -4,6 +4,7 @@ import {
   assertPurchasingQuantityShape,
   derivePurchaseOrderStatus,
   newId,
+  packageInventoryQuantityScaled,
   validatePurchaseOrderRequest,
 } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
@@ -61,9 +62,19 @@ export interface PurchasingActor {
 export interface PurchaseOrderLineRecord {
   readonly id: string;
   readonly productId: string;
+  readonly packageId: string | null;
+  /** Commercial selling-unit quantity. Null only on pre-V2-3 historical rows. */
+  readonly commercialQuantityScaled: string | null;
+  readonly packageCode: string | null;
+  readonly packageUnitLabel: string | null;
+  readonly packageBaseQuantityScaled: string | null;
+  /** Authoritative base Product quantity ordered. */
   readonly orderedQuantityScaled: string;
+  /** Authoritative base Product quantity already received. */
   readonly receivedQuantityScaled: string;
   readonly remainingQuantityScaled: string;
+  /** Remaining commercial selling-unit quantity when V2-3 snapshot exists. */
+  readonly remainingCommercialQuantityScaled: string | null;
 }
 
 export interface PurchaseOrderRecord {
@@ -93,8 +104,22 @@ interface OrderHeaderRow {
 interface OrderLineRow {
   id: string;
   productId: string;
+  packageId: string | null;
+  commercialQuantityScaled: bigint | null;
+  packageCode: string | null;
+  packageUnitLabel: string | null;
+  packageBaseQuantityScaled: bigint | null;
   orderedQuantityScaled: bigint;
   receivedQuantityScaled: bigint;
+}
+
+interface LockedPackageFact {
+  readonly id: string;
+  readonly productId: string;
+  readonly code: string;
+  readonly unitLabel: string;
+  readonly baseQuantityScaled: bigint;
+  readonly isActive: boolean;
 }
 
 /**
@@ -110,6 +135,22 @@ function statusOf(value: string): PurchaseOrderStatus {
   throw new Error(`Unrecognised purchase order status: "${value}".`);
 }
 
+function commercialRemaining(line: OrderLineRow): string | null {
+  if (line.commercialQuantityScaled === null) return null;
+  const remainingBase = line.orderedQuantityScaled - line.receivedQuantityScaled;
+  if (line.packageId === null) return remainingBase.toString();
+
+  const factor = line.packageBaseQuantityScaled;
+  if (factor === null || factor <= 1_000n || factor % 1_000n !== 0n) {
+    throw new Error('Purchase-order package snapshot invariant failure.');
+  }
+  const numerator = remainingBase * 1_000n;
+  if (numerator % factor !== 0n) {
+    throw new Error('Purchase-order package remaining quantity is not exactly representable.');
+  }
+  return (numerator / factor).toString();
+}
+
 function toRecord(header: OrderHeaderRow, lines: readonly OrderLineRow[]): PurchaseOrderRecord {
   return {
     id: header.id,
@@ -121,6 +162,13 @@ function toRecord(header: OrderHeaderRow, lines: readonly OrderLineRow[]): Purch
     lines: lines.map((line) => ({
       id: line.id,
       productId: line.productId,
+      packageId: line.packageId,
+      commercialQuantityScaled:
+        line.commercialQuantityScaled === null ? null : line.commercialQuantityScaled.toString(),
+      packageCode: line.packageCode,
+      packageUnitLabel: line.packageUnitLabel,
+      packageBaseQuantityScaled:
+        line.packageBaseQuantityScaled === null ? null : line.packageBaseQuantityScaled.toString(),
       // Strings, never Numbers. A warehouse quantity in grams reaches 2^53,
       // and JSON would round it on the way out (ADR-0024 §3).
       orderedQuantityScaled: line.orderedQuantityScaled.toString(),
@@ -128,6 +176,7 @@ function toRecord(header: OrderHeaderRow, lines: readonly OrderLineRow[]): Purch
       remainingQuantityScaled: (
         line.orderedQuantityScaled - line.receivedQuantityScaled
       ).toString(),
+      remainingCommercialQuantityScaled: commercialRemaining(line),
     })),
   };
 }
@@ -162,6 +211,11 @@ async function readOrder(
     select: {
       id: true,
       productId: true,
+      packageId: true,
+      commercialQuantityScaled: true,
+      packageCode: true,
+      packageUnitLabel: true,
+      packageBaseQuantityScaled: true,
       orderedQuantityScaled: true,
       receivedQuantityScaled: true,
     },
@@ -191,9 +245,25 @@ function orderFromSnapshot(value: unknown): PurchaseOrderResult {
       lines: snapshotRows(order, 'lines').map((line) => ({
         id: snapshotString(line, 'id'),
         productId: snapshotString(line, 'productId'),
+        packageId: Object.hasOwn(line, 'packageId') ? snapshotNullableString(line, 'packageId') : null,
+        commercialQuantityScaled: Object.hasOwn(line, 'commercialQuantityScaled')
+          ? snapshotNullableString(line, 'commercialQuantityScaled')
+          : null,
+        packageCode: Object.hasOwn(line, 'packageCode')
+          ? snapshotNullableString(line, 'packageCode')
+          : null,
+        packageUnitLabel: Object.hasOwn(line, 'packageUnitLabel')
+          ? snapshotNullableString(line, 'packageUnitLabel')
+          : null,
+        packageBaseQuantityScaled: Object.hasOwn(line, 'packageBaseQuantityScaled')
+          ? snapshotNullableString(line, 'packageBaseQuantityScaled')
+          : null,
         orderedQuantityScaled: snapshotString(line, 'orderedQuantityScaled'),
         receivedQuantityScaled: snapshotString(line, 'receivedQuantityScaled'),
         remainingQuantityScaled: snapshotString(line, 'remainingQuantityScaled'),
+        remainingCommercialQuantityScaled: Object.hasOwn(line, 'remainingCommercialQuantityScaled')
+          ? snapshotNullableString(line, 'remainingCommercialQuantityScaled')
+          : null,
       })),
     },
     replayed: true,
@@ -224,6 +294,40 @@ async function lockSupplier(
   // supplier stays valid: deactivation is an administrative state, not a
   // retroactive claim that the merchant never bought from them (§5).
   if (!row.isActive) throw new PurchasingRefusedError('inactive-supplier', supplierId);
+}
+
+async function lockPackages(
+  tx: TransactionClient,
+  tenant: string,
+  lines: readonly { readonly productId: string; readonly packageId: string | null }[],
+): Promise<Map<string, LockedPackageFact>> {
+  const ids = [
+    ...new Set(
+      lines.flatMap((line) => (line.packageId === null ? [] : [line.packageId])),
+    ),
+  ].sort();
+  const facts = new Map<string, LockedPackageFact>();
+
+  for (const packageId of ids) {
+    const rows = await tx.$queryRaw<
+      {
+        id: string;
+        productId: string;
+        code: string;
+        unitLabel: string;
+        baseQuantityScaled: bigint;
+        isActive: boolean;
+      }[]
+    >`
+      SELECT "id","productId","code","unitLabel","baseQuantityScaled","isActive"
+        FROM "product_packages"
+       WHERE "tenantId" = ${tenant}::uuid AND "id" = ${packageId}::uuid
+       FOR SHARE`;
+    const row = rows.at(0);
+    if (row === undefined) throw new PurchasingRefusedError('unknown-package', packageId);
+    facts.set(packageId, row);
+  }
+  return facts;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,22 +381,49 @@ export async function createPurchaseOrder(
         tenant,
         plan.lines.map((line) => line.productId),
       );
+      const packages = await lockPackages(tx, tenant, plan.lines);
 
-      for (const line of plan.lines) {
+      const resolvedLines = plan.lines.map((line) => {
         const fact = products.get(line.productId);
         if (fact === undefined) {
           throw new PurchasingRefusedError('unknown-product', line.productId);
         }
-        // Half a tin cannot be ordered, so it cannot be received either. The
-        // check happens here as well as at receiving because an order for a
-        // fractional quantity of a unit product is an order no delivery could
-        // ever satisfy.
-        assertPurchasingQuantityShape(
-          line.orderedQuantityScaled,
-          fact.productType,
-          'orderedQuantityScaled',
-        );
-      }
+
+        if (line.packageId === null) {
+          assertPurchasingQuantityShape(
+            line.orderedQuantityScaled,
+            fact.productType,
+            'orderedQuantityScaled',
+          );
+          return {
+            ...line,
+            commercialQuantityScaled: line.orderedQuantityScaled,
+            inventoryQuantityScaled: line.orderedQuantityScaled,
+            package: null,
+          };
+        }
+
+        const packageFact = packages.get(line.packageId);
+        if (packageFact === undefined || packageFact.productId !== line.productId) {
+          throw new PurchasingRefusedError('unknown-package', line.packageId);
+        }
+        if (!packageFact.isActive) {
+          throw new PurchasingRefusedError('package-unavailable', line.packageId);
+        }
+        if (fact.productType !== 'unit') {
+          throw new PurchasingRefusedError('package-unavailable', line.packageId);
+        }
+
+        return {
+          ...line,
+          commercialQuantityScaled: line.orderedQuantityScaled,
+          inventoryQuantityScaled: packageInventoryQuantityScaled({
+            commercialQuantityScaled: line.orderedQuantityScaled,
+            packageBaseQuantityScaled: packageFact.baseQuantityScaled,
+          }),
+          package: packageFact,
+        };
+      });
 
       await tx.purchaseOrder.create({
         data: {
@@ -306,8 +437,8 @@ export async function createPurchaseOrder(
           // Not from the request. A client that could name its own status
           // could name `received` and be believed (§7).
           status: derivePurchaseOrderStatus(
-            plan.lines.map((line) => ({
-              orderedQuantityScaled: line.orderedQuantityScaled,
+            resolvedLines.map((line) => ({
+              orderedQuantityScaled: line.inventoryQuantityScaled,
               receivedQuantityScaled: 0n,
             })),
           ),
@@ -317,14 +448,19 @@ export async function createPurchaseOrder(
         },
       });
 
-      for (const line of plan.lines) {
+      for (const line of resolvedLines) {
         await tx.purchaseOrderLine.create({
           data: {
             id: newId(),
             tenantId: tenant,
             purchaseOrderId: orderId,
             productId: line.productId,
-            orderedQuantityScaled: line.orderedQuantityScaled,
+            packageId: line.package?.id ?? null,
+            commercialQuantityScaled: line.commercialQuantityScaled,
+            packageCode: line.package?.code ?? null,
+            packageUnitLabel: line.package?.unitLabel ?? null,
+            packageBaseQuantityScaled: line.package?.baseQuantityScaled ?? null,
+            orderedQuantityScaled: line.inventoryQuantityScaled,
             // Zero, explicitly. Nothing has arrived.
             receivedQuantityScaled: 0n,
           },
@@ -343,7 +479,8 @@ export async function createPurchaseOrder(
           operationId: request.operationId,
           supplierId: plan.supplierId,
           branchId: plan.branchId,
-          lineCount: plan.lines.length,
+          lineCount: resolvedLines.length,
+          packageLineCount: resolvedLines.filter((line) => line.package !== null).length,
           reference: plan.reference,
         },
         at,
@@ -475,6 +612,11 @@ export async function getPurchaseOrder(
       select: {
         id: true,
         productId: true,
+        packageId: true,
+        commercialQuantityScaled: true,
+        packageCode: true,
+        packageUnitLabel: true,
+        packageBaseQuantityScaled: true,
         orderedQuantityScaled: true,
         receivedQuantityScaled: true,
       },

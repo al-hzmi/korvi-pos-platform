@@ -354,6 +354,8 @@ export type PurchasingRefusal =
   | 'unknown-product'
   | 'inactive-product'
   | 'untracked-product'
+  | 'unknown-package'
+  | 'package-unavailable'
   | 'unknown-purchase-order'
   | 'unknown-purchase-order-line'
   | 'purchase-order-closed'

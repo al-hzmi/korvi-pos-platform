@@ -123,7 +123,15 @@ const purchaseOrderBody = z
     branchId: UUID,
     reference: REFERENCE.nullable().optional(),
     lines: z
-      .array(z.object({ productId: UUID, orderedQuantityScaled: UNSIGNED_SCALED }).strict())
+      .array(
+        z
+          .object({
+            productId: UUID,
+            packageId: UUID.nullable().optional().default(null),
+            orderedQuantityScaled: UNSIGNED_SCALED,
+          })
+          .strict(),
+      )
       .min(1)
       .max(MAX_PURCHASING_LINES),
   })
@@ -200,6 +208,11 @@ const FORBIDDEN_PURCHASING_FIELDS = [
   'occurredAt',
   'receivedAt',
   'orderedAt',
+  'commercialQuantityScaled',
+  'acceptedCommercialQuantityScaled',
+  'packageCode',
+  'packageUnitLabel',
+  'packageBaseQuantityScaled',
   'createdAt',
   'updatedAt',
   'auditEventId',
@@ -221,6 +234,7 @@ const FORBIDDEN_RECEIPT_FIELDS = [
   'supplierId',
   'branchId',
   'productId',
+  'packageId',
   ...FORBIDDEN_PURCHASING_FIELDS,
 ] as const;
 
@@ -307,6 +321,8 @@ const MESSAGES: Readonly<Record<PurchasingFailureReason, string>> = {
   'unknown-product': 'الصنف غير موجود.',
   'inactive-product': 'الصنف غير مفعل.',
   'untracked-product': 'هذا الصنف لا يخضع لتتبع المخزون.',
+  'unknown-package': 'وحدة التعبئة غير موجودة لهذا الصنف.',
+  'package-unavailable': 'وحدة التعبئة لم تعد متاحة للطلب.',
   'unknown-purchase-order': 'أمر الشراء غير موجود.',
   'unknown-purchase-order-line': 'بند أمر الشراء غير موجود.',
   'purchase-order-closed': 'تم استلام أمر الشراء بالكامل.',
@@ -341,6 +357,8 @@ const STATUS: Readonly<Record<PurchasingFailureReason, number>> = {
   'unknown-product': 404,
   'inactive-product': 409,
   'untracked-product': 409,
+  'unknown-package': 404,
+  'package-unavailable': 409,
   'unknown-purchase-order': 404,
   'unknown-purchase-order-line': 404,
   'purchase-order-closed': 409,
