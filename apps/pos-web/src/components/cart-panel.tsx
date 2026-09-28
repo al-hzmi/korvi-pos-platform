@@ -98,7 +98,12 @@ function CartRow({
               aria-label={`إنقاص ${quantityLabel}`}
               disabled={locked}
               onClick={() => {
-                dispatch({ type: 'step', productId: line.productId, packageId: line.packageId, direction: -1 });
+                dispatch({
+                  type: 'step',
+                  productId: line.productId,
+                  packageId: line.packageId,
+                  direction: -1,
+                });
               }}
             >
               −
@@ -135,7 +140,12 @@ function CartRow({
               aria-label={`زيادة ${quantityLabel}`}
               disabled={locked}
               onClick={() => {
-                dispatch({ type: 'step', productId: line.productId, packageId: line.packageId, direction: 1 });
+                dispatch({
+                  type: 'step',
+                  productId: line.productId,
+                  packageId: line.packageId,
+                  direction: 1,
+                });
               }}
             >
               +

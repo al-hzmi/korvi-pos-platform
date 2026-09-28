@@ -75,13 +75,18 @@ function sameCommercialLine(
   productId: string,
   packageId: string | null | undefined,
 ): boolean {
-  return line.productId === productId && normalizedPackageId(line.packageId) === normalizedPackageId(packageId);
+  return (
+    line.productId === productId &&
+    normalizedPackageId(line.packageId) === normalizedPackageId(packageId)
+  );
 }
 
 function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
   const packageId = normalizedPackageId(product.matchedPackageId);
   const packageRow =
-    packageId === null ? null : (product.packages ?? []).find((entry) => entry.id === packageId) ?? null;
+    packageId === null
+      ? null
+      : ((product.packages ?? []).find((entry) => entry.id === packageId) ?? null);
   const fallbackPackagePriceMinor =
     packageRow === null
       ? product.priceMinor
@@ -202,9 +207,7 @@ export function previewCart(lines: readonly CartLine[], priceMode: PriceMode): P
 }
 
 /** Ids and quantities. The whole of what a basket is allowed to assert. */
-export function cartToRequestLines(
-  lines: readonly CartLine[],
-): readonly {
+export function cartToRequestLines(lines: readonly CartLine[]): readonly {
   readonly productId: string;
   readonly packageId?: string | null;
   readonly quantityScaled: string;

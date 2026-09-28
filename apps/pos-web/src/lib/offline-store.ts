@@ -180,7 +180,9 @@ function isOptionalNullableInteger(value: unknown): boolean {
 function isOptionalStringArray(value: unknown): boolean {
   return (
     value === undefined ||
-    (Array.isArray(value) && value.length <= 100 && value.every((entry) => typeof entry === 'string'))
+    (Array.isArray(value) &&
+      value.length <= 100 &&
+      value.every((entry) => typeof entry === 'string'))
   );
 }
 
@@ -202,7 +204,10 @@ function isProductPackageSummary(value: unknown): boolean {
 }
 
 function isOptionalProductPackages(value: unknown): boolean {
-  return value === undefined || (Array.isArray(value) && value.length <= 500 && value.every(isProductPackageSummary));
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.length <= 500 && value.every(isProductPackageSummary))
+  );
 }
 
 export function isProductSummary(value: unknown): value is ProductSummary {
@@ -242,7 +247,9 @@ function isCartLine(value: unknown): value is CartLine {
     isNullableString(value.nameEn) &&
     (value.productType === 'unit' || value.productType === 'weighted') &&
     isNullableString(value.unitLabel) &&
-    (value.packageId === undefined || value.packageId === null || typeof value.packageId === 'string') &&
+    (value.packageId === undefined ||
+      value.packageId === null ||
+      typeof value.packageId === 'string') &&
     isOptionalNullableString(value.packageCode) &&
     isOptionalNullableString(value.packageNameAr) &&
     isOptionalNullableString(value.packageUnitLabel) &&
@@ -573,7 +580,9 @@ function fromStoredProduct(value: unknown, tenantId: string): ProductSummary {
     id: value.id,
     ...(value.categoryId === undefined ? {} : { categoryId: value.categoryId }),
     ...(value.categoryNameAr === undefined ? {} : { categoryNameAr: value.categoryNameAr }),
-    ...(value.categorySortOrder === undefined ? {} : { categorySortOrder: value.categorySortOrder }),
+    ...(value.categorySortOrder === undefined
+      ? {}
+      : { categorySortOrder: value.categorySortOrder }),
     ...(value.imageUrl === undefined ? {} : { imageUrl: value.imageUrl }),
     sku: value.sku,
     nameAr: value.nameAr,

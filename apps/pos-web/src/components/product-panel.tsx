@@ -287,7 +287,10 @@ export function ProductPanel({
                     </span>
                   </button>
                   {!quickService && (product.packages?.length ?? 0) > 0 ? (
-                    <div className="flex flex-wrap gap-1.5" aria-label={`وحدات بيع ${product.nameAr}`}>
+                    <div
+                      className="flex flex-wrap gap-1.5"
+                      aria-label={`وحدات بيع ${product.nameAr}`}
+                    >
                       {(product.packages ?? []).map((packageRow) => (
                         <button
                           key={packageRow.id}

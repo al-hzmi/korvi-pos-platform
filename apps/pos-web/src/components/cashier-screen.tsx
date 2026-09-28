@@ -358,7 +358,15 @@ export function CashierScreen({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [api, cart.lines, couponCode, offlineRetailBaseEligible, onExpired, priceContext, quickService]);
+  }, [
+    api,
+    cart.lines,
+    couponCode,
+    offlineRetailBaseEligible,
+    onExpired,
+    priceContext,
+    quickService,
+  ]);
 
   const effectiveTotalMinor = authoritativePricing?.totalMinor ?? preview.total.minor.toString();
   const effectiveNetMinor = authoritativePricing?.netMinor ?? preview.net.minor.toString();

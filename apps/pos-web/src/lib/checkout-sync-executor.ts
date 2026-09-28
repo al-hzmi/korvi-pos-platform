@@ -80,7 +80,11 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
       (typeof value.tableId === 'string' && isUuidV7(value.tableId))
     ) ||
     !(value.offlineCaptured === undefined || value.offlineCaptured === true) ||
-    !(value.priceContext === undefined || value.priceContext === 'retail' || value.priceContext === 'wholesale') ||
+    !(
+      value.priceContext === undefined ||
+      value.priceContext === 'retail' ||
+      value.priceContext === 'wholesale'
+    ) ||
     !(
       value.expectedPricingHash === undefined ||
       (typeof value.expectedPricingHash === 'string' &&
