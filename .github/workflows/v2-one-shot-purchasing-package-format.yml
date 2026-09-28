@@ -1,0 +1,45 @@
+name: V2 One-Shot Purchasing Package Format
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-one-shot-purchasing-package-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Apply canonical formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prettier --write apps/api/src/__tests__/purchasing-packaging-live.test.ts apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/lib/api-types.ts apps/pos-web/src/lib/api.ts apps/pos-web/src/lib/cart.ts apps/pos-web/src/lib/purchasing-command.ts packages/database/src/purchasing/catalog.ts packages/database/src/purchasing/purchase-orders.ts packages/database/src/purchasing/receiving.ts packages/domain/src/purchasing/__tests__/package-purchasing.test.ts
+          rm .github/workflows/v2-one-shot-purchasing-package-format.yml
+          git diff --check
+      - name: Commit formatter output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-format"
+          git config user.email "actions@users.noreply.github.com"
+          git add apps/api/src/__tests__/purchasing-packaging-live.test.ts apps/pos-web/src/components/control/purchasing-operations.tsx apps/pos-web/src/lib/api-types.ts apps/pos-web/src/lib/api.ts apps/pos-web/src/lib/cart.ts apps/pos-web/src/lib/purchasing-command.ts packages/database/src/purchasing/catalog.ts packages/database/src/purchasing/purchase-orders.ts packages/database/src/purchasing/receiving.ts packages/domain/src/purchasing/__tests__/package-purchasing.test.ts .github/workflows/v2-one-shot-purchasing-package-format.yml
+          git commit -m "style(v2-3): format package purchasing workflow"
+          git push origin HEAD:mastermind/v2-strengthening
