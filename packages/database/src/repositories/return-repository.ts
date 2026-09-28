@@ -85,7 +85,11 @@ interface ReturnLineRow {
   productType: string | null;
   vatBasisPoints: number | null;
   quantityScaled: bigint;
-  inventoryQuantityScaled: bigint;
+  inventoryQuantityScaled: bigint | null;
+  packageCode: string | null;
+  packageNameAr: string | null;
+  packageUnitLabel: string | null;
+  packageBaseQuantityScaled: bigint | null;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
   promotionDiscountMinor: bigint;
@@ -142,7 +146,12 @@ function lineToDomain(row: ReturnLineRow): ReturnLineRecord {
     productType: productType(row.productType),
     vatBasisPoints: rate(row.vatBasisPoints ?? 0),
     quantityScaled: minor(row.quantityScaled),
-    inventoryQuantityScaled: minor(row.inventoryQuantityScaled),
+    inventoryQuantityScaled: minor(row.inventoryQuantityScaled ?? row.quantityScaled),
+    packageCode: row.packageCode,
+    packageNameAr: row.packageNameAr,
+    packageUnitLabel: row.packageUnitLabel,
+    packageBaseQuantityScaled:
+      row.packageBaseQuantityScaled === null ? null : minor(row.packageBaseQuantityScaled),
     grossMinor: minor(row.grossMinor),
     lineDiscountMinor: minor(row.lineDiscountMinor),
     promotionDiscountMinor: minor(row.promotionDiscountMinor),
@@ -234,6 +243,10 @@ interface SaleLineRow {
   unitPriceMinor: bigint;
   quantityScaled: bigint;
   inventoryQuantityScaled: bigint | null;
+  packageCode: string | null;
+  packageNameAr: string | null;
+  packageUnitLabel: string | null;
+  packageBaseQuantityScaled: bigint | null;
   grossMinor: bigint;
   lineDiscountMinor: bigint;
   promotionDiscountMinor: bigint;
@@ -304,7 +317,8 @@ async function returnedSoFar(
   const rows = await tx.$queryRaw<ReturnedAggregateRow[]>`
     SELECT rl."saleLineId"                            AS "saleLineId",
            SUM(rl."quantityScaled")::bigint           AS "quantityScaled",
-           SUM(rl."inventoryQuantityScaled")::bigint  AS "inventoryQuantityScaled",
+           SUM(COALESCE(rl."inventoryQuantityScaled",rl."quantityScaled"))::bigint
+                                                      AS "inventoryQuantityScaled",
            SUM(rl."grossMinor")::bigint               AS "grossMinor",
            SUM(rl."netMinor")::bigint                 AS "netMinor",
            SUM(rl."lineDiscountMinor")::bigint        AS "lineDiscountMinor",
@@ -749,6 +763,10 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
             vatBasisPoints: Number(line.vatBasisPoints),
             quantityScaled: BigInt(line.quantityScaled),
             inventoryQuantityScaled: BigInt(line.inventoryQuantityScaled),
+            packageCode: original.packageCode,
+            packageNameAr: original.packageNameAr,
+            packageUnitLabel: original.packageUnitLabel,
+            packageBaseQuantityScaled: original.packageBaseQuantityScaled,
             grossMinor: BigInt(line.grossMinor),
             lineDiscountMinor: BigInt(line.lineDiscountMinor),
             promotionDiscountMinor: BigInt(line.promotionDiscountMinor),

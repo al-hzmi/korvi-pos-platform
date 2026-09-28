@@ -188,10 +188,11 @@ export async function proveRetailPricingSettlementWithin(
   const settlement = input.retailPricingSettlement;
   const hasRetailSnapshot = input.sale.lines.some(
     (line) =>
-      line.inventoryQuantityScaled !== undefined ||
-      line.packageId !== undefined ||
-      line.priceContext !== undefined ||
-      line.pricingProvenance !== undefined,
+      (line.inventoryQuantityScaled ?? null) !== null ||
+      (line.packageId ?? null) !== null ||
+      (line.priceContext ?? null) !== null ||
+      (line.pricingProvenance ?? null) !== null ||
+      (line.priceListId ?? null) !== null,
   );
 
   if (settlement === undefined) {

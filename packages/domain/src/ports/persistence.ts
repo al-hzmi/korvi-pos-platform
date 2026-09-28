@@ -1091,6 +1091,10 @@ export interface ReturnLineRecord {
   readonly quantityScaled: string;
   /** Base Product quantity restored by this return line. */
   readonly inventoryQuantityScaled: string;
+  readonly packageCode?: string | null;
+  readonly packageNameAr?: string | null;
+  readonly packageUnitLabel?: string | null;
+  readonly packageBaseQuantityScaled?: string | null;
   readonly grossMinor: string;
   readonly lineDiscountMinor: string;
   readonly promotionDiscountMinor?: string;

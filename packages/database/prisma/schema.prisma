@@ -2295,7 +2295,12 @@ model ReturnLine {
 
   quantityScaled          BigInt
   /// Base Product quantity restored by this commercial return quantity.
-  inventoryQuantityScaled BigInt
+  /// Null is historical pre-V2-3 evidence and means quantityScaled.
+  inventoryQuantityScaled BigInt?
+  packageCode               String?
+  packageNameAr             String?
+  packageUnitLabel          String?
+  packageBaseQuantityScaled BigInt?
 
   grossMinor             BigInt @default(0)
   lineDiscountMinor      BigInt @default(0)
