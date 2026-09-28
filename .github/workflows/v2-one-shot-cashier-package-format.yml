@@ -45,7 +45,7 @@ jobs:
             apps/pos-web/src/lib/checkout-sync-executor.ts \
             apps/pos-web/src/lib/failures.ts \
             apps/pos-web/src/lib/offline-checkout.ts \
-            apps/pos-web/src/lib/offline-store.ts \
+            apps/pos-web/src/lib/offline-store.ts
           rm .github/workflows/v2-one-shot-cashier-package-format.yml
           git diff --check
       - name: Commit formatter output
