@@ -863,7 +863,19 @@ try {
       'restored durable cart to unlock before clearing',
       20_000,
     );
-    await clickButton('إفراغ السلة');
+    const clearedRestoredDraft = await evaluate(`(() => {
+      const button = [...document.querySelectorAll('button')].find(
+        (candidate) => (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'إفراغ السلة'
+      );
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    })()`);
+    assert.equal(
+      clearedRestoredDraft,
+      true,
+      'Restored durable cart could not be cleared before coupon proof.',
+    );
     await waitForText('السلة فارغة', 20_000);
     record('coupon proof cleared a legitimately restored durable draft before starting its sale');
   } else {
