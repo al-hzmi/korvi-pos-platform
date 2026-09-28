@@ -149,7 +149,12 @@ export function buildPurchaseOrderIntent(
         ? null
         : (line.product.packages ?? []).find((candidate) => candidate.id === packageId);
     if (packageId !== null) {
-      if (line.product.productType !== 'unit' || packageRow === undefined || !packageRow.isActive) {
+      if (
+        line.product.productType !== 'unit' ||
+        packageRow === null ||
+        packageRow === undefined ||
+        !packageRow.isActive
+      ) {
         return { ok: false, message: 'وحدة التعبئة المختارة لم تعد متاحة لهذا الصنف.' };
       }
     }
