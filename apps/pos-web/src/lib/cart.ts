@@ -24,6 +24,12 @@ export interface CartLine {
   readonly nameEn: string | null;
   readonly productType: ProductType;
   readonly unitLabel: string | null;
+  /** Commercial package identity. Null/absent means the base Product selling unit. */
+  readonly packageId?: string | null;
+  readonly packageCode?: string | null;
+  readonly packageNameAr?: string | null;
+  readonly packageUnitLabel?: string | null;
+  readonly packageBaseQuantityScaled?: string | null;
   /** Snapshot of the price the catalogue showed. For display only. */
   readonly unitPriceMinor: string;
   readonly vatBasisPoints: number;
@@ -37,27 +43,70 @@ export interface CartLine {
 
 export type CartAction =
   | { readonly type: 'add'; readonly product: ProductSummary }
-  | { readonly type: 'set-quantity'; readonly productId: string; readonly quantityScaled: string }
-  | { readonly type: 'step'; readonly productId: string; readonly direction: 1 | -1 }
+  | {
+      readonly type: 'set-quantity';
+      readonly productId: string;
+      readonly packageId?: string | null;
+      readonly quantityScaled: string;
+    }
+  | {
+      readonly type: 'step';
+      readonly productId: string;
+      readonly packageId?: string | null;
+      readonly direction: 1 | -1;
+    }
   | {
       readonly type: 'set-preparation';
       readonly productId: string;
+      readonly packageId?: string | null;
       readonly note: string;
       readonly options: string;
     }
-  | { readonly type: 'remove'; readonly productId: string }
+  | { readonly type: 'remove'; readonly productId: string; readonly packageId?: string | null }
   | { readonly type: 'replace'; readonly lines: readonly CartLine[] }
   | { readonly type: 'clear' };
 
+function normalizedPackageId(value: string | null | undefined): string | null {
+  return value ?? null;
+}
+
+function sameCommercialLine(
+  line: Pick<CartLine, 'productId' | 'packageId'>,
+  productId: string,
+  packageId: string | null | undefined,
+): boolean {
+  return line.productId === productId && normalizedPackageId(line.packageId) === normalizedPackageId(packageId);
+}
+
 function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
+  const packageId = normalizedPackageId(product.matchedPackageId);
+  const packageRow =
+    packageId === null ? null : (product.packages ?? []).find((entry) => entry.id === packageId) ?? null;
+  const fallbackPackagePriceMinor =
+    packageRow === null
+      ? product.priceMinor
+      : (
+          (BigInt(product.priceMinor) * BigInt(packageRow.baseQuantityScaled)) /
+          QUANTITY_SCALE
+        ).toString();
+
   return {
     productId: product.id,
     sku: product.sku,
     nameAr: product.nameAr,
     nameEn: product.nameEn,
     productType: product.productType,
-    unitLabel: product.unitLabel,
-    unitPriceMinor: product.priceMinor,
+    unitLabel: packageRow?.unitLabel ?? product.unitLabel,
+    packageId,
+    ...(packageRow === null
+      ? {}
+      : {
+          packageCode: packageRow.code,
+          packageNameAr: packageRow.nameAr,
+          packageUnitLabel: packageRow.unitLabel,
+          packageBaseQuantityScaled: packageRow.baseQuantityScaled,
+        }),
+    unitPriceMinor: fallbackPackagePriceMinor,
     vatBasisPoints: product.vatBasisPoints,
     quantityScaled,
     preparationNote: '',
@@ -68,27 +117,28 @@ function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
 export function cartReducer(lines: readonly CartLine[], action: CartAction): readonly CartLine[] {
   switch (action.type) {
     case 'add': {
-      const existing = lines.find((line) => line.productId === action.product.id);
+      const packageId = normalizedPackageId(action.product.matchedPackageId);
+      const existing = lines.find((line) => sameCommercialLine(line, action.product.id, packageId));
       if (existing === undefined) {
         return [...lines, lineFor(action.product, QUANTITY_SCALE.toString())];
       }
       // Merged, not appended. A cashier scanning the same tin twice means two
       // tins, and the receipt should say so on one line.
       return lines.map((line) =>
-        line.productId === action.product.id
+        sameCommercialLine(line, action.product.id, packageId)
           ? { ...line, quantityScaled: addScaled(line.quantityScaled, QUANTITY_SCALE.toString()) }
           : line,
       );
     }
     case 'set-quantity':
       return lines.map((line) =>
-        line.productId === action.productId
+        sameCommercialLine(line, action.productId, action.packageId)
           ? { ...line, quantityScaled: action.quantityScaled }
           : line,
       );
     case 'step':
       return lines.map((line) => {
-        if (line.productId !== action.productId) return line;
+        if (!sameCommercialLine(line, action.productId, action.packageId)) return line;
         // Whole-unit steps belong to whole-unit products. A weighed line is
         // 0.750 kg, not "one of something", and stepping it by a unit is
         // meaningless in one direction and dangerous in the other. The screen
@@ -99,7 +149,7 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
       });
     case 'set-preparation':
       return lines.map((line) =>
-        line.productId === action.productId
+        sameCommercialLine(line, action.productId, action.packageId)
           ? {
               ...line,
               preparationNote: action.note.slice(0, 280),
@@ -108,7 +158,7 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
           : line,
       );
     case 'remove':
-      return lines.filter((line) => line.productId !== action.productId);
+      return lines.filter((line) => !sameCommercialLine(line, action.productId, action.packageId));
     case 'replace':
       return action.lines;
     case 'clear':
@@ -154,9 +204,14 @@ export function previewCart(lines: readonly CartLine[], priceMode: PriceMode): P
 /** Ids and quantities. The whole of what a basket is allowed to assert. */
 export function cartToRequestLines(
   lines: readonly CartLine[],
-): readonly { readonly productId: string; readonly quantityScaled: string }[] {
+): readonly {
+  readonly productId: string;
+  readonly packageId?: string | null;
+  readonly quantityScaled: string;
+}[] {
   return lines.map((line) => ({
     productId: line.productId,
+    ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
     quantityScaled: line.quantityScaled,
   }));
 }

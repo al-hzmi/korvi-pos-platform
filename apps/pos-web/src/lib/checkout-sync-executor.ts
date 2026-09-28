@@ -80,6 +80,7 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
       (typeof value.tableId === 'string' && isUuidV7(value.tableId))
     ) ||
     !(value.offlineCaptured === undefined || value.offlineCaptured === true) ||
+    !(value.priceContext === undefined || value.priceContext === 'retail' || value.priceContext === 'wholesale') ||
     !(
       value.expectedPricingHash === undefined ||
       (typeof value.expectedPricingHash === 'string' &&
@@ -114,6 +115,9 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
       isRecord(line) &&
       typeof line.productId === 'string' &&
       isUuidV7(line.productId) &&
+      (line.packageId === undefined ||
+        line.packageId === null ||
+        (typeof line.packageId === 'string' && isUuidV7(line.packageId))) &&
       typeof line.quantityScaled === 'string' &&
       POSITIVE_INTEGER.test(line.quantityScaled),
   );

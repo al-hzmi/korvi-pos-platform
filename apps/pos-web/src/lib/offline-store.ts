@@ -9,7 +9,7 @@ import {
   type QueuePartition,
   type TransactionQueuePort,
 } from '@korvi/domain';
-import type { ProductSummary } from './api-types';
+import type { CheckoutPriceContext, ProductSummary } from './api-types';
 import type { CartLine } from './cart';
 import type { ElectronicTenderDraft, PaymentMode } from './payment-tenders';
 
@@ -60,6 +60,7 @@ export interface OfflineSaleDraft {
   readonly paymentMode?: PaymentMode;
   readonly electronicTenders?: readonly ElectronicTenderDraft[];
   readonly couponCode?: string;
+  readonly priceContext?: CheckoutPriceContext;
   readonly orderType?: RestaurantOrderType;
   readonly tableId?: string;
   readonly restaurantOrderId?: string;
@@ -176,6 +177,34 @@ function isOptionalNullableInteger(value: unknown): boolean {
   );
 }
 
+function isOptionalStringArray(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.length <= 100 && value.every((entry) => typeof entry === 'string'))
+  );
+}
+
+function isProductPackageSummary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.code === 'string' &&
+    typeof value.nameAr === 'string' &&
+    isNullableString(value.nameEn) &&
+    typeof value.unitLabel === 'string' &&
+    isIntegerString(value.baseQuantityScaled, false) &&
+    Array.isArray(value.barcodes) &&
+    value.barcodes.length <= 100 &&
+    value.barcodes.every((entry) => typeof entry === 'string') &&
+    typeof value.revision === 'string' &&
+    /^[1-9][0-9]{0,18}$/.test(value.revision)
+  );
+}
+
+function isOptionalProductPackages(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.length <= 500 && value.every(isProductPackageSummary));
+}
+
 export function isProductSummary(value: unknown): value is ProductSummary {
   if (!isRecord(value)) return false;
   return (
@@ -195,6 +224,11 @@ export function isProductSummary(value: unknown): value is ProductSummary {
     value.vatBasisPoints >= 0 &&
     value.vatBasisPoints <= 10_000 &&
     isNullableString(value.primaryBarcode) &&
+    isOptionalStringArray(value.barcodes) &&
+    isOptionalProductPackages(value.packages) &&
+    (value.matchedPackageId === undefined ||
+      value.matchedPackageId === null ||
+      typeof value.matchedPackageId === 'string') &&
     typeof value.trackInventory === 'boolean'
   );
 }
@@ -208,6 +242,13 @@ function isCartLine(value: unknown): value is CartLine {
     isNullableString(value.nameEn) &&
     (value.productType === 'unit' || value.productType === 'weighted') &&
     isNullableString(value.unitLabel) &&
+    (value.packageId === undefined || value.packageId === null || typeof value.packageId === 'string') &&
+    isOptionalNullableString(value.packageCode) &&
+    isOptionalNullableString(value.packageNameAr) &&
+    isOptionalNullableString(value.packageUnitLabel) &&
+    (value.packageBaseQuantityScaled === undefined ||
+      value.packageBaseQuantityScaled === null ||
+      isIntegerString(value.packageBaseQuantityScaled, false)) &&
     isIntegerString(value.unitPriceMinor, true) &&
     typeof value.vatBasisPoints === 'number' &&
     Number.isInteger(value.vatBasisPoints) &&
@@ -267,6 +308,9 @@ export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
     isOptionalElectronicTenderDrafts(value.electronicTenders) &&
     (value.couponCode === undefined ||
       (typeof value.couponCode === 'string' && value.couponCode.length <= 64)) &&
+    (value.priceContext === undefined ||
+      value.priceContext === 'retail' ||
+      value.priceContext === 'wholesale') &&
     (value.paymentMode !== 'mixed' ||
       (Array.isArray(value.electronicTenders) && value.electronicTenders.length > 0)) &&
     isOptionalRestaurantOrderType(value.orderType) &&
@@ -474,8 +518,22 @@ function normalized(value: string): string {
 }
 
 function productSearchText(product: ProductSummary): string {
+  const packages = product.packages ?? [];
   return normalized(
-    [product.sku, product.nameAr, product.nameEn ?? '', product.primaryBarcode ?? ''].join('\n'),
+    [
+      product.sku,
+      product.nameAr,
+      product.nameEn ?? '',
+      product.primaryBarcode ?? '',
+      ...(product.barcodes ?? []),
+      ...packages.flatMap((packageRow) => [
+        packageRow.code,
+        packageRow.nameAr,
+        packageRow.nameEn ?? '',
+        packageRow.unitLabel,
+        ...packageRow.barcodes,
+      ]),
+    ].join('\n'),
   );
 }
 
@@ -513,6 +571,10 @@ function fromStoredProduct(value: unknown, tenantId: string): ProductSummary {
   }
   return {
     id: value.id,
+    ...(value.categoryId === undefined ? {} : { categoryId: value.categoryId }),
+    ...(value.categoryNameAr === undefined ? {} : { categoryNameAr: value.categoryNameAr }),
+    ...(value.categorySortOrder === undefined ? {} : { categorySortOrder: value.categorySortOrder }),
+    ...(value.imageUrl === undefined ? {} : { imageUrl: value.imageUrl }),
     sku: value.sku,
     nameAr: value.nameAr,
     nameEn: value.nameEn,
@@ -521,6 +583,9 @@ function fromStoredProduct(value: unknown, tenantId: string): ProductSummary {
     priceMinor: value.priceMinor,
     vatBasisPoints: value.vatBasisPoints,
     primaryBarcode: value.primaryBarcode,
+    ...(value.barcodes === undefined ? {} : { barcodes: value.barcodes }),
+    ...(value.packages === undefined ? {} : { packages: value.packages }),
+    ...(value.matchedPackageId === undefined ? {} : { matchedPackageId: value.matchedPackageId }),
     trackInventory: value.trackInventory,
   };
 }
@@ -547,6 +612,7 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
       ? {}
       : { electronicTenders: value.electronicTenders }),
     ...(value.couponCode === undefined ? {} : { couponCode: value.couponCode }),
+    ...(value.priceContext === undefined ? {} : { priceContext: value.priceContext }),
     ...(value.orderType === undefined ? {} : { orderType: value.orderType }),
     ...(value.tableId === undefined ? {} : { tableId: value.tableId }),
     ...(value.restaurantOrderId === undefined
@@ -1230,7 +1296,14 @@ export async function openKorviOfflineStore(factory?: IDBFactory): Promise<Korvi
           throw new OfflineStoreError('corrupt', 'Cached catalogue search index is invalid.');
         }
         if (needle !== '' && !value.searchText.includes(needle)) continue;
-        products.push(product);
+        const exact = term.trim();
+        const packageMatch =
+          exact === ''
+            ? undefined
+            : (product.packages ?? []).find((packageRow) => packageRow.barcodes.includes(exact));
+        products.push(
+          packageMatch === undefined ? product : { ...product, matchedPackageId: packageMatch.id },
+        );
         if (products.length === bounded) break;
       }
       return products;

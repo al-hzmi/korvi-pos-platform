@@ -87,6 +87,7 @@ export function checkoutQueueOperation(
           ),
         }),
     ...(intent.couponCodes === undefined ? {} : { couponCodes: [...intent.couponCodes] }),
+    ...(intent.priceContext === undefined ? {} : { priceContext: intent.priceContext }),
     ...(intent.expectedPricingHash === undefined
       ? {}
       : { expectedPricingHash: intent.expectedPricingHash }),

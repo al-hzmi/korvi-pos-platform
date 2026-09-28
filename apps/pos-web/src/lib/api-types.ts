@@ -214,6 +214,17 @@ export interface RestaurantPreparationTaskMutation {
   readonly replayed: boolean;
 }
 
+export interface ProductPackageSummary {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly unitLabel: string;
+  readonly baseQuantityScaled: string;
+  readonly barcodes: readonly string[];
+  readonly revision: string;
+}
+
 export interface ProductSummary {
   readonly id: string;
   /** Optional only so pre-upgrade durable catalogue rows remain readable. */
@@ -229,6 +240,11 @@ export interface ProductSummary {
   readonly priceMinor: string;
   readonly vatBasisPoints: number;
   readonly primaryBarcode: string | null;
+  /** Additive V2-3 read-side metadata; optional for pre-upgrade durable cache rows. */
+  readonly barcodes?: readonly string[];
+  readonly packages?: readonly ProductPackageSummary[];
+  /** Present only when an exact barcode resolved one commercial selling unit. */
+  readonly matchedPackageId?: string | null;
   readonly trackInventory: boolean;
 }
 
@@ -1084,9 +1100,16 @@ export type CheckoutTenderRequest =
  * Runtime validators enforce that exactly one payment shape is present:
  * legacy cashReceivedMinor or the explicit tender list.
  */
+export type CheckoutPriceContext = 'retail' | 'wholesale';
+
 export interface CheckoutPreviewRequest {
   readonly couponCodes?: readonly string[];
-  readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
+  readonly priceContext?: CheckoutPriceContext;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly packageId?: string | null;
+    readonly quantityScaled: string;
+  }[];
 }
 
 export interface CheckoutPreviewApplication {
@@ -1106,6 +1129,18 @@ export interface CheckoutPreviewResponse {
   readonly netMinor: string;
   readonly vatMinor: string;
   readonly totalMinor: string;
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly packageId: string | null;
+    readonly unitPriceMinor: string;
+    readonly quantityScaled: string;
+    readonly inventoryQuantityScaled: string;
+    readonly grossMinor: string;
+    readonly promotionDiscountMinor: string;
+    readonly netMinor: string;
+    readonly vatMinor: string;
+    readonly totalMinor: string;
+  }[];
   readonly applications: readonly CheckoutPreviewApplication[];
 }
 
@@ -1121,11 +1156,16 @@ export interface CheckoutRequest {
   readonly cashReceivedMinor?: string;
   readonly tenders?: readonly CheckoutTenderRequest[];
   readonly couponCodes?: readonly string[];
+  readonly priceContext?: CheckoutPriceContext;
   /** Server-issued preview precondition; never a client-authored total. */
   readonly expectedPricingHash?: string;
   /** Restrictive marker set by offline queue/sync; never pricing authority. */
   readonly offlineCaptured?: true;
-  readonly lines: readonly { readonly productId: string; readonly quantityScaled: string }[];
+  readonly lines: readonly {
+    readonly productId: string;
+    readonly packageId?: string | null;
+    readonly quantityScaled: string;
+  }[];
 }
 
 /**

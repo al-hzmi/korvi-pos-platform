@@ -826,8 +826,10 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         '/v1/checkout/preview',
         json({
           ...(request.couponCodes === undefined ? {} : { couponCodes: request.couponCodes }),
+          ...(request.priceContext === undefined ? {} : { priceContext: request.priceContext }),
           lines: request.lines.map((line) => ({
             productId: line.productId,
+            ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
             quantityScaled: line.quantityScaled,
           })),
         }),
@@ -886,8 +888,10 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
               : { offlineCaptured: request.offlineCaptured }),
             lines: request.lines.map((line) => ({
               productId: line.productId,
+              ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
               quantityScaled: line.quantityScaled,
             })),
+            ...(request.priceContext === undefined ? {} : { priceContext: request.priceContext }),
           }),
           { signal: controller.signal },
         )) as CheckoutResponse;

@@ -66,6 +66,18 @@ export interface CheckoutPreviewSuccess {
     readonly netMinor: string;
     readonly vatMinor: string;
     readonly totalMinor: string;
+    readonly lines: readonly {
+      readonly productId: string;
+      readonly packageId: string | null;
+      readonly unitPriceMinor: string;
+      readonly quantityScaled: string;
+      readonly inventoryQuantityScaled: string;
+      readonly grossMinor: string;
+      readonly promotionDiscountMinor: string;
+      readonly netMinor: string;
+      readonly vatMinor: string;
+      readonly totalMinor: string;
+    }[];
     readonly applications: readonly {
       readonly promotionId: string;
       readonly merchantCode: string;
@@ -361,6 +373,24 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
           netMinor: priced.net.minor.toString(),
           vatMinor: priced.vat.minor.toString(),
           totalMinor: priced.total.minor.toString(),
+          lines: priced.lines.map((line, index) => {
+            const source = loaded[index];
+            if (source === undefined) {
+              throw new Error('Checkout preview line/source cardinality mismatch.');
+            }
+            return {
+              productId: line.productId,
+              packageId: source.authority?.package?.id ?? null,
+              unitPriceMinor: line.unitPrice.minor.toString(),
+              quantityScaled: source.scaled.toString(),
+              inventoryQuantityScaled: source.inventoryScaled.toString(),
+              grossMinor: line.gross.minor.toString(),
+              promotionDiscountMinor: line.promotionDiscount.minor.toString(),
+              netMinor: line.net.minor.toString(),
+              vatMinor: line.vat.minor.toString(),
+              totalMinor: line.total.minor.toString(),
+            };
+          }),
           applications: evaluation.applications.map((application) => ({
             promotionId: application.promotionId,
             merchantCode: application.merchantCode,

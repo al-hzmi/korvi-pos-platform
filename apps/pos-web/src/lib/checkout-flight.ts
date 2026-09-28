@@ -97,13 +97,18 @@ function freeze(intent: CheckoutIntent): CheckoutIntent {
     ...(intent.couponCodes === undefined
       ? {}
       : { couponCodes: Object.freeze(intent.couponCodes.map((code) => code)) }),
+    ...(intent.priceContext === undefined ? {} : { priceContext: intent.priceContext }),
     ...(intent.expectedPricingHash === undefined
       ? {}
       : { expectedPricingHash: intent.expectedPricingHash }),
     ...(intent.offlineCaptured === undefined ? {} : { offlineCaptured: intent.offlineCaptured }),
     lines: Object.freeze(
       intent.lines.map((line) =>
-        Object.freeze({ productId: line.productId, quantityScaled: line.quantityScaled }),
+        Object.freeze({
+          productId: line.productId,
+          ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
+          quantityScaled: line.quantityScaled,
+        }),
       ),
     ),
   });

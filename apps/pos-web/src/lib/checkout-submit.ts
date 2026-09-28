@@ -28,6 +28,7 @@ export interface CheckoutSubmission {
   readonly cashReceivedMinor?: string;
   readonly tenders?: readonly CheckoutTenderRequest[];
   readonly couponCodes?: readonly string[];
+  readonly priceContext?: 'retail' | 'wholesale';
   readonly expectedPricingHash?: string;
   readonly offlineCaptured?: true;
 }
@@ -81,6 +82,7 @@ export function runCheckout(
     ...(input.couponCodes === undefined
       ? {}
       : { couponCodes: input.couponCodes.map((code) => code) }),
+    ...(input.priceContext === undefined ? {} : { priceContext: input.priceContext }),
     ...(input.expectedPricingHash === undefined
       ? {}
       : { expectedPricingHash: input.expectedPricingHash }),
