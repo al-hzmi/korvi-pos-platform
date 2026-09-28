@@ -238,11 +238,13 @@ describe.skipIf(url === '')('V2-3 package-aware purchasing, PostgreSQL live', ()
 
     const evidence = await withTenant(prisma, scope.tenantId, async (tx) => ({
       balance: await tx.inventoryBalance.findFirstOrThrow({
-        where: { tenantId_branchId_productId: {
-          tenantId: T.tenant,
-          branchId: T.branch,
-          productId: T.product,
-        } },
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: T.tenant,
+            branchId: T.branch,
+            productId: T.product,
+          },
+        },
       }),
       movement: await tx.inventoryMovement.findFirstOrThrow({
         where: { sourceId: receipt.id, productId: T.product },
@@ -282,11 +284,13 @@ describe.skipIf(url === '')('V2-3 package-aware purchasing, PostgreSQL live', ()
         where: { sourceId: receipt.id, productId: T.product },
       }),
       balance: await tx.inventoryBalance.findFirstOrThrow({
-        where: { tenantId_branchId_productId: {
-          tenantId: T.tenant,
-          branchId: T.branch,
-          productId: T.product,
-        } },
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: T.tenant,
+            branchId: T.branch,
+            productId: T.product,
+          },
+        },
       }),
     }));
     expect(afterReplay.movements).toBe(1);

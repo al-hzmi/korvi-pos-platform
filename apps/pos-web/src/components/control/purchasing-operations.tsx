@@ -450,15 +450,15 @@ export function OrderDetail({
                 <td className="px-3 py-3">{productName(products, line.productId)}</td>
                 <td className="px-3 py-3">
                   <Numeric value={formatScaled(purchaseLineOrderedDisplay(line))} />
-        {purchaseLineUnitSuffix(line)}
+                  {purchaseLineUnitSuffix(line)}
                 </td>
                 <td className="px-3 py-3">
                   <Numeric value={formatScaled(purchaseLineReceivedDisplay(line))} />
-        {purchaseLineUnitSuffix(line)}
+                  {purchaseLineUnitSuffix(line)}
                 </td>
                 <td className="px-3 py-3 font-semibold">
                   <Numeric value={formatScaled(purchaseLineRemainingDisplay(line))} />
-        {purchaseLineUnitSuffix(line)}
+                  {purchaseLineUnitSuffix(line)}
                 </td>
               </tr>
             ))}
