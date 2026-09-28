@@ -615,6 +615,7 @@ describe.skipIf(url === '')('returns, live', () => {
                 productType: line.productType,
                 vatBasisPoints: line.vatBasisPoints,
                 quantityScaled: '1000',
+                inventoryQuantityScaled: '1000',
                 grossMinor: '1150',
                 lineDiscountMinor: '0',
                 promotionDiscountMinor: '0',
