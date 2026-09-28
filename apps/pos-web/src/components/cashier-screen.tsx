@@ -164,6 +164,7 @@ export function CashierScreen({
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);
   const [cash, setCash] = useState('');
   const [couponCode, setCouponCode] = useState('');
+  const [priceContext, setPriceContext] = useState<'retail' | 'wholesale'>('retail');
   const [authoritativePricing, setAuthoritativePricing] = useState<CheckoutPreviewResponse | null>(
     null,
   );
@@ -176,6 +177,8 @@ export function CashierScreen({
     emptyElectronicTender(),
   ]);
   const quickService = vertical === 'restaurant';
+  const canSelectPriceContext =
+    !quickService && principal.permissions.includes('sale.price-context');
   const [orderType, setOrderType] = useState<RestaurantOrderType>('takeaway');
   const [tableId, setTableId] = useState<string | null>(null);
   const [restaurantFloor, setRestaurantFloor] = useState<RestaurantFloorResponse | null>(null);
@@ -285,6 +288,9 @@ export function CashierScreen({
   } = useDurableSaleDraft(durableScope, offlineStoreProtector);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
+  const offlineRetailBaseEligible =
+    priceContext === 'retail' &&
+    cart.lines.every((line) => line.packageId === undefined || line.packageId === null);
 
   useEffect(() => {
     if (quickService || cart.lines.length === 0) {
@@ -306,8 +312,10 @@ export function CashierScreen({
           {
             lines: cart.lines.map((line) => ({
               productId: line.productId,
+              ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
               quantityScaled: line.quantityScaled,
             })),
+            priceContext,
             ...(couponCode.trim() === '' ? {} : { couponCodes: [couponCode.trim()] }),
           },
           { signal: controller.signal },
@@ -325,10 +333,17 @@ export function CashierScreen({
           setAuthoritativePricing(null);
 
           const transportUnavailable = failure.code === 'network' || failure.code === 'timeout';
-          if (transportUnavailable && couponCode.trim() === '') {
+          if (transportUnavailable && couponCode.trim() === '' && offlineRetailBaseEligible) {
             setPricingStatus('offline');
             setPricingNotice(
-              'تعذّر الوصول إلى تسعير الخادم. البيع النقدي فقط يمكن حفظه دون اتصال، وسيعيد الخادم التحقق من السعر والعروض قبل اعتماده.',
+              'تعذّر الوصول إلى تسعير الخادم. بيع التجزئة للوحدة الأساسية فقط يمكن حفظه دون اتصال، وسيعيد الخادم التحقق قبل اعتماده.',
+            );
+            return;
+          }
+          if (transportUnavailable) {
+            setPricingStatus('failed');
+            setPricingNotice(
+              'وحدة البيع المعبأة أو سعر الجملة يحتاجان اتصالاً بالخادم للتحقق من سياسة السعر قبل الدفع.',
             );
             return;
           }
@@ -343,7 +358,7 @@ export function CashierScreen({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [api, cart.lines, couponCode, onExpired, quickService]);
+  }, [api, cart.lines, couponCode, offlineRetailBaseEligible, onExpired, priceContext, quickService]);
 
   const effectiveTotalMinor = authoritativePricing?.totalMinor ?? preview.total.minor.toString();
   const effectiveNetMinor = authoritativePricing?.netMinor ?? preview.net.minor.toString();
@@ -379,6 +394,11 @@ export function CashierScreen({
       cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
       setCash(durableState.draft.cash);
       setCouponCode(durableState.draft.couponCode ?? '');
+      setPriceContext(
+        durableState.draft.priceContext === 'wholesale' && canSelectPriceContext
+          ? 'wholesale'
+          : 'retail',
+      );
       setPaymentMode(durableState.draft.paymentMode ?? 'cash');
       setElectronicTenders(
         durableState.draft.electronicTenders === undefined ||
@@ -400,7 +420,7 @@ export function CashierScreen({
       }
     }
     setDraftHydrated(true);
-  }, [cart.dispatch, draftHydrated, durableState]);
+  }, [canSelectPriceContext, cart.dispatch, draftHydrated, durableState]);
 
   useEffect(() => {
     if (
@@ -464,6 +484,7 @@ export function CashierScreen({
       paymentMode,
       ...(paymentMode === 'mixed' ? { electronicTenders } : {}),
       ...(!quickService && couponCode.trim() !== '' ? { couponCode } : {}),
+      ...(!quickService ? { priceContext } : {}),
       ...(quickService ? { orderType } : {}),
       ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
       ...(activeRestaurantOrderIdentity === null
@@ -479,6 +500,7 @@ export function CashierScreen({
     cart.lines,
     cash,
     couponCode,
+    priceContext,
     paymentMode,
     electronicTenders,
     checkout.state.phase,
@@ -541,6 +563,7 @@ export function CashierScreen({
     cart.dispatch({ type: 'clear' });
     setCash('');
     setCouponCode('');
+    setPriceContext('retail');
     setPaymentMode('cash');
     setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
@@ -837,6 +860,7 @@ export function CashierScreen({
     cart.dispatch({ type: 'clear' });
     setCash('');
     setCouponCode('');
+    setPriceContext('retail');
     setPaymentMode('cash');
     setElectronicTenders([emptyElectronicTender()]);
     setOrderType('takeaway');
@@ -866,7 +890,7 @@ export function CashierScreen({
     if (
       !quickService &&
       pricingStatus === 'offline' &&
-      (couponCode.trim() !== '' || paymentMode !== 'cash')
+      (couponCode.trim() !== '' || paymentMode !== 'cash' || !offlineRetailBaseEligible)
     ) {
       return;
     }
@@ -883,6 +907,7 @@ export function CashierScreen({
             expectedRestaurantOrderRevision: activeRestaurantOrderIdentity.revision,
           }),
       lines: cart.lines,
+      ...(!quickService ? { priceContext } : {}),
       ...(!quickService && couponCode.trim() !== '' ? { couponCodes: [couponCode.trim()] } : {}),
       ...(!quickService && authoritativePricing !== null
         ? { expectedPricingHash: authoritativePricing.pricingHash }
@@ -902,6 +927,8 @@ export function CashierScreen({
     activeRestaurantOrderIdentity,
     cart.lines,
     couponCode,
+    priceContext,
+    offlineRetailBaseEligible,
     authoritativePricing,
     pricingStatus,
     payment,
@@ -937,7 +964,10 @@ export function CashierScreen({
       ? null
       : pricingStatus === 'ready'
         ? null
-        : pricingStatus === 'offline' && couponCode.trim() === '' && paymentMode === 'cash'
+        : pricingStatus === 'offline' &&
+            couponCode.trim() === '' &&
+            paymentMode === 'cash' &&
+            offlineRetailBaseEligible
           ? null
           : (pricingNotice ??
             (pricingStatus === 'loading'
@@ -1158,6 +1188,7 @@ export function CashierScreen({
               <CartPanel
                 lines={cart.lines}
                 preview={preview}
+                authoritativeLines={authoritativePricing?.lines}
                 locked={locked}
                 quickService={quickService}
                 dispatch={cart.dispatch}
@@ -1170,6 +1201,8 @@ export function CashierScreen({
                 cash={cash}
                 showCoupon={!quickService}
                 couponCode={couponCode}
+                showPriceContext={canSelectPriceContext}
+                priceContext={priceContext}
                 paymentMode={paymentMode}
                 electronicTenders={electronicTenders}
                 lineCount={cart.lines.length}
@@ -1179,6 +1212,7 @@ export function CashierScreen({
                 cashRef={cashInput}
                 onCashChange={setCash}
                 onCouponCodeChange={setCouponCode}
+                onPriceContextChange={setPriceContext}
                 onPaymentModeChange={setPaymentMode}
                 onElectronicTenderChange={(index, value) => {
                   setElectronicTenders((current) =>

@@ -6,6 +6,7 @@ import { formatMinor } from '../lib/money';
 import { formatScaled, parseQuantityToScaled } from '../lib/quantity';
 import type { JSX } from 'react';
 import type { PricedCart } from '@korvi/domain';
+import type { CheckoutPreviewResponse } from '../lib/api-types';
 import type { CartAction, CartLine } from '../lib/cart';
 
 /**
@@ -20,6 +21,7 @@ interface CartRowProps {
   readonly line: CartLine;
   readonly locked: boolean;
   readonly lineTotalMinor: string;
+  readonly unitPriceMinor: string;
   readonly quickService: boolean;
   readonly dispatch: (action: CartAction) => void;
 }
@@ -28,6 +30,7 @@ function CartRow({
   line,
   locked,
   lineTotalMinor,
+  unitPriceMinor,
   quickService,
   dispatch,
 }: CartRowProps): JSX.Element {
@@ -46,7 +49,12 @@ function CartRow({
       return;
     }
     setInvalid(false);
-    dispatch({ type: 'set-quantity', productId: line.productId, quantityScaled: parsed.value });
+    dispatch({
+      type: 'set-quantity',
+      productId: line.productId,
+      packageId: line.packageId,
+      quantityScaled: parsed.value,
+    });
   };
 
   const quantityLabel = `كمية ${line.nameAr}`;
@@ -57,11 +65,16 @@ function CartRow({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <span className="truncate text-sm font-semibold text-card-foreground">{line.nameAr}</span>
+          {line.packageId === undefined || line.packageId === null ? null : (
+            <span className="w-fit rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              {line.packageNameAr ?? line.packageCode ?? 'وحدة بيع'}
+            </span>
+          )}
           <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <BidiIsolate className="rounded-md bg-muted px-1.5 py-0.5">{line.sku}</BidiIsolate>
             <span aria-hidden="true">·</span>
             <span className="flex items-baseline gap-1">
-              <Numeric value={formatMinor(line.unitPriceMinor)} />
+              <Numeric value={formatMinor(unitPriceMinor)} />
               <span className="text-[10px]">ر.س</span>
             </span>
             {line.unitLabel === null ? null : <span>/ {line.unitLabel}</span>}
@@ -85,18 +98,18 @@ function CartRow({
               aria-label={`إنقاص ${quantityLabel}`}
               disabled={locked}
               onClick={() => {
-                dispatch({ type: 'step', productId: line.productId, direction: -1 });
+                dispatch({ type: 'step', productId: line.productId, packageId: line.packageId, direction: -1 });
               }}
             >
               −
             </Button>
           ) : null}
 
-          <label className="sr-only" htmlFor={`qty-${line.productId}`}>
+          <label className="sr-only" htmlFor={`qty-${line.productId}-${line.packageId ?? 'base'}`}>
             {quantityLabel}
           </label>
           <input
-            id={`qty-${line.productId}`}
+            id={`qty-${line.productId}-${line.packageId ?? 'base'}`}
             inputMode="decimal"
             dir="ltr"
             disabled={locked}
@@ -122,7 +135,7 @@ function CartRow({
               aria-label={`زيادة ${quantityLabel}`}
               disabled={locked}
               onClick={() => {
-                dispatch({ type: 'step', productId: line.productId, direction: 1 });
+                dispatch({ type: 'step', productId: line.productId, packageId: line.packageId, direction: 1 });
               }}
             >
               +
@@ -139,7 +152,7 @@ function CartRow({
           disabled={locked}
           aria-label={`حذف ${line.nameAr}`}
           onClick={() => {
-            dispatch({ type: 'remove', productId: line.productId });
+            dispatch({ type: 'remove', productId: line.productId, packageId: line.packageId });
           }}
         >
           حذف
@@ -159,6 +172,7 @@ function CartRow({
                 dispatch({
                   type: 'set-preparation',
                   productId: line.productId,
+                  packageId: line.packageId,
                   options: event.target.value,
                   note: line.preparationNote ?? '',
                 });
@@ -177,6 +191,7 @@ function CartRow({
                 dispatch({
                   type: 'set-preparation',
                   productId: line.productId,
+                  packageId: line.packageId,
                   options: line.preparationOptions ?? '',
                   note: event.target.value,
                 });
@@ -200,6 +215,7 @@ export interface CartPanelProps {
   readonly lines: readonly CartLine[];
   /** Priced once by the workspace and passed down, so the figures cannot diverge. */
   readonly preview: PricedCart;
+  readonly authoritativeLines?: CheckoutPreviewResponse['lines'];
   readonly locked: boolean;
   readonly quickService?: boolean;
   readonly dispatch: (action: CartAction) => void;
@@ -208,6 +224,7 @@ export interface CartPanelProps {
 export function CartPanel({
   lines,
   preview,
+  authoritativeLines,
   locked,
   quickService = false,
   dispatch,
@@ -254,10 +271,14 @@ export function CartPanel({
         <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto py-3 pe-1">
           {lines.map((line, index) => (
             <CartRow
-              key={line.productId}
+              key={`${line.productId}:${line.packageId ?? 'base'}`}
               line={line}
               locked={locked}
-              lineTotalMinor={(preview.lines[index]?.total.minor ?? 0n).toString()}
+              unitPriceMinor={authoritativeLines?.[index]?.unitPriceMinor ?? line.unitPriceMinor}
+              lineTotalMinor={
+                authoritativeLines?.[index]?.totalMinor ??
+                (preview.lines[index]?.total.minor ?? 0n).toString()
+              }
               quickService={quickService}
               dispatch={dispatch}
             />

@@ -213,7 +213,7 @@ export function ProductPanel({
             {visibleProducts.map((product) => {
               const imageUrl = enableImages ? (product.imageUrl ?? null) : null;
               return (
-                <li key={product.id}>
+                <li key={product.id} className="flex min-w-0 flex-col gap-2">
                   <button
                     type="button"
                     disabled={disabled}
@@ -286,6 +286,31 @@ export function ProductPanel({
                       </span>
                     </span>
                   </button>
+                  {!quickService && (product.packages?.length ?? 0) > 0 ? (
+                    <div className="flex flex-wrap gap-1.5" aria-label={`وحدات بيع ${product.nameAr}`}>
+                      {(product.packages ?? []).map((packageRow) => (
+                        <button
+                          key={packageRow.id}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => {
+                            onPick({ ...product, matchedPackageId: packageRow.id });
+                          }}
+                          className={cn(
+                            'min-h-9 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium',
+                            'text-foreground hover:border-primary/40 hover:bg-accent',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            'disabled:pointer-events-none disabled:opacity-50',
+                          )}
+                        >
+                          {packageRow.nameAr}
+                          <span className="ms-1 text-[10px] text-muted-foreground">
+                            × {(BigInt(packageRow.baseQuantityScaled) / 1_000n).toString()}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

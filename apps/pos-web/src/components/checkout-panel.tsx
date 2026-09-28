@@ -36,6 +36,8 @@ export interface CheckoutPanelProps {
   readonly cash: string;
   readonly showCoupon: boolean;
   readonly couponCode: string;
+  readonly showPriceContext: boolean;
+  readonly priceContext: 'retail' | 'wholesale';
   readonly paymentMode: PaymentMode;
   readonly electronicTenders: readonly ElectronicTenderDraft[];
   readonly lineCount: number;
@@ -45,6 +47,7 @@ export interface CheckoutPanelProps {
   readonly cashRef: Ref<HTMLInputElement>;
   readonly onCashChange: (value: string) => void;
   readonly onCouponCodeChange: (value: string) => void;
+  readonly onPriceContextChange: (value: 'retail' | 'wholesale') => void;
   readonly onPaymentModeChange: (mode: PaymentMode) => void;
   readonly onElectronicTenderChange: (index: number, value: ElectronicTenderDraft) => void;
   readonly onAddElectronicTender: () => void;
@@ -61,6 +64,8 @@ export function CheckoutPanel({
   cash,
   showCoupon,
   couponCode,
+  showPriceContext,
+  priceContext,
   paymentMode,
   electronicTenders,
   lineCount,
@@ -70,6 +75,7 @@ export function CheckoutPanel({
   cashRef,
   onCashChange,
   onCouponCodeChange,
+  onPriceContextChange,
   onPaymentModeChange,
   onElectronicTenderChange,
   onAddElectronicTender,
@@ -127,6 +133,33 @@ export function CheckoutPanel({
           </div>
         </dl>
       </div>
+
+      {showPriceContext ? (
+        <div className="rounded-lg border border-border bg-background p-3">
+          <p className="mb-2 text-sm font-medium text-foreground">سياق السعر</p>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="سياق السعر">
+            <Button
+              type="button"
+              variant={priceContext === 'retail' ? 'secondary' : 'outline'}
+              disabled={paymentFrozen}
+              onClick={() => onPriceContextChange('retail')}
+            >
+              تجزئة
+            </Button>
+            <Button
+              type="button"
+              variant={priceContext === 'wholesale' ? 'secondary' : 'outline'}
+              disabled={paymentFrozen}
+              onClick={() => onPriceContextChange('wholesale')}
+            >
+              جملة
+            </Button>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            السعر النهائي ووحدة البيع يحددهما الخادم من سياسة المنشأة.
+          </p>
+        </div>
+      ) : null}
 
       {showCoupon ? (
         <div className="rounded-lg border border-border bg-background p-3">

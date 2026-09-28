@@ -139,6 +139,30 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'تغيّر السعر منذ آخر تسعير. حدّث السعر قبل إعادة الدفع.',
     action: 'amend-cart',
   },
+  'unknown-package': {
+    message: 'وحدة البيع المختارة غير معروفة. اختر وحدة أخرى.',
+    action: 'amend-cart',
+  },
+  'package-unavailable': {
+    message: 'وحدة البيع المختارة لم تعد متاحة. حدّث الصنف.',
+    action: 'amend-cart',
+  },
+  'wholesale-price-incomplete': {
+    message: 'لا يوجد سعر جملة معتمد لهذه الوحدة. استخدم التجزئة أو راجع الإدارة.',
+    action: 'amend-cart',
+  },
+  'price-context-not-authorized': {
+    message: 'لا تملك صلاحية اختيار سعر الجملة.',
+    action: 'permission',
+  },
+  'retail-pricing-policy-stale': {
+    message: 'تغيّرت وحدة البيع أو قائمة الأسعار. حدّث السلة قبل الدفع.',
+    action: 'amend-cart',
+  },
+  'retail-pricing-not-applicable': {
+    message: 'وحدات البيع وقوائم الأسعار غير متاحة لمسار المطعم الحالي.',
+    action: 'amend-cart',
+  },
   'promotions-not-applicable': {
     message: 'العروض والكوبونات غير متاحة لمسار الطلب الحالي.',
     action: 'amend-cart',
