@@ -401,10 +401,7 @@ export class PromotionPolicyRefusedError extends DatabaseError {
  * refusals, never client-authored price decisions.
  */
 export type RetailPricingPolicyRefusal =
-  | 'unknown-package'
-  | 'package-unavailable'
-  | 'wholesale-price-incomplete'
-  | 'policy-stale';
+  'unknown-package' | 'package-unavailable' | 'wholesale-price-incomplete' | 'policy-stale';
 
 export class RetailPricingPolicyRefusedError extends DatabaseError {
   public override readonly name = 'RetailPricingPolicyRefusedError';

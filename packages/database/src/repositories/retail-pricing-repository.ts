@@ -1,6 +1,4 @@
-import {
-  resolveContextPrice,
-} from '@korvi/domain';
+import { resolveContextPrice } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import { oneOf, rate, scoped, tenantParam } from './mapping.js';
 import type {
@@ -162,22 +160,19 @@ export function createRetailPricingRepository(prisma: PrismaClient): RetailPrici
         const selectedList =
           resolved.priceListId === null
             ? null
-            : lists.find((candidate) => candidate.id === resolved.priceListId) ?? null;
+            : (lists.find((candidate) => candidate.id === resolved.priceListId) ?? null);
 
-        let selectedEntry:
-          | {
-              id: string;
-              revision: bigint;
-            }
-          | null = null;
+        let selectedEntry: {
+          id: string;
+          revision: bigint;
+        } | null = null;
         if (selectedList !== null) {
           const selectedPackageId =
-            resolved.provenance === 'price-list-package' ? packageRow?.id ?? null : null;
+            resolved.provenance === 'price-list-package' ? (packageRow?.id ?? null) : null;
           const entry =
             selectedList.entries.find(
               (candidate) =>
-                candidate.productId === product.id &&
-                candidate.packageId === selectedPackageId,
+                candidate.productId === product.id && candidate.packageId === selectedPackageId,
             ) ?? null;
           if (entry !== null) selectedEntry = { id: entry.id, revision: entry.revision };
         }

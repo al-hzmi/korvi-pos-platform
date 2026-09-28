@@ -47,10 +47,7 @@ interface PriceEntryPolicyRow {
   revision: bigint;
 }
 
-async function lockRetailPricingPolicyShared(
-  tx: TransactionClient,
-  tenant: string,
-): Promise<void> {
+async function lockRetailPricingPolicyShared(tx: TransactionClient, tenant: string): Promise<void> {
   await tx.$queryRaw<{ locked: number }[]>`
     SELECT 1::int4 AS "locked"
       FROM (
@@ -310,7 +307,7 @@ export async function proveRetailPricingSettlementWithin(
     const list =
       resolved.priceListId === null
         ? null
-        : lists.find((candidate) => candidate.id === resolved.priceListId) ?? null;
+        : (lists.find((candidate) => candidate.id === resolved.priceListId) ?? null);
     const entry =
       list === null
         ? null

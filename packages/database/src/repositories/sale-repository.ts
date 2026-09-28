@@ -901,9 +901,7 @@ export async function recordSaleWithin(
       // Tracked lines are replaced below, in this same transaction, by
       // the exact basis their sale movement consumed.
       costKnownQuantityScaled: 0n,
-      costUnknownQuantityScaled: BigInt(
-        line.inventoryQuantityScaled ?? line.quantityScaled,
-      ),
+      costUnknownQuantityScaled: BigInt(line.inventoryQuantityScaled ?? line.quantityScaled),
       costValueMinor: 0n,
       costProvenance: 'unknown',
     })),
@@ -1063,9 +1061,9 @@ export async function recordSaleWithin(
     const correlated =
       movement.saleLineId === undefined || movement.saleLineId === null
         ? null
-        : saleLineById.get(movement.saleLineId) ?? null;
+        : (saleLineById.get(movement.saleLineId) ?? null);
     const candidates = saleLinesByProduct.get(movement.productId) ?? [];
-    const saleLine = correlated ?? (candidates.length === 1 ? candidates[0] ?? null : null);
+    const saleLine = correlated ?? (candidates.length === 1 ? (candidates[0] ?? null) : null);
 
     if (
       saleLine === null ||
