@@ -13,6 +13,15 @@ import type { ProductType, TenantScope } from '@korvi/domain';
  * can still be understood, while the client offers only active tracked rows
  * for new orders and the locked authority rechecks both facts.
  */
+export interface PurchasingProductPackage {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly unitLabel: string;
+  readonly baseQuantityScaled: string;
+  readonly isActive: boolean;
+}
+
 export interface PurchasingProduct {
   readonly id: string;
   readonly sku: string;
@@ -22,6 +31,8 @@ export interface PurchasingProduct {
   readonly unitLabel: string;
   readonly isActive: boolean;
   readonly trackInventory: boolean;
+  /** Commercial ordering units only; never retail price authority. */
+  readonly packages: readonly PurchasingProductPackage[];
 }
 
 export interface PurchasingProductPage {
@@ -58,6 +69,17 @@ export async function listPurchasingProductPage(
         unitLabel: true,
         isActive: true,
         trackInventory: true,
+        packages: {
+          select: {
+            id: true,
+            code: true,
+            nameAr: true,
+            unitLabel: true,
+            baseQuantityScaled: true,
+            isActive: true,
+          },
+          orderBy: [{ isActive: 'desc' }, { code: 'asc' }],
+        },
       },
     });
 
@@ -67,6 +89,10 @@ export async function listPurchasingProductPage(
       rows: page.map((row) => ({
         ...row,
         productType: oneOf(PRODUCT_TYPES, row.productType, 'products.productType'),
+        packages: row.packages.map((packageRow) => ({
+          ...packageRow,
+          baseQuantityScaled: packageRow.baseQuantityScaled.toString(),
+        })),
       })),
       nextCursor: rows.length > bounded && last !== undefined ? last.id : null,
     };

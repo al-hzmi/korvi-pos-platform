@@ -1403,6 +1403,15 @@ export interface PurchasingBranch {
   readonly isActive: boolean;
 }
 
+export interface PurchasingProductPackage {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly unitLabel: string;
+  readonly baseQuantityScaled: string;
+  readonly isActive: boolean;
+}
+
 export interface PurchasingProduct {
   readonly id: string;
   readonly sku: string;
@@ -1412,6 +1421,7 @@ export interface PurchasingProduct {
   readonly unitLabel: string;
   readonly isActive: boolean;
   readonly trackInventory: boolean;
+  readonly packages: readonly PurchasingProductPackage[];
 }
 
 export interface PurchasingSupplier {
@@ -1432,9 +1442,16 @@ export type PurchaseOrderStatus = 'open' | 'partially_received' | 'received';
 export interface PurchaseOrderLine {
   readonly id: string;
   readonly productId: string;
+  readonly packageId: string | null;
+  readonly commercialQuantityScaled: string | null;
+  readonly packageCode: string | null;
+  readonly packageUnitLabel: string | null;
+  readonly packageBaseQuantityScaled: string | null;
+  /** Base Product inventory quantities. */
   readonly orderedQuantityScaled: string;
   readonly receivedQuantityScaled: string;
   readonly remainingQuantityScaled: string;
+  readonly remainingCommercialQuantityScaled: string | null;
 }
 
 export interface PurchaseOrder {
@@ -1481,6 +1498,7 @@ export interface PurchaseOrderCreateRequest {
   readonly reference: string | null;
   readonly lines: readonly {
     readonly productId: string;
+    readonly packageId?: string | null | undefined;
     readonly orderedQuantityScaled: string;
   }[];
 }
@@ -1506,6 +1524,12 @@ export interface PurchaseReceiptLineResult {
   readonly id: string;
   readonly purchaseOrderLineId: string;
   readonly productId: string;
+  readonly packageId: string | null;
+  readonly acceptedCommercialQuantityScaled: string | null;
+  readonly packageCode: string | null;
+  readonly packageUnitLabel: string | null;
+  readonly packageBaseQuantityScaled: string | null;
+  /** Base Product inventory quantities. */
   readonly acceptedQuantityScaled: string;
   readonly orderedQuantityScaled: string;
   readonly beforeReceivedQuantityScaled: string;

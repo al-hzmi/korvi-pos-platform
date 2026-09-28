@@ -60,6 +60,7 @@ export type DetailState =
 interface OrderLineDraft {
   readonly key: string;
   readonly productId: string;
+  readonly packageId: string | null;
   readonly quantity: string;
 }
 
@@ -78,6 +79,37 @@ function productName(products: readonly PurchasingProduct[], id: string): string
   return product === undefined
     ? isolateLtrText(id)
     : `${product.nameAr} — ${isolateLtrText(product.sku)}`;
+}
+
+function purchaseLineOrderedDisplay(line: PurchaseOrderLine): string {
+  return line.packageId === null
+    ? line.orderedQuantityScaled
+    : (line.commercialQuantityScaled ?? line.orderedQuantityScaled);
+}
+
+function purchaseLineRemainingDisplay(line: PurchaseOrderLine): string {
+  return line.packageId === null
+    ? line.remainingQuantityScaled
+    : (line.remainingCommercialQuantityScaled ?? line.remainingQuantityScaled);
+}
+
+function purchaseLineReceivedDisplay(line: PurchaseOrderLine): string {
+  if (
+    line.packageId !== null &&
+    line.commercialQuantityScaled !== null &&
+    line.remainingCommercialQuantityScaled !== null
+  ) {
+    return (
+      BigInt(line.commercialQuantityScaled) - BigInt(line.remainingCommercialQuantityScaled)
+    ).toString();
+  }
+  return line.receivedQuantityScaled;
+}
+
+function purchaseLineUnitSuffix(line: PurchaseOrderLine): string {
+  return line.packageId === null
+    ? ''
+    : ` — ${line.packageCode ?? 'تعبئة'} / ${line.packageUnitLabel ?? 'وحدة'}`;
 }
 
 /**
@@ -103,8 +135,12 @@ export function resolveOrderLineProduct(
     : products.find((product) => product.id === productId);
 }
 
-export function orderLineFieldLabel(field: 'product' | 'quantity', index: number): string {
-  const label = field === 'product' ? 'الصنف' : 'الكمية المطلوبة';
+export function orderLineFieldLabel(
+  field: 'product' | 'package' | 'quantity',
+  index: number,
+): string {
+  const label =
+    field === 'product' ? 'الصنف' : field === 'package' ? 'وحدة الطلب' : 'الكمية المطلوبة';
   return `${label} في بند أمر الشراء ${String(index + 1)}`;
 }
 
@@ -160,7 +196,8 @@ export function ReceiptLineEditor({
       <div className="font-medium">
         <span>{label}</span>
         <span className="mt-1 block text-xs text-muted-foreground">
-          المتبقي: <Numeric value={formatScaled(line.remainingQuantityScaled)} />
+          المتبقي: <Numeric value={formatScaled(purchaseLineRemainingDisplay(line))} />
+          {purchaseLineUnitSuffix(line)}
         </span>
       </div>
       <label className="flex flex-col gap-2 font-medium">
@@ -412,13 +449,16 @@ export function OrderDetail({
               <tr key={line.id} className="border-b border-border last:border-b-0">
                 <td className="px-3 py-3">{productName(products, line.productId)}</td>
                 <td className="px-3 py-3">
-                  <Numeric value={formatScaled(line.orderedQuantityScaled)} />
+                  <Numeric value={formatScaled(purchaseLineOrderedDisplay(line))} />
+        {purchaseLineUnitSuffix(line)}
                 </td>
                 <td className="px-3 py-3">
-                  <Numeric value={formatScaled(line.receivedQuantityScaled)} />
+                  <Numeric value={formatScaled(purchaseLineReceivedDisplay(line))} />
+        {purchaseLineUnitSuffix(line)}
                 </td>
                 <td className="px-3 py-3 font-semibold">
-                  <Numeric value={formatScaled(line.remainingQuantityScaled)} />
+                  <Numeric value={formatScaled(purchaseLineRemainingDisplay(line))} />
+        {purchaseLineUnitSuffix(line)}
                 </td>
               </tr>
             ))}
@@ -442,7 +482,16 @@ export function OrderDetail({
             {receipt.lines.map((line) => (
               <span key={line.id}>
                 {productName(products, line.productId)}:
-                <Numeric value={formatScaled(line.acceptedQuantityScaled)} />
+                <Numeric
+                  value={formatScaled(
+                    line.packageId === null
+                      ? line.acceptedQuantityScaled
+                      : (line.acceptedCommercialQuantityScaled ?? line.acceptedQuantityScaled),
+                  )}
+                />
+                {line.packageId === null
+                  ? ''
+                  : ` — ${line.packageCode ?? 'تعبئة'} / ${line.packageUnitLabel ?? 'وحدة'}`}
               </span>
             ))}
           </div>
@@ -487,7 +536,7 @@ export function PurchasingOperations({
   const [orderBranchId, setOrderBranchId] = useState('');
   const [orderReference, setOrderReference] = useState('');
   const [orderLines, setOrderLines] = useState<readonly OrderLineDraft[]>([
-    { key: 'line-1', productId: '', quantity: '' },
+    { key: 'line-1', productId: '', packageId: null, quantity: '' },
   ]);
   const [selectedOrderId, setSelectedOrderId] = useState(
     () =>
@@ -620,7 +669,7 @@ export function PurchasingOperations({
         setSupplierActive(submission.result.value.supplier.isActive);
       } else if (submission.result.kind === 'order-create') {
         setOrderReference('');
-        setOrderLines([{ key: 'line-1', productId: '', quantity: '' }]);
+        setOrderLines([{ key: 'line-1', productId: '', packageId: null, quantity: '' }]);
         nextLine.current = 2;
       }
     }
@@ -654,7 +703,7 @@ export function PurchasingOperations({
         setOrderSupplierId('');
         setOrderBranchId('');
         setOrderLines((current) =>
-          current.map((line) => ({ ...line, productId: '', quantity: '' })),
+          current.map((line) => ({ ...line, productId: '', packageId: null, quantity: '' })),
         );
         setReceiptReference('');
         setReceiptInventoryValues({});
@@ -722,14 +771,18 @@ export function PurchasingOperations({
 
   const submitOrder = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
-    const lines: { product: PurchasingProduct; quantity: string }[] = [];
+    const lines: {
+      product: PurchasingProduct;
+      packageId: string | null;
+      quantity: string;
+    }[] = [];
     for (const [index, draft] of orderLines.entries()) {
       const product = resolveOrderLineProduct(activeProducts, draft.productId, index);
       if (product === undefined) {
         setValidation('اختر صنفًا مفعّلًا لكل بند.');
         return;
       }
-      lines.push({ product, quantity: draft.quantity });
+      lines.push({ product, packageId: draft.packageId, quantity: draft.quantity });
     }
     const built = buildPurchaseOrderIntent(
       {
@@ -1015,10 +1068,18 @@ export function PurchasingOperations({
             ) : null}
             {orderLines.map((line, index) => {
               const selected = resolveOrderLineProduct(activeProducts, line.productId, index);
+              const activePackages =
+                selected?.productType === 'unit'
+                  ? selected.packages.filter((packageRow) => packageRow.isActive)
+                  : [];
+              const selectedPackage =
+                line.packageId === null
+                  ? null
+                  : activePackages.find((packageRow) => packageRow.id === line.packageId);
               return (
                 <div
                   key={line.key}
-                  className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-[1fr_1fr_auto]"
+                  className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-[1fr_0.9fr_1fr_auto]"
                 >
                   <label className="flex flex-col gap-2 text-sm font-medium">
                     الصنف
@@ -1032,7 +1093,7 @@ export function PurchasingOperations({
                         setOrderLines((current) =>
                           current.map((item) =>
                             item.key === line.key
-                              ? { ...item, productId: event.target.value }
+                              ? { ...item, productId: event.target.value, packageId: null }
                               : item,
                           ),
                         );
@@ -1045,6 +1106,40 @@ export function PurchasingOperations({
                       {activeProducts.map((product) => (
                         <option key={product.id} value={product.id}>
                           {product.nameAr} — {isolateLtrText(product.sku)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2 text-sm font-medium">
+                    وحدة الطلب
+                    <select
+                      aria-label={orderLineFieldLabel('package', index)}
+                      className="h-touch rounded-md border border-input bg-background px-3"
+                      disabled={formLocked || selected === undefined}
+                      value={selectedPackage?.id ?? ''}
+                      onChange={(event) => {
+                        flight.current.reset();
+                        setOrderLines((current) =>
+                          current.map((item) =>
+                            item.key === line.key
+                              ? {
+                                  ...item,
+                                  productId: bindVisibleSelectionId(item.productId, selected?.id),
+                                  packageId: event.target.value === '' ? null : event.target.value,
+                                }
+                              : item,
+                          ),
+                        );
+                        setValidation(null);
+                      }}
+                    >
+                      <option value="">
+                        الوحدة الأساسية{selected === undefined ? '' : ` — ${selected.unitLabel}`}
+                      </option>
+                      {activePackages.map((packageRow) => (
+                        <option key={packageRow.id} value={packageRow.id}>
+                          {packageRow.nameAr} — {isolateLtrText(packageRow.code)} ×{' '}
+                          {formatScaled(packageRow.baseQuantityScaled)}
                         </option>
                       ))}
                     </select>
@@ -1119,7 +1214,7 @@ export function PurchasingOperations({
                   const product = activeProducts.find((candidate) => !used.has(candidate.id));
                   setOrderLines((current) => [
                     ...current,
-                    { key, productId: product?.id ?? '', quantity: '' },
+                    { key, productId: product?.id ?? '', packageId: null, quantity: '' },
                   ]);
                 }}
               >

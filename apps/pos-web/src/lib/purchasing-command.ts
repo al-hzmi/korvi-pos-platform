@@ -110,7 +110,11 @@ export function buildPurchaseOrderIntent(
     readonly supplierId: string;
     readonly branchId: string;
     readonly reference: string;
-    readonly lines: readonly { readonly product: PurchasingProduct; readonly quantity: string }[];
+    readonly lines: readonly {
+      readonly product: PurchasingProduct;
+      readonly packageId: string | null;
+      readonly quantity: string;
+    }[];
   },
   mint: () => string,
 ): PurchasingDraftResult {
@@ -129,14 +133,36 @@ export function buildPurchaseOrderIntent(
     return { ok: false, message: 'الرقم المرجعي تجاوز 120 حرفًا.' };
   }
 
-  const lines: { productId: string; orderedQuantityScaled: string }[] = [];
+  const lines: {
+    productId: string;
+    packageId: string | null;
+    orderedQuantityScaled: string;
+  }[] = [];
   for (const line of input.lines) {
     if (!line.product.isActive || !line.product.trackInventory) {
       return { ok: false, message: 'أحد الأصناف لم يعد مفعّلًا أو متتبعًا للمخزون.' };
     }
-    const quantity = parseInventoryQuantityToScaled(line.quantity, line.product.productType);
+
+    const packageRow =
+      line.packageId === null
+        ? null
+        : line.product.packages.find((candidate) => candidate.id === line.packageId);
+    if (line.packageId !== null) {
+      if (line.product.productType !== 'unit' || packageRow === undefined || !packageRow.isActive) {
+        return { ok: false, message: 'وحدة التعبئة المختارة لم تعد متاحة لهذا الصنف.' };
+      }
+    }
+
+    const quantity = parseInventoryQuantityToScaled(
+      line.quantity,
+      line.packageId === null ? line.product.productType : 'unit',
+    );
     if (!quantity.ok) return { ok: false, message: quantityMessage(quantity.reason) };
-    lines.push({ productId: line.product.id, orderedQuantityScaled: quantity.value });
+    lines.push({
+      productId: line.product.id,
+      packageId: line.packageId,
+      orderedQuantityScaled: quantity.value,
+    });
   }
 
   return {
@@ -190,9 +216,23 @@ export function buildPurchaseReceiptIntent(
     if (product === undefined) {
       return { ok: false, message: 'تعذر إثبات نوع أحد أصناف الأمر. حدّث بيانات المشتريات.' };
     }
-    const quantity = parseInventoryQuantityToScaled(draft, product.productType);
+    const commercialPackage = line.packageId !== null;
+    const quantity = parseInventoryQuantityToScaled(
+      draft,
+      commercialPackage ? 'unit' : product.productType,
+    );
     if (!quantity.ok) return { ok: false, message: quantityMessage(quantity.reason) };
-    if (BigInt(quantity.value) > BigInt(line.remainingQuantityScaled)) {
+    const remaining =
+      commercialPackage && line.remainingCommercialQuantityScaled !== null
+        ? line.remainingCommercialQuantityScaled
+        : line.remainingQuantityScaled;
+    if (commercialPackage && line.remainingCommercialQuantityScaled === null) {
+      return {
+        ok: false,
+        message: 'تعذر إثبات كمية وحدة التعبئة التاريخية. حدّث تفاصيل أمر الشراء.',
+      };
+    }
+    if (BigInt(quantity.value) > BigInt(remaining)) {
       return { ok: false, message: 'إحدى كميات الاستلام تتجاوز الكمية المتبقية في الأمر.' };
     }
     if (valueDraft?.enabled === true) {
@@ -271,6 +311,7 @@ export function describePurchasingCommandFailure(error: unknown): PurchasingComm
       'inactive_branch',
       'inactive_product',
       'untracked_product',
+      'package_unavailable',
       'purchase_order_closed',
       'over_receipt',
     ].includes(error.code)

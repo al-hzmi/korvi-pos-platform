@@ -1456,6 +1456,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           reference: request.reference,
           lines: request.lines.map((line) => ({
             productId: line.productId,
+            ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
             orderedQuantityScaled: line.orderedQuantityScaled,
           })),
         },
