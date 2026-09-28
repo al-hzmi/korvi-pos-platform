@@ -746,12 +746,14 @@ describe('identity, quantities and refusals across the wire', () => {
       'isActive',
       'nameAr',
       'nameEn',
+      'packages',
       'productType',
       'sku',
       'trackInventory',
       'unitLabel',
     ]);
-    expect(JSON.stringify(row)).not.toMatch(/tenant|price|quantity|revision|cost/);
+    expect(row?.['packages']).toEqual([]);
+    expect(JSON.stringify(row)).not.toMatch(/tenant|price|stock|revision|cost/);
     expect(seen.at(0)).toEqual({
       method: 'listProducts',
       request: { limit: 50, cursor: null },
