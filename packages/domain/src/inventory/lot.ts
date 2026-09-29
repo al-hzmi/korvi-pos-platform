@@ -252,10 +252,7 @@ export function allocateOriginalSaleLotReturn(
 
   const ordered = [...originals.entries()].sort(([a], [b]) => a.localeCompare(b));
   const originalTotal = ordered.reduce((sum, [, quantity]) => sum + quantity, 0n);
-  const previousTotal = ordered.reduce(
-    (sum, [lotId]) => sum + (previous.get(lotId) ?? 0n),
-    0n,
-  );
+  const previousTotal = ordered.reduce((sum, [lotId]) => sum + (previous.get(lotId) ?? 0n), 0n);
   const cumulativeTarget = previousTotal + input.returnQuantityScaled;
   if (cumulativeTarget > originalTotal) {
     throw new LotDomainError(
