@@ -946,6 +946,131 @@ try {
   await clickButton('عملية بيع جديدة');
   await waitForText('ابحث أو امسح الباركود', 20_000);
 
+  await cdp.send('Page.navigate', { url: `${baseUrl}/control/lots` });
+  await waitForText('إدارة الدفعات وتواريخ الصلاحية', 30_000);
+  await setInput('lot-product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('BROWSER-SKU-001', 20_000);
+  await clickButton('صنف برهان المتصفح');
+  await waitForText('غير مفعل', 20_000);
+  await setSelectByLabelText('سياسة الاختيار عند الصرف', 'fefo');
+  await setSelectByLabelText('تاريخ الدفعة', 'optional');
+  await clickButton('تفعيل تتبع الدفعات');
+  await waitForText('تم تفعيل تتبع الدفعات', 30_000);
+  await waitForText('رصيد تاريخي غير معروف', 20_000);
+
+  const lotTruthBeforeSale = await browserRequest(
+    `/v1/admin/lots/products/${encodeURIComponent(beforeRow.productId)}`,
+  );
+  assert.equal(lotTruthBeforeSale.config.trackingMode, 'required');
+  assert.equal(lotTruthBeforeSale.config.selectionPolicy, 'fefo');
+  const baselineLot = lotTruthBeforeSale.config.lots.find(
+    (lot) => lot.provenance === 'historical-unknown',
+  );
+  assert.ok(baselineLot !== undefined, 'Lot tracking activation did not create historical baseline.');
+  const baselineAvailability = baselineLot.availabilityByBranch.find(
+    (row) => row.branchId === branch.id,
+  );
+  assert.ok(
+    baselineAvailability !== undefined,
+    'Historical baseline lot has no availability for the proof branch.',
+  );
+  const baselineQuantityBeforeSale = BigInt(baselineAvailability.quantityScaled);
+  assert.ok(
+    baselineQuantityBeforeSale >= 1000n,
+    'Historical baseline must contain at least one sellable unit.',
+  );
+  record(
+    'actual Chrome Control UI enabled FEFO lot tracking and preserved existing stock as explicit historical-unknown provenance',
+  );
+  await capture('control-v2-4-lot-tracking-success');
+
+  await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
+  await waitForText('ابحث أو امسح الباركود', 30_000);
+  await waitFor(
+    `(() => {
+      const input = document.getElementById('product-search');
+      return input instanceof HTMLInputElement && !input.disabled;
+    })()`,
+    'cashier durable draft hydration before lot-controlled sale',
+    20_000,
+  );
+
+  const lotStaleCartPresent = await evaluate(`(() => {
+    const button = [...document.querySelectorAll('button')].find(
+      (candidate) => (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'إفراغ السلة'
+    );
+    return button instanceof HTMLButtonElement;
+  })()`);
+  if (lotStaleCartPresent) {
+    await clickButton('إفراغ السلة');
+    await waitFor(
+      `![...document.querySelectorAll('button')].some(
+        (candidate) => (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'إفراغ السلة'
+      )`,
+      'restored lot-proof cart to clear',
+      20_000,
+    );
+  }
+
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+  await clickButton('إلكتروني / متعدد');
+  const lotSaleTotalMajor = await amountAfterLabel('الإجمالي المستحق');
+  const lotSaleTotalMinor = majorToMinor(lotSaleTotalMajor);
+  await setInputByAriaLabel('مبلغ الدفعة الإلكترونية 1', minorToMajor(lotSaleTotalMinor));
+  await setInputByAriaLabel('مرجع الموافقة 1', 'V24-LOT-PROOF-001');
+  await clickButton('إتمام البيع');
+  await waitForText('تمّت العملية', 30_000);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(
+    saleRequests,
+    4,
+    'Lot-controlled online checkout must add exactly one POST /v1/sales request.',
+  );
+
+  const lotTruthAfterSale = await browserRequest(
+    `/v1/admin/lots/products/${encodeURIComponent(beforeRow.productId)}`,
+  );
+  const storedBaselineLot = lotTruthAfterSale.config.lots.find(
+    (lot) => lot.id === baselineLot.id,
+  );
+  assert.ok(storedBaselineLot !== undefined, 'Baseline lot disappeared after sale.');
+  const afterAvailability = storedBaselineLot.availabilityByBranch.find(
+    (row) => row.branchId === branch.id,
+  );
+  const baselineQuantityAfterSale = BigInt(afterAvailability?.quantityScaled ?? '0');
+  assert.equal(
+    baselineQuantityBeforeSale - baselineQuantityAfterSale,
+    1000n,
+    'Lot-controlled sale did not consume exactly one base unit from the FEFO-selected lot.',
+  );
+
+  const lotSalesPage = await browserRequest('/v1/admin/sales?limit=20');
+  let lotSaleDetail = null;
+  for (const sale of lotSalesPage.items) {
+    if (sale.terminal?.id !== terminal.id || sale.status !== 'finalized') continue;
+    const detail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(sale.id)}`);
+    if (
+      detail.tenders.some(
+        (tender) => tender.kind === 'electronic' && tender.reference === 'V24-LOT-PROOF-001',
+      )
+    ) {
+      lotSaleDetail = detail;
+      break;
+    }
+  }
+  assert.ok(lotSaleDetail !== null, 'Lot-controlled proof sale missing from server truth.');
+  assert.equal(lotSaleDetail.totalMinor, lotSaleTotalMinor.toString());
+  record(
+    'actual Chrome cashier finalized a lot-controlled online sale; authoritative lot availability decreased by exactly one base unit',
+  );
+  await capture('cashier-v2-4-lot-controlled-sale-success');
+  await clickButton('عملية بيع جديدة');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
+
   await clickButton('إغلاق الوردية');
   await waitForText('إغلاق الوردية وتسوية الدرج', 20_000);
   await setInput('shift-close-declared-cash', '101.00');
