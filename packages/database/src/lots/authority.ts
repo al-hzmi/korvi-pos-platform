@@ -92,7 +92,7 @@ function dateKind(value: string | null): 'expiry' | 'best-before' | null {
   throw new Error('Inventory lot contains an unsupported date kind.');
 }
 
-function businessDateAt(instant: Date, timeZone: string): string {
+export function businessDateAt(instant: Date, timeZone: string): string {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone,

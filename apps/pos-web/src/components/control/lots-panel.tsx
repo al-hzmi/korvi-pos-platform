@@ -39,6 +39,19 @@ function statusLabel(value: AdminInventoryLot['status']): string {
   return 'مغلقة';
 }
 
+function dateStateLabel(value: AdminInventoryLot['dateState']): string {
+  switch (value) {
+    case 'unknown':
+      return 'تاريخ غير معروف';
+    case 'eligible':
+      return 'ضمن التاريخ';
+    case 'expired':
+      return 'منتهية';
+    case 'past-best-before':
+      return 'تجاوزت الأفضل قبل';
+  }
+}
+
 function quantityForBranch(lot: AdminInventoryLot, branchId: string): bigint {
   const row = lot.availabilityByBranch.find((entry) => entry.branchId === branchId);
   return BigInt(row?.quantityScaled ?? '0');
@@ -474,6 +487,53 @@ export function LotsPanel({
 
           {config.trackingMode === 'required' ? (
             <CardSurface className="p-5">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">حقائق الصلاحية</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    قراءة مشتقة من الدفعات الحالية فقط؛ لا تغيّر المخزون ولا تنفذ قرارًا تلقائيًا.
+                  </p>
+                </div>
+                <span className="rounded-md bg-muted px-2.5 py-1 font-mono text-xs text-muted-foreground">
+                  {config.expiryIntelligence.businessDate}
+                </span>
+              </div>
+              <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <dt className="text-xs text-muted-foreground">الرصيد المؤهل للصرف</dt>
+                  <dd className="mt-1 font-mono text-lg font-semibold text-foreground">
+                    {config.expiryIntelligence.eligibleQuantityScaled}
+                  </dd>
+                </div>
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <dt className="text-xs text-muted-foreground">كمية منتهية</dt>
+                  <dd className="mt-1 font-mono text-lg font-semibold text-foreground">
+                    {config.expiryIntelligence.expiredQuantityScaled}
+                  </dd>
+                </div>
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <dt className="text-xs text-muted-foreground">تاريخ غير معروف</dt>
+                  <dd className="mt-1 font-mono text-lg font-semibold text-foreground">
+                    {config.expiryIntelligence.unknownDateQuantityScaled}
+                  </dd>
+                </div>
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <dt className="text-xs text-muted-foreground">أقرب انتهاء مؤهل</dt>
+                  <dd className="mt-1 font-mono text-sm font-semibold text-foreground">
+                    {config.expiryIntelligence.soonestEligibleExpiryDate ?? '—'}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-xs text-muted-foreground">
+                تجاوز «الأفضل قبل»: <span className="font-mono">{config.expiryIntelligence.pastBestBeforeQuantityScaled}</span>
+                {' · '}محظور/مغلق: <span className="font-mono">{config.expiryIntelligence.blockedOrClosedQuantityScaled}</span>
+                {' · '}إجمالي موزع على الدفعات: <span className="font-mono">{config.expiryIntelligence.totalAvailableQuantityScaled}</span>
+              </p>
+            </CardSurface>
+          ) : null}
+
+          {config.trackingMode === 'required' ? (
+            <CardSurface className="p-5">
               <div className="mb-4">
                 <h2 className="text-base font-semibold text-foreground">سجل الدفعات</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -506,6 +566,15 @@ export function LotsPanel({
                             {lot.dateKind === null || lot.dateValue === null
                               ? 'لا يوجد تاريخ مثبت'
                               : `${lot.dateKind === 'expiry' ? 'انتهاء' : 'أفضل قبل'}: ${lot.dateValue}`}
+                            {' · '}
+                            {dateStateLabel(lot.dateState)}
+                            {lot.daysUntilDate === null
+                              ? ''
+                              : ` · ${lot.daysUntilDate >= 0 ? 'متبقي' : 'متجاوز'} ${Math.abs(lot.daysUntilDate)} يوم`}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            المتاح: <span className="font-mono">{lot.totalAvailableQuantityScaled}</span>
+                            {' · '}المؤهل للصرف: <span className="font-mono">{lot.eligibleForConsumptionQuantityScaled}</span>
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">

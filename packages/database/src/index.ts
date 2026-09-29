@@ -128,6 +128,7 @@ export type {
   LotAdminActor,
   LotAvailabilityByBranch,
   LotAdminLot,
+  LotExpiryIntelligence,
   ProductLotAdminConfig,
   EnableLotTrackingRequest,
   UpdateLotPolicyRequest,

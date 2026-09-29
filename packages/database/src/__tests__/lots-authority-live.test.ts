@@ -407,7 +407,7 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     } satisfies Partial<LotAdminRefusedError>);
   });
 
-  it('H. expired expiry stock is never auto-consumed while past best-before remains eligible', async () => {
+  it('H. expiry intelligence uses the business date and consumption excludes expired stock', async () => {
     await enableProductLotTracking(prisma, scope, actor, A.datedProduct, {
       selectionPolicy: 'fefo',
       dateRequirement: 'required',
@@ -423,8 +423,13 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
       dateKind: 'best-before',
       dateValue: '2026-09-28',
     });
+    const futureExpiry = await createLot({
+      productId: A.datedProduct,
+      dateKind: 'expiry',
+      dateValue: '2026-10-05',
+    });
 
-    for (const lotId of [expired, bestBefore]) {
+    for (const lotId of [expired, bestBefore, futureExpiry]) {
       await withTenant(prisma, scope.tenantId, (tx) =>
         applyMovementWithin(tx, A.tenant, movement(A.datedProduct, '1000'), true, null, undefined, {
           kind: 'explicit',
@@ -433,24 +438,62 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
       );
     }
 
+    const observedAt = new Date('2026-09-29T12:00:00.000Z');
+    const before = await readProductLotConfig(prisma, scope, A.datedProduct, observedAt);
+    if (before === null) throw new Error('dated lot config missing');
+    expect(before.expiryIntelligence).toEqual({
+      observedAt: observedAt.toISOString(),
+      businessDate: '2026-09-29',
+      totalAvailableQuantityScaled: '3000',
+      eligibleQuantityScaled: '2000',
+      expiredQuantityScaled: '1000',
+      pastBestBeforeQuantityScaled: '1000',
+      unknownDateQuantityScaled: '0',
+      blockedOrClosedQuantityScaled: '0',
+      soonestEligibleExpiryDate: '2026-10-05',
+    });
+    expect(before.lots.find((lot) => lot.id === expired)).toMatchObject({
+      dateState: 'expired',
+      daysUntilDate: -1,
+      totalAvailableQuantityScaled: '1000',
+      eligibleForConsumptionQuantityScaled: '0',
+    });
+    expect(before.lots.find((lot) => lot.id === bestBefore)).toMatchObject({
+      dateState: 'past-best-before',
+      daysUntilDate: -1,
+      eligibleForConsumptionQuantityScaled: '1000',
+    });
+    expect(before.lots.find((lot) => lot.id === futureExpiry)).toMatchObject({
+      dateState: 'eligible',
+      daysUntilDate: 6,
+      eligibleForConsumptionQuantityScaled: '1000',
+    });
+
     const inventory = createInventoryRepository(prisma);
     await inventory.applyMovement(
       scope,
-      movement(A.datedProduct, '-1000', '2026-09-29T12:00:00.000Z'),
+      movement(A.datedProduct, '-2000', '2026-09-29T12:00:00.000Z'),
     );
 
-    const availability = await readProductLotConfig(prisma, scope, A.datedProduct);
-    const expiredRow = availability?.lots.find((lot) => lot.id === expired);
-    const bestBeforeRow = availability?.lots.find((lot) => lot.id === bestBefore);
+    const after = await readProductLotConfig(
+      prisma,
+      scope,
+      A.datedProduct,
+      new Date('2026-09-29T12:01:00.000Z'),
+    );
+    const expiredRow = after?.lots.find((lot) => lot.id === expired);
+    const bestBeforeRow = after?.lots.find((lot) => lot.id === bestBefore);
+    const futureExpiryRow = after?.lots.find((lot) => lot.id === futureExpiry);
     expect(expiredRow?.availabilityByBranch[0]?.quantityScaled).toBe('1000');
     expect(bestBeforeRow?.availabilityByBranch[0]?.quantityScaled).toBe('0');
+    expect(futureExpiryRow?.availabilityByBranch[0]?.quantityScaled).toBe('0');
 
     await expect(
-      inventory.applyMovement(scope, movement(A.datedProduct, '-1', '2026-09-29T12:01:00.000Z')),
+      inventory.applyMovement(scope, movement(A.datedProduct, '-1', '2026-09-29T12:02:00.000Z')),
     ).rejects.toMatchObject({
-      name: 'LotDomainError',
-      detail: 'insufficient-eligible-lot',
-    });
+      name: 'LotPolicyRefusedError',
+      detail: 'lot-unavailable',
+    } satisfies Partial<LotPolicyRefusedError>);
   });
 
   it('I. concurrent consumers serialize on lot identities and cannot oversell lot-controlled stock', async () => {

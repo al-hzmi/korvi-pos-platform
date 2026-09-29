@@ -1281,10 +1281,26 @@ export interface AdminInventoryLot {
   readonly externalBatchReference: string | null;
   readonly dateKind: 'expiry' | 'best-before' | null;
   readonly dateValue: string | null;
+  readonly dateState: 'unknown' | 'eligible' | 'expired' | 'past-best-before';
+  readonly daysUntilDate: number | null;
+  readonly totalAvailableQuantityScaled: string;
+  readonly eligibleForConsumptionQuantityScaled: string;
   readonly status: 'active' | 'blocked' | 'closed';
   readonly revision: string;
   readonly firstObservedAt: string;
   readonly availabilityByBranch: readonly AdminLotAvailabilityByBranch[];
+}
+
+export interface AdminLotExpiryIntelligence {
+  readonly observedAt: string;
+  readonly businessDate: string;
+  readonly totalAvailableQuantityScaled: string;
+  readonly eligibleQuantityScaled: string;
+  readonly expiredQuantityScaled: string;
+  readonly pastBestBeforeQuantityScaled: string;
+  readonly unknownDateQuantityScaled: string;
+  readonly blockedOrClosedQuantityScaled: string;
+  readonly soonestEligibleExpiryDate: string | null;
 }
 
 export interface AdminProductLotConfig {
@@ -1296,6 +1312,7 @@ export interface AdminProductLotConfig {
   readonly dateRequirement: 'optional' | 'required';
   readonly revision: string;
   readonly businessTimeZone: string;
+  readonly expiryIntelligence: AdminLotExpiryIntelligence;
   readonly lots: readonly AdminInventoryLot[];
 }
 

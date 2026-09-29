@@ -1,5 +1,6 @@
-import { canonicalUuid, newId } from '@korvi/domain';
+import { canonicalUuid, lotDateState, newId, parseCalendarDate } from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
+import { businessDateAt } from '../lots/authority.js';
 import { withTenant } from '../tenant-context.js';
 import { tenantParam } from '../repositories/mapping.js';
 import type { PrismaClient } from '../client.js';
@@ -43,10 +44,26 @@ export interface LotAdminLot {
   readonly externalBatchReference: string | null;
   readonly dateKind: 'expiry' | 'best-before' | null;
   readonly dateValue: string | null;
+  readonly dateState: 'unknown' | 'eligible' | 'expired' | 'past-best-before';
+  readonly daysUntilDate: number | null;
+  readonly totalAvailableQuantityScaled: string;
+  readonly eligibleForConsumptionQuantityScaled: string;
   readonly status: 'active' | 'blocked' | 'closed';
   readonly revision: string;
   readonly firstObservedAt: string;
   readonly availabilityByBranch: readonly LotAvailabilityByBranch[];
+}
+
+export interface LotExpiryIntelligence {
+  readonly observedAt: string;
+  readonly businessDate: string;
+  readonly totalAvailableQuantityScaled: string;
+  readonly eligibleQuantityScaled: string;
+  readonly expiredQuantityScaled: string;
+  readonly pastBestBeforeQuantityScaled: string;
+  readonly unknownDateQuantityScaled: string;
+  readonly blockedOrClosedQuantityScaled: string;
+  readonly soonestEligibleExpiryDate: string | null;
 }
 
 export interface ProductLotAdminConfig {
@@ -58,6 +75,7 @@ export interface ProductLotAdminConfig {
   readonly dateRequirement: 'optional' | 'required';
   readonly revision: string;
   readonly businessTimeZone: string;
+  readonly expiryIntelligence: LotExpiryIntelligence;
   readonly lots: readonly LotAdminLot[];
 }
 
@@ -193,6 +211,7 @@ async function loadConfig(
   tx: TransactionClient,
   tenant: string,
   productId: string,
+  observedAt: Date,
 ): Promise<ProductLotAdminConfig | null> {
   const product = await tx.product.findFirst({
     where: { tenantId: tenant, id: productId },
@@ -226,6 +245,67 @@ async function loadConfig(
     byLot.set(row.lotId, rows);
   }
 
+  const businessTimeZone = settings?.businessTimeZone ?? 'Asia/Riyadh';
+  const businessDate = businessDateAt(observedAt, businessTimeZone);
+  const businessDay = parseCalendarDate(businessDate, 'businessDate');
+  let totalAvailable = 0n;
+  let eligible = 0n;
+  let expired = 0n;
+  let pastBestBefore = 0n;
+  let unknownDate = 0n;
+  let blockedOrClosed = 0n;
+  let soonestEligibleExpiryDate: string | null = null;
+
+  const lotFacts: LotAdminLot[] = lots.map((lot) => {
+    const dateKind = lotDateKind(lot.dateKind);
+    const dateValue = lot.dateValue?.toISOString().slice(0, 10) ?? null;
+    const dateState = lotDateState(dateKind, dateValue, businessDate);
+    const status = lotStatus(lot.status);
+    const availabilityByBranch = byLot.get(lot.id) ?? [];
+    const total = availabilityByBranch.reduce(
+      (sum, row) => sum + BigInt(row.quantityScaled),
+      0n,
+    );
+    if (total < 0n) {
+      throw new DatabaseError('Lot availability cannot be negative in the administration read model.');
+    }
+    const consumable = status === 'active' && dateState !== 'expired' ? total : 0n;
+    totalAvailable += total;
+    eligible += consumable;
+    if (dateState === 'expired') expired += total;
+    if (dateState === 'past-best-before') pastBestBefore += total;
+    if (dateState === 'unknown') unknownDate += total;
+    if (status !== 'active') blockedOrClosed += total;
+    if (
+      total > 0n &&
+      status === 'active' &&
+      dateKind === 'expiry' &&
+      dateState === 'eligible' &&
+      dateValue !== null &&
+      (soonestEligibleExpiryDate === null || dateValue < soonestEligibleExpiryDate)
+    ) {
+      soonestEligibleExpiryDate = dateValue;
+    }
+
+    return {
+      id: lot.id,
+      internalCode: lot.internalCode,
+      provenance: lotProvenance(lot.provenance),
+      externalBatchReference: lot.externalBatchReference,
+      dateKind,
+      dateValue,
+      dateState,
+      daysUntilDate:
+        dateValue === null ? null : parseCalendarDate(dateValue, 'dateValue') - businessDay,
+      totalAvailableQuantityScaled: total.toString(),
+      eligibleForConsumptionQuantityScaled: consumable.toString(),
+      status,
+      revision: lot.revision.toString(),
+      firstObservedAt: lot.firstObservedAt.toISOString(),
+      availabilityByBranch,
+    };
+  });
+
   return {
     productId: product.id,
     sku: product.sku,
@@ -234,19 +314,19 @@ async function loadConfig(
     selectionPolicy: policy?.selectionPolicy === 'fifo' ? 'fifo' : 'fefo',
     dateRequirement: policy?.dateRequirement === 'required' ? 'required' : 'optional',
     revision: (policy?.revision ?? 0n).toString(),
-    businessTimeZone: settings?.businessTimeZone ?? 'Asia/Riyadh',
-    lots: lots.map((lot) => ({
-      id: lot.id,
-      internalCode: lot.internalCode,
-      provenance: lotProvenance(lot.provenance),
-      externalBatchReference: lot.externalBatchReference,
-      dateKind: lotDateKind(lot.dateKind),
-      dateValue: lot.dateValue?.toISOString().slice(0, 10) ?? null,
-      status: lotStatus(lot.status),
-      revision: lot.revision.toString(),
-      firstObservedAt: lot.firstObservedAt.toISOString(),
-      availabilityByBranch: byLot.get(lot.id) ?? [],
-    })),
+    businessTimeZone,
+    expiryIntelligence: {
+      observedAt: observedAt.toISOString(),
+      businessDate,
+      totalAvailableQuantityScaled: totalAvailable.toString(),
+      eligibleQuantityScaled: eligible.toString(),
+      expiredQuantityScaled: expired.toString(),
+      pastBestBeforeQuantityScaled: pastBestBefore.toString(),
+      unknownDateQuantityScaled: unknownDate.toString(),
+      blockedOrClosedQuantityScaled: blockedOrClosed.toString(),
+      soonestEligibleExpiryDate,
+    },
+    lots: lotFacts,
   };
 }
 
@@ -288,8 +368,11 @@ export async function readProductLotConfig(
   prisma: PrismaClient,
   scope: TenantScope,
   productId: string,
+  observedAt: Date = new Date(),
 ): Promise<ProductLotAdminConfig | null> {
-  return withTenant(prisma, scope.tenantId, (tx) => loadConfig(tx, tenantParam(scope), productId));
+  return withTenant(prisma, scope.tenantId, (tx) =>
+    loadConfig(tx, tenantParam(scope), productId, observedAt),
+  );
 }
 
 export async function enableProductLotTracking(
@@ -396,7 +479,7 @@ export async function enableProductLotTracking(
       occurredAt,
     );
 
-    const result = await loadConfig(tx, tenant, productId);
+    const result = await loadConfig(tx, tenant, productId, occurredAt);
     if (result === null) throw new DatabaseError('Product disappeared after lot activation.');
     return result;
   });
@@ -446,7 +529,7 @@ export async function updateProductLotPolicy(
       },
       occurredAt,
     );
-    const result = await loadConfig(tx, tenant, productId);
+    const result = await loadConfig(tx, tenant, productId, occurredAt);
     if (result === null) throw new DatabaseError('Product disappeared after lot policy update.');
     return result;
   });
@@ -505,7 +588,7 @@ export async function updateInventoryLotStatus(
       { previousStatus: lot.status, currentStatus: input.status },
       occurredAt,
     );
-    const result = await loadConfig(tx, tenant, lot.productId);
+    const result = await loadConfig(tx, tenant, lot.productId, occurredAt);
     if (result === null) throw new DatabaseError('Lot product disappeared after status update.');
     return result;
   });
@@ -547,7 +630,7 @@ export async function recordInventoryLotReclassification(
       if (previous.requestHash !== input.requestHash) {
         throw new LotAdminRefusedError('idempotency-conflict');
       }
-      const replay = await loadConfig(tx, tenant, previous.productId);
+      const replay = await loadConfig(tx, tenant, previous.productId, occurredAt);
       if (replay === null) throw new DatabaseError('Reclassification product disappeared.');
       return replay;
     }
@@ -647,7 +730,7 @@ export async function recordInventoryLotReclassification(
       },
       occurredAt,
     );
-    const result = await loadConfig(tx, tenant, input.productId);
+    const result = await loadConfig(tx, tenant, input.productId, occurredAt);
     if (result === null) throw new DatabaseError('Reclassification product disappeared.');
     return result;
   });

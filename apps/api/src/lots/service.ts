@@ -119,7 +119,7 @@ export function createMerchantLotAdminService(
   return {
     async read(principal, productId) {
       requirePrincipalPermission(principal, 'lot.manage');
-      return readProductLotConfig(prisma, scopeOf(principal), productId);
+      return readProductLotConfig(prisma, scopeOf(principal), productId, now());
     },
 
     async enable(principal, productId, input) {
