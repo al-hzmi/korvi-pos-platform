@@ -984,12 +984,26 @@ export async function recordInventoryTransfer(
         lineId,
       );
 
-      // The destination receives the exact basis the source movement just
-      // consumed. This is the transfer valuation conservation boundary: no
-      // branch can manufacture a fresh average, and no value can disappear
-      // between the two legs. If the destination is negative, the shared
-      // costing authority records any known value used to fill that deficit as
-      // catch-up evidence rather than pretending it remains an inventory asset.
+      // The destination receives the exact basis and, for lot-controlled
+      // products, the exact lot identities the source movement consumed.
+      // This preserves both valuation and provenance without creating a
+      // destination-only lot or any parallel lot balance.
+      const transferLots =
+        out.lots.length === 0
+          ? undefined
+          : {
+              kind: 'explicit' as const,
+              allocations: out.lots.map((allocation) => {
+                if (allocation.quantityScaled >= 0n) {
+                  throw new Error('Transfer source lot allocation must be outgoing.');
+                }
+                return {
+                  lotId: allocation.lotId,
+                  quantityScaled: (-allocation.quantityScaled).toString(),
+                };
+              }),
+            };
+
       const into = await applyMovementWithin(
         tx,
         tenant,
@@ -1008,6 +1022,7 @@ export async function recordInventoryTransfer(
         true,
         lineId,
         out.cost,
+        transferLots,
       );
 
       if (

@@ -11,6 +11,7 @@ import {
   createInventoryRepository,
 } from '../repositories/inventory-repository.js';
 import { withTenant } from '../tenant-context.js';
+import { recordInventoryTransfer } from '../inventory/stock-ledger.js';
 import type { LotAdminRefusedError } from '../administration/lots.js';
 import type { LotPolicyRefusedError } from '../errors.js';
 import type { PrismaClient } from '../client.js';
@@ -21,9 +22,11 @@ const url = process.env['KORVI_TEST_DATABASE_URL'] ?? '';
 const A = {
   tenant: '018fd240-0000-7000-8000-00000000000a',
   branch: '018fd240-0000-7000-8000-0000000000b1',
+  branch2: '018fd240-0000-7000-8000-0000000000b2',
   user: '018fd240-0000-7000-8000-0000000000c1',
   product: '018fd240-0000-7000-8000-0000000000d1',
   datedProduct: '018fd240-0000-7000-8000-0000000000d2',
+  transferProduct: '018fd240-0000-7000-8000-0000000000d3',
 } as const;
 
 const B = {
@@ -130,6 +133,15 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
           updatedAt: new Date(),
         },
       });
+      await tx.branch.create({
+        data: {
+          id: A.branch2,
+          tenantId: A.tenant,
+          code: 'V24-B',
+          nameAr: 'فرع V2-4 الثاني',
+          updatedAt: new Date(),
+        },
+      });
       await tx.user.create({
         data: {
           id: A.user,
@@ -142,6 +154,7 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
       for (const [id, sku, quantity] of [
         [A.product, 'LOT-LIVE-1', 5_000n],
         [A.datedProduct, 'LOT-LIVE-DATE', 0n],
+        [A.transferProduct, 'LOT-LIVE-TRANSFER', 4_000n],
       ] as const) {
         await tx.product.create({
           data: {
@@ -167,6 +180,16 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
           },
         });
       }
+      await tx.inventoryBalance.create({
+        data: {
+          tenantId: A.tenant,
+          branchId: A.branch2,
+          productId: A.transferProduct,
+          quantityScaled: 0n,
+          revision: 0n,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     await withTenant(prisma, otherScope.tenantId, async (tx) => {
@@ -449,7 +472,57 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     expect(after?.quantityScaled).toBeGreaterThanOrEqual(0n);
   });
 
-  it('J. finalized lot distribution entries reject historical rewrites', async () => {
+  it('J. transfers preserve exact lot identities across branches without a parallel stock truth', async () => {
+    const config = await enableProductLotTracking(prisma, scope, actor, A.transferProduct, {
+      selectionPolicy: 'fifo',
+      dateRequirement: 'optional',
+      occurredAt: '2026-09-29T00:04:00.000Z',
+    });
+    const sourceLot = config.lots[0];
+    if (sourceLot === undefined) throw new Error('transfer baseline lot missing');
+
+    const result = await recordInventoryTransfer(
+      prisma,
+      { tenantId: A.tenant, userId: A.user },
+      {
+        operationId: newId(),
+        fromBranchId: A.branch,
+        toBranchId: A.branch2,
+        reason: 'v2-4-lot-transfer-proof',
+        lines: [{ productId: A.transferProduct, quantityScaled: '1000' }],
+      },
+      'transfer-proof'.padEnd(43, 'T'),
+      () => new Date('2026-09-29T00:05:00.000Z'),
+    );
+    expect(result.lines[0]?.sourceAfterQuantityScaled).toBe('3000');
+    expect(result.lines[0]?.destinationAfterQuantityScaled).toBe('1000');
+
+    const proof = await withTenant(prisma, scope.tenantId, async (tx) => {
+      const balances = await tx.inventoryBalance.findMany({
+        where: { productId: A.transferProduct },
+        orderBy: { branchId: 'asc' },
+      });
+      const entries = await tx.inventoryLotEntry.findMany({
+        where: { productId: A.transferProduct, lotId: sourceLot.id },
+        orderBy: [{ branchId: 'asc' }, { occurredAt: 'asc' }],
+      });
+      return { balances, entries };
+    });
+
+    const sourceEntries = proof.entries.filter((entry) => entry.branchId === A.branch);
+    const destinationEntries = proof.entries.filter((entry) => entry.branchId === A.branch2);
+    expect(sourceEntries.reduce((sum, row) => sum + row.quantityScaled, 0n)).toBe(3_000n);
+    expect(destinationEntries.reduce((sum, row) => sum + row.quantityScaled, 0n)).toBe(1_000n);
+    expect(new Set(proof.entries.map((entry) => entry.lotId))).toEqual(new Set([sourceLot.id]));
+
+    const balances = new Map(
+      proof.balances.map((balance) => [balance.branchId, balance.quantityScaled] as const),
+    );
+    expect(balances.get(A.branch)).toBe(3_000n);
+    expect(balances.get(A.branch2)).toBe(1_000n);
+  });
+
+  it('K. finalized lot distribution entries reject historical rewrites', async () => {
     const entry = await withTenant(prisma, scope.tenantId, async (tx) =>
       tx.inventoryLotEntry.findFirst({ where: { productId: A.product } }),
     );
