@@ -525,9 +525,18 @@ export function LotsPanel({
                 </div>
               </dl>
               <p className="mt-3 text-xs text-muted-foreground">
-                تجاوز «الأفضل قبل»: <span className="font-mono">{config.expiryIntelligence.pastBestBeforeQuantityScaled}</span>
-                {' · '}محظور/مغلق: <span className="font-mono">{config.expiryIntelligence.blockedOrClosedQuantityScaled}</span>
-                {' · '}إجمالي موزع على الدفعات: <span className="font-mono">{config.expiryIntelligence.totalAvailableQuantityScaled}</span>
+                تجاوز «الأفضل قبل»:{' '}
+                <span className="font-mono">
+                  {config.expiryIntelligence.pastBestBeforeQuantityScaled}
+                </span>
+                {' · '}محظور/مغلق:{' '}
+                <span className="font-mono">
+                  {config.expiryIntelligence.blockedOrClosedQuantityScaled}
+                </span>
+                {' · '}إجمالي موزع على الدفعات:{' '}
+                <span className="font-mono">
+                  {config.expiryIntelligence.totalAvailableQuantityScaled}
+                </span>
               </p>
             </CardSurface>
           ) : null}
@@ -573,8 +582,12 @@ export function LotsPanel({
                               : ` · ${lot.daysUntilDate >= 0 ? 'متبقي' : 'متجاوز'} ${Math.abs(lot.daysUntilDate)} يوم`}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            المتاح: <span className="font-mono">{lot.totalAvailableQuantityScaled}</span>
-                            {' · '}المؤهل للصرف: <span className="font-mono">{lot.eligibleForConsumptionQuantityScaled}</span>
+                            المتاح:{' '}
+                            <span className="font-mono">{lot.totalAvailableQuantityScaled}</span>
+                            {' · '}المؤهل للصرف:{' '}
+                            <span className="font-mono">
+                              {lot.eligibleForConsumptionQuantityScaled}
+                            </span>
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">

@@ -262,12 +262,11 @@ async function loadConfig(
     const dateState = lotDateState(dateKind, dateValue, businessDate);
     const status = lotStatus(lot.status);
     const availabilityByBranch = byLot.get(lot.id) ?? [];
-    const total = availabilityByBranch.reduce(
-      (sum, row) => sum + BigInt(row.quantityScaled),
-      0n,
-    );
+    const total = availabilityByBranch.reduce((sum, row) => sum + BigInt(row.quantityScaled), 0n);
     if (total < 0n) {
-      throw new DatabaseError('Lot availability cannot be negative in the administration read model.');
+      throw new DatabaseError(
+        'Lot availability cannot be negative in the administration read model.',
+      );
     }
     const consumable = status === 'active' && dateState !== 'expired' ? total : 0n;
     totalAvailable += total;

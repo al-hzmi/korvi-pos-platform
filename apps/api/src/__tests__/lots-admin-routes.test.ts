@@ -27,10 +27,7 @@ import {
   memoryTerminalRepository,
   seedStore,
 } from './support/memory-business.js';
-import type {
-  LotAdminResult,
-  MerchantLotAdminService,
-} from '../lots/service.js';
+import type { LotAdminResult, MerchantLotAdminService } from '../lots/service.js';
 import type { ProductLotAdminConfig } from '@korvi/database';
 import type { AuthenticatedPrincipal, RoleName } from '@korvi/domain';
 import type { Fixture } from './support/memory-business.js';
@@ -221,12 +218,7 @@ async function cookieFor(server: FastifyInstance): Promise<string> {
   return header.split(';')[0] ?? '';
 }
 
-function send(
-  method: 'GET' | 'POST' | 'PATCH',
-  url: string,
-  cookie?: string,
-  payload?: unknown,
-) {
+function send(method: 'GET' | 'POST' | 'PATCH', url: string, cookie?: string, payload?: unknown) {
   return app.inject({
     method,
     url,
@@ -303,17 +295,12 @@ describe('lot administration authorization', () => {
   it('refuses client-asserted tenant or actor fields rather than sanitizing them through', async () => {
     await build('manager');
     const cookie = await cookieFor(app);
-    const response = await send(
-      'POST',
-      `/v1/admin/lots/products/${PRODUCT_ID}/enable`,
-      cookie,
-      {
-        selectionPolicy: 'fefo',
-        dateRequirement: 'required',
-        tenantId: '018fd420-0000-7000-8000-00000000000b',
-        actorUserId: '018fd420-0000-7000-8000-0000000000b4',
-      },
-    );
+    const response = await send('POST', `/v1/admin/lots/products/${PRODUCT_ID}/enable`, cookie, {
+      selectionPolicy: 'fefo',
+      dateRequirement: 'required',
+      tenantId: '018fd420-0000-7000-8000-00000000000b',
+      actorUserId: '018fd420-0000-7000-8000-0000000000b4',
+    });
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body)).toEqual({ error: 'invalid_body' });
     expect(calls).toHaveLength(0);
