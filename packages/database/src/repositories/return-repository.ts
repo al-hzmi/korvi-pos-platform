@@ -891,13 +891,17 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               'A stock reversal was planned without an id to write it under.',
             );
           }
+          const productId = line.productId;
+          if (productId === null) {
+            throw new DatabaseError('A stock return movement is missing its product identity.');
+          }
           const applied = await applyMovementWithin(
             tx,
             tenant,
             {
               id,
               branchId: input.branchId,
-              productId: line.productId,
+              productId,
               kind: 'return',
               // Positive base Product quantity from the immutable sale snapshot.
               quantityScaled: line.inventoryQuantityScaled,
@@ -926,7 +930,7 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
                 id: newId(),
                 tenantId: tenant,
                 returnLineId,
-                productId: line.productId,
+                productId,
                 lotId: lot.lotId,
                 quantityScaled: lot.quantityScaled,
                 internalCode: lot.internalCode,
