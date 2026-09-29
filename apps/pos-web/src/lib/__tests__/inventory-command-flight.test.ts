@@ -66,6 +66,39 @@ describe('inventory command flight', () => {
     expect(flight.begin(() => adjustment('op-never-built'))).toBe(first);
   });
 
+  it('deep-freezes lot counts so a retry cannot swap counted lot quantities', () => {
+    const flight = createInventoryCommandFlight();
+    const first = flight.begin(() => ({
+      kind: 'count',
+      request: {
+        operationId: 'op-count-lot-1',
+        branchId: 'branch-1',
+        reason: 'جرد دفعات',
+        lines: [
+          {
+            productId: 'product-1',
+            countedQuantityScaled: '2000',
+            expectedRevision: '7',
+            lots: [
+              { lotId: 'lot-1', countedQuantityScaled: '750' },
+              { lotId: 'lot-2', countedQuantityScaled: '1250' },
+            ],
+          },
+        ],
+      },
+    }))!;
+
+    const countRequest = first.kind === 'count' ? first.request : null;
+    expect(countRequest).not.toBeNull();
+    expect(Object.isFrozen(countRequest?.lines)).toBe(true);
+    expect(Object.isFrozen(countRequest?.lines[0])).toBe(true);
+    expect(Object.isFrozen(countRequest?.lines[0]?.lots)).toBe(true);
+    expect(Object.isFrozen(countRequest?.lines[0]?.lots?.[0])).toBe(true);
+
+    flight.settle('ambiguous');
+    expect(flight.begin(() => adjustment('op-never-built'))).toBe(first);
+  });
+
   it('retires a definitely refused intent before accepting an amendment', () => {
     const flight = createInventoryCommandFlight();
     flight.begin(() => adjustment('op-1'));
