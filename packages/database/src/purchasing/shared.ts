@@ -34,9 +34,7 @@ type PurchasingRelevantStockRefusal = Exclude<
   | 'unknown-lot'
 >;
 
-const REFUSAL_TRANSLATION: Readonly<
-  Record<PurchasingRelevantStockRefusal, PurchasingRefusal>
-> = {
+const REFUSAL_TRANSLATION: Readonly<Record<PurchasingRelevantStockRefusal, PurchasingRefusal>> = {
   'unknown-branch': 'unknown-branch',
   'inactive-branch': 'inactive-branch',
   'unknown-product': 'unknown-product',
