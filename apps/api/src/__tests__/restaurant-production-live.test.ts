@@ -519,7 +519,14 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
         },
       }),
       productions: await tx.restaurantRecipeProduction.count({
-        where: { productId: A.finishedUnknown },
+        where: {
+          lines: {
+            some: {
+              productId: A.finishedUnknown,
+              role: 'output',
+            },
+          },
+        },
       }),
     }));
 
@@ -545,7 +552,14 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
         },
       }),
       productions: await tx.restaurantRecipeProduction.count({
-        where: { productId: A.finishedUnknown },
+        where: {
+          lines: {
+            some: {
+              productId: A.finishedUnknown,
+              role: 'output',
+            },
+          },
+        },
       }),
     }));
     expect(afterRefusal.output?.quantityScaled).toBe(before.output?.quantityScaled);
