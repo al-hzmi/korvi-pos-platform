@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { StockRequestError, assertQuantityShape, newId } from '@korvi/domain';
-import { InsufficientStockError, StockOperationRefusedError } from '../errors.js';
+import {
+  InsufficientStockError,
+  LotPolicyRefusedError,
+  StockOperationRefusedError,
+} from '../errors.js';
 import {
   lockBalances,
   lockBranches,
@@ -225,6 +229,9 @@ function translateStock(error: unknown): never {
   }
   if (error instanceof StockRequestError) {
     throw new RestaurantWasteRefusedError('invalid-quantity');
+  }
+  if (error instanceof LotPolicyRefusedError && error.detail === 'lot-unavailable') {
+    throw new RestaurantWasteRefusedError('insufficient-stock');
   }
   if (error instanceof StockOperationRefusedError) {
     switch (error.detail) {

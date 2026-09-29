@@ -269,6 +269,9 @@ function translateStock(error: unknown): never {
     if (error.detail === 'incoming-lot-required') {
       throw new RestaurantProductionRefusedError('output-lot-required');
     }
+    if (error.detail === 'lot-unavailable') {
+      throw new RestaurantProductionRefusedError('insufficient-stock');
+    }
     throw new RestaurantProductionRefusedError('invalid-output-lot');
   }
   if (error instanceof StockOperationRefusedError) {

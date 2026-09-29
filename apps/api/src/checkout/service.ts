@@ -26,6 +26,7 @@ import {
 } from '@korvi/domain';
 import {
   InsufficientStockError,
+  LotPolicyRefusedError,
   OperationAlreadyRecordedError,
   PromotionPolicyRefusedError,
   RetailPricingPolicyRefusedError,
@@ -1379,6 +1380,12 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         // three are races a prior read cannot settle. Each rolls the whole
         // transaction back; none of them reaches the client as a driver error.
         if (error instanceof InsufficientStockError) return fail('insufficient-stock');
+        if (error instanceof LotPolicyRefusedError) {
+          if (error.detail === 'lot-unavailable') return fail('insufficient-stock');
+          if (error.detail === 'invalid-business-time-zone') {
+            return fail('tenant-misconfigured', 'إعداد المنطقة الزمنية للمنشأة غير صالح.');
+          }
+        }
         if (error instanceof ShiftUnusableError) return fail('shift-invalid');
         if (error instanceof RetailPricingPolicyRefusedError) {
           if (error.detail === 'unknown-package') return fail('unknown-package');

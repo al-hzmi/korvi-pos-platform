@@ -8,6 +8,7 @@ import {
   createPrismaClient,
   createPurchaseOrder,
   createSupplier,
+  enableProductLotTracking,
   getPurchaseOrder,
   getSupplier,
   listPurchaseOrders,
@@ -74,6 +75,7 @@ const T = {
   costReceipt: '018f5b00-0000-7000-8000-0000000000b0',
   costFreshness: '018f5b00-0000-7000-8000-0000000000b1',
   costUnknownFreshness: '018f5b00-0000-7000-8000-0000000000b2',
+  lotReceipt: '018f5b00-0000-7000-8000-0000000000b3',
 } as const;
 
 const OTHER = {
@@ -437,6 +439,7 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
         [T.costReceipt, 'COST-RECEIPT', 'unit', true, true],
         [T.costFreshness, 'COST-FRESHNESS', 'unit', true, true],
         [T.costUnknownFreshness, 'COST-UNKNOWN-FRESHNESS', 'unit', true, true],
+        [T.lotReceipt, 'LOT-RECEIPT', 'unit', true, true],
       ] as const) {
         await tx.product.create({
           data: {
@@ -2433,6 +2436,157 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     const after = await balanceOf(T.branchA, T.scale);
     expect(after?.revision).toBe(before.revision + 2n);
     expect(after?.quantityScaled).toBe(before.quantityScaled + 6_000n);
+  }, 90_000);
+
+  it('V2-4: receiving commits exact lot provenance snapshots that reconcile to the canonical movement', async () => {
+    await enableProductLotTracking(
+      prisma,
+      scope,
+      { userId: T.user },
+      T.lotReceipt,
+      {
+        selectionPolicy: 'fefo',
+        dateRequirement: 'required',
+        occurredAt: '2026-09-29T13:00:00.000Z',
+      },
+    );
+
+    const po = await freshOrder([
+      { productId: T.lotReceipt, orderedQuantityScaled: '10000' },
+    ]);
+    const received = await receive({
+      operationId: `rc-lot-${newId()}`,
+      purchaseOrderId: po.id,
+      reference: 'LOT-DN-1',
+      lines: [
+        {
+          purchaseOrderLineId: po.lineIdFor(T.lotReceipt),
+          acceptedQuantityScaled: '10000',
+          lots: [
+            {
+              acceptedQuantityScaled: '4000',
+              externalBatchReference: 'BATCH-A',
+              dateKind: 'expiry',
+              dateValue: '2026-12-31',
+            },
+            {
+              acceptedQuantityScaled: '6000',
+              externalBatchReference: 'BATCH-B',
+              dateKind: 'best-before',
+              dateValue: '2027-01-15',
+            },
+          ],
+        },
+      ],
+    });
+
+    const receiptLine = received.lines[0];
+    if (receiptLine === undefined) throw new Error('lot receipt line missing');
+    expect(receiptLine.lots).toHaveLength(2);
+    expect(
+      [...receiptLine.lots]
+        .sort((a, b) =>
+          String(a.externalBatchReference).localeCompare(String(b.externalBatchReference)),
+        )
+        .map((lot) => ({
+          batch: lot.externalBatchReference,
+          quantity: lot.acceptedQuantityScaled,
+          provenance: lot.provenance,
+          dateKind: lot.dateKind,
+          dateValue: lot.dateValue,
+        })),
+    ).toEqual([
+      {
+        batch: 'BATCH-A',
+        quantity: '4000',
+        provenance: 'received',
+        dateKind: 'expiry',
+        dateValue: '2026-12-31',
+      },
+      {
+        batch: 'BATCH-B',
+        quantity: '6000',
+        provenance: 'received',
+        dateKind: 'best-before',
+        dateValue: '2027-01-15',
+      },
+    ]);
+
+    const evidence = await withTenant(prisma, scope.tenantId, async (tx) => {
+      const movement = await tx.inventoryMovement.findFirstOrThrow({
+        where: {
+          tenantId: T.tenant,
+          sourceType: 'purchase-receipt',
+          sourceId: received.id,
+          productId: T.lotReceipt,
+        },
+        select: { id: true, quantityScaled: true },
+      });
+      return {
+        movement,
+        entries: await tx.inventoryLotEntry.findMany({
+          where: { tenantId: T.tenant, inventoryMovementId: movement.id },
+          select: {
+            lotId: true,
+            quantityScaled: true,
+            causeKind: true,
+          },
+          orderBy: { lotId: 'asc' },
+        }),
+        snapshots: await tx.purchaseReceiptLotAllocation.findMany({
+          where: { tenantId: T.tenant, purchaseReceiptLineId: receiptLine.id },
+          select: {
+            lotId: true,
+            commercialQuantityScaled: true,
+            quantityScaled: true,
+            provenance: true,
+            externalBatchReference: true,
+            dateKind: true,
+            dateValue: true,
+          },
+          orderBy: { externalBatchReference: 'asc' },
+        }),
+      };
+    });
+
+    expect(evidence.movement.quantityScaled).toBe(10_000n);
+    expect(evidence.entries.reduce((sum, row) => sum + row.quantityScaled, 0n)).toBe(10_000n);
+    expect(evidence.entries).toHaveLength(2);
+    expect(evidence.entries.every((row) => row.causeKind === 'movement')).toBe(true);
+    expect(new Set(evidence.entries.map((row) => row.lotId))).toEqual(
+      new Set(evidence.snapshots.map((row) => row.lotId)),
+    );
+    expect(
+      evidence.snapshots.map((row) => ({
+        batch: row.externalBatchReference,
+        commercial: row.commercialQuantityScaled,
+        base: row.quantityScaled,
+        provenance: row.provenance,
+        dateKind: row.dateKind,
+        dateValue: row.dateValue?.toISOString().slice(0, 10) ?? null,
+      })),
+    ).toEqual([
+      {
+        batch: 'BATCH-A',
+        commercial: 4_000n,
+        base: 4_000n,
+        provenance: 'received',
+        dateKind: 'expiry',
+        dateValue: '2026-12-31',
+      },
+      {
+        batch: 'BATCH-B',
+        commercial: 6_000n,
+        base: 6_000n,
+        provenance: 'received',
+        dateKind: 'best-before',
+        dateValue: '2027-01-15',
+      },
+    ]);
+
+    const readBack = await listPurchaseReceipts(prisma, T.tenant, po.id, 50);
+    expect(readBack).toHaveLength(1);
+    expect(readBack[0]?.lines[0]?.lots).toHaveLength(2);
   }, 90_000);
 
   // -------------------------------------------------------------------------

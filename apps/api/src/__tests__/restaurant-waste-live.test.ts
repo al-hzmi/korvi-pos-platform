@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { tenantId as brandTenantId } from '@korvi/domain';
-import { createPrismaClient, recordRestaurantWaste, withTenant } from '@korvi/database';
+import {
+  createPrismaClient,
+  enableProductLotTracking,
+  recordRestaurantWaste,
+  updateInventoryLotStatus,
+  withTenant,
+} from '@korvi/database';
 import type { PrismaClient, RestaurantWasteRefusedError } from '@korvi/database';
 import type { TenantScope } from '@korvi/domain';
 
@@ -14,6 +20,7 @@ const A = {
   known: '01995000-0000-7000-8000-0000000000a3',
   unknown: '01995000-0000-7000-8000-0000000000a4',
   second: '01995000-0000-7000-8000-0000000000a5',
+  lotWaste: '01995000-0000-7000-8000-0000000000a6',
 } as const;
 
 const B = {
@@ -141,6 +148,7 @@ describe.skipIf(url === '')('restaurant waste/spoilage inventory authority, live
         [A.known, 'KNOWN-WASTE', 'unit'],
         [A.unknown, 'UNKNOWN-SPOILAGE', 'weighted'],
         [A.second, 'SECOND-WASTE', 'unit'],
+        [A.lotWaste, 'LOT-WASTE', 'unit'],
       ] as const) {
         await tx.product.create({
           data: {
@@ -419,6 +427,129 @@ describe.skipIf(url === '')('restaurant waste/spoilage inventory authority, live
     expect(after.wastes).toBe(0);
     expect(after.key).toBe(0);
     expect(after.audits).toBe(before.audits);
+  });
+
+  it('V2-4 consumes only eligible lot stock for waste and refuses a blocked remainder without writing residue', async () => {
+    await seed(A.lotWaste, 3_000n, 3_000n, 300n);
+    const config = await enableProductLotTracking(
+      prisma,
+      scope,
+      actor,
+      A.lotWaste,
+      {
+        selectionPolicy: 'fefo',
+        dateRequirement: 'optional',
+        occurredAt: '2026-09-29T13:00:00.000Z',
+      },
+    );
+    const lot = config.lots[0];
+    if (lot === undefined) throw new Error('baseline waste lot missing');
+
+    const result = await recordRestaurantWaste(
+      prisma,
+      scope,
+      actor,
+      {
+        operationId: '01995000-0000-7000-8000-0000000000c6',
+        branchId: A.branch,
+        reasonType: 'waste',
+        note: 'lot proof',
+        lines: [{ productId: A.lotWaste, quantityScaled: '1000' }],
+      },
+      () => new Date('2026-09-29T13:05:00.000Z'),
+    );
+
+    const firstEvidence = await withTenant(prisma, A.tenant, async (tx) => {
+      const movement = await tx.inventoryMovement.findFirstOrThrow({
+        where: {
+          tenantId: A.tenant,
+          sourceType: 'restaurant-waste',
+          sourceId: result.id,
+          productId: A.lotWaste,
+        },
+        select: { id: true, quantityScaled: true },
+      });
+      return {
+        movement,
+        entries: await tx.inventoryLotEntry.findMany({
+          where: { tenantId: A.tenant, inventoryMovementId: movement.id },
+          select: { lotId: true, quantityScaled: true, causeKind: true },
+        }),
+        balance: await tx.inventoryBalance.findUnique({
+          where: {
+            tenantId_branchId_productId: {
+              tenantId: A.tenant,
+              branchId: A.branch,
+              productId: A.lotWaste,
+            },
+          },
+          select: { quantityScaled: true },
+        }),
+      };
+    });
+    expect(firstEvidence.movement.quantityScaled).toBe(-1_000n);
+    expect(firstEvidence.entries).toEqual([
+      { lotId: lot.id, quantityScaled: -1_000n, causeKind: 'movement' },
+    ]);
+    expect(firstEvidence.balance?.quantityScaled).toBe(2_000n);
+
+    const blocked = await updateInventoryLotStatus(
+      prisma,
+      scope,
+      actor,
+      lot.id,
+      {
+        expectedRevision: lot.revision,
+        status: 'blocked',
+        occurredAt: '2026-09-29T13:06:00.000Z',
+      },
+    );
+    expect(blocked.lots.find((entry) => entry.id === lot.id)?.status).toBe('blocked');
+
+    const refusedOperationId = '01995000-0000-7000-8000-0000000000c7';
+    await expect(
+      recordRestaurantWaste(
+        prisma,
+        scope,
+        actor,
+        {
+          operationId: refusedOperationId,
+          branchId: A.branch,
+          reasonType: 'waste',
+          note: null,
+          lines: [{ productId: A.lotWaste, quantityScaled: '500' }],
+        },
+        () => new Date('2026-09-29T13:07:00.000Z'),
+      ),
+    ).rejects.toMatchObject<Partial<RestaurantWasteRefusedError>>({
+      detail: 'insufficient-stock',
+    });
+
+    const residue = await withTenant(prisma, A.tenant, async (tx) => ({
+      balance: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.lotWaste,
+          },
+        },
+        select: { quantityScaled: true },
+      }),
+      waste: await tx.restaurantWaste.count({
+        where: { tenantId: A.tenant, operationId: refusedOperationId },
+      }),
+      key: await tx.idempotencyKey.count({
+        where: {
+          tenantId: A.tenant,
+          scope: 'restaurant.waste',
+          operationId: refusedOperationId,
+        },
+      }),
+    }));
+    expect(residue.balance?.quantityScaled).toBe(2_000n);
+    expect(residue.waste).toBe(0);
+    expect(residue.key).toBe(0);
   });
 
   it('keeps waste documents tenant-private under FORCE RLS', async () => {

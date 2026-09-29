@@ -1,4 +1,5 @@
 import {
+  LotDomainError,
   assertLotEntriesReconcile,
   canonicalUuid,
   deriveLotCountPlan,
@@ -579,22 +580,30 @@ export async function prepareMovementLotsWithin(
   const instant = new Date(movement.occurredAt);
   const businessDate = businessDateAt(instant, await settingsTimeZone(tx, tenant));
   const available = await availabilityRows(tx, tenant, movement.branchId, movement.productId);
-  const selected = selectLotAllocations({
-    requiredQuantityScaled: -movementQuantity,
-    policy: policy.selectionPolicy,
-    businessDate,
-    candidates: available.map((row) => ({
-      lotId: row.id,
-      availableQuantityScaled: row.availableQuantityScaled,
-      firstObservedAtMs: row.firstObservedAt.getTime(),
-      dateKind: dateKind(row.dateKind),
-      dateValue: dateOnly(row.dateValue),
-      status:
-        row.status === 'active' || row.status === 'blocked' || row.status === 'closed'
-          ? row.status
-          : 'blocked',
-    })),
-  });
+  let selected;
+  try {
+    selected = selectLotAllocations({
+      requiredQuantityScaled: -movementQuantity,
+      policy: policy.selectionPolicy,
+      businessDate,
+      candidates: available.map((row) => ({
+        lotId: row.id,
+        availableQuantityScaled: row.availableQuantityScaled,
+        firstObservedAtMs: row.firstObservedAt.getTime(),
+        dateKind: dateKind(row.dateKind),
+        dateValue: dateOnly(row.dateValue),
+        status:
+          row.status === 'active' || row.status === 'blocked' || row.status === 'closed'
+            ? row.status
+            : 'blocked',
+      })),
+    });
+  } catch (error) {
+    if (error instanceof LotDomainError && error.detail === 'insufficient-eligible-lot') {
+      throw new LotPolicyRefusedError('lot-unavailable');
+    }
+    throw error;
+  }
 
   const byId = new Map(available.map((row) => [row.id, row] as const));
   return selected.map((allocation) => {
