@@ -16,13 +16,16 @@ export interface ExplicitMovementLotAllocation {
   readonly quantityScaled: string;
 }
 
-export interface ReceivedMovementLotFact {
+export interface IncomingMovementLotFact {
   /** Positive base Product quantity after package conversion. */
   readonly quantityScaled: string;
   readonly externalBatchReference: string | null;
   readonly dateKind: 'expiry' | 'best-before' | null;
   readonly dateValue: string | null;
 }
+
+/** Backward-compatible name used by the purchasing receiving authority. */
+export type ReceivedMovementLotFact = IncomingMovementLotFact;
 
 export type MovementLotDirective =
   | {
@@ -31,7 +34,12 @@ export type MovementLotDirective =
     }
   | {
       readonly kind: 'received';
-      readonly lots: readonly ReceivedMovementLotFact[];
+      readonly lots: readonly IncomingMovementLotFact[];
+    }
+  | {
+      /** Restaurant/recipe production creates explicit produced provenance. */
+      readonly kind: 'produced';
+      readonly lots: readonly IncomingMovementLotFact[];
     }
   | {
       /**
@@ -226,13 +234,14 @@ async function createHistoricalReturnLotWithin(
   });
 }
 
-async function resolveReceivedLotWithin(
+async function resolveIncomingLotWithin(
   tx: TransactionClient,
   tenant: string,
   productId: string,
-  fact: ReceivedMovementLotFact,
+  fact: IncomingMovementLotFact,
   occurredAt: Date,
   dateRequired: boolean,
+  provenance: 'received' | 'produced',
 ): Promise<LotRow> {
   let quantity: bigint;
   try {
@@ -254,7 +263,7 @@ async function resolveReceivedLotWithin(
         tenantId: tenant,
         productId,
         internalCode: lotCode(id),
-        provenance: 'received',
+        provenance,
         externalBatchReference: null,
         dateKind: received.kind,
         dateValue,
@@ -268,11 +277,12 @@ async function resolveReceivedLotWithin(
 
   const candidateId = newId();
   await tx.$executeRawUnsafe(
-    'INSERT INTO "inventory_lots" ("id","tenantId","productId","internalCode","provenance","externalBatchReference","dateKind","dateValue","status","revision","firstObservedAt","createdAt","updatedAt") VALUES ($1::uuid,$2::uuid,$3::uuid,$4,\'received\',$5,$6,$7::date,\'active\',1,$8,$8,$8) ON CONFLICT ("tenantId","productId","externalBatchReference") DO NOTHING',
+    'INSERT INTO "inventory_lots" ("id","tenantId","productId","internalCode","provenance","externalBatchReference","dateKind","dateValue","status","revision","firstObservedAt","createdAt","updatedAt") VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::date,\'active\',1,$9,$9,$9) ON CONFLICT ("tenantId","productId","externalBatchReference") DO NOTHING',
     candidateId,
     tenant,
     productId,
     lotCode(candidateId),
+    provenance,
     externalBatchReference,
     received.kind,
     received.value,
@@ -286,7 +296,7 @@ async function resolveReceivedLotWithin(
 
   const existingDate = dateOnly(row.dateValue);
   if (
-    row.provenance !== 'received' ||
+    row.provenance !== provenance ||
     row.dateKind !== received.kind ||
     existingDate !== received.value
   ) {
@@ -334,20 +344,21 @@ export async function prepareMovementLotsWithin(
     return [snapshot(row, movementQuantity)];
   }
 
-  if (directive?.kind === 'received') {
+  if (directive?.kind === 'received' || directive?.kind === 'produced') {
     if (movementQuantity <= 0n || directive.lots.length === 0) {
       throw new LotPolicyRefusedError('invalid-lot-fact');
     }
     const occurredAt = new Date(movement.occurredAt);
     const resolved: PreparedMovementLotAllocation[] = [];
     for (const fact of directive.lots) {
-      const row = await resolveReceivedLotWithin(
+      const row = await resolveIncomingLotWithin(
         tx,
         tenant,
         movement.productId,
         fact,
         occurredAt,
         policy.dateRequirement === 'required',
+        directive.kind,
       );
       let quantity: bigint;
       try {

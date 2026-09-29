@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { StockRequestError, addKnownCostValue, assertQuantityShape, newId } from '@korvi/domain';
-import { InsufficientStockError, StockOperationRefusedError } from '../errors.js';
+import {
+  InsufficientStockError,
+  LotPolicyRefusedError,
+  StockOperationRefusedError,
+} from '../errors.js';
 import {
   lockBalances,
   lockBranches,
@@ -28,6 +32,8 @@ export type RestaurantProductionRefusal =
   | 'inactive-product'
   | 'untracked-product'
   | 'invalid-quantity'
+  | 'output-lot-required'
+  | 'invalid-output-lot'
   | 'insufficient-stock'
   | 'idempotency-conflict'
   | 'operation-in-progress';
@@ -43,11 +49,23 @@ export interface RestaurantProductionActor {
   readonly userId: string;
 }
 
+export interface RestaurantRecipeProductionOutputLot {
+  /** Manufacturer/production batch reference when one exists. Null is explicit unknown. */
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  readonly dateValue: string | null;
+}
+
 export interface RestaurantRecipeProductionRequest {
   readonly operationId: string;
   readonly branchId: string;
   readonly recipeRevision: string;
   readonly batchCount: string;
+  /**
+   * Lot identity facts for the produced output. The quantity is intentionally
+   * absent: recipe yield × batchCount is the only output quantity authority.
+   */
+  readonly outputLot?: RestaurantRecipeProductionOutputLot | undefined;
 }
 
 export interface RestaurantRecipeProductionLineResult {
@@ -114,12 +132,19 @@ function fingerprint(
   return createHash('sha256')
     .update(
       JSON.stringify([
-        'restaurant-recipe-production.v1',
+        'restaurant-recipe-production.v2',
         actorUserId,
         productId.toLowerCase(),
         request.branchId.toLowerCase(),
         recipeRevision.toString(),
         batchCount.toString(),
+        request.outputLot === undefined
+          ? null
+          : [
+              request.outputLot.externalBatchReference?.trim() ?? null,
+              request.outputLot.dateKind,
+              request.outputLot.dateValue,
+            ],
       ]),
       'utf8',
     )
@@ -239,6 +264,12 @@ function translateStock(error: unknown): never {
   }
   if (error instanceof StockRequestError) {
     throw new RestaurantProductionRefusedError('invalid-quantity');
+  }
+  if (error instanceof LotPolicyRefusedError) {
+    if (error.detail === 'incoming-lot-required') {
+      throw new RestaurantProductionRefusedError('output-lot-required');
+    }
+    throw new RestaurantProductionRefusedError('invalid-output-lot');
   }
   if (error instanceof StockOperationRefusedError) {
     switch (error.detail) {
@@ -437,6 +468,19 @@ export async function recordRestaurantRecipeProduction(
         true,
         outputLineId,
         outputBasis,
+        request.outputLot === undefined
+          ? undefined
+          : {
+              kind: 'produced',
+              lots: [
+                {
+                  quantityScaled: outputQuantity.toString(),
+                  externalBatchReference: request.outputLot.externalBatchReference,
+                  dateKind: request.outputLot.dateKind,
+                  dateValue: request.outputLot.dateValue,
+                },
+              ],
+            },
       );
       await tx.restaurantRecipeProductionLine.create({
         data: {

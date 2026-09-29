@@ -19,6 +19,17 @@ const PRODUCTION_BODY = z
     branchId: UUID,
     recipeRevision: POSITIVE_QUANTITY,
     batchCount: POSITIVE_QUANTITY,
+    outputLot: z
+      .object({
+        externalBatchReference: z.string().trim().min(1).max(120).nullable(),
+        dateKind: z.enum(['expiry', 'best-before']).nullable(),
+        dateValue: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      })
+      .strict()
+      .refine((lot) => (lot.dateKind === null) === (lot.dateValue === null), {
+        message: 'dateKind and dateValue must be paired',
+      })
+      .optional(),
   })
   .strict();
 
@@ -65,6 +76,8 @@ const PRODUCTION_STATUS: Readonly<Record<RestaurantProductionRefusal, number>> =
   'inactive-product': 422,
   'untracked-product': 422,
   'invalid-quantity': 422,
+  'output-lot-required': 422,
+  'invalid-output-lot': 422,
   'insufficient-stock': 409,
   'idempotency-conflict': 409,
   'operation-in-progress': 409,

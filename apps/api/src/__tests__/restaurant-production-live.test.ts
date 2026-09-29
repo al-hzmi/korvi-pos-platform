@@ -3,6 +3,7 @@ import pg from 'pg';
 import { newId, tenantId as brandTenantId } from '@korvi/domain';
 import {
   createPrismaClient,
+  enableProductLotTracking,
   recordRestaurantRecipeProduction,
   setRestaurantRecipe,
   withTenant,
@@ -492,6 +493,122 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
       costUnknownQuantityScaled: '1000',
       costValueMinor: '0',
       costProvenance: 'unknown',
+    });
+  });
+
+  it('requires explicit produced-lot provenance for lot-controlled output and binds it into idempotency', async () => {
+    // The earlier unknown-cost production leaves one base unit on hand. Turning
+    // tracking on must preserve that as historical-unknown rather than
+    // pretending it came from the batch we are about to produce.
+    const config = await enableProductLotTracking(
+      prisma,
+      scope,
+      actor,
+      A.finishedUnknown,
+      {
+        selectionPolicy: 'fefo',
+        dateRequirement: 'required',
+        occurredAt: '2026-09-29T09:00:00.000Z',
+      },
+    );
+    expect(config.lots.some((lot) => lot.provenance === 'historical-unknown')).toBe(true);
+
+    await seedBalance(A.ingredientUnknown, 1_000n, 0n, 0n);
+    const before = await withTenant(prisma, A.tenant, async (tx) => ({
+      output: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.finishedUnknown,
+          },
+        },
+      }),
+      productions: await tx.restaurantRecipeProduction.count({
+        where: { productId: A.finishedUnknown },
+      }),
+    }));
+
+    await expect(
+      recordRestaurantRecipeProduction(prisma, scope, actor, A.finishedUnknown, {
+        operationId: newId(),
+        branchId: A.branch,
+        recipeRevision: '1',
+        batchCount: '1',
+      }),
+    ).rejects.toMatchObject<Partial<RestaurantProductionRefusedError>>({
+      detail: 'output-lot-required',
+    });
+
+    const afterRefusal = await withTenant(prisma, A.tenant, async (tx) => ({
+      output: await tx.inventoryBalance.findUnique({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: A.tenant,
+            branchId: A.branch,
+            productId: A.finishedUnknown,
+          },
+        },
+      }),
+      productions: await tx.restaurantRecipeProduction.count({
+        where: { productId: A.finishedUnknown },
+      }),
+    }));
+    expect(afterRefusal.output?.quantityScaled).toBe(before.output?.quantityScaled);
+    expect(afterRefusal.output?.revision).toBe(before.output?.revision);
+    expect(afterRefusal.productions).toBe(before.productions);
+
+    const operationId = newId();
+    const request = {
+      operationId,
+      branchId: A.branch,
+      recipeRevision: '1',
+      batchCount: '1',
+      outputLot: {
+        externalBatchReference: 'PROD-2026-09-29-A',
+        dateKind: 'best-before' as const,
+        dateValue: '2026-10-15',
+      },
+    };
+    const result = await recordRestaurantRecipeProduction(
+      prisma,
+      scope,
+      actor,
+      A.finishedUnknown,
+      request,
+    );
+    expect(result.replayed).toBe(false);
+
+    const provenance = await withTenant(prisma, A.tenant, async (tx) => {
+      const lot = await tx.inventoryLot.findFirst({
+        where: {
+          tenantId: A.tenant,
+          productId: A.finishedUnknown,
+          externalBatchReference: 'PROD-2026-09-29-A',
+        },
+      });
+      if (lot === null) throw new Error('produced lot missing');
+      const quantity = await tx.inventoryLotEntry.aggregate({
+        where: { tenantId: A.tenant, branchId: A.branch, lotId: lot.id },
+        _sum: { quantityScaled: true },
+      });
+      return { lot, quantity: quantity._sum.quantityScaled ?? 0n };
+    });
+    expect(provenance.lot.provenance).toBe('produced');
+    expect(provenance.lot.dateKind).toBe('best-before');
+    expect(provenance.lot.dateValue?.toISOString().slice(0, 10)).toBe('2026-10-15');
+    expect(provenance.quantity).toBe(1_000n);
+
+    await expect(
+      recordRestaurantRecipeProduction(prisma, scope, actor, A.finishedUnknown, {
+        ...request,
+        outputLot: {
+          ...request.outputLot,
+          externalBatchReference: 'PROD-DIFFERENT',
+        },
+      }),
+    ).rejects.toMatchObject<Partial<RestaurantProductionRefusedError>>({
+      detail: 'idempotency-conflict',
     });
   });
 
