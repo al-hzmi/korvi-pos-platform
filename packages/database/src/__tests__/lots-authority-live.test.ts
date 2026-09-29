@@ -5,14 +5,14 @@ import {
   enableProductLotTracking,
   readProductLotConfig,
   recordInventoryLotReclassification,
-  LotAdminRefusedError,
 } from '../administration/lots.js';
 import {
   applyMovementWithin,
   createInventoryRepository,
 } from '../repositories/inventory-repository.js';
 import { withTenant } from '../tenant-context.js';
-import { LotPolicyRefusedError } from '../errors.js';
+import type { LotAdminRefusedError } from '../administration/lots.js';
+import type { LotPolicyRefusedError } from '../errors.js';
 import type { PrismaClient } from '../client.js';
 import type { InventoryMovementInput, TenantScope } from '@korvi/domain';
 
