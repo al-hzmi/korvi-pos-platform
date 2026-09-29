@@ -102,8 +102,7 @@ export async function listPurchasingProductPage(
         isActive: row.isActive,
         trackInventory: row.trackInventory,
         lotTrackingRequired: row.lotPolicy?.trackingMode === 'required',
-        lotDateRequirement:
-          row.lotPolicy?.dateRequirement === 'required' ? 'required' : 'optional',
+        lotDateRequirement: row.lotPolicy?.dateRequirement === 'required' ? 'required' : 'optional',
         packages: row.packages.map((packageRow) => ({
           ...packageRow,
           baseQuantityScaled: packageRow.baseQuantityScaled.toString(),

@@ -127,7 +127,8 @@ function buildReceiptLots(
       draft.quantity.trim(),
       commercialPackage ? 'unit' : product.productType,
     );
-    if (!quantity.ok) return { ok: false, message: `كمية الدفعة: ${quantityMessage(quantity.reason)}` };
+    if (!quantity.ok)
+      return { ok: false, message: `كمية الدفعة: ${quantityMessage(quantity.reason)}` };
 
     const batch = draft.externalBatchReference.trim();
     if (batch.length > MAX_PURCHASING_REFERENCE) {
@@ -136,7 +137,10 @@ function buildReceiptLots(
     if (batch === '') {
       unknownBatchCount += 1;
       if (unknownBatchCount > 1) {
-        return { ok: false, message: 'لا يمكن تسجيل أكثر من دفعة واحدة بهوية Batch مجهولة في السطر نفسه.' };
+        return {
+          ok: false,
+          message: 'لا يمكن تسجيل أكثر من دفعة واحدة بهوية Batch مجهولة في السطر نفسه.',
+        };
       }
     } else {
       if (knownBatches.has(batch)) {
