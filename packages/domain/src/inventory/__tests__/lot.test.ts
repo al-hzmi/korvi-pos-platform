@@ -7,6 +7,7 @@ import {
   lotDateState,
   parseCalendarDate,
   selectLotAllocations,
+  splitLotCountPlan,
 } from '../lot.js';
 
 const LOT_A = '018f2b1a-0000-7000-8000-0000000000a1';
@@ -296,5 +297,47 @@ describe('lot-aware physical count planning', () => {
     expect(plan.totalCountedQuantityScaled).toBe(6_000n);
     expect(plan.totalDeltaQuantityScaled).toBe(1_000n);
     expect(plan.isZeroNetReclassification).toBe(false);
+  });
+
+  it('splits positive Product delta from zero-net lot redistribution deterministically', () => {
+    const execution = splitLotCountPlan(
+      deriveLotCountPlan({
+        current: [
+          { lotId: LOT_A, quantityScaled: 5_000n },
+          { lotId: LOT_B, quantityScaled: 1_000n },
+        ],
+        counted: [
+          { lotId: LOT_A, quantityScaled: 4_000n },
+          { lotId: LOT_B, quantityScaled: 3_000n },
+        ],
+      }),
+    );
+    expect(execution.reclassification).toEqual([
+      { lotId: LOT_A, quantityScaled: -1_000n },
+      { lotId: LOT_B, quantityScaled: 1_000n },
+    ]);
+    expect(execution.movement).toEqual([{ lotId: LOT_B, quantityScaled: 1_000n }]);
+    expect(execution.totalDeltaQuantityScaled).toBe(1_000n);
+  });
+
+  it('splits negative Product delta from redistribution without mixed-sign movement entries', () => {
+    const execution = splitLotCountPlan(
+      deriveLotCountPlan({
+        current: [
+          { lotId: LOT_A, quantityScaled: 5_000n },
+          { lotId: LOT_B, quantityScaled: 5_000n },
+        ],
+        counted: [
+          { lotId: LOT_A, quantityScaled: 2_000n },
+          { lotId: LOT_B, quantityScaled: 6_000n },
+        ],
+      }),
+    );
+    expect(execution.reclassification).toEqual([
+      { lotId: LOT_B, quantityScaled: 1_000n },
+      { lotId: LOT_A, quantityScaled: -1_000n },
+    ]);
+    expect(execution.movement).toEqual([{ lotId: LOT_A, quantityScaled: -2_000n }]);
+    expect(execution.totalDeltaQuantityScaled).toBe(-2_000n);
   });
 });

@@ -59,6 +59,13 @@ const UNSIGNED_SCALED = z
 const OPERATION_ID = z.string().trim().min(1).max(120);
 const REASON = z.string().trim().min(1).max(MAX_STOCK_REASON);
 
+const LOT_COUNT_OBSERVATION = z
+  .object({
+    lotId: UUID,
+    countedQuantityScaled: UNSIGNED_SCALED,
+  })
+  .strict();
+
 const adjustmentBody = z
   .object({
     operationId: OPERATION_ID,
@@ -83,6 +90,7 @@ const countBody = z
             productId: UUID,
             countedQuantityScaled: UNSIGNED_SCALED,
             expectedRevision: UNSIGNED_SCALED,
+            lots: z.array(LOT_COUNT_OBSERVATION).max(500).optional(),
           })
           .strict(),
       )
@@ -224,6 +232,8 @@ const MESSAGES: Readonly<Record<StockFailureReason, string>> = {
   'non-positive-quantity': 'كمية التحويل يجب أن تكون أكبر من صفر.',
   'fractional-unit-quantity': 'هذا الصنف يُباع بالعدد، والكمية يجب أن تكون رقمًا صحيحًا.',
   'duplicate-product': 'لا يمكن تكرار الصنف نفسه في نفس العملية.',
+  'duplicate-lot': 'لا يمكن تكرار الدفعة نفسها في جرد الصنف.',
+  'lot-count-mismatch': 'مجموع كميات الدفعات يجب أن يساوي كمية الصنف المجرودة.',
   'no-lines': 'يجب إدخال صنف واحد على الأقل.',
   'too-many-lines': 'عدد الأصناف في العملية تجاوز الحد المسموح.',
   'same-branch': 'لا يمكن التحويل إلى نفس الفرع.',
@@ -235,6 +245,9 @@ const MESSAGES: Readonly<Record<StockFailureReason, string>> = {
   'untracked-product': 'هذا الصنف لا يخضع لتتبع المخزون.',
   'insufficient-stock': 'الكمية المتوفرة في الفرع لا تكفي لإتمام العملية.',
   'stock-changed': 'تغيّر رصيد المخزون أثناء الجرد. يرجى تحديث الأرصدة وإعادة الجرد.',
+  'lot-count-required': 'هذا الصنف يتطلب جرد الكمية حسب الدفعات.',
+  'lot-count-not-applicable': 'هذا الصنف لا يستخدم تتبع الدفعات.',
+  'unknown-lot': 'إحدى الدفعات غير موجودة لهذا الصنف.',
   'cost-state-changed':
     'تغيّرت حقائق المخزون أو التكلفة منذ المراجعة. حدّث البيانات واتخذ قرار تقييم جديدًا.',
   'idempotency-conflict': 'رقم العملية مستخدم لطلب مختلف.',
@@ -259,6 +272,8 @@ const STATUS: Readonly<Record<StockFailureReason, number>> = {
   'non-positive-quantity': 422,
   'fractional-unit-quantity': 422,
   'duplicate-product': 422,
+  'duplicate-lot': 422,
+  'lot-count-mismatch': 422,
   'no-lines': 422,
   'too-many-lines': 422,
   'same-branch': 422,
@@ -270,6 +285,9 @@ const STATUS: Readonly<Record<StockFailureReason, number>> = {
   'untracked-product': 409,
   'insufficient-stock': 409,
   'stock-changed': 409,
+  'lot-count-required': 422,
+  'lot-count-not-applicable': 422,
+  'unknown-lot': 404,
   'cost-state-changed': 409,
   'idempotency-conflict': 409,
 };

@@ -11,7 +11,7 @@ import {
   createInventoryRepository,
 } from '../repositories/inventory-repository.js';
 import { withTenant } from '../tenant-context.js';
-import { recordInventoryTransfer } from '../inventory/stock-ledger.js';
+import { recordInventoryCount, recordInventoryTransfer } from '../inventory/stock-ledger.js';
 import type { LotAdminRefusedError } from '../administration/lots.js';
 import type { LotPolicyRefusedError } from '../errors.js';
 import type { PrismaClient } from '../client.js';
@@ -27,6 +27,7 @@ const A = {
   product: '018fd240-0000-7000-8000-0000000000d1',
   datedProduct: '018fd240-0000-7000-8000-0000000000d2',
   transferProduct: '018fd240-0000-7000-8000-0000000000d3',
+  countProduct: '018fd240-0000-7000-8000-0000000000d4',
 } as const;
 
 const B = {
@@ -155,6 +156,7 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
         [A.product, 'LOT-LIVE-1', 5_000n],
         [A.datedProduct, 'LOT-LIVE-DATE', 0n],
         [A.transferProduct, 'LOT-LIVE-TRANSFER', 4_000n],
+        [A.countProduct, 'LOT-LIVE-COUNT', 4_000n],
       ] as const) {
         await tx.product.create({
           data: {
@@ -522,7 +524,144 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     expect(balances.get(A.branch2)).toBe(1_000n);
   });
 
-  it('K. finalized lot distribution entries reject historical rewrites', async () => {
+  it('K. keeps lot count redistribution zero-net, then records only the true Product delta', async () => {
+    const config = await enableProductLotTracking(prisma, scope, actor, A.countProduct, {
+      selectionPolicy: 'fifo',
+      dateRequirement: 'optional',
+      occurredAt: '2026-09-29T00:06:00.000Z',
+    });
+    const baseline = config.lots[0];
+    if (baseline === undefined) throw new Error('count baseline lot missing');
+    const secondLot = await createLot({
+      productId: A.countProduct,
+      provenance: 'manual-correction',
+    });
+
+    const before = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.inventoryBalance.findFirst({
+        where: { branchId: A.branch, productId: A.countProduct },
+      }),
+    );
+    if (before === null) throw new Error('count balance missing');
+
+    const zeroNet = await recordInventoryCount(
+      prisma,
+      { tenantId: A.tenant, userId: A.user },
+      {
+        operationId: newId(),
+        branchId: A.branch,
+        reason: 'physical lot recount',
+        lines: [
+          {
+            productId: A.countProduct,
+            countedQuantityScaled: '4000',
+            expectedRevision: before.revision.toString(),
+            lots: [
+              { lotId: baseline.id, countedQuantityScaled: '3000' },
+              { lotId: secondLot, countedQuantityScaled: '1000' },
+            ],
+          },
+        ],
+      },
+      'lot-count-zero'.padEnd(43, 'Z'),
+      () => new Date('2026-09-29T00:07:00.000Z'),
+    );
+    expect(zeroNet.lines[0]?.deltaQuantityScaled).toBe('0');
+    expect(zeroNet.lines[0]?.resultRevision).toBe(before.revision.toString());
+
+    const afterZero = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      balance: await tx.inventoryBalance.findFirst({
+        where: { branchId: A.branch, productId: A.countProduct },
+      }),
+      countMovements: await tx.inventoryMovement.count({
+        where: {
+          productId: A.countProduct,
+          sourceType: 'inventory-count',
+          sourceId: zeroNet.id,
+        },
+      }),
+      reclassifications: await tx.inventoryLotReclassification.count({
+        where: { productId: A.countProduct, branchId: A.branch },
+      }),
+      lots: await tx.inventoryLotEntry.groupBy({
+        by: ['lotId'],
+        where: { productId: A.countProduct, branchId: A.branch },
+        _sum: { quantityScaled: true },
+      }),
+    }));
+    expect(afterZero.balance?.quantityScaled).toBe(4_000n);
+    expect(afterZero.balance?.revision).toBe(before.revision);
+    expect(afterZero.countMovements).toBe(0);
+    expect(afterZero.reclassifications).toBe(1);
+    expect(
+      new Map(
+        afterZero.lots.map((row) => [row.lotId, row._sum.quantityScaled ?? 0n] as const),
+      ),
+    ).toEqual(
+      new Map([
+        [baseline.id, 3_000n],
+        [secondLot, 1_000n],
+      ]),
+    );
+
+    const netPositive = await recordInventoryCount(
+      prisma,
+      { tenantId: A.tenant, userId: A.user },
+      {
+        operationId: newId(),
+        branchId: A.branch,
+        reason: 'found one extra unit in existing batch',
+        lines: [
+          {
+            productId: A.countProduct,
+            countedQuantityScaled: '5000',
+            expectedRevision: before.revision.toString(),
+            lots: [
+              { lotId: baseline.id, countedQuantityScaled: '3000' },
+              { lotId: secondLot, countedQuantityScaled: '2000' },
+            ],
+          },
+        ],
+      },
+      'lot-count-plus'.padEnd(43, 'P'),
+      () => new Date('2026-09-29T00:08:00.000Z'),
+    );
+    expect(netPositive.lines[0]?.deltaQuantityScaled).toBe('1000');
+    expect(netPositive.lines[0]?.afterQuantityScaled).toBe('5000');
+
+    const afterPositive = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      balance: await tx.inventoryBalance.findFirst({
+        where: { branchId: A.branch, productId: A.countProduct },
+      }),
+      movement: await tx.inventoryMovement.findFirst({
+        where: {
+          productId: A.countProduct,
+          sourceType: 'inventory-count',
+          sourceId: netPositive.id,
+        },
+      }),
+      lots: await tx.inventoryLotEntry.groupBy({
+        by: ['lotId'],
+        where: { productId: A.countProduct, branchId: A.branch },
+        _sum: { quantityScaled: true },
+      }),
+    }));
+    expect(afterPositive.balance?.quantityScaled).toBe(5_000n);
+    expect(afterPositive.balance?.revision).toBe(before.revision + 1n);
+    expect(afterPositive.movement?.quantityScaled).toBe(1_000n);
+    expect(
+      new Map(
+        afterPositive.lots.map((row) => [row.lotId, row._sum.quantityScaled ?? 0n] as const),
+      ),
+    ).toEqual(
+      new Map([
+        [baseline.id, 3_000n],
+        [secondLot, 2_000n],
+      ]),
+    );
+  });
+
+  it('L. finalized lot distribution entries reject historical rewrites', async () => {
     const entry = await withTenant(prisma, scope.tenantId, async (tx) =>
       tx.inventoryLotEntry.findFirst({ where: { productId: A.product } }),
     );

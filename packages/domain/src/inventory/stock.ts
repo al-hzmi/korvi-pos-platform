@@ -42,6 +42,8 @@ export type StockRequestRefusal =
   | 'non-positive-quantity'
   | 'fractional-unit-quantity'
   | 'duplicate-product'
+  | 'duplicate-lot'
+  | 'lot-count-mismatch'
   | 'no-lines'
   | 'too-many-lines'
   | 'same-branch'
@@ -163,12 +165,23 @@ export interface AdjustmentRequest {
   readonly lines: readonly AdjustmentLineRequest[];
 }
 
+export interface CountLotObservation {
+  readonly lotId: string;
+  /** Absolute physical quantity observed for this existing lot. */
+  readonly countedQuantityScaled: string;
+}
+
 export interface CountLineRequest {
   readonly productId: string;
-  /** Absolute observed quantity. Evidence, not an instruction. */
+  /** Absolute observed Product quantity. Evidence, not an instruction. */
   readonly countedQuantityScaled: string;
   /** The revision of the balance snapshot that was physically counted. */
   readonly expectedRevision: string;
+  /**
+   * Present for lot-controlled products. The sum must equal the Product count;
+   * omitted lots are observed as zero. No deltas cross this boundary.
+   */
+  readonly lots?: readonly CountLotObservation[] | undefined;
 }
 
 export interface CountRequest {
@@ -301,6 +314,12 @@ export interface ValidatedCountLine {
   readonly productId: string;
   readonly countedQuantityScaled: bigint;
   readonly expectedRevision: bigint;
+  readonly lots?:
+    | readonly {
+        readonly lotId: string;
+        readonly countedQuantityScaled: bigint;
+      }[]
+    | undefined;
 }
 
 export interface ValidatedCount {
@@ -325,10 +344,37 @@ export function validateCountRequest(request: CountRequest): ValidatedCount {
     if (counted < 0n) {
       throw new StockRequestError('negative-count', 'A counted quantity cannot be negative.');
     }
+    const lots =
+      line.lots === undefined
+        ? undefined
+        : line.lots
+            .map((lot) => ({
+              lotId: canonicalUuid(lot.lotId, 'lotId'),
+              countedQuantityScaled: parseSignedScaled(
+                lot.countedQuantityScaled,
+                'lot.countedQuantityScaled',
+              ),
+            }))
+            .sort((left, right) => left.lotId.localeCompare(right.lotId));
+    if (lots !== undefined) {
+      if (new Set(lots.map((lot) => lot.lotId)).size !== lots.length) {
+        throw new StockRequestError('duplicate-lot', 'A lot may appear at most once.');
+      }
+      if (lots.some((lot) => lot.countedQuantityScaled < 0n)) {
+        throw new StockRequestError('negative-count', 'A lot count cannot be negative.');
+      }
+      if (lots.reduce((sum, lot) => sum + lot.countedQuantityScaled, 0n) !== counted) {
+        throw new StockRequestError(
+          'lot-count-mismatch',
+          'Lot observations must sum exactly to the Product count.',
+        );
+      }
+    }
     return {
       productId: line.productId,
       countedQuantityScaled: counted,
       expectedRevision: parseRevision(line.expectedRevision),
+      ...(lots === undefined ? {} : { lots }),
     };
   });
 
@@ -443,7 +489,7 @@ export function canonicalAdjustmentForm(request: AdjustmentRequest): readonly un
 
 export function canonicalCountForm(request: CountRequest): readonly unknown[] {
   return [
-    'inventory-count.v1',
+    'inventory-count.v2',
     canonicalUuid(request.branchId, 'branchId'),
     normalizedReason(request.reason),
     sortedByProduct(
@@ -451,6 +497,17 @@ export function canonicalCountForm(request: CountRequest): readonly unknown[] {
         canonicalUuid(line.productId, 'productId'),
         parseSignedScaled(line.countedQuantityScaled, 'countedQuantityScaled').toString(),
         parseRevision(line.expectedRevision).toString(),
+        line.lots === undefined
+          ? null
+          : [...line.lots]
+              .map((lot) => [
+                canonicalUuid(lot.lotId, 'lotId'),
+                parseSignedScaled(
+                  lot.countedQuantityScaled,
+                  'lot.countedQuantityScaled',
+                ).toString(),
+              ])
+              .sort((left, right) => String(left[0]).localeCompare(String(right[0]))),
       ]),
     ),
   ];
@@ -511,6 +568,9 @@ export const STOCK_AUTHORITY_REFUSALS = [
   'untracked-product',
   'insufficient-stock',
   'stock-changed',
+  'lot-count-required',
+  'lot-count-not-applicable',
+  'unknown-lot',
   'idempotency-conflict',
 ] as const;
 

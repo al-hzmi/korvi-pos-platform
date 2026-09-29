@@ -20,6 +20,8 @@ const PRODUCT_A = '018f2b1a-0000-7000-8000-0000000000a1';
 const PRODUCT_B = '018f2b1a-0000-7000-8000-0000000000b2';
 const BRANCH_A = '018f2b1a-0000-7000-8000-00000000b001';
 const BRANCH_B = '018f2b1a-0000-7000-8000-00000000b002';
+const LOT_A = '018f2b1a-0000-7000-8000-0000000000c1';
+const LOT_B = '018f2b1a-0000-7000-8000-0000000000c2';
 
 function adjustment(over: Partial<AdjustmentRequest> = {}): AdjustmentRequest {
   return {
@@ -192,6 +194,68 @@ describe('count requests', () => {
         }),
       ).lines,
     ).toEqual([{ productId: PRODUCT_A, countedQuantityScaled: 0n, expectedRevision: 7n }]);
+  });
+
+  it('accepts lot observations only when they sum exactly to the Product count', () => {
+    expect(
+      validateCountRequest(
+        count({
+          lines: [
+            {
+              productId: PRODUCT_A,
+              countedQuantityScaled: '4000',
+              expectedRevision: '3',
+              lots: [
+                { lotId: LOT_B, countedQuantityScaled: '1000' },
+                { lotId: LOT_A, countedQuantityScaled: '3000' },
+              ],
+            },
+          ],
+        }),
+      ).lines[0]?.lots,
+    ).toEqual([
+      { lotId: LOT_A, countedQuantityScaled: 3000n },
+      { lotId: LOT_B, countedQuantityScaled: 1000n },
+    ]);
+
+    expect(
+      refusalOf(() =>
+        validateCountRequest(
+          count({
+            lines: [
+              {
+                productId: PRODUCT_A,
+                countedQuantityScaled: '4000',
+                expectedRevision: '3',
+                lots: [{ lotId: LOT_A, countedQuantityScaled: '3000' }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('lot-count-mismatch');
+  });
+
+  it('refuses duplicate lot observations before persistence', () => {
+    expect(
+      refusalOf(() =>
+        validateCountRequest(
+          count({
+            lines: [
+              {
+                productId: PRODUCT_A,
+                countedQuantityScaled: '4000',
+                expectedRevision: '3',
+                lots: [
+                  { lotId: LOT_A, countedQuantityScaled: '2000' },
+                  { lotId: LOT_A, countedQuantityScaled: '2000' },
+                ],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('duplicate-lot');
   });
 });
 
@@ -407,6 +471,56 @@ describe('canonical request form', () => {
       }),
     );
     expect(JSON.stringify(first)).not.toBe(JSON.stringify(later));
+  });
+
+  it('binds lot observations but ignores their submitted order', () => {
+    const left = canonicalCountForm(
+      count({
+        lines: [
+          {
+            productId: PRODUCT_A,
+            countedQuantityScaled: '4000',
+            expectedRevision: '3',
+            lots: [
+              { lotId: LOT_A, countedQuantityScaled: '3000' },
+              { lotId: LOT_B, countedQuantityScaled: '1000' },
+            ],
+          },
+        ],
+      }),
+    );
+    const reordered = canonicalCountForm(
+      count({
+        lines: [
+          {
+            productId: PRODUCT_A,
+            countedQuantityScaled: '4000',
+            expectedRevision: '3',
+            lots: [
+              { lotId: LOT_B, countedQuantityScaled: '1000' },
+              { lotId: LOT_A, countedQuantityScaled: '3000' },
+            ],
+          },
+        ],
+      }),
+    );
+    const changed = canonicalCountForm(
+      count({
+        lines: [
+          {
+            productId: PRODUCT_A,
+            countedQuantityScaled: '4000',
+            expectedRevision: '3',
+            lots: [
+              { lotId: LOT_A, countedQuantityScaled: '2000' },
+              { lotId: LOT_B, countedQuantityScaled: '2000' },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(JSON.stringify(left)).toBe(JSON.stringify(reordered));
+    expect(JSON.stringify(left)).not.toBe(JSON.stringify(changed));
   });
 
   it('binds transfer direction, so a reversed transfer is a different intent', () => {

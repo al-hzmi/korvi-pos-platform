@@ -1,13 +1,15 @@
 import {
   assertLotEntriesReconcile,
   canonicalUuid,
+  deriveLotCountPlan,
   lotDateState,
   newId,
   parseCalendarDate,
   selectLotAllocations,
+  splitLotCountPlan,
 } from '@korvi/domain';
-import { LotPolicyRefusedError } from '../errors.js';
-import type { InventoryMovementInput } from '@korvi/domain';
+import { DatabaseError, LotPolicyRefusedError } from '../errors.js';
+import type { InventoryMovementInput, LotCountExecutionPlan } from '@korvi/domain';
 import type { TransactionClient } from '../tenant-context.js';
 
 export interface ExplicitMovementLotAllocation {
@@ -310,6 +312,141 @@ async function resolveIncomingLotWithin(
  * It then locks lot identities in deterministic id order and derives the
  * movement's lot distribution from immutable entries.
  */
+export async function prepareLotCountReconciliationWithin(
+  tx: TransactionClient,
+  tenant: string,
+  input: {
+    readonly branchId: string;
+    readonly productId: string;
+    readonly currentBalanceQuantityScaled: bigint;
+    readonly countedQuantityScaled: bigint;
+    readonly observations: readonly {
+      readonly lotId: string;
+      readonly countedQuantityScaled: bigint;
+    }[];
+  },
+): Promise<LotCountExecutionPlan> {
+  const policy = await trackingPolicy(tx, tenant, input.productId);
+  if (policy === null) throw new LotPolicyRefusedError('lot-product-mismatch');
+
+  await lockAllProductLots(tx, tenant, input.productId);
+  const available = await availabilityRows(tx, tenant, input.branchId, input.productId);
+  const currentTotal = available.reduce(
+    (sum, lot) => sum + lot.availableQuantityScaled,
+    0n,
+  );
+  if (currentTotal !== input.currentBalanceQuantityScaled) {
+    throw new DatabaseError(
+      'Lot distribution does not reconcile to the canonical InventoryBalance before count.',
+    );
+  }
+
+  const known = new Set(available.map((lot) => lot.id));
+  if (input.observations.some((lot) => !known.has(canonicalUuid(lot.lotId, 'lotId')))) {
+    throw new LotPolicyRefusedError('unknown-lot');
+  }
+
+  const plan = deriveLotCountPlan({
+    current: available.map((lot) => ({
+      lotId: lot.id,
+      quantityScaled: lot.availableQuantityScaled,
+    })),
+    counted: input.observations.map((lot) => ({
+      lotId: lot.lotId,
+      quantityScaled: lot.countedQuantityScaled,
+    })),
+  });
+  if (plan.totalCountedQuantityScaled !== input.countedQuantityScaled) {
+    throw new LotPolicyRefusedError('invalid-lot-fact');
+  }
+  if (
+    plan.totalBeforeQuantityScaled !== input.currentBalanceQuantityScaled ||
+    plan.totalDeltaQuantityScaled !==
+      input.countedQuantityScaled - input.currentBalanceQuantityScaled
+  ) {
+    throw new DatabaseError('Lot count plan diverged from canonical Product count.');
+  }
+  return splitLotCountPlan(plan);
+}
+
+export async function commitLotCountReclassificationWithin(
+  tx: TransactionClient,
+  tenant: string,
+  input: {
+    readonly countId: string;
+    readonly branchId: string;
+    readonly productId: string;
+    readonly expectedBalanceRevision: bigint;
+    readonly requestHash: string;
+    readonly reason: string | null;
+    readonly actorUserId: string;
+    readonly occurredAt: Date;
+    readonly lines: readonly {
+      readonly lotId: string;
+      readonly quantityScaled: bigint;
+    }[];
+  },
+): Promise<string | null> {
+  if (input.lines.length === 0) return null;
+  if (
+    input.lines.some((line) => line.quantityScaled === 0n) ||
+    input.lines.reduce((sum, line) => sum + line.quantityScaled, 0n) !== 0n
+  ) {
+    throw new DatabaseError('Count lot reclassification must be non-empty and zero-net.');
+  }
+
+  const id = newId();
+  await tx.inventoryLotReclassification.create({
+    data: {
+      id,
+      tenantId: tenant,
+      branchId: input.branchId,
+      productId: input.productId,
+      operationId: `count:${input.countId}:${input.productId}`,
+      requestHash: input.requestHash,
+      expectedBalanceRevision: input.expectedBalanceRevision,
+      reason: input.reason ?? 'physical-count-lot-reconciliation',
+      actorUserId: input.actorUserId,
+      occurredAt: input.occurredAt,
+    },
+  });
+  await tx.inventoryLotEntry.createMany({
+    data: input.lines.map((line) => ({
+      id: newId(),
+      tenantId: tenant,
+      branchId: input.branchId,
+      productId: input.productId,
+      lotId: line.lotId,
+      quantityScaled: line.quantityScaled,
+      causeKind: 'reclassification',
+      inventoryMovementId: null,
+      reclassificationId: id,
+      actorUserId: input.actorUserId,
+      occurredAt: input.occurredAt,
+    })),
+  });
+  await tx.auditEvent.create({
+    data: {
+      id: newId(),
+      tenantId: tenant,
+      actorUserId: input.actorUserId,
+      branchId: input.branchId,
+      terminalId: null,
+      eventType: 'inventory-lot.reclassified',
+      entityType: 'inventory-lot-reclassification',
+      entityId: id,
+      metadata: {
+        source: 'physical-count',
+        countId: input.countId,
+        productId: input.productId,
+        lineCount: input.lines.length,
+      },
+      occurredAt: input.occurredAt,
+    },
+  });
+  return id;
+}
+
 export async function prepareMovementLotsWithin(
   tx: TransactionClient,
   tenant: string,

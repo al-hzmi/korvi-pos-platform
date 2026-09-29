@@ -9,7 +9,12 @@ import {
   validateTransferRequest,
 } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
-import { StockOperationRefusedError } from '../errors.js';
+import { LotPolicyRefusedError, StockOperationRefusedError } from '../errors.js';
+import { lockCostBalanceWithin } from '../costing/ledger.js';
+import {
+  commitLotCountReclassificationWithin,
+  prepareLotCountReconciliationWithin,
+} from '../lots/authority.js';
 import { applyMovementWithin } from '../repositories/inventory-repository.js';
 import type {
   AdjustmentRequest,
@@ -553,6 +558,16 @@ export async function recordInventoryAdjustment(
         // primitive is not asked to re-decide it with its own predicate.
         true,
         lineId,
+        undefined,
+        lotExecution === null
+          ? undefined
+          : {
+              kind: 'explicit',
+              allocations: lotExecution.movement.map((allocation) => ({
+                lotId: allocation.lotId,
+                quantityScaled: allocation.quantityScaled.toString(),
+              })),
+            },
       );
 
       await tx.inventoryAdjustmentLine.create({
@@ -676,6 +691,13 @@ export async function recordInventoryCount(
         throw new StockOperationRefusedError('unknown-product', line.productId);
       }
       assertQuantityShape(line.countedQuantityScaled, fact.productType, 'countedQuantityScaled');
+      for (const lot of line.lots ?? []) {
+        assertQuantityShape(
+          lot.countedQuantityScaled,
+          fact.productType,
+          'lot.countedQuantityScaled',
+        );
+      }
     }
 
     // No `allowNegativeStock` read here, deliberately. A counted quantity is
@@ -724,6 +746,63 @@ export async function recordInventoryCount(
        */
       if (before.revision !== line.expectedRevision) {
         throw new StockOperationRefusedError('stock-changed', line.productId);
+      }
+
+      const lotPolicy = await tx.productLotPolicy.findUnique({
+        where: {
+          tenantId_productId: {
+            tenantId: tenant,
+            productId: line.productId,
+          },
+        },
+        select: { trackingMode: true },
+      });
+      const lotControlled = lotPolicy?.trackingMode === 'required';
+      if (lotControlled && line.lots === undefined) {
+        throw new StockOperationRefusedError('lot-count-required', line.productId);
+      }
+      if (!lotControlled && line.lots !== undefined) {
+        throw new StockOperationRefusedError('lot-count-not-applicable', line.productId);
+      }
+
+      let lotExecution:
+        | Awaited<ReturnType<typeof prepareLotCountReconciliationWithin>>
+        | null = null;
+      if (lotControlled) {
+        // Count follows the canonical balance -> cost -> lot lock order.
+        await lockCostBalanceWithin(
+          tx,
+          tenant,
+          plan.branchId,
+          line.productId,
+          before.revision,
+        );
+        try {
+          lotExecution = await prepareLotCountReconciliationWithin(tx, tenant, {
+            branchId: plan.branchId,
+            productId: line.productId,
+            currentBalanceQuantityScaled: before.quantityScaled,
+            countedQuantityScaled: line.countedQuantityScaled,
+            observations: line.lots ?? [],
+          });
+        } catch (error) {
+          if (error instanceof LotPolicyRefusedError && error.detail === 'unknown-lot') {
+            throw new StockOperationRefusedError('unknown-lot', line.productId);
+          }
+          throw error;
+        }
+
+        await commitLotCountReclassificationWithin(tx, tenant, {
+          countId: documentId,
+          branchId: plan.branchId,
+          productId: line.productId,
+          expectedBalanceRevision: before.revision,
+          requestHash,
+          reason: plan.reason,
+          actorUserId: actor.userId,
+          occurredAt: at,
+          lines: lotExecution.reclassification,
+        });
       }
 
       // Derived by the server, from the locked row. The client stated an
@@ -778,6 +857,16 @@ export async function recordInventoryCount(
         },
         true,
         lineId,
+        undefined,
+        lotExecution === null
+          ? undefined
+          : {
+              kind: 'explicit',
+              allocations: lotExecution.movement.map((allocation) => ({
+                lotId: allocation.lotId,
+                quantityScaled: allocation.quantityScaled.toString(),
+              })),
+            },
       );
 
       await tx.inventoryCountLine.create({
@@ -818,6 +907,7 @@ export async function recordInventoryCount(
         branchId: plan.branchId,
         lineCount: results.length,
         adjustedLineCount: results.filter((line) => line.deltaQuantityScaled !== '0').length,
+        lotObservedLineCount: lines.filter((line) => line.lots !== undefined).length,
         reason: plan.reason,
       },
       at,

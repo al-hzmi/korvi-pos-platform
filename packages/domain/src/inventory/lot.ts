@@ -68,6 +68,14 @@ export interface LotCountPlan {
   readonly isZeroNetReclassification: boolean;
 }
 
+export interface LotCountExecutionPlan {
+  /** Signed zero-sum distribution correction; no InventoryMovement. */
+  readonly reclassification: readonly SelectedLotAllocation[];
+  /** Same-sign allocations that reconcile exactly to Product stock delta. */
+  readonly movement: readonly SelectedLotAllocation[];
+  readonly totalDeltaQuantityScaled: bigint;
+}
+
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseCalendarDate(value: string, field = 'date'): number {
@@ -402,5 +410,83 @@ export function deriveLotCountPlan(input: {
     totalCountedQuantityScaled,
     totalDeltaQuantityScaled,
     isZeroNetReclassification: totalDeltaQuantityScaled === 0n && lines.length > 0,
+  };
+}
+
+/**
+ * Split physical lot observations into distribution-only correction and the
+ * canonical Product movement. This preserves the V2-4 invariant that every lot
+ * entry attached to an InventoryMovement has the movement's sign.
+ */
+export function splitLotCountPlan(plan: LotCountPlan): LotCountExecutionPlan {
+  const deltas = [...plan.lines]
+    .map((line) => ({ lotId: line.lotId, quantityScaled: line.deltaQuantityScaled }))
+    .sort((a, b) => a.lotId.localeCompare(b.lotId));
+
+  if (plan.totalDeltaQuantityScaled === 0n) {
+    return {
+      reclassification: deltas,
+      movement: [],
+      totalDeltaQuantityScaled: 0n,
+    };
+  }
+
+  const positive = deltas
+    .filter((line) => line.quantityScaled > 0n)
+    .map((line) => ({ ...line }));
+  const negative = deltas
+    .filter((line) => line.quantityScaled < 0n)
+    .map((line) => ({ ...line }));
+
+  const reclassification: SelectedLotAllocation[] = [];
+  const movement: SelectedLotAllocation[] = [];
+
+  if (plan.totalDeltaQuantityScaled > 0n) {
+    // Every observed decrease is distribution correction. Pair it
+    // deterministically against observed increases; only the surplus positive
+    // quantity is new Product stock.
+    let correctionNeeded = negative.reduce((sum, line) => sum - line.quantityScaled, 0n);
+    reclassification.push(...negative);
+
+    for (const line of positive) {
+      const used = line.quantityScaled < correctionNeeded ? line.quantityScaled : correctionNeeded;
+      if (used > 0n) {
+        reclassification.push({ lotId: line.lotId, quantityScaled: used });
+        correctionNeeded -= used;
+      }
+      const remainder = line.quantityScaled - used;
+      if (remainder > 0n) movement.push({ lotId: line.lotId, quantityScaled: remainder });
+    }
+  } else {
+    // Every observed increase is distribution correction. Pair it against
+    // decreases; only the remaining negative quantity leaves Product stock.
+    let correctionNeeded = positive.reduce((sum, line) => sum + line.quantityScaled, 0n);
+    reclassification.push(...positive);
+
+    for (const line of negative) {
+      const available = -line.quantityScaled;
+      const used = available < correctionNeeded ? available : correctionNeeded;
+      if (used > 0n) {
+        reclassification.push({ lotId: line.lotId, quantityScaled: -used });
+        correctionNeeded -= used;
+      }
+      const remainder = available - used;
+      if (remainder > 0n) movement.push({ lotId: line.lotId, quantityScaled: -remainder });
+    }
+  }
+
+  const reclassSum = reclassification.reduce((sum, line) => sum + line.quantityScaled, 0n);
+  const movementSum = movement.reduce((sum, line) => sum + line.quantityScaled, 0n);
+  if (reclassSum !== 0n || movementSum !== plan.totalDeltaQuantityScaled) {
+    throw new LotDomainError(
+      'allocation-total-mismatch',
+      'Lot count decomposition failed to conserve quantity.',
+    );
+  }
+
+  return {
+    reclassification,
+    movement,
+    totalDeltaQuantityScaled: plan.totalDeltaQuantityScaled,
   };
 }

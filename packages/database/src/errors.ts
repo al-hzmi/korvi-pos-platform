@@ -283,6 +283,9 @@ export type StockOperationRefusal =
   | 'untracked-product'
   | 'insufficient-stock'
   | 'stock-changed'
+  | 'lot-count-required'
+  | 'lot-count-not-applicable'
+  | 'unknown-lot'
   | 'idempotency-conflict';
 
 export class StockOperationRefusedError extends DatabaseError {
