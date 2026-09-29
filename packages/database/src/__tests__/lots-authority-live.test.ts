@@ -600,9 +600,7 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     expect(afterZero.countMovements).toBe(0);
     expect(afterZero.reclassifications).toBe(1);
     expect(
-      new Map(
-        afterZero.lots.map((row) => [row.lotId, row._sum.quantityScaled ?? 0n] as const),
-      ),
+      new Map(afterZero.lots.map((row) => [row.lotId, row._sum.quantityScaled ?? 0n] as const)),
     ).toEqual(
       new Map([
         [baseline.id, 3_000n],
@@ -656,9 +654,7 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     expect(afterPositive.balance?.revision).toBe(before.revision + 1n);
     expect(afterPositive.movement?.quantityScaled).toBe(1_000n);
     expect(
-      new Map(
-        afterPositive.lots.map((row) => [row.lotId, row._sum.quantityScaled ?? 0n] as const),
-      ),
+      new Map(afterPositive.lots.map((row) => [row.lotId, row._sum.quantityScaled ?? 0n] as const)),
     ).toEqual(
       new Map([
         [baseline.id, 3_000n],

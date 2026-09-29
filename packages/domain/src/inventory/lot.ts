@@ -431,12 +431,8 @@ export function splitLotCountPlan(plan: LotCountPlan): LotCountExecutionPlan {
     };
   }
 
-  const positive = deltas
-    .filter((line) => line.quantityScaled > 0n)
-    .map((line) => ({ ...line }));
-  const negative = deltas
-    .filter((line) => line.quantityScaled < 0n)
-    .map((line) => ({ ...line }));
+  const positive = deltas.filter((line) => line.quantityScaled > 0n).map((line) => ({ ...line }));
+  const negative = deltas.filter((line) => line.quantityScaled < 0n).map((line) => ({ ...line }));
 
   const reclassification: SelectedLotAllocation[] = [];
   const movement: SelectedLotAllocation[] = [];

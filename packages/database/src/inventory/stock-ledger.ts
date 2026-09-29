@@ -594,10 +594,7 @@ export async function recordInventoryAdjustment(
             case 'incoming-lot-required':
               throw new StockOperationRefusedError('lot-adjustment-required', line.productId);
             case 'lot-product-mismatch':
-              throw new StockOperationRefusedError(
-                'lot-adjustment-not-applicable',
-                line.productId,
-              );
+              throw new StockOperationRefusedError('lot-adjustment-not-applicable', line.productId);
             case 'unknown-lot':
               throw new StockOperationRefusedError('unknown-lot', line.productId);
             case 'lot-unavailable':
@@ -807,18 +804,11 @@ export async function recordInventoryCount(
         throw new StockOperationRefusedError('lot-count-not-applicable', line.productId);
       }
 
-      let lotExecution:
-        | Awaited<ReturnType<typeof prepareLotCountReconciliationWithin>>
-        | null = null;
+      let lotExecution: Awaited<ReturnType<typeof prepareLotCountReconciliationWithin>> | null =
+        null;
       if (lotControlled) {
         // Count follows the canonical balance -> cost -> lot lock order.
-        await lockCostBalanceWithin(
-          tx,
-          tenant,
-          plan.branchId,
-          line.productId,
-          before.revision,
-        );
+        await lockCostBalanceWithin(tx, tenant, plan.branchId, line.productId, before.revision);
         try {
           lotExecution = await prepareLotCountReconciliationWithin(tx, tenant, {
             branchId: plan.branchId,

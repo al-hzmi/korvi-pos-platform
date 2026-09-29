@@ -336,10 +336,7 @@ export async function prepareLotCountReconciliationWithin(
 
   await lockAllProductLots(tx, tenant, input.productId);
   const available = await availabilityRows(tx, tenant, input.branchId, input.productId);
-  const currentTotal = available.reduce(
-    (sum, lot) => sum + lot.availableQuantityScaled,
-    0n,
-  );
+  const currentTotal = available.reduce((sum, lot) => sum + lot.availableQuantityScaled, 0n);
   if (currentTotal !== input.currentBalanceQuantityScaled) {
     throw new DatabaseError(
       'Lot distribution does not reconcile to the canonical InventoryBalance before count.',
