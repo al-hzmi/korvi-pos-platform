@@ -514,7 +514,7 @@ function normalizedReason(reason: string | null): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
-function sortedByProduct(lines: readonly (readonly string[])[]): readonly (readonly string[])[] {
+function sortedByProduct(lines: readonly (readonly unknown[])[]): readonly (readonly unknown[])[] {
   return [...lines].sort((a, b) => {
     const left = a[0] ?? '';
     const right = b[0] ?? '';
