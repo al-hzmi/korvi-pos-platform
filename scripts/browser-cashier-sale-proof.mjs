@@ -1074,6 +1074,93 @@ try {
   await clickButton('عملية بيع جديدة');
   await waitForText('ابحث أو امسح الباركود', 20_000);
 
+  const purchasingSuppliers = await browserRequest(
+    '/v1/admin/purchasing/suppliers?limit=50&activeOnly=true',
+  );
+  const lotProofSupplier = purchasingSuppliers.rows.find(
+    (supplier) => supplier.name === 'مورد برهان المتصفح',
+  );
+  assert.ok(lotProofSupplier !== undefined, 'V2-4 receiving proof supplier is missing.');
+  const lotProofOrderResult = await browserRequest('/v1/admin/purchasing/orders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      operationId: `v24-lot-po-${Date.now().toString()}`,
+      supplierId: lotProofSupplier.id,
+      branchId: branch.id,
+      reference: 'BROWSER-V24-LOT-PO-001',
+      lines: [{ productId: beforeRow.productId, orderedQuantityScaled: '1000' }],
+    }),
+  });
+  const lotProofOrder = lotProofOrderResult.order;
+  assert.equal(lotProofOrder.reference, 'BROWSER-V24-LOT-PO-001');
+
+  await cdp.send('Page.navigate', { url: `${baseUrl}/control/purchasing` });
+  await waitForText('المشتريات والاستلام', 30_000);
+  await clickButton('الاستلامات');
+  await waitForText('BROWSER-V24-LOT-PO-001', 30_000);
+  const selectedLotProofOrder = await evaluate(`(() => {
+    const row = [...document.querySelectorAll('tr')].find((candidate) =>
+      (candidate.textContent ?? '').includes('BROWSER-V24-LOT-PO-001')
+    );
+    const button = row?.querySelector('button');
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.scrollIntoView({ block: 'center', inline: 'nearest' });
+    button.click();
+    return true;
+  })()`);
+  assert.equal(selectedLotProofOrder, true, 'Could not select V2-4 lot receiving proof order.');
+  await waitFor(
+    `[...document.querySelectorAll('button')].some(
+      (button) => !button.disabled && (button.textContent ?? '').includes('تسجيل الاستلام')
+    )`,
+    'lot-aware receiving form',
+    30_000,
+  );
+
+  await setInputByLabelText('مرجع إشعار التسليم', 'BROWSER-V24-GRN-001');
+  await setInputByLabelText('الكمية المستلمة', '1');
+  await clickButton('إضافة دفعة');
+  await setInputByLabelText('كمية الدفعة', '1');
+  await setInputByLabelText('Batch / رقم الدفعة', 'V24-BATCH-001');
+  await setSelectByLabelText('نوع التاريخ', 'expiry');
+  await setInputByLabelText('التاريخ', '2027-12-31');
+  await clickButton('تسجيل الاستلام');
+  await waitForText('سُجل الاستلام وحركة المخزون ذريًا.', 30_000);
+
+  const lotProofReceipts = await browserRequest(
+    `/v1/admin/purchasing/orders/${encodeURIComponent(lotProofOrder.id)}/receipts?limit=20`,
+  );
+  assert.equal(lotProofReceipts.receipts.length, 1);
+  const lotProofReceiptLine = lotProofReceipts.receipts[0]?.lines[0];
+  assert.equal(lotProofReceiptLine?.lots?.length, 1);
+  assert.equal(lotProofReceiptLine?.lots?.[0]?.externalBatchReference, 'V24-BATCH-001');
+  assert.equal(lotProofReceiptLine?.lots?.[0]?.dateKind, 'expiry');
+  assert.equal(lotProofReceiptLine?.lots?.[0]?.dateValue, '2027-12-31');
+
+  const lotTruthAfterReceiving = await browserRequest(
+    `/v1/admin/lots/products/${encodeURIComponent(beforeRow.productId)}`,
+  );
+  const receivedProofLot = lotTruthAfterReceiving.config.lots.find(
+    (lot) => lot.externalBatchReference === 'V24-BATCH-001',
+  );
+  assert.ok(receivedProofLot !== undefined, 'UI receipt did not create the authoritative received lot.');
+  assert.equal(receivedProofLot.provenance, 'received');
+  assert.equal(receivedProofLot.dateKind, 'expiry');
+  assert.equal(receivedProofLot.dateValue, '2027-12-31');
+  assert.equal(
+    receivedProofLot.availabilityByBranch.find((row) => row.branchId === branch.id)
+      ?.quantityScaled,
+    '1000',
+  );
+  record(
+    'actual Chrome purchasing UI received a lot-controlled item with explicit batch/expiry provenance and server truth preserved the allocation',
+  );
+  await capture('control-v2-4-lot-aware-receiving-success');
+
+  await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
+  await waitForText('ابحث أو امسح الباركود', 30_000);
+
   await clickButton('إغلاق الوردية');
   await waitForText('إغلاق الوردية وتسوية الدرج', 20_000);
   await setInput('shift-close-declared-cash', '101.00');
