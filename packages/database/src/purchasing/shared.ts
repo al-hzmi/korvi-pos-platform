@@ -1,6 +1,6 @@
 import { newId } from '@korvi/domain';
 import { StockOperationRefusedError, PurchasingRefusedError } from '../errors.js';
-import type { PurchasingRefusal } from '../errors.js';
+import type { PurchasingRefusal, StockOperationRefusal } from '../errors.js';
 import type { TransactionClient } from '../tenant-context.js';
 
 /**
@@ -23,8 +23,19 @@ import type { TransactionClient } from '../tenant-context.js';
  * refusal later fails the type check here instead of silently arriving on the
  * purchasing surface under a name its consumers do not handle.
  */
+type PurchasingRelevantStockRefusal = Exclude<
+  StockOperationRefusal,
+  | 'lot-count-required'
+  | 'lot-count-not-applicable'
+  | 'lot-adjustment-required'
+  | 'lot-adjustment-not-applicable'
+  | 'invalid-lot-adjustment'
+  | 'lot-unavailable'
+  | 'unknown-lot'
+>;
+
 const REFUSAL_TRANSLATION: Readonly<
-  Record<StockOperationRefusedError['detail'], PurchasingRefusal>
+  Record<PurchasingRelevantStockRefusal, PurchasingRefusal>
 > = {
   'unknown-branch': 'unknown-branch',
   'inactive-branch': 'inactive-branch',
@@ -40,9 +51,32 @@ const REFUSAL_TRANSLATION: Readonly<
   'stock-changed': 'idempotency-conflict',
 };
 
+function isPurchasingRelevantStockRefusal(
+  detail: StockOperationRefusal,
+): detail is PurchasingRelevantStockRefusal {
+  switch (detail) {
+    case 'lot-count-required':
+    case 'lot-count-not-applicable':
+    case 'lot-adjustment-required':
+    case 'lot-adjustment-not-applicable':
+    case 'invalid-lot-adjustment':
+    case 'lot-unavailable':
+    case 'unknown-lot':
+      return false;
+    default:
+      return true;
+  }
+}
+
 export function inPurchasingVocabulary<T>(work: () => Promise<T>): Promise<T> {
   return work().catch((error: unknown) => {
     if (error instanceof StockOperationRefusedError) {
+      // These lot-specific stock-operation refusals belong to count/adjustment
+      // surfaces, not receiving. Receiving's V2-4 lot policy failures travel as
+      // LotPolicyRefusedError and are translated by the API service. If one of
+      // these appears here, preserve it as an internal contract breach instead
+      // of laundering it into an unrelated purchasing business refusal.
+      if (!isPurchasingRelevantStockRefusal(error.detail)) throw error;
       throw new PurchasingRefusedError(REFUSAL_TRANSLATION[error.detail], error.productId);
     }
     throw error;
