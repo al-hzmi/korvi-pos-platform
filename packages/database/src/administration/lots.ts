@@ -212,9 +212,7 @@ async function loadConfig(
       where: { tenantId: tenant, productId },
       orderBy: [{ status: 'asc' }, { dateValue: 'asc' }, { internalCode: 'asc' }],
     }),
-    tx.$queryRawUnsafe<
-      { lotId: string; branchId: string; quantityScaled: bigint }[]
-    >(
+    tx.$queryRawUnsafe<{ lotId: string; branchId: string; quantityScaled: bigint }[]>(
       'SELECT "lotId","branchId",SUM("quantityScaled")::bigint AS "quantityScaled" FROM "inventory_lot_entries" WHERE "tenantId"=$1::uuid AND "productId"=$2::uuid GROUP BY "lotId","branchId" ORDER BY "lotId","branchId"',
       tenant,
       productId,
@@ -291,9 +289,7 @@ export async function readProductLotConfig(
   scope: TenantScope,
   productId: string,
 ): Promise<ProductLotAdminConfig | null> {
-  return withTenant(prisma, scope.tenantId, (tx) =>
-    loadConfig(tx, tenantParam(scope), productId),
-  );
+  return withTenant(prisma, scope.tenantId, (tx) => loadConfig(tx, tenantParam(scope), productId));
 }
 
 export async function enableProductLotTracking(
@@ -318,9 +314,7 @@ export async function enableProductLotTracking(
     if (balances.some((balance) => balance.quantityScaled < 0n)) {
       throw new LotAdminRefusedError('negative-stock');
     }
-    if (
-      (await tx.inventoryLotEntry.count({ where: { tenantId: tenant, productId } })) !== 0
-    ) {
+    if ((await tx.inventoryLotEntry.count({ where: { tenantId: tenant, productId } })) !== 0) {
       throw new DatabaseError('Lot entries exist before lot tracking activation.');
     }
 
@@ -431,12 +425,8 @@ export async function updateProductLotPolicy(
     const changed = await tx.productLotPolicy.updateMany({
       where: { tenantId: tenant, productId, revision: expected, trackingMode: 'required' },
       data: {
-        ...(input.selectionPolicy === undefined
-          ? {}
-          : { selectionPolicy: input.selectionPolicy }),
-        ...(input.dateRequirement === undefined
-          ? {}
-          : { dateRequirement: input.dateRequirement }),
+        ...(input.selectionPolicy === undefined ? {} : { selectionPolicy: input.selectionPolicy }),
+        ...(input.dateRequirement === undefined ? {} : { dateRequirement: input.dateRequirement }),
         revision: { increment: 1n },
         updatedAt: occurredAt,
       },
@@ -569,9 +559,7 @@ export async function recordInventoryLotReclassification(
     });
     if (policy?.trackingMode !== 'required') throw new LotAdminRefusedError('not-enabled');
 
-    const balances = await tx.$queryRawUnsafe<
-      { quantityScaled: bigint; revision: bigint }[]
-    >(
+    const balances = await tx.$queryRawUnsafe<{ quantityScaled: bigint; revision: bigint }[]>(
       'SELECT "quantityScaled","revision" FROM "inventory_balances" WHERE "tenantId"=$1::uuid AND "branchId"=$2::uuid AND "productId"=$3::uuid FOR UPDATE',
       tenant,
       input.branchId,
