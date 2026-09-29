@@ -431,17 +431,11 @@ describe.skipIf(url === '')('restaurant waste/spoilage inventory authority, live
 
   it('V2-4 consumes only eligible lot stock for waste and refuses a blocked remainder without writing residue', async () => {
     await seed(A.lotWaste, 3_000n, 3_000n, 300n);
-    const config = await enableProductLotTracking(
-      prisma,
-      scope,
-      actor,
-      A.lotWaste,
-      {
-        selectionPolicy: 'fefo',
-        dateRequirement: 'optional',
-        occurredAt: '2026-09-29T13:00:00.000Z',
-      },
-    );
+    const config = await enableProductLotTracking(prisma, scope, actor, A.lotWaste, {
+      selectionPolicy: 'fefo',
+      dateRequirement: 'optional',
+      occurredAt: '2026-09-29T13:00:00.000Z',
+    });
     const lot = config.lots[0];
     if (lot === undefined) throw new Error('baseline waste lot missing');
 
@@ -493,17 +487,11 @@ describe.skipIf(url === '')('restaurant waste/spoilage inventory authority, live
     ]);
     expect(firstEvidence.balance?.quantityScaled).toBe(2_000n);
 
-    const blocked = await updateInventoryLotStatus(
-      prisma,
-      scope,
-      actor,
-      lot.id,
-      {
-        expectedRevision: lot.revision,
-        status: 'blocked',
-        occurredAt: '2026-09-29T13:06:00.000Z',
-      },
-    );
+    const blocked = await updateInventoryLotStatus(prisma, scope, actor, lot.id, {
+      expectedRevision: lot.revision,
+      status: 'blocked',
+      occurredAt: '2026-09-29T13:06:00.000Z',
+    });
     expect(blocked.lots.find((entry) => entry.id === lot.id)?.status).toBe('blocked');
 
     const refusedOperationId = '01995000-0000-7000-8000-0000000000c7';

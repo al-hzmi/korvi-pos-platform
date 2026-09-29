@@ -2439,21 +2439,13 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
   }, 90_000);
 
   it('V2-4: receiving commits exact lot provenance snapshots that reconcile to the canonical movement', async () => {
-    await enableProductLotTracking(
-      prisma,
-      scope,
-      { userId: T.user },
-      T.lotReceipt,
-      {
-        selectionPolicy: 'fefo',
-        dateRequirement: 'required',
-        occurredAt: '2026-09-29T13:00:00.000Z',
-      },
-    );
+    await enableProductLotTracking(prisma, scope, { userId: T.user }, T.lotReceipt, {
+      selectionPolicy: 'fefo',
+      dateRequirement: 'required',
+      occurredAt: '2026-09-29T13:00:00.000Z',
+    });
 
-    const po = await freshOrder([
-      { productId: T.lotReceipt, orderedQuantityScaled: '10000' },
-    ]);
+    const po = await freshOrder([{ productId: T.lotReceipt, orderedQuantityScaled: '10000' }]);
     const received = await receive({
       operationId: `rc-lot-${newId()}`,
       purchaseOrderId: po.id,
