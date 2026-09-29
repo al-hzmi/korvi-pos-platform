@@ -63,9 +63,7 @@ import type {
  */
 
 export type PurchasingFailureReason =
-  | PurchasingRequestRefusal
-  | PurchasingRefusal
-  | LotPolicyRefusal;
+  PurchasingRequestRefusal | PurchasingRefusal | LotPolicyRefusal;
 
 export type PurchasingResult<T> =
   | { readonly outcome: 'success'; readonly value: T }

@@ -147,9 +147,7 @@ const purchaseOrderQuery = z
   })
   .strict();
 
-const LOT_DATE = z
-  .string()
-  .regex(/^\\d{4}-\\d{2}-\\d{2}$/, 'must be YYYY-MM-DD');
+const LOT_DATE = z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/, 'must be YYYY-MM-DD');
 
 const receiptLotBody = z
   .object({

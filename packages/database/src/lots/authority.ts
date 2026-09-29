@@ -211,8 +211,7 @@ async function resolveReceivedLotWithin(
 
   const externalBatchReference = cleanBatch(fact.externalBatchReference);
   const received = receivedDate(fact.dateKind, fact.dateValue, dateRequired);
-  const dateValue =
-    received.value === null ? null : new Date(`${received.value}T00:00:00.000Z`);
+  const dateValue = received.value === null ? null : new Date(`${received.value}T00:00:00.000Z`);
 
   if (externalBatchReference === null) {
     const id = newId();
@@ -278,9 +277,7 @@ export async function prepareMovementLotsWithin(
   if (policy === null) {
     if (
       directive !== undefined &&
-      (directive.kind === 'explicit'
-        ? directive.allocations.length > 0
-        : directive.lots.length > 0)
+      (directive.kind === 'explicit' ? directive.allocations.length > 0 : directive.lots.length > 0)
     ) {
       throw new LotPolicyRefusedError('lot-product-mismatch');
     }

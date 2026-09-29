@@ -546,8 +546,7 @@ export function validatePurchaseReceiptRequest(
     }
     if (
       lots.length > 0 &&
-      lots.reduce((sum, lot) => sum + lot.acceptedQuantityScaled, 0n) !==
-        acceptedQuantityScaled
+      lots.reduce((sum, lot) => sum + lot.acceptedQuantityScaled, 0n) !== acceptedQuantityScaled
     ) {
       throw new PurchasingRequestError(
         'invalid-lot',

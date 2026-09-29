@@ -315,10 +315,7 @@ function receiptFromSnapshot(value: unknown): PurchaseReceiptResult {
             internalCode: snapshotString(lot, 'internalCode'),
             provenance: snapshotString(lot, 'provenance'),
             externalBatchReference: snapshotNullableString(lot, 'externalBatchReference'),
-            dateKind: snapshotNullableString(lot, 'dateKind') as
-              | 'expiry'
-              | 'best-before'
-              | null,
+            dateKind: snapshotNullableString(lot, 'dateKind') as 'expiry' | 'best-before' | null,
             dateValue: snapshotNullableString(lot, 'dateValue'),
           }))
         : [],
@@ -645,9 +642,7 @@ export async function recordPurchaseReceipt(
                 externalBatchReference: lot.externalBatchReference,
                 dateKind: lot.dateKind,
                 dateValue:
-                  lot.dateValue === null
-                    ? null
-                    : new Date(`${lot.dateValue}T00:00:00.000Z`),
+                  lot.dateValue === null ? null : new Date(`${lot.dateValue}T00:00:00.000Z`),
               };
             }),
           });
