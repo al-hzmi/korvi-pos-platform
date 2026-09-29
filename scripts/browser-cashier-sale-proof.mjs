@@ -965,7 +965,9 @@ try {
   assert.equal(lotTruthBeforeSale.config.trackingMode, 'required');
   assert.equal(lotTruthBeforeSale.config.selectionPolicy, 'fefo');
   const baselineLot = lotTruthBeforeSale.config.lots.find(
-    (lot) => lot.provenance === 'historical-unknown',
+    (lot) =>
+      lot.provenance === 'historical-unknown' &&
+      lot.availabilityByBranch.some((row) => row.branchId === branch.id),
   );
   assert.ok(
     baselineLot !== undefined,
