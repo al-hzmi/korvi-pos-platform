@@ -2681,6 +2681,8 @@ describe.skipIf(url === '')('purchasing and receiving, live', () => {
     expect(Object.keys(page.rows[0] ?? {}).sort()).toEqual([
       'id',
       'isActive',
+      'lotDateRequirement',
+      'lotTrackingRequired',
       'nameAr',
       'nameEn',
       'packages',

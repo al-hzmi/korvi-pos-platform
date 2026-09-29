@@ -505,7 +505,7 @@ describe.skipIf(url === '')('restaurant waste/spoilage inventory authority, live
           branchId: A.branch,
           reasonType: 'waste',
           note: null,
-          lines: [{ productId: A.lotWaste, quantityScaled: '500' }],
+          lines: [{ productId: A.lotWaste, quantityScaled: '1000' }],
         },
         () => new Date('2026-09-29T13:07:00.000Z'),
       ),

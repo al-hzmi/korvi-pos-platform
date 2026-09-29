@@ -172,6 +172,24 @@ async function setInputByAriaLabel(label, value) {
   assert.equal(changed, true, `Input with aria-label ${label} was not available.`);
 }
 
+async function setInputByAriaLabelPrefix(prefix, value) {
+  const changed = await evaluate(`(() => {
+    const input = [...document.querySelectorAll('input')].find(
+      (candidate) => (candidate.getAttribute('aria-label') ?? '').startsWith(${jsString(prefix)})
+    );
+    if (!(input instanceof HTMLInputElement)) return false;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (setter === undefined) return false;
+    setter.call(input, ${jsString(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.focus();
+    return true;
+  })()`);
+  assert.equal(changed, true, `Input with aria-label prefix ${prefix} was not available.`);
+}
+
 async function setInputByPlaceholder(placeholder, value) {
   const changed = await evaluate(`(() => {
     const input = [...document.querySelectorAll('input')].find(
@@ -1124,7 +1142,7 @@ try {
   await setInputByLabelText('كمية الدفعة', '1');
   await setInputByLabelText('Batch / رقم الدفعة', 'V24-BATCH-001');
   await setSelectByLabelText('نوع التاريخ', 'expiry');
-  await setInputByLabelText('التاريخ', '2027-12-31');
+  await setInputByAriaLabelPrefix('تاريخ الدفعة 1 ', '2027-12-31');
   await clickButton('تسجيل الاستلام');
   await waitForText('سُجل الاستلام وحركة المخزون ذريًا.', 30_000);
 
