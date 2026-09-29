@@ -92,7 +92,10 @@ async function trackingPolicy(
   ) {
     throw new Error('Product lot policy is outside ADR-0039.');
   }
-  return policy;
+  return {
+    selectionPolicy: policy.selectionPolicy,
+    dateRequirement: policy.dateRequirement,
+  };
 }
 
 async function lockAllProductLots(

@@ -114,6 +114,27 @@ export type {
   CreatePriceListEntryRequest,
   UpdatePriceListEntryRequest,
 } from './administration/retail-pricing.js';
+
+export {
+  LotAdminRefusedError,
+  readProductLotConfig,
+  enableProductLotTracking,
+  updateProductLotPolicy,
+  updateInventoryLotStatus,
+  recordInventoryLotReclassification,
+} from './administration/lots.js';
+export type {
+  LotAdminRefusal,
+  LotAdminActor,
+  LotAvailabilityByBranch,
+  LotAdminLot,
+  ProductLotAdminConfig,
+  EnableLotTrackingRequest,
+  UpdateLotPolicyRequest,
+  UpdateLotStatusRequest,
+  LotReclassificationLine,
+  RecordLotReclassificationRequest,
+} from './administration/lots.js';
 export {
   MAX_MERCHANT_SALES_PAGE,
   listMerchantSales,
