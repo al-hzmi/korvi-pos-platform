@@ -7,16 +7,10 @@ import {
   prepareMovementCost,
 } from '../costing/ledger.js';
 import { minor, scoped, tenantParam } from './mapping.js';
-import {
-  commitMovementLotsWithin,
-  prepareMovementLotsWithin,
-} from '../lots/authority.js';
+import { commitMovementLotsWithin, prepareMovementLotsWithin } from '../lots/authority.js';
 import type { TransactionClient } from '../tenant-context.js';
 import type { IncomingCostBasis, MovementCostEvidence } from '../costing/ledger.js';
-import type {
-  MovementLotDirective,
-  PreparedMovementLotAllocation,
-} from '../lots/authority.js';
+import type { MovementLotDirective, PreparedMovementLotAllocation } from '../lots/authority.js';
 import type {
   InventoryBalance,
   InventoryMovementInput,
@@ -147,12 +141,7 @@ export async function applyMovementWithin(
   // ADR-0039: balance/cost locks remain first. Lot identities are locked only
   // after those canonical authorities, so V2-4 cannot introduce a new
   // deadlock order or a second stock truth.
-  const preparedLots = await prepareMovementLotsWithin(
-    tx,
-    tenant,
-    movement,
-    lotDirective,
-  );
+  const preparedLots = await prepareMovementLotsWithin(tx, tenant, movement, lotDirective);
 
   await tx.inventoryMovement.create({
     data: {
@@ -208,13 +197,7 @@ export async function applyMovementWithin(
     occurredAt: new Date(movement.occurredAt),
     prepared: preparedCost,
   });
-  await commitMovementLotsWithin(
-    tx,
-    tenant,
-    movement,
-    preparedLots,
-    newId,
-  );
+  await commitMovementLotsWithin(tx, tenant, movement, preparedLots, newId);
 
   return {
     tenantId: tenant,

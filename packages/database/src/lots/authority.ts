@@ -77,13 +77,10 @@ async function trackingPolicy(
   tx: TransactionClient,
   tenant: string,
   productId: string,
-): Promise<
-  | null
-  | {
-      readonly selectionPolicy: 'fefo' | 'fifo';
-      readonly dateRequirement: 'optional' | 'required';
-    }
-> {
+): Promise<null | {
+  readonly selectionPolicy: 'fefo' | 'fifo';
+  readonly dateRequirement: 'optional' | 'required';
+}> {
   const policy = await tx.productLotPolicy.findUnique({
     where: { tenantId_productId: { tenantId: tenant, productId } },
     select: { trackingMode: true, selectionPolicy: true, dateRequirement: true },
@@ -124,10 +121,7 @@ async function availabilityRows(
   );
 }
 
-async function settingsTimeZone(
-  tx: TransactionClient,
-  tenant: string,
-): Promise<string> {
+async function settingsTimeZone(tx: TransactionClient, tenant: string): Promise<string> {
   const settings = await tx.tenantSettings.findUnique({
     where: { tenantId: tenant },
     select: { businessTimeZone: true },
@@ -135,10 +129,7 @@ async function settingsTimeZone(
   return settings?.businessTimeZone ?? 'Asia/Riyadh';
 }
 
-function snapshot(
-  row: LotRow,
-  quantityScaled: bigint,
-): PreparedMovementLotAllocation {
+function snapshot(row: LotRow, quantityScaled: bigint): PreparedMovementLotAllocation {
   return {
     lotId: row.id,
     quantityScaled,
@@ -207,7 +198,8 @@ export async function prepareMovementLotsWithin(
         if (
           row === undefined ||
           row.status !== 'active' ||
-          lotDateState(dateKind(row.dateKind), dateOnly(row.dateValue), businessDate) === 'expired' ||
+          lotDateState(dateKind(row.dateKind), dateOnly(row.dateValue), businessDate) ===
+            'expired' ||
           row.availableQuantityScaled < -allocation.quantityScaled
         ) {
           throw new LotPolicyRefusedError('lot-unavailable');
@@ -227,16 +219,8 @@ export async function prepareMovementLotsWithin(
   }
 
   const instant = new Date(movement.occurredAt);
-  const businessDate = businessDateAt(
-    instant,
-    await settingsTimeZone(tx, tenant),
-  );
-  const available = await availabilityRows(
-    tx,
-    tenant,
-    movement.branchId,
-    movement.productId,
-  );
+  const businessDate = businessDateAt(instant, await settingsTimeZone(tx, tenant));
+  const available = await availabilityRows(tx, tenant, movement.branchId, movement.productId);
   const selected = selectLotAllocations({
     requiredQuantityScaled: -movementQuantity,
     policy: policy.selectionPolicy,
