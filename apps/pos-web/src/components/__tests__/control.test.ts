@@ -852,12 +852,17 @@ describe('purchasing presentation', () => {
     const commonLine = {
       line,
       label: 'حليب — MILK-1L',
+      product: pages.products.rows[0],
       quantity: '1',
       inventoryValue: { enabled: true, value: '0.00' },
+      lots: [],
       disabled: false,
       onQuantityChange: () => undefined,
       onCostEnabledChange: () => undefined,
       onCostValueChange: () => undefined,
+      onAddLot: () => undefined,
+      onRemoveLot: () => undefined,
+      onLotChange: () => undefined,
     } as const;
     const receiver = renderToStaticMarkup(
       createElement(ReceiptLineEditor, { ...commonLine, canManageCost: false }),
