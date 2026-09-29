@@ -1143,8 +1143,64 @@ try {
   await setInputByLabelText('Batch / رقم الدفعة', 'V24-BATCH-001');
   await setSelectByLabelText('نوع التاريخ', 'expiry');
   await setInputByAriaLabelPrefix('تاريخ الدفعة 1 ', '2027-12-31');
+
+  let lotReceiptRequests = 0;
+  let lotReceiptResponseStatus = null;
+  let lotReceiptResponseBody = null;
+  let lotReceiptBodyPromise = null;
+  cdp.on('Network.requestWillBeSent', (params) => {
+    const request = params.request;
+    if (
+      request?.method === 'POST' &&
+      new URL(request.url).pathname === '/v1/admin/purchasing/receipts'
+    ) {
+      lotReceiptRequests += 1;
+    }
+  });
+  cdp.on('Network.responseReceived', (params) => {
+    if (new URL(params.response.url).pathname !== '/v1/admin/purchasing/receipts') return;
+    lotReceiptResponseStatus = params.response.status;
+    lotReceiptBodyPromise = cdp
+      .send('Network.getResponseBody', { requestId: params.requestId })
+      .then((payload) => {
+        lotReceiptResponseBody = payload.body;
+      })
+      .catch(() => undefined);
+  });
+
   await clickButton('تسجيل الاستلام');
-  await waitForText('سُجل الاستلام وحركة المخزون ذريًا.', 30_000);
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+
+  if (lotReceiptRequests === 0) {
+    const visibleText = String(await evaluate(`document.body?.innerText ?? ''`))
+      .replace(/\s+/g, ' ')
+      .slice(-1800);
+    throw new Error(
+      `Lot-aware receiving emitted no POST /v1/admin/purchasing/receipts request. Visible UI tail: ${visibleText}`,
+    );
+  }
+  if (lotReceiptBodyPromise !== null) await lotReceiptBodyPromise;
+  if (
+    lotReceiptResponseStatus !== null &&
+    lotReceiptResponseStatus !== 200 &&
+    lotReceiptResponseStatus !== 201
+  ) {
+    throw new Error(
+      `Lot-aware receiving returned HTTP ${String(lotReceiptResponseStatus)}: ${String(lotReceiptResponseBody)}`,
+    );
+  }
+
+  try {
+    await waitForText('سُجل الاستلام وحركة المخزون ذريًا.', 20_000);
+  } catch (error) {
+    const visibleText = String(await evaluate(`document.body?.innerText ?? ''`))
+      .replace(/\s+/g, ' ')
+      .slice(-1800);
+    throw new Error(
+      `Lot-aware receiving did not reach success after HTTP ${String(lotReceiptResponseStatus)}. Response: ${String(lotReceiptResponseBody)}. Visible UI tail: ${visibleText}`,
+      { cause: error },
+    );
+  }
 
   const lotProofReceipts = await browserRequest(
     `/v1/admin/purchasing/orders/${encodeURIComponent(lotProofOrder.id)}/receipts?limit=20`,
