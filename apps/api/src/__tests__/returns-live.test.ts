@@ -918,17 +918,11 @@ describe.skipIf(url === '')('returns, live', () => {
     );
   });
   it('N. sale and partial returns preserve immutable lot provenance end to end', async () => {
-    const config = await enableProductLotTracking(
-      prisma,
-      scope,
-      { userId: R.user },
-      R.lotted,
-      {
-        selectionPolicy: 'fefo',
-        dateRequirement: 'optional',
-        occurredAt: '2026-09-29T01:00:00.000Z',
-      },
-    );
+    const config = await enableProductLotTracking(prisma, scope, { userId: R.user }, R.lotted, {
+      selectionPolicy: 'fefo',
+      dateRequirement: 'optional',
+      occurredAt: '2026-09-29T01:00:00.000Z',
+    });
     const lot = config.lots[0];
     if (lot === undefined) throw new Error('tracking baseline lot was not created');
 
@@ -987,17 +981,11 @@ describe.skipIf(url === '')('returns, live', () => {
     );
     expect(preTrackingSnapshotCount).toBe(0);
 
-    const enabled = await enableProductLotTracking(
-      prisma,
-      scope,
-      { userId: R.user },
-      R.legacyLot,
-      {
-        selectionPolicy: 'fifo',
-        dateRequirement: 'required',
-        occurredAt: '2026-09-29T01:10:00.000Z',
-      },
-    );
+    const enabled = await enableProductLotTracking(prisma, scope, { userId: R.user }, R.legacyLot, {
+      selectionPolicy: 'fifo',
+      dateRequirement: 'required',
+      occurredAt: '2026-09-29T01:10:00.000Z',
+    });
     expect(enabled.lots).toHaveLength(1);
 
     const result = await returns.create({
@@ -1033,5 +1021,4 @@ describe.skipIf(url === '')('returns, live', () => {
     expect(lots).toHaveLength(2);
     expect(lots.every((lot) => lot.provenance === 'historical-unknown')).toBe(true);
   });
-
 });
