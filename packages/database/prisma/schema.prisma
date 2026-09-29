@@ -93,6 +93,13 @@ model Tenant {
   priceListEntries              PriceListEntry[]
   inventoryBalances             InventoryBalance[]
   inventoryMovements            InventoryMovement[]
+  productLotPolicies             ProductLotPolicy[]
+  inventoryLots                  InventoryLot[]
+  inventoryLotEntries            InventoryLotEntry[]
+  inventoryLotReclassifications  InventoryLotReclassification[]
+  purchaseReceiptLotAllocations  PurchaseReceiptLotAllocation[]
+  saleLineLotAllocations         SaleLineLotAllocation[]
+  returnLineLotAllocations       ReturnLineLotAllocation[]
   inventoryCostBalances         InventoryCostBalance[]
   inventoryValuationEvents      InventoryValuationEvent[]
   inventoryAdjustments          InventoryAdjustment[]
@@ -171,6 +178,8 @@ model Branch {
   terminals                Terminal[]
   inventoryBalances        InventoryBalance[]
   inventoryMovements       InventoryMovement[]
+  inventoryLotEntries       InventoryLotEntry[]
+  inventoryLotReclassifications InventoryLotReclassification[]
   inventoryCostBalances    InventoryCostBalance[]
   inventoryValuationEvents InventoryValuationEvent[]
   inventoryAdjustments     InventoryAdjustment[]
@@ -597,6 +606,8 @@ model User {
   inventoryAdjustments     InventoryAdjustment[]
   inventoryCounts          InventoryCount[]
   inventoryTransfers       InventoryTransfer[]
+  inventoryLotEntries       InventoryLotEntry[]
+  inventoryLotReclassifications InventoryLotReclassification[]
   purchaseOrders           PurchaseOrder[]
   purchaseReceipts         PurchaseReceipt[]
   inventoryValuationEvents InventoryValuationEvent[]
@@ -728,6 +739,8 @@ model TenantSettings {
   priceMode             String @default("tax-inclusive")
   defaultVatBasisPoints Int    @default(1500)
   currency              String @default("SAR")
+  /// IANA zone used only for merchant calendar facts such as expiry dates.
+  businessTimeZone      String @default("Asia/Riyadh")
 
   enableProductImages Boolean @default(false)
   requireBarcode      Boolean @default(true)
@@ -912,6 +925,13 @@ model Product {
   priceListEntries         PriceListEntry[]
   inventoryBalances        InventoryBalance[]
   inventoryMovements       InventoryMovement[]
+  lotPolicy                 ProductLotPolicy?
+  inventoryLots             InventoryLot[]
+  inventoryLotEntries       InventoryLotEntry[]
+  inventoryLotReclassifications InventoryLotReclassification[]
+  purchaseReceiptLotAllocations PurchaseReceiptLotAllocation[]
+  saleLineLotAllocations    SaleLineLotAllocation[]
+  returnLineLotAllocations  ReturnLineLotAllocation[]
   inventoryCostBalances    InventoryCostBalance[]
   inventoryValuationEvents InventoryValuationEvent[]
   inventoryAdjustmentLines InventoryAdjustmentLine[]
@@ -1078,6 +1098,202 @@ model ProductPrice {
 /// The natural key is the primary key. A surrogate id would let a second
 /// balance row for the same product exist without violating anything, and two
 /// disagreeing stock figures is worse than none.
+model ProductLotPolicy {
+  tenantId String @db.Uuid
+  productId String @db.Uuid
+
+  /// 'none' | 'required'
+  trackingMode String @default("none")
+  /// 'fefo' | 'fifo'
+  selectionPolicy String @default("fefo")
+  /// 'optional' | 'required'
+  dateRequirement String @default("optional")
+  revision BigInt @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, productId])
+  @@map("product_lot_policies")
+}
+
+model InventoryLot {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  productId String @db.Uuid
+
+  /// Korvi-owned immutable identity shown even when supplier batch is absent.
+  internalCode String
+  /// 'received' | 'produced' | 'historical-unknown' | 'manual-correction'
+  provenance String
+  externalBatchReference String?
+  /// 'expiry' | 'best-before' | null. Paired with dateValue.
+  dateKind  String?
+  dateValue DateTime? @db.Date
+
+  /// 'active' | 'blocked' | 'closed'
+  status   String @default("active")
+  revision BigInt @default(1)
+
+  /// First time Korvi observed this lot identity; never a fabricated receipt time.
+  firstObservedAt DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  entries InventoryLotEntry[]
+  purchaseReceiptAllocations PurchaseReceiptLotAllocation[]
+  saleLineAllocations SaleLineLotAllocation[]
+  returnLineAllocations ReturnLineLotAllocation[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, productId, id])
+  @@unique([tenantId, productId, internalCode])
+  @@unique([tenantId, productId, externalBatchReference])
+  @@index([tenantId, productId, status])
+  @@index([tenantId, productId, dateValue])
+  @@map("inventory_lots")
+}
+
+model InventoryLotReclassification {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  branchId  String @db.Uuid
+  productId String @db.Uuid
+
+  operationId String
+  requestHash String
+  expectedBalanceRevision BigInt
+  reason      String
+  actorUserId String @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  actor   User    @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+  entries InventoryLotEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, branchId, productId])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, branchId, productId, occurredAt])
+  @@map("inventory_lot_reclassifications")
+}
+
+model InventoryLotEntry {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  branchId  String @db.Uuid
+  productId String @db.Uuid
+  lotId     String @db.Uuid
+
+  /// Signed distribution quantity. This never changes Product stock by itself.
+  quantityScaled BigInt
+  /// 'tracking-baseline' | 'movement' | 'reclassification'
+  causeKind String
+  inventoryMovementId String? @db.Uuid
+  reclassificationId  String? @db.Uuid
+
+  actorUserId String? @db.Uuid
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  lot InventoryLot @relation(fields: [tenantId, productId, lotId], references: [tenantId, productId, id], onDelete: NoAction)
+  movement InventoryMovement? @relation(fields: [tenantId, inventoryMovementId, branchId, productId], references: [tenantId, id, branchId, productId], onDelete: NoAction)
+  reclassification InventoryLotReclassification? @relation(fields: [tenantId, reclassificationId, branchId, productId], references: [tenantId, id, branchId, productId], onDelete: NoAction)
+  actor User? @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, branchId, productId, lotId, occurredAt])
+  @@index([tenantId, inventoryMovementId])
+  @@index([tenantId, reclassificationId])
+  @@map("inventory_lot_entries")
+}
+
+model PurchaseReceiptLotAllocation {
+  id                    String @id @db.Uuid
+  tenantId              String @db.Uuid
+  purchaseReceiptLineId String @db.Uuid
+  productId             String @db.Uuid
+  lotId                 String @db.Uuid
+  quantityScaled        BigInt
+
+  internalCode           String
+  provenance             String
+  externalBatchReference String?
+  dateKind               String?
+  dateValue              DateTime? @db.Date
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  receiptLine PurchaseReceiptLine @relation(fields: [tenantId, purchaseReceiptLineId], references: [tenantId, id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  lot InventoryLot @relation(fields: [tenantId, productId, lotId], references: [tenantId, productId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, purchaseReceiptLineId, lotId])
+  @@index([tenantId, productId, lotId])
+  @@map("purchase_receipt_lot_allocations")
+}
+
+model SaleLineLotAllocation {
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  saleLineId String @db.Uuid
+  productId  String @db.Uuid
+  lotId      String @db.Uuid
+  quantityScaled BigInt
+
+  internalCode           String
+  provenance             String
+  externalBatchReference String?
+  dateKind               String?
+  dateValue              DateTime? @db.Date
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  saleLine SaleLine @relation(fields: [tenantId, saleLineId], references: [tenantId, id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  lot InventoryLot @relation(fields: [tenantId, productId, lotId], references: [tenantId, productId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, saleLineId, lotId])
+  @@index([tenantId, productId, lotId])
+  @@map("sale_line_lot_allocations")
+}
+
+model ReturnLineLotAllocation {
+  id           String @id @db.Uuid
+  tenantId     String @db.Uuid
+  returnLineId String @db.Uuid
+  productId    String @db.Uuid
+  lotId        String @db.Uuid
+  quantityScaled BigInt
+
+  internalCode           String
+  provenance             String
+  externalBatchReference String?
+  dateKind               String?
+  dateValue              DateTime? @db.Date
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  returnLine ReturnLine @relation(fields: [tenantId, returnLineId], references: [tenantId, id], onDelete: Cascade)
+  product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  lot InventoryLot @relation(fields: [tenantId, productId, lotId], references: [tenantId, productId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, returnLineId, lotId])
+  @@index([tenantId, productId, lotId])
+  @@map("return_line_lot_allocations")
+}
+
 model InventoryBalance {
   tenantId       String   @db.Uuid
   branchId       String   @db.Uuid
@@ -1146,7 +1362,10 @@ model InventoryMovement {
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch  Branch  @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
   product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  lotEntries InventoryLotEntry[]
 
+  @@unique([tenantId, id])
+  @@unique([tenantId, id, branchId, productId])
   @@index([tenantId, branchId, productId, occurredAt])
   @@index([tenantId, sourceType, sourceId])
   @@index([tenantId, sourceLineId])
@@ -1592,6 +1811,7 @@ model PurchaseReceiptLine {
   purchaseOrderLine PurchaseOrderLine @relation(fields: [tenantId, purchaseOrderLineId], references: [tenantId, id], onDelete: NoAction)
   product           Product           @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
   package           ProductPackage?   @relation(fields: [tenantId, productId, packageId], references: [tenantId, productId, id], onDelete: NoAction)
+  lotAllocations    PurchaseReceiptLotAllocation[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, purchaseReceiptId, purchaseOrderLineId], map: "purchase_receipt_lines_tenantId_receiptId_orderLineId_key")
@@ -1842,6 +2062,7 @@ model SaleLine {
   priceList   PriceList?    @relation(fields: [tenantId, priceListId], references: [tenantId, id], onDelete: NoAction)
   returnLines ReturnLine[]
   promotionAllocations SalePromotionAllocation[]
+  lotAllocations SaleLineLotAllocation[]
 
   @@unique([tenantId, saleId, lineNumber])
   /// The tenant-consistency key. A child row references this table by
@@ -2324,9 +2545,11 @@ model ReturnLine {
   return   Return   @relation(fields: [tenantId, returnId], references: [tenantId, id], onDelete: Cascade)
   saleLine SaleLine @relation(fields: [tenantId, saleLineId], references: [tenantId, id], onDelete: NoAction)
   product  Product? @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
+  lotAllocations ReturnLineLotAllocation[]
 
   /// One row per sale line per return. Two rows for one line would each pass
   /// a remaining-quantity check their sum fails.
+  @@unique([tenantId, id])
   @@unique([tenantId, returnId, saleLineId])
   @@index([tenantId, returnId])
   @@index([tenantId, saleLineId])

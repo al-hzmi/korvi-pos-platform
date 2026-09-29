@@ -15,6 +15,7 @@ export const PERMISSIONS = [
   'inventory.transfer',
   'inventory.cost.read',
   'inventory.cost.manage',
+  'lot.manage',
   'purchasing.read',
   'purchasing.manage',
   'purchasing.receive',
@@ -78,6 +79,7 @@ const MANAGER: readonly Permission[] = [
   // to rewrite valuation authority (ADR-0024 §8).
   'inventory.cost.read',
   'inventory.cost.manage',
+  'lot.manage',
   // Purchasing is a branch-management responsibility: a manager orders from
   // suppliers and signs for what the van delivers. `receive` is separate from
   // `manage` because they are separate acts — committing the shop to a

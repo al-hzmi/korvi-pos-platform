@@ -22,12 +22,12 @@ const actorFor = (role: RoleName): Actor => ({
 });
 
 describe('permission catalogue', () => {
-  it('lists twenty-seven distinct permissions', () => {
+  it('lists twenty-eight distinct permissions', () => {
     // Strike 5C separated cost visibility from valuation authority. V2-1 adds
     // the dedicated no-receipt exchange authority rather than reusing refund
     // permission (ADR-0036). All catalogue entries remain distinct.
-    expect(PERMISSIONS).toHaveLength(27);
-    expect(new Set(PERMISSIONS).size).toBe(27);
+    expect(PERMISSIONS).toHaveLength(28);
+    expect(new Set(PERMISSIONS).size).toBe(28);
   });
 
   it('grants the owner every permission', () => {
@@ -71,6 +71,7 @@ describe('least privilege', () => {
       'inventory.transfer',
       'inventory.cost.read',
       'inventory.cost.manage',
+      'lot.manage',
       // A till neither orders from suppliers nor signs for a delivery.
       'purchasing.read',
       'purchasing.manage',
@@ -109,6 +110,7 @@ describe('least privilege', () => {
     expect(can(manager, 'sale.price-context')).toBe(true);
     expect(can(manager, 'inventory.cost.read')).toBe(true);
     expect(can(manager, 'inventory.cost.manage')).toBe(true);
+    expect(can(manager, 'lot.manage')).toBe(true);
   });
 
   it('gives an admin everything except what only an owner holds', () => {
