@@ -1493,6 +1493,9 @@ export interface PurchasingProduct {
   readonly unitLabel: string;
   readonly isActive: boolean;
   readonly trackInventory: boolean;
+  /** Read-only V2-4 receiving safety metadata. */
+  readonly lotTrackingRequired?: boolean;
+  readonly lotDateRequirement?: 'optional' | 'required';
   /** Additive V2-3 field; absent on legacy cached/test DTOs. */
   readonly packages?: readonly PurchasingProductPackage[];
 }
@@ -1581,6 +1584,14 @@ export interface PurchaseOrderCreateResult {
   readonly replayed: boolean;
 }
 
+export interface PurchaseReceiptLotRequest {
+  /** Commercial quantity, in the same unit as the receipt line. */
+  readonly acceptedQuantityScaled: string;
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  readonly dateValue: string | null;
+}
+
 export interface PurchaseReceiptCreateRequest {
   readonly operationId: string;
   readonly purchaseOrderId: string;
@@ -1590,7 +1601,19 @@ export interface PurchaseReceiptCreateRequest {
     readonly acceptedQuantityScaled: string;
     /** Omission is unknown cost; present zero is known zero-value acquisition. */
     readonly inventoryValueMinor?: string;
+    readonly lots?: readonly PurchaseReceiptLotRequest[];
   }[];
+}
+
+export interface PurchaseReceiptLotResult {
+  readonly lotId: string;
+  readonly acceptedCommercialQuantityScaled: string;
+  readonly acceptedQuantityScaled: string;
+  readonly internalCode: string;
+  readonly provenance: 'received' | 'produced' | 'historical-unknown' | 'manual-correction';
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  readonly dateValue: string | null;
 }
 
 export interface PurchaseReceiptLineResult {
@@ -1610,6 +1633,7 @@ export interface PurchaseReceiptLineResult {
   readonly beforeQuantityScaled: string;
   readonly afterQuantityScaled: string;
   readonly resultRevision: string;
+  readonly lots?: readonly PurchaseReceiptLotResult[];
 }
 
 export interface PurchaseReceiptResult {

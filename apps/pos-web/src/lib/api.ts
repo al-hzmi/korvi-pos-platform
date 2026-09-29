@@ -1588,6 +1588,16 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             ...(line.inventoryValueMinor === undefined
               ? {}
               : { inventoryValueMinor: line.inventoryValueMinor }),
+            ...(line.lots === undefined
+              ? {}
+              : {
+                  lots: line.lots.map((lot) => ({
+                    acceptedQuantityScaled: lot.acceptedQuantityScaled,
+                    externalBatchReference: lot.externalBatchReference,
+                    dateKind: lot.dateKind,
+                    dateValue: lot.dateValue,
+                  })),
+                }),
           })),
         },
         PURCHASING_COMMAND_TIMEOUT_MS,

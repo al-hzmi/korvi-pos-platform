@@ -27,6 +27,15 @@ const WEIGHTED: PurchasingProduct = {
   unitLabel: 'كجم',
 };
 
+const LOT_REQUIRED: PurchasingProduct = {
+  ...WEIGHTED,
+  id: 'product-lot',
+  sku: 'LOT',
+  nameAr: 'صنف دفعات',
+  lotTrackingRequired: true,
+  lotDateRequirement: 'required',
+};
+
 const ORDER: PurchaseOrder = {
   id: 'order-1',
   supplierId: 'supplier-1',
@@ -246,6 +255,144 @@ describe('purchasing command construction', () => {
         reference: '',
         products: [WEIGHTED],
         quantities: { 'line-1': '900719925474098.301' },
+      },
+      () => 'op',
+    );
+    expect(built).toMatchObject({ ok: false });
+  });
+
+  it('builds exact multi-lot receiving evidence for a lot-controlled product', () => {
+    const order = {
+      ...ORDER,
+      lines: [{ ...ORDER.lines[0]!, productId: LOT_REQUIRED.id, remainingQuantityScaled: '5000' }],
+    };
+    const built = buildPurchaseReceiptIntent(
+      {
+        order,
+        reference: '',
+        products: [LOT_REQUIRED],
+        quantities: { 'line-1': '2.125' },
+        lots: {
+          'line-1': [
+            {
+              quantity: '1.000',
+              externalBatchReference: 'BATCH-A',
+              dateKind: 'expiry',
+              dateValue: '2027-06-30',
+            },
+            {
+              quantity: '1.125',
+              externalBatchReference: 'BATCH-B',
+              dateKind: 'best-before',
+              dateValue: '2027-08-01',
+            },
+          ],
+        },
+      },
+      () => 'op-lot-receipt',
+    );
+
+    expect(built).toEqual({
+      ok: true,
+      intent: {
+        kind: 'receipt',
+        request: {
+          operationId: 'op-lot-receipt',
+          purchaseOrderId: ORDER.id,
+          reference: null,
+          lines: [
+            {
+              purchaseOrderLineId: 'line-1',
+              acceptedQuantityScaled: '2125',
+              lots: [
+                {
+                  acceptedQuantityScaled: '1000',
+                  externalBatchReference: 'BATCH-A',
+                  dateKind: 'expiry',
+                  dateValue: '2027-06-30',
+                },
+                {
+                  acceptedQuantityScaled: '1125',
+                  externalBatchReference: 'BATCH-B',
+                  dateKind: 'best-before',
+                  dateValue: '2027-08-01',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it('fails closed when lot evidence is missing, mismatched, or lacks a required date', () => {
+    const order = {
+      ...ORDER,
+      lines: [{ ...ORDER.lines[0]!, productId: LOT_REQUIRED.id, remainingQuantityScaled: '5000' }],
+    };
+    const base = {
+      order,
+      reference: '',
+      products: [LOT_REQUIRED] as readonly PurchasingProduct[],
+      quantities: { 'line-1': '2' },
+    };
+
+    expect(buildPurchaseReceiptIntent(base, () => 'missing')).toMatchObject({ ok: false });
+    expect(
+      buildPurchaseReceiptIntent(
+        {
+          ...base,
+          lots: {
+            'line-1': [
+              {
+                quantity: '1',
+                externalBatchReference: 'BATCH-A',
+                dateKind: 'expiry' as const,
+                dateValue: '2027-06-30',
+              },
+            ],
+          },
+        },
+        () => 'mismatch',
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      buildPurchaseReceiptIntent(
+        {
+          ...base,
+          lots: {
+            'line-1': [
+              {
+                quantity: '2',
+                externalBatchReference: 'BATCH-A',
+                dateKind: '' as const,
+                dateValue: '',
+              },
+            ],
+          },
+        },
+        () => 'date-required',
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it('refuses invented lot evidence for a product that is not lot controlled', () => {
+    const built = buildPurchaseReceiptIntent(
+      {
+        order: ORDER,
+        reference: '',
+        products: [WEIGHTED],
+        quantities: { 'line-1': '1' },
+        lots: {
+          'line-1': [
+            {
+              quantity: '1',
+              externalBatchReference: 'BATCH-NOT-ALLOWED',
+              dateKind: 'expiry',
+              dateValue: '2027-06-30',
+            },
+          ],
+        },
       },
       () => 'op',
     );

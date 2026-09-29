@@ -59,7 +59,31 @@ function freezeIntent(intent: PurchasingCommandIntent): PurchasingCommandIntent 
           operationId: intent.request.operationId,
           purchaseOrderId: intent.request.purchaseOrderId,
           reference: intent.request.reference,
-          lines: freezeLines(intent.request.lines),
+          lines: Object.freeze(
+            intent.request.lines.map((line) =>
+              Object.freeze({
+                purchaseOrderLineId: line.purchaseOrderLineId,
+                acceptedQuantityScaled: line.acceptedQuantityScaled,
+                ...(line.inventoryValueMinor === undefined
+                  ? {}
+                  : { inventoryValueMinor: line.inventoryValueMinor }),
+                ...(line.lots === undefined
+                  ? {}
+                  : {
+                      lots: Object.freeze(
+                        line.lots.map((lot) =>
+                          Object.freeze({
+                            acceptedQuantityScaled: lot.acceptedQuantityScaled,
+                            externalBatchReference: lot.externalBatchReference,
+                            dateKind: lot.dateKind,
+                            dateValue: lot.dateValue,
+                          }),
+                        ),
+                      ),
+                    }),
+              }),
+            ),
+          ),
         }),
       });
   }

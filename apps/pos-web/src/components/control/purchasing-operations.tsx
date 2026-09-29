@@ -33,6 +33,7 @@ import type {
   PurchasingCommandFailure,
   PurchasingCommandResult,
   ReceiptInventoryValueDraft,
+  ReceiptLotDraft,
 } from '../../lib/purchasing-command';
 import type { PurchasingCommandIntent } from '../../lib/purchasing-command-flight';
 import type { PurchasingPages } from './purchasing-panel';
@@ -175,24 +176,37 @@ export function purchasingDetailAfterIdentityChange(
 export function ReceiptLineEditor({
   line,
   label,
+  product,
   quantity,
   inventoryValue,
+  lots,
   canManageCost,
   disabled,
   onQuantityChange,
   onCostEnabledChange,
   onCostValueChange,
+  onAddLot,
+  onRemoveLot,
+  onLotChange,
 }: {
   readonly line: PurchaseOrderLine;
   readonly label: string;
+  readonly product: PurchasingProduct | undefined;
   readonly quantity: string;
   readonly inventoryValue: ReceiptInventoryValueDraft;
+  readonly lots: readonly ReceiptLotDraft[];
   readonly canManageCost: boolean;
   readonly disabled: boolean;
   readonly onQuantityChange: (value: string) => void;
   readonly onCostEnabledChange: (enabled: boolean) => void;
   readonly onCostValueChange: (value: string) => void;
+  readonly onAddLot: () => void;
+  readonly onRemoveLot: (index: number) => void;
+  readonly onLotChange: (index: number, patch: Partial<ReceiptLotDraft>) => void;
 }): JSX.Element {
+  const lotControlled = product?.lotTrackingRequired === true;
+  const dateRequired = product?.lotDateRequirement === 'required';
+
   return (
     <div className="grid gap-3 rounded-md border border-border p-3 text-sm md:grid-cols-2 md:items-end">
       <div className="font-medium">
@@ -214,6 +228,119 @@ export function ReceiptLineEditor({
           onChange={(event) => onQuantityChange(event.target.value)}
         />
       </label>
+
+      {lotControlled ? (
+        <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/20 p-3 md:col-span-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-foreground">الدفعات المستلمة</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                وزّع الكمية المستلمة على دفعة واحدة أو أكثر. مجموع كميات الدفعات يجب أن يساوي كمية
+                الاستلام أعلاه، ولا ينشئ كورفي Batch أو تاريخًا غير مثبت.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={disabled || lots.length >= MAX_PURCHASING_LINES}
+              onClick={onAddLot}
+            >
+              إضافة دفعة
+            </Button>
+          </div>
+          {dateRequired ? (
+            <StatusNote tone="warning">
+              سياسة هذا الصنف تشترط تاريخ انتهاء أو «أفضل قبل» لكل دفعة مستلمة.
+            </StatusNote>
+          ) : null}
+          {lots.length === 0 ? (
+            <StatusNote tone="info">
+              تتبع الدفعات مفعل لهذا الصنف. أضف بيانات الدفعة قبل تسجيل الاستلام.
+            </StatusNote>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {lots.map((lot, index) => (
+                <div
+                  key={`${line.id}-lot-${String(index)}`}
+                  className="grid gap-3 rounded-md border border-border bg-background p-3 lg:grid-cols-4"
+                >
+                  <label className="flex flex-col gap-1.5 font-medium">
+                    كمية الدفعة
+                    <input
+                      aria-label={`كمية الدفعة ${String(index + 1)} ${label}`}
+                      className="h-touch rounded-md border border-input bg-background px-3 font-mono"
+                      dir="ltr"
+                      inputMode="decimal"
+                      disabled={disabled}
+                      value={lot.quantity}
+                      onChange={(event) => onLotChange(index, { quantity: event.target.value })}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 font-medium">
+                    Batch / رقم الدفعة (اختياري)
+                    <input
+                      aria-label={`مرجع الدفعة ${String(index + 1)} ${label}`}
+                      className="h-touch rounded-md border border-input bg-background px-3 font-mono"
+                      dir="ltr"
+                      maxLength={120}
+                      disabled={disabled}
+                      value={lot.externalBatchReference}
+                      onChange={(event) =>
+                        onLotChange(index, { externalBatchReference: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 font-medium">
+                    نوع التاريخ
+                    <select
+                      aria-label={`نوع تاريخ الدفعة ${String(index + 1)} ${label}`}
+                      className="h-touch rounded-md border border-input bg-background px-3"
+                      disabled={disabled}
+                      value={lot.dateKind}
+                      onChange={(event) =>
+                        onLotChange(index, {
+                          dateKind: event.target.value as '' | 'expiry' | 'best-before',
+                          ...(event.target.value === '' ? { dateValue: '' } : {}),
+                        })
+                      }
+                    >
+                      {dateRequired ? null : <option value="">بدون تاريخ مثبت</option>}
+                      <option value="expiry">تاريخ انتهاء</option>
+                      <option value="best-before">أفضل قبل</option>
+                    </select>
+                  </label>
+                  <div className="flex items-end gap-2">
+                    <label className="flex min-w-0 flex-1 flex-col gap-1.5 font-medium">
+                      التاريخ
+                      <input
+                        type="date"
+                        aria-label={`تاريخ الدفعة ${String(index + 1)} ${label}`}
+                        className="h-touch rounded-md border border-input bg-background px-3 font-mono"
+                        dir="ltr"
+                        disabled={disabled || lot.dateKind === ''}
+                        value={lot.dateValue}
+                        onChange={(event) => onLotChange(index, { dateValue: event.target.value })}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled}
+                      aria-label={`حذف الدفعة ${String(index + 1)} من ${label}`}
+                      onClick={() => onRemoveLot(index)}
+                    >
+                      حذف
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+
       {canManageCost ? (
         <div className="flex flex-col gap-3 md:col-span-2">
           <label className="flex min-h-touch items-center gap-2 font-medium">
@@ -494,6 +621,19 @@ export function OrderDetail({
                 {(line.packageId ?? null) === null
                   ? ''
                   : ` — ${line.packageCode ?? 'تعبئة'} / ${line.packageUnitLabel ?? 'وحدة'}`}
+                {line.lots === undefined || line.lots.length === 0 ? null : (
+                  <span className="mt-1 block ps-3 text-xs text-muted-foreground">
+                    {line.lots.map((lot, index) => (
+                      <span key={lot.lotId} className="block">
+                        دفعة {String(index + 1)}: {lot.externalBatchReference ?? lot.internalCode} ·{' '}
+                        <Numeric value={formatScaled(lot.acceptedCommercialQuantityScaled)} />
+                        {lot.dateKind === null || lot.dateValue === null
+                          ? ' · بلا تاريخ مثبت'
+                          : ` · ${lot.dateKind === 'expiry' ? 'انتهاء' : 'أفضل قبل'} ${lot.dateValue}`}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </span>
             ))}
           </div>
@@ -551,6 +691,9 @@ export function PurchasingOperations({
   const [receiptQuantities, setReceiptQuantities] = useState<Readonly<Record<string, string>>>({});
   const [receiptInventoryValues, setReceiptInventoryValues] = useState<
     Readonly<Record<string, ReceiptInventoryValueDraft>>
+  >({});
+  const [receiptLots, setReceiptLots] = useState<
+    Readonly<Record<string, readonly ReceiptLotDraft[]>>
   >({});
   const [validation, setValidation] = useState<string | null>(null);
   const [submission, setSubmission] = useState<SubmissionState>({ kind: 'idle' });
@@ -694,6 +837,7 @@ export function PurchasingOperations({
     setPostWriteRefresh('ready');
     setReceiptQuantities({});
     setReceiptInventoryValues({});
+    setReceiptLots({});
     setReceiptReference('');
     onCommandLockChange(false);
   };
@@ -740,6 +884,7 @@ export function PurchasingOperations({
         if (failure.action === 'refresh-purchasing') {
           setReceiptQuantities({});
           setReceiptInventoryValues({});
+          setReceiptLots({});
           reconcile();
         } else if (commandFailureReleasesWorkspace(failure.action)) {
           onCommandLockChange(false);
@@ -815,6 +960,7 @@ export function PurchasingOperations({
         products: pages.products.rows,
         quantities: receiptQuantities,
         inventoryValues: receiptInventoryValues,
+        lots: receiptLots,
       },
       newId,
     );
@@ -1265,6 +1411,7 @@ export function PurchasingOperations({
               setSelectedOrderId(orderId);
               setReceiptQuantities({});
               setReceiptInventoryValues({});
+              setReceiptLots({});
               setValidation(null);
             }}
           />
@@ -1337,13 +1484,19 @@ export function PurchasingOperations({
                       enabled: false,
                       value: '',
                     };
+                    const product = pages.products.rows.find(
+                      (candidate) => candidate.id === line.productId,
+                    );
+                    const lots = receiptLots[line.id] ?? [];
                     return (
                       <ReceiptLineEditor
                         key={line.id}
                         line={line}
                         label={productName(pages.products.rows, line.productId)}
+                        product={product}
                         quantity={receiptQuantities[line.id] ?? ''}
                         inventoryValue={inventoryValue}
+                        lots={lots}
                         canManageCost={canManageCost}
                         disabled={formLocked}
                         onQuantityChange={(value) => {
@@ -1364,6 +1517,43 @@ export function PurchasingOperations({
                           setReceiptInventoryValues((current) => ({
                             ...current,
                             [line.id]: { enabled: true, value },
+                          }));
+                          setValidation(null);
+                        }}
+                        onAddLot={() => {
+                          flight.current.reset();
+                          setReceiptLots((current) => ({
+                            ...current,
+                            [line.id]: [
+                              ...(current[line.id] ?? []),
+                              {
+                                quantity: '',
+                                externalBatchReference: '',
+                                dateKind:
+                                  product?.lotDateRequirement === 'required' ? 'expiry' : '',
+                                dateValue: '',
+                              },
+                            ],
+                          }));
+                          setValidation(null);
+                        }}
+                        onRemoveLot={(index) => {
+                          flight.current.reset();
+                          setReceiptLots((current) => ({
+                            ...current,
+                            [line.id]: (current[line.id] ?? []).filter(
+                              (_lot, lotIndex) => lotIndex !== index,
+                            ),
+                          }));
+                          setValidation(null);
+                        }}
+                        onLotChange={(index, patch) => {
+                          flight.current.reset();
+                          setReceiptLots((current) => ({
+                            ...current,
+                            [line.id]: (current[line.id] ?? []).map((lot, lotIndex) =>
+                              lotIndex === index ? { ...lot, ...patch } : lot,
+                            ),
                           }));
                           setValidation(null);
                         }}

@@ -31,6 +31,9 @@ export interface PurchasingProduct {
   readonly unitLabel: string;
   readonly isActive: boolean;
   readonly trackInventory: boolean;
+  /** Read-only V2-4 receiving safety metadata; not lot-management authority. */
+  readonly lotTrackingRequired: boolean;
+  readonly lotDateRequirement: 'optional' | 'required';
   /** Commercial ordering units only; never retail price authority. */
   readonly packages: readonly PurchasingProductPackage[];
 }
@@ -69,6 +72,9 @@ export async function listPurchasingProductPage(
         unitLabel: true,
         isActive: true,
         trackInventory: true,
+        lotPolicy: {
+          select: { trackingMode: true, dateRequirement: true },
+        },
         packages: {
           select: {
             id: true,
@@ -87,8 +93,17 @@ export async function listPurchasingProductPage(
     const last = page.at(-1);
     return {
       rows: page.map((row) => ({
-        ...row,
+        id: row.id,
+        sku: row.sku,
+        nameAr: row.nameAr,
+        nameEn: row.nameEn,
         productType: oneOf(PRODUCT_TYPES, row.productType, 'products.productType'),
+        unitLabel: row.unitLabel,
+        isActive: row.isActive,
+        trackInventory: row.trackInventory,
+        lotTrackingRequired: row.lotPolicy?.trackingMode === 'required',
+        lotDateRequirement:
+          row.lotPolicy?.dateRequirement === 'required' ? 'required' : 'optional',
         packages: row.packages.map((packageRow) => ({
           ...packageRow,
           baseQuantityScaled: packageRow.baseQuantityScaled.toString(),

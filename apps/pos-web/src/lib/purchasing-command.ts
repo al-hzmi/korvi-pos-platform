@@ -36,6 +36,13 @@ export interface ReceiptInventoryValueDraft {
   readonly value: string;
 }
 
+export interface ReceiptLotDraft {
+  readonly quantity: string;
+  readonly externalBatchReference: string;
+  readonly dateKind: '' | 'expiry' | 'best-before';
+  readonly dateValue: string;
+}
+
 function boundedOptionalReference(reference: string): string | null | undefined {
   const trimmed = reference.trim();
   if (trimmed.length > MAX_PURCHASING_REFERENCE) return undefined;
@@ -59,6 +66,110 @@ function inventoryValueMessage(reason: string): string {
   }
   if (reason === 'precision') return 'قيمة الاقتناء تقبل منزلتين عشريتين كحد أقصى.';
   return 'أدخل قيمة اقتناء صحيحة بالريال دون فواصل أو رموز.';
+}
+
+function validCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function buildReceiptLots(
+  product: PurchasingProduct,
+  commercialPackage: boolean,
+  acceptedQuantityScaled: string,
+  drafts: readonly ReceiptLotDraft[],
+):
+  | {
+      readonly ok: true;
+      readonly lots:
+        | readonly {
+            readonly acceptedQuantityScaled: string;
+            readonly externalBatchReference: string | null;
+            readonly dateKind: 'expiry' | 'best-before' | null;
+            readonly dateValue: string | null;
+          }[]
+        | undefined;
+    }
+  | { readonly ok: false; readonly message: string } {
+  const meaningful = drafts.filter(
+    (lot) =>
+      lot.quantity.trim() !== '' ||
+      lot.externalBatchReference.trim() !== '' ||
+      lot.dateKind !== '' ||
+      lot.dateValue.trim() !== '',
+  );
+
+  if (product.lotTrackingRequired !== true) {
+    return meaningful.length === 0
+      ? { ok: true, lots: undefined }
+      : { ok: false, message: 'هذا الصنف لا يتطلب تتبع دفعات؛ أزل بيانات الدفعة من الاستلام.' };
+  }
+  if (meaningful.length === 0) {
+    return { ok: false, message: 'هذا الصنف يتطلب تحديد دفعة واحدة على الأقل عند الاستلام.' };
+  }
+  if (meaningful.length > MAX_PURCHASING_LINES) {
+    return { ok: false, message: 'عدد الدفعات في بند الاستلام تجاوز الحد المسموح.' };
+  }
+
+  const lots: {
+    acceptedQuantityScaled: string;
+    externalBatchReference: string | null;
+    dateKind: 'expiry' | 'best-before' | null;
+    dateValue: string | null;
+  }[] = [];
+  let total = 0n;
+  const knownBatches = new Set<string>();
+  let unknownBatchCount = 0;
+
+  for (const draft of meaningful) {
+    const quantity = parseInventoryQuantityToScaled(
+      draft.quantity.trim(),
+      commercialPackage ? 'unit' : product.productType,
+    );
+    if (!quantity.ok) return { ok: false, message: `كمية الدفعة: ${quantityMessage(quantity.reason)}` };
+
+    const batch = draft.externalBatchReference.trim();
+    if (batch.length > MAX_PURCHASING_REFERENCE) {
+      return { ok: false, message: 'مرجع الدفعة تجاوز 120 حرفًا.' };
+    }
+    if (batch === '') {
+      unknownBatchCount += 1;
+      if (unknownBatchCount > 1) {
+        return { ok: false, message: 'لا يمكن تسجيل أكثر من دفعة واحدة بهوية Batch مجهولة في السطر نفسه.' };
+      }
+    } else {
+      if (knownBatches.has(batch)) {
+        return { ok: false, message: 'لا يمكن تكرار مرجع Batch نفسه في بند الاستلام.' };
+      }
+      knownBatches.add(batch);
+    }
+
+    const hasKind = draft.dateKind !== '';
+    const hasDate = draft.dateValue.trim() !== '';
+    if (hasKind !== hasDate) {
+      return { ok: false, message: 'نوع التاريخ وتاريخ الدفعة يجب إدخالهما معًا.' };
+    }
+    if (product.lotDateRequirement === 'required' && !hasDate) {
+      return { ok: false, message: 'سياسة هذا الصنف تشترط تاريخًا لكل دفعة مستلمة.' };
+    }
+    if (hasDate && !validCalendarDate(draft.dateValue.trim())) {
+      return { ok: false, message: 'تاريخ الدفعة غير صالح.' };
+    }
+
+    total += BigInt(quantity.value);
+    lots.push({
+      acceptedQuantityScaled: quantity.value,
+      externalBatchReference: batch === '' ? null : batch,
+      dateKind: draft.dateKind === '' ? null : draft.dateKind,
+      dateValue: hasDate ? draft.dateValue.trim() : null,
+    });
+  }
+
+  if (total !== BigInt(acceptedQuantityScaled)) {
+    return { ok: false, message: 'مجموع كميات الدفعات يجب أن يساوي الكمية المستلمة في هذا البند.' };
+  }
+  return { ok: true, lots };
 }
 
 export function buildSupplierCreateIntent(name: string, mint: () => string): PurchasingDraftResult {
@@ -193,6 +304,7 @@ export function buildPurchaseReceiptIntent(
     readonly products: readonly PurchasingProduct[];
     readonly quantities: Readonly<Record<string, string>>;
     readonly inventoryValues?: Readonly<Record<string, ReceiptInventoryValueDraft>>;
+    readonly lots?: Readonly<Record<string, readonly ReceiptLotDraft[]>>;
   },
   mint: () => string,
 ): PurchasingDraftResult {
@@ -208,6 +320,12 @@ export function buildPurchaseReceiptIntent(
     purchaseOrderLineId: string;
     acceptedQuantityScaled: string;
     inventoryValueMinor?: string;
+    lots?: readonly {
+      acceptedQuantityScaled: string;
+      externalBatchReference: string | null;
+      dateKind: 'expiry' | 'best-before' | null;
+      dateValue: string | null;
+    }[];
   }[] = [];
   for (const line of input.order.lines) {
     const draft = input.quantities[line.id]?.trim() ?? '';
@@ -242,16 +360,25 @@ export function buildPurchaseReceiptIntent(
     if (BigInt(quantity.value) > BigInt(remaining)) {
       return { ok: false, message: 'إحدى كميات الاستلام تتجاوز الكمية المتبقية في الأمر.' };
     }
+    const lotResult = buildReceiptLots(
+      product,
+      commercialPackage,
+      quantity.value,
+      input.lots?.[line.id] ?? [],
+    );
+    if (!lotResult.ok) return lotResult;
+
+    const base = {
+      purchaseOrderLineId: line.id,
+      acceptedQuantityScaled: quantity.value,
+      ...(lotResult.lots === undefined ? {} : { lots: lotResult.lots }),
+    };
     if (valueDraft?.enabled === true) {
       const value = parseSarToPostgresMinor(valueDraft.value);
       if (!value.ok) return { ok: false, message: inventoryValueMessage(value.reason) };
-      lines.push({
-        purchaseOrderLineId: line.id,
-        acceptedQuantityScaled: quantity.value,
-        inventoryValueMinor: value.value,
-      });
+      lines.push({ ...base, inventoryValueMinor: value.value });
     } else {
-      lines.push({ purchaseOrderLineId: line.id, acceptedQuantityScaled: quantity.value });
+      lines.push(base);
     }
   }
   if (lines.length === 0) {

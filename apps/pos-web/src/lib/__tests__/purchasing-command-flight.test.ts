@@ -33,6 +33,37 @@ function valuedReceipt(operationId: string): PurchasingCommandIntent {
   };
 }
 
+function lotReceipt(operationId: string): PurchasingCommandIntent {
+  return {
+    kind: 'receipt',
+    request: {
+      operationId,
+      purchaseOrderId: 'order-1',
+      reference: null,
+      lines: [
+        {
+          purchaseOrderLineId: 'line-1',
+          acceptedQuantityScaled: '2000',
+          lots: [
+            {
+              acceptedQuantityScaled: '1000',
+              externalBatchReference: 'BATCH-A',
+              dateKind: 'expiry',
+              dateValue: '2027-06-30',
+            },
+            {
+              acceptedQuantityScaled: '1000',
+              externalBatchReference: 'BATCH-B',
+              dateKind: null,
+              dateValue: null,
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
 describe('purchasing command flight', () => {
   it('claims synchronously so a double submit cannot mint a second operation', () => {
     const flight = createPurchasingCommandFlight();
@@ -70,6 +101,21 @@ describe('purchasing command flight', () => {
     if (retry?.kind === 'receipt') {
       expect(retry.request.lines[0]?.inventoryValueMinor).toBe('9007199254740993');
       expect(Object.isFrozen(retry.request.lines[0])).toBe(true);
+    }
+  });
+
+  it('deep-freezes lot evidence into an ambiguous receipt retry', () => {
+    const flight = createPurchasingCommandFlight();
+    const first = flight.begin(() => lotReceipt('lot-op'));
+    flight.settle('ambiguous');
+    const retry = flight.begin(() => lotReceipt('wrong-op'));
+
+    expect(retry).toBe(first);
+    if (retry?.kind === 'receipt') {
+      const lots = retry.request.lines[0]?.lots;
+      expect(Object.isFrozen(lots)).toBe(true);
+      expect(Object.isFrozen(lots?.[0])).toBe(true);
+      expect(lots?.[0]?.externalBatchReference).toBe('BATCH-A');
     }
   });
 
