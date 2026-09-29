@@ -967,7 +967,10 @@ try {
   const baselineLot = lotTruthBeforeSale.config.lots.find(
     (lot) => lot.provenance === 'historical-unknown',
   );
-  assert.ok(baselineLot !== undefined, 'Lot tracking activation did not create historical baseline.');
+  assert.ok(
+    baselineLot !== undefined,
+    'Lot tracking activation did not create historical baseline.',
+  );
   const baselineAvailability = baselineLot.availabilityByBranch.find(
     (row) => row.branchId === branch.id,
   );
@@ -1034,9 +1037,7 @@ try {
   const lotTruthAfterSale = await browserRequest(
     `/v1/admin/lots/products/${encodeURIComponent(beforeRow.productId)}`,
   );
-  const storedBaselineLot = lotTruthAfterSale.config.lots.find(
-    (lot) => lot.id === baselineLot.id,
-  );
+  const storedBaselineLot = lotTruthAfterSale.config.lots.find((lot) => lot.id === baselineLot.id);
   assert.ok(storedBaselineLot !== undefined, 'Baseline lot disappeared after sale.');
   const afterAvailability = storedBaselineLot.availabilityByBranch.find(
     (row) => row.branchId === branch.id,
