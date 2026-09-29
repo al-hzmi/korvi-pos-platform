@@ -162,6 +162,8 @@ function recordingPurchasing(): MerchantPurchasingService {
             unitLabel: 'حبة',
             isActive: true,
             trackInventory: true,
+            lotTrackingRequired: false,
+            lotDateRequirement: 'optional',
             packages: [],
           },
         ],
