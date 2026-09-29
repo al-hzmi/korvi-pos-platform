@@ -500,17 +500,11 @@ describe.skipIf(url === '')('restaurant recipe production inventory authority, l
     // The earlier unknown-cost production leaves one base unit on hand. Turning
     // tracking on must preserve that as historical-unknown rather than
     // pretending it came from the batch we are about to produce.
-    const config = await enableProductLotTracking(
-      prisma,
-      scope,
-      actor,
-      A.finishedUnknown,
-      {
-        selectionPolicy: 'fefo',
-        dateRequirement: 'required',
-        occurredAt: '2026-09-29T09:00:00.000Z',
-      },
-    );
+    const config = await enableProductLotTracking(prisma, scope, actor, A.finishedUnknown, {
+      selectionPolicy: 'fefo',
+      dateRequirement: 'required',
+      occurredAt: '2026-09-29T09:00:00.000Z',
+    });
     expect(config.lots.some((lot) => lot.provenance === 'historical-unknown')).toBe(true);
 
     await seedBalance(A.ingredientUnknown, 1_000n, 0n, 0n);
