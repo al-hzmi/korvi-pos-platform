@@ -191,7 +191,7 @@ CREATE TABLE "inventory_lot_entries" (
 );
 
 CREATE FUNCTION assert_v2_4_lot_entry_parent_identity() RETURNS trigger
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $v24$
 DECLARE
   v_branch UUID;
   v_product UUID;
@@ -219,7 +219,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$v24$;
 
 CREATE TRIGGER "inventory_lot_entries_parent_identity"
 BEFORE INSERT ON "inventory_lot_entries"
