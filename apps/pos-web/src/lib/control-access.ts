@@ -10,6 +10,7 @@ const CONTROL_CENTRE_PERMISSIONS = new Set<Principal['permissions'][number]>([
   'report.read',
   'product.read',
   'inventory.read',
+  'lot.manage',
   'purchasing.read',
   'promotion.manage',
   'customer.read',

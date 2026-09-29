@@ -55,6 +55,7 @@ describe('installed cashier host boundary', () => {
       if (entry.permission === undefined) throw new Error(`missing permission for ${entry.key}`);
       expect(canOpenControlCentre([entry.permission])).toBe(true);
     }
+    expect(canOpenControlCentre(['lot.manage'])).toBe(true);
     expect(canOpenControlCentre(['sale.create', 'shift.open'])).toBe(false);
   });
 });

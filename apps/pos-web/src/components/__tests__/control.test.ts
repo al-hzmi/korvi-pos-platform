@@ -119,6 +119,7 @@ describe('control navigation', () => {
       'المبيعات',
       'المنتجات',
       'المخزون',
+      'الدفعات والصلاحية',
       'المشتريات',
       'العروض والكوبونات',
       'العملاء',
@@ -139,6 +140,7 @@ describe('control navigation', () => {
           'report.read',
           'product.read',
           'inventory.read',
+          'lot.manage',
           'purchasing.read',
           'promotion.manage',
           'customer.read',
@@ -154,6 +156,7 @@ describe('control navigation', () => {
     expect(unbuilt).toEqual([]);
     expect(markup).not.toContain('غير مكتمل');
     expect(markup).not.toContain('قريباً');
+    expect(markup).toContain('/control/lots');
     expect(markup).toContain('/control/promotions');
     expect(markup).toContain('/control/zatca');
   });
@@ -330,6 +333,8 @@ describe('who the control centre is for', () => {
     expect(canOpenControlCentre(cashier.permissions)).toBe(true);
     expect(firstAuthorizedSection(cashier.permissions)).toBe('products');
     expect(firstAuthorizedSection(['inventory.read'])).toBe('inventory');
+    expect(canOpenControlCentre(['lot.manage'])).toBe(true);
+    expect(firstAuthorizedSection(['lot.manage'])).toBe('lots');
     expect(firstAuthorizedSection(['purchasing.read'])).toBe('purchasing');
     expect(canOpenControlCentre(['promotion.manage'])).toBe(true);
     expect(firstAuthorizedSection(['promotion.manage'])).toBe('promotions');
