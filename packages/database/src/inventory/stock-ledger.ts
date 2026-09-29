@@ -558,16 +558,6 @@ export async function recordInventoryAdjustment(
         // primitive is not asked to re-decide it with its own predicate.
         true,
         lineId,
-        undefined,
-        lotExecution === null
-          ? undefined
-          : {
-              kind: 'explicit',
-              allocations: lotExecution.movement.map((allocation) => ({
-                lotId: allocation.lotId,
-                quantityScaled: allocation.quantityScaled.toString(),
-              })),
-            },
       );
 
       await tx.inventoryAdjustmentLine.create({
