@@ -28,6 +28,12 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
   { key: 'products', label: 'المنتجات', section: 'products', permission: 'product.read' },
   { key: 'inventory', label: 'المخزون', section: 'inventory', permission: 'inventory.read' },
   {
+    key: 'lots',
+    label: 'الدفعات والصلاحية',
+    section: 'lots',
+    permission: 'lot.manage',
+  },
+  {
     key: 'purchasing',
     label: 'المشتريات',
     section: 'purchasing',

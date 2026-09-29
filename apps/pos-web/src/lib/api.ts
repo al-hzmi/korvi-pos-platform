@@ -2,9 +2,14 @@ import type {
   AdminAccessChange,
   AdminBranch,
   AdminMember,
+  AdminLotEnableInput,
+  AdminLotPolicyUpdateInput,
+  AdminLotReclassificationInput,
+  AdminLotStatusUpdateInput,
   AdminPage,
   AdminProductBootstrap,
   AdminProductCreateInput,
+  AdminProductLotConfig,
   AdminPromotion,
   AdminPromotionCreateInput,
   AdminPromotionUpdateInput,
@@ -404,6 +409,20 @@ export interface ApiClient {
   inventoryAdjust(request: InventoryAdjustmentRequest): Promise<InventoryAdjustmentResult>;
   inventoryCount(request: InventoryCountRequest): Promise<InventoryCountResult>;
   inventoryTransfer(request: InventoryTransferRequest): Promise<InventoryTransferResult>;
+  adminLotConfig(productId: string, options?: RequestOptions): Promise<AdminProductLotConfig>;
+  enableAdminLotTracking(
+    productId: string,
+    input: AdminLotEnableInput,
+  ): Promise<AdminProductLotConfig>;
+  updateAdminLotPolicy(
+    productId: string,
+    input: AdminLotPolicyUpdateInput,
+  ): Promise<AdminProductLotConfig>;
+  updateAdminLotStatus(
+    lotId: string,
+    input: AdminLotStatusUpdateInput,
+  ): Promise<AdminProductLotConfig>;
+  reclassifyAdminLots(input: AdminLotReclassificationInput): Promise<AdminProductLotConfig>;
   purchasingBranches(
     query?: { readonly limit?: number; readonly cursor?: string },
     options?: RequestOptions,
@@ -1336,6 +1355,19 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           lines: request.lines.map((line) => ({
             productId: line.productId,
             deltaQuantityScaled: line.deltaQuantityScaled,
+            ...(line.lot === undefined
+              ? {}
+              : {
+                  lot:
+                    line.lot.kind === 'existing'
+                      ? { kind: 'existing' as const, lotId: line.lot.lotId }
+                      : {
+                          kind: 'manual-correction' as const,
+                          externalBatchReference: line.lot.externalBatchReference,
+                          dateKind: line.lot.dateKind,
+                          dateValue: line.lot.dateValue,
+                        },
+                }),
           })),
         },
         INVENTORY_COMMAND_TIMEOUT_MS,
@@ -1353,6 +1385,14 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             productId: line.productId,
             countedQuantityScaled: line.countedQuantityScaled,
             expectedRevision: line.expectedRevision,
+            ...(line.lots === undefined
+              ? {}
+              : {
+                  lots: line.lots.map((lot) => ({
+                    lotId: lot.lotId,
+                    countedQuantityScaled: lot.countedQuantityScaled,
+                  })),
+                }),
           })),
         },
         INVENTORY_COMMAND_TIMEOUT_MS,
@@ -1374,6 +1414,77 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         },
         INVENTORY_COMMAND_TIMEOUT_MS,
       );
+    },
+
+    async adminLotConfig(productId, options) {
+      const body = (await call(
+        `/v1/admin/lots/products/${encodeURIComponent(productId)}`,
+        { method: 'GET' },
+        options,
+      )) as { readonly config: AdminProductLotConfig };
+      return body.config;
+    },
+
+    async enableAdminLotTracking(productId, input) {
+      const body = (await call(
+        `/v1/admin/lots/products/${encodeURIComponent(productId)}/enable`,
+        json({
+          selectionPolicy: input.selectionPolicy,
+          dateRequirement: input.dateRequirement,
+        }),
+      )) as { readonly config: AdminProductLotConfig };
+      return body.config;
+    },
+
+    async updateAdminLotPolicy(productId, input) {
+      const body = (await call(
+        `/v1/admin/lots/products/${encodeURIComponent(productId)}/policy`,
+        json(
+          {
+            expectedRevision: input.expectedRevision,
+            ...(input.selectionPolicy === undefined
+              ? {}
+              : { selectionPolicy: input.selectionPolicy }),
+            ...(input.dateRequirement === undefined
+              ? {}
+              : { dateRequirement: input.dateRequirement }),
+          },
+          'PATCH',
+        ),
+      )) as { readonly config: AdminProductLotConfig };
+      return body.config;
+    },
+
+    async updateAdminLotStatus(lotId, input) {
+      const body = (await call(
+        `/v1/admin/lots/${encodeURIComponent(lotId)}/status`,
+        json(
+          {
+            expectedRevision: input.expectedRevision,
+            status: input.status,
+          },
+          'PATCH',
+        ),
+      )) as { readonly config: AdminProductLotConfig };
+      return body.config;
+    },
+
+    async reclassifyAdminLots(input) {
+      const body = (await call(
+        '/v1/admin/lots/reclassifications',
+        json({
+          operationId: input.operationId,
+          productId: input.productId,
+          branchId: input.branchId,
+          expectedBalanceRevision: input.expectedBalanceRevision,
+          reason: input.reason,
+          lines: input.lines.map((line) => ({
+            lotId: line.lotId,
+            quantityScaled: line.quantityScaled,
+          })),
+        }),
+      )) as { readonly config: AdminProductLotConfig };
+      return body.config;
     },
 
     async purchasingBranches(query = {}, options) {

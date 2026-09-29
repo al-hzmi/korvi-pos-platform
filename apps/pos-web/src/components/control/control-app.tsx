@@ -7,6 +7,7 @@ import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './c
 import { CustomersPanel } from './customers-panel';
 import { DashboardPanel } from './dashboard-panel';
 import { InventoryPanel } from './inventory-panel';
+import { LotsPanel } from './lots-panel';
 import { MembersPanel } from './members-panel';
 import { MigrationPanel } from './migration-panel';
 import { OnboardingPanel } from './onboarding-panel';
@@ -67,6 +68,8 @@ function sectionTitle(section: ControlSection): string {
       return 'المنتجات';
     case 'inventory':
       return 'المخزون';
+    case 'lots':
+      return 'الدفعات والصلاحية';
     case 'purchasing':
       return 'المشتريات';
     case 'promotions':
@@ -118,6 +121,14 @@ function Section({
           api={api}
           preferredBranchId={principal.branchId}
           permissions={principal.permissions}
+          onCommandLockChange={onCommandLockChange}
+        />
+      );
+    case 'lots':
+      return (
+        <LotsPanel
+          api={api}
+          preferredBranchId={principal.branchId}
           onCommandLockChange={onCommandLockChange}
         />
       );

@@ -1267,6 +1267,64 @@ export interface InventoryBalancePage {
   readonly nextCursor: string | null;
 }
 
+export interface AdminLotAvailabilityByBranch {
+  readonly branchId: string;
+  readonly quantityScaled: string;
+}
+
+export interface AdminInventoryLot {
+  readonly id: string;
+  readonly internalCode: string;
+  readonly provenance: 'received' | 'produced' | 'historical-unknown' | 'manual-correction';
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  readonly dateValue: string | null;
+  readonly status: 'active' | 'blocked' | 'closed';
+  readonly revision: string;
+  readonly firstObservedAt: string;
+  readonly availabilityByBranch: readonly AdminLotAvailabilityByBranch[];
+}
+
+export interface AdminProductLotConfig {
+  readonly productId: string;
+  readonly sku: string;
+  readonly nameAr: string;
+  readonly trackingMode: 'none' | 'required';
+  readonly selectionPolicy: 'fefo' | 'fifo';
+  readonly dateRequirement: 'optional' | 'required';
+  readonly revision: string;
+  readonly businessTimeZone: string;
+  readonly lots: readonly AdminInventoryLot[];
+}
+
+export interface AdminLotEnableInput {
+  readonly selectionPolicy: 'fefo' | 'fifo';
+  readonly dateRequirement: 'optional' | 'required';
+}
+
+export interface AdminLotPolicyUpdateInput {
+  readonly expectedRevision: string;
+  readonly selectionPolicy?: 'fefo' | 'fifo';
+  readonly dateRequirement?: 'optional' | 'required';
+}
+
+export interface AdminLotStatusUpdateInput {
+  readonly expectedRevision: string;
+  readonly status: 'active' | 'blocked' | 'closed';
+}
+
+export interface AdminLotReclassificationInput {
+  readonly operationId: string;
+  readonly productId: string;
+  readonly branchId: string;
+  readonly expectedBalanceRevision: string;
+  readonly reason: string;
+  readonly lines: readonly {
+    readonly lotId: string;
+    readonly quantityScaled: string;
+  }[];
+}
+
 /** Current valuation facts; no average/unit-cost figure is derived here. */
 export interface InventoryCostBalanceRow {
   readonly branchId: string;
@@ -1321,6 +1379,14 @@ export interface InventoryAdjustmentRequest {
   readonly lines: readonly {
     readonly productId: string;
     readonly deltaQuantityScaled: string;
+    readonly lot?:
+      | { readonly kind: 'existing'; readonly lotId: string }
+      | {
+          readonly kind: 'manual-correction';
+          readonly externalBatchReference: string | null;
+          readonly dateKind: 'expiry' | 'best-before' | null;
+          readonly dateValue: string | null;
+        };
   }[];
 }
 
@@ -1332,6 +1398,10 @@ export interface InventoryCountRequest {
     readonly productId: string;
     readonly countedQuantityScaled: string;
     readonly expectedRevision: string;
+    readonly lots?: readonly {
+      readonly lotId: string;
+      readonly countedQuantityScaled: string;
+    }[];
   }[];
 }
 
