@@ -213,34 +213,55 @@ export function allocateOriginalSaleLotReturn(
   const originals = new Map<string, bigint>();
   for (const row of input.original) {
     const lotId = canonicalUuid(row.lotId, 'lotId');
-    if (originals.has(lotId)) throw new LotDomainError('duplicate-lot', 'Duplicate original lot.');
-    if (row.quantityScaled <= 0n) throw new LotDomainError('invalid-quantity', 'Original lot quantity must be positive.');
+    if (originals.has(lotId)) {
+      throw new LotDomainError('duplicate-lot', 'Duplicate original lot.');
+    }
+    if (row.quantityScaled <= 0n) {
+      throw new LotDomainError('invalid-quantity', 'Original lot quantity must be positive.');
+    }
     originals.set(lotId, row.quantityScaled);
   }
   if (originals.size === 0) {
-    throw new LotDomainError('allocation-total-mismatch', 'Original sale lot allocation is required.');
+    throw new LotDomainError(
+      'allocation-total-mismatch',
+      'Original sale lot allocation is required.',
+    );
   }
 
   const previous = new Map<string, bigint>();
   for (const row of input.previouslyReturned) {
     const lotId = canonicalUuid(row.lotId, 'lotId');
-    if (previous.has(lotId)) throw new LotDomainError('duplicate-lot', 'Duplicate returned lot.');
+    if (previous.has(lotId)) {
+      throw new LotDomainError('duplicate-lot', 'Duplicate returned lot.');
+    }
     const originalQuantity = originals.get(lotId);
     if (originalQuantity === undefined) {
-      throw new LotDomainError('unknown-original-lot', 'Returned lot is absent from original sale.');
+      throw new LotDomainError(
+        'unknown-original-lot',
+        'Returned lot is absent from original sale.',
+      );
     }
     if (row.quantityScaled < 0n || row.quantityScaled > originalQuantity) {
-      throw new LotDomainError('invalid-quantity', 'Returned lot quantity is outside original allocation.');
+      throw new LotDomainError(
+        'invalid-quantity',
+        'Returned lot quantity is outside original allocation.',
+      );
     }
     previous.set(lotId, row.quantityScaled);
   }
 
   const ordered = [...originals.entries()].sort(([a], [b]) => a.localeCompare(b));
   const originalTotal = ordered.reduce((sum, [, quantity]) => sum + quantity, 0n);
-  const previousTotal = ordered.reduce((sum, [lotId]) => sum + (previous.get(lotId) ?? 0n), 0n);
+  const previousTotal = ordered.reduce(
+    (sum, [lotId]) => sum + (previous.get(lotId) ?? 0n),
+    0n,
+  );
   const cumulativeTarget = previousTotal + input.returnQuantityScaled;
   if (cumulativeTarget > originalTotal) {
-    throw new LotDomainError('return-exceeds-original', 'Cumulative return exceeds original lot quantity.');
+    throw new LotDomainError(
+      'return-exceeds-original',
+      'Cumulative return exceeds original lot quantity.',
+    );
   }
 
   const targets = ordered.map(([lotId, originalQuantity]) => {
@@ -258,7 +279,10 @@ export function allocateOriginalSaleLotReturn(
 
   const assigned = targets.reduce((sum, row) => sum + row.target, 0n);
   if (assigned > cumulativeTarget) {
-    throw new LotDomainError('allocation-total-mismatch', 'Prior lot returns exceed cumulative target.');
+    throw new LotDomainError(
+      'allocation-total-mismatch',
+      'Prior lot returns exceed cumulative target.',
+    );
   }
   let residual = cumulativeTarget - assigned;
   const ranked = [...targets].sort((a, b) =>
@@ -275,12 +299,18 @@ export function allocateOriginalSaleLotReturn(
     residual -= 1n;
   }
   if (residual !== 0n) {
-    throw new LotDomainError('allocation-total-mismatch', 'Lot return allocation could not conserve quantity.');
+    throw new LotDomainError(
+      'allocation-total-mismatch',
+      'Lot return allocation could not conserve quantity.',
+    );
   }
 
   return targets.flatMap((row) => {
     if (row.target > row.originalQuantity) {
-      throw new LotDomainError('return-exceeds-original', 'Lot return exceeds original allocation.');
+      throw new LotDomainError(
+        'return-exceeds-original',
+        'Lot return exceeds original allocation.',
+      );
     }
     const quantityScaled = row.target - row.previousQuantity;
     return quantityScaled === 0n ? [] : [{ lotId: row.lotId, quantityScaled }];
