@@ -171,11 +171,11 @@ CREATE TABLE "inventory_lot_entries" (
   CONSTRAINT "inventory_lot_entries_lot_fkey"
     FOREIGN KEY ("tenantId","productId","lotId") REFERENCES "inventory_lots"("tenantId","productId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
   CONSTRAINT "inventory_lot_entries_movement_fkey"
-    FOREIGN KEY ("tenantId","inventoryMovementId","branchId","productId")
-    REFERENCES "inventory_movements"("tenantId","id","branchId","productId") ON DELETE NO ACTION ON UPDATE CASCADE,
+    FOREIGN KEY ("tenantId","inventoryMovementId")
+    REFERENCES "inventory_movements"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
   CONSTRAINT "inventory_lot_entries_reclassification_fkey"
-    FOREIGN KEY ("tenantId","reclassificationId","branchId","productId")
-    REFERENCES "inventory_lot_reclassifications"("tenantId","id","branchId","productId") ON DELETE NO ACTION ON UPDATE CASCADE,
+    FOREIGN KEY ("tenantId","reclassificationId")
+    REFERENCES "inventory_lot_reclassifications"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
   CONSTRAINT "inventory_lot_entries_actor_fkey"
     FOREIGN KEY ("tenantId","actorUserId") REFERENCES "users"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
   CONSTRAINT "inventory_lot_entries_quantity_nonzero"
@@ -189,6 +189,41 @@ CREATE TABLE "inventory_lot_entries" (
       OR ("causeKind" = 'reclassification' AND "inventoryMovementId" IS NULL AND "reclassificationId" IS NOT NULL)
     )
 );
+
+CREATE FUNCTION assert_v2_4_lot_entry_parent_identity() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE
+  v_branch UUID;
+  v_product UUID;
+BEGIN
+  IF NEW."inventoryMovementId" IS NOT NULL THEN
+    SELECT "branchId","productId"
+      INTO v_branch,v_product
+      FROM "inventory_movements"
+     WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."inventoryMovementId";
+  ELSIF NEW."reclassificationId" IS NOT NULL THEN
+    SELECT "branchId","productId"
+      INTO v_branch,v_product
+      FROM "inventory_lot_reclassifications"
+     WHERE "tenantId" = NEW."tenantId" AND "id" = NEW."reclassificationId";
+  ELSE
+    RETURN NEW;
+  END IF;
+
+  IF v_branch IS NULL
+     OR v_branch IS DISTINCT FROM NEW."branchId"
+     OR v_product IS DISTINCT FROM NEW."productId"
+  THEN
+    RAISE EXCEPTION 'lot entry parent branch/product identity mismatch'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER "inventory_lot_entries_parent_identity"
+BEFORE INSERT ON "inventory_lot_entries"
+FOR EACH ROW EXECUTE FUNCTION assert_v2_4_lot_entry_parent_identity();
 
 CREATE UNIQUE INDEX "inventory_lot_entries_tenant_id_key"
   ON "inventory_lot_entries"("tenantId","id");

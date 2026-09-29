@@ -1208,8 +1208,8 @@ model InventoryLotEntry {
   branch Branch @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: NoAction)
   product Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
   lot InventoryLot @relation(fields: [tenantId, productId, lotId], references: [tenantId, productId, id], onDelete: NoAction)
-  movement InventoryMovement? @relation(fields: [tenantId, inventoryMovementId, branchId, productId], references: [tenantId, id, branchId, productId], onDelete: NoAction)
-  reclassification InventoryLotReclassification? @relation(fields: [tenantId, reclassificationId, branchId, productId], references: [tenantId, id, branchId, productId], onDelete: NoAction)
+  movement InventoryMovement? @relation(fields: [tenantId, inventoryMovementId], references: [tenantId, id], onDelete: NoAction)
+  reclassification InventoryLotReclassification? @relation(fields: [tenantId, reclassificationId], references: [tenantId, id], onDelete: NoAction)
   actor User? @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
 
   @@unique([tenantId, id])
