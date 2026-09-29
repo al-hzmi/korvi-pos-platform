@@ -1,3 +1,4 @@
+import { newId } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import { InsufficientStockError } from '../errors.js';
 import {
@@ -6,8 +7,16 @@ import {
   prepareMovementCost,
 } from '../costing/ledger.js';
 import { minor, scoped, tenantParam } from './mapping.js';
+import {
+  commitMovementLotsWithin,
+  prepareMovementLotsWithin,
+} from '../lots/authority.js';
 import type { TransactionClient } from '../tenant-context.js';
 import type { IncomingCostBasis, MovementCostEvidence } from '../costing/ledger.js';
+import type {
+  MovementLotDirective,
+  PreparedMovementLotAllocation,
+} from '../lots/authority.js';
 import type {
   InventoryBalance,
   InventoryMovementInput,
@@ -26,6 +35,7 @@ interface BalanceRow {
 
 export interface AppliedMovementRow extends BalanceRow {
   readonly cost: MovementCostEvidence;
+  readonly lots: readonly PreparedMovementLotAllocation[];
 }
 
 function toDomain(scope: TenantScope, row: BalanceRow): InventoryBalance {
@@ -113,6 +123,7 @@ export async function applyMovementWithin(
   allowNegative = true,
   sourceLineId: string | null = null,
   incomingCostBasis?: IncomingCostBasis,
+  lotDirective?: MovementLotDirective,
 ): Promise<AppliedMovementRow> {
   const quantity = BigInt(movement.quantityScaled);
   if (quantity === 0n) {
@@ -132,6 +143,15 @@ export async function applyMovementWithin(
     quantity,
     currentCost,
     incomingCostBasis,
+  );
+  // ADR-0039: balance/cost locks remain first. Lot identities are locked only
+  // after those canonical authorities, so V2-4 cannot introduce a new
+  // deadlock order or a second stock truth.
+  const preparedLots = await prepareMovementLotsWithin(
+    tx,
+    tenant,
+    movement,
+    lotDirective,
   );
 
   await tx.inventoryMovement.create({
@@ -188,6 +208,13 @@ export async function applyMovementWithin(
     occurredAt: new Date(movement.occurredAt),
     prepared: preparedCost,
   });
+  await commitMovementLotsWithin(
+    tx,
+    tenant,
+    movement,
+    preparedLots,
+    newId,
+  );
 
   return {
     tenantId: tenant,
@@ -196,6 +223,7 @@ export async function applyMovementWithin(
     quantityScaled: after.quantityScaled,
     revision: after.revision,
     cost: preparedCost.evidence,
+    lots: preparedLots,
   };
 }
 

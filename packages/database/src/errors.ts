@@ -414,3 +414,25 @@ export class RetailPricingPolicyRefusedError extends DatabaseError {
     this.detail = detail;
   }
 }
+
+/**
+ * A lot-controlled inventory movement cannot be proven from the facts supplied
+ * by its parent operation. These refusals are decided under canonical stock +
+ * lot locks, not from a preflight read (ADR-0039).
+ */
+export type LotPolicyRefusal =
+  | 'incoming-lot-required'
+  | 'unknown-lot'
+  | 'lot-product-mismatch'
+  | 'lot-unavailable'
+  | 'invalid-business-time-zone';
+
+export class LotPolicyRefusedError extends DatabaseError {
+  public override readonly name = 'LotPolicyRefusedError';
+  public readonly detail: LotPolicyRefusal;
+
+  public constructor(detail: LotPolicyRefusal) {
+    super(`Lot policy refused: ${detail}`);
+    this.detail = detail;
+  }
+}

@@ -208,6 +208,8 @@ FIFO:
 
 Allocation consumes each candidate up to its derived available quantity until the requested base quantity is satisfied.
 
+A lot-controlled Product cannot oversell into a negative balance even when the tenant's generic `allowNegativeStock` setting is true. A negative Product total cannot be distributed across truthful physical lots, so insufficient eligible lot quantity is a hard refusal.
+
 If eligible availability is insufficient, the operation refuses. It never silently consumes an expired or blocked lot.
 
 ### 10. Concurrency authority
@@ -226,9 +228,12 @@ The existing InventoryBalance lock remains the Product total authority. Lock ord
 
 1. document/shift/policy locks already required by the operation;
 2. InventoryBalance rows in canonical branch/Product order;
-3. InventoryLot rows in canonical lot-id order;
-4. append InventoryMovement;
-5. append reconciled InventoryLotEntry facts.
+3. the existing InventoryCostBalance lock for that Product/branch;
+4. InventoryLot rows in canonical lot-id order;
+5. append InventoryMovement;
+6. append reconciled InventoryLotEntry facts.
+
+This preserves Strike 5C's balance → cost lock order; V2-4 appends lot identity locks after it rather than inserting a competing order.
 
 ### 11. Receiving
 
