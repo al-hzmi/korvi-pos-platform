@@ -59,6 +59,8 @@ const QUEUE_OPERATION: QueueOperationInput = {
 describe('offline store validation', () => {
   it('accepts exact string financial fields and refuses floating or corrupt catalogue values', () => {
     expect(isProductSummary(PRODUCT)).toBe(true);
+    expect(isProductSummary({ ...PRODUCT, lotTrackingRequired: true })).toBe(true);
+    expect(isProductSummary({ ...PRODUCT, lotTrackingRequired: 'true' })).toBe(false);
     expect(isProductSummary({ ...PRODUCT, priceMinor: 11.5 })).toBe(false);
     expect(isProductSummary({ ...PRODUCT, vatBasisPoints: 1500.5 })).toBe(false);
     expect(isProductSummary({ ...PRODUCT, productType: 'other' })).toBe(false);
@@ -85,6 +87,18 @@ describe('offline store validation', () => {
     } as const;
 
     expect(isOfflineSaleDraft(draft)).toBe(true);
+    expect(
+      isOfflineSaleDraft({
+        ...draft,
+        lines: [{ ...draft.lines[0], lotTrackingRequired: true }],
+      }),
+    ).toBe(true);
+    expect(
+      isOfflineSaleDraft({
+        ...draft,
+        lines: [{ ...draft.lines[0], lotTrackingRequired: 'true' }],
+      }),
+    ).toBe(false);
     expect(
       isOfflineSaleDraft({
         ...draft,
