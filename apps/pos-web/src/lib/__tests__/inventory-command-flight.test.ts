@@ -32,6 +32,40 @@ describe('inventory command flight', () => {
     expect(flight.outstanding()).toBe(true);
   });
 
+  it('deep-freezes lot-bearing stock intents so an ambiguous retry cannot mutate lot identity', () => {
+    const flight = createInventoryCommandFlight();
+    const first = flight.begin(() => ({
+      kind: 'adjustment',
+      request: {
+        operationId: 'op-lot-1',
+        branchId: 'branch-1',
+        reason: 'تصحيح دفعة',
+        lines: [
+          {
+            productId: 'product-1',
+            deltaQuantityScaled: '1000',
+            lot: {
+              kind: 'manual-correction',
+              externalBatchReference: 'BATCH-7',
+              dateKind: 'expiry',
+              dateValue: '2027-12-31',
+            },
+          },
+        ],
+      },
+    }))!;
+
+    expect(Object.isFrozen(first.request)).toBe(true);
+    expect(Object.isFrozen(first.request.lines)).toBe(true);
+    const adjustmentRequest = first.kind === 'adjustment' ? first.request : null;
+    expect(adjustmentRequest).not.toBeNull();
+    expect(Object.isFrozen(adjustmentRequest?.lines[0])).toBe(true);
+    expect(Object.isFrozen(adjustmentRequest?.lines[0]?.lot)).toBe(true);
+
+    flight.settle('ambiguous');
+    expect(flight.begin(() => adjustment('op-never-built'))).toBe(first);
+  });
+
   it('retires a definitely refused intent before accepting an amendment', () => {
     const flight = createInventoryCommandFlight();
     flight.begin(() => adjustment('op-1'));

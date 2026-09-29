@@ -24,10 +24,68 @@ export interface InventoryCommandFlight {
   reset(): void;
 }
 
-function freezeLines<T extends Readonly<Record<string, string>>>(
-  lines: readonly T[],
-): readonly Readonly<T>[] {
-  return Object.freeze(lines.map((line) => Object.freeze({ ...line }) as Readonly<T>));
+function freezeAdjustmentLines(
+  lines: InventoryAdjustmentRequest['lines'],
+): InventoryAdjustmentRequest['lines'] {
+  return Object.freeze(
+    lines.map((line) =>
+      Object.freeze({
+        productId: line.productId,
+        deltaQuantityScaled: line.deltaQuantityScaled,
+        ...(line.lot === undefined
+          ? {}
+          : {
+              lot: Object.freeze(
+                line.lot.kind === 'existing'
+                  ? { kind: 'existing' as const, lotId: line.lot.lotId }
+                  : {
+                      kind: 'manual-correction' as const,
+                      externalBatchReference: line.lot.externalBatchReference,
+                      dateKind: line.lot.dateKind,
+                      dateValue: line.lot.dateValue,
+                    },
+              ),
+            }),
+      }),
+    ),
+  );
+}
+
+function freezeCountLines(lines: InventoryCountRequest['lines']): InventoryCountRequest['lines'] {
+  return Object.freeze(
+    lines.map((line) =>
+      Object.freeze({
+        productId: line.productId,
+        countedQuantityScaled: line.countedQuantityScaled,
+        expectedRevision: line.expectedRevision,
+        ...(line.lots === undefined
+          ? {}
+          : {
+              lots: Object.freeze(
+                line.lots.map((lot) =>
+                  Object.freeze({
+                    lotId: lot.lotId,
+                    countedQuantityScaled: lot.countedQuantityScaled,
+                  }),
+                ),
+              ),
+            }),
+      }),
+    ),
+  );
+}
+
+function freezeTransferLines(
+  lines: InventoryTransferRequest['lines'],
+): InventoryTransferRequest['lines'] {
+  return Object.freeze(
+    lines.map((line) =>
+      Object.freeze({
+        productId: line.productId,
+        quantityScaled: line.quantityScaled,
+      }),
+    ),
+  );
 }
 
 /**
@@ -44,7 +102,7 @@ function freezeIntent(intent: InventoryCommandIntent): InventoryCommandIntent {
           operationId: intent.request.operationId,
           branchId: intent.request.branchId,
           reason: intent.request.reason,
-          lines: freezeLines(intent.request.lines),
+          lines: freezeAdjustmentLines(intent.request.lines),
         }),
       });
     case 'count':
@@ -54,7 +112,7 @@ function freezeIntent(intent: InventoryCommandIntent): InventoryCommandIntent {
           operationId: intent.request.operationId,
           branchId: intent.request.branchId,
           reason: intent.request.reason,
-          lines: freezeLines(intent.request.lines),
+          lines: freezeCountLines(intent.request.lines),
         }),
       });
     case 'transfer':
@@ -65,7 +123,7 @@ function freezeIntent(intent: InventoryCommandIntent): InventoryCommandIntent {
           fromBranchId: intent.request.fromBranchId,
           toBranchId: intent.request.toBranchId,
           reason: intent.request.reason,
-          lines: freezeLines(intent.request.lines),
+          lines: freezeTransferLines(intent.request.lines),
         }),
       });
   }
