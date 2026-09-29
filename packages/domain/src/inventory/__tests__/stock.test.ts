@@ -153,6 +153,42 @@ describe('adjustment requests', () => {
     ).toBe('duplicate-product');
   });
 
+  it('binds governed lot provenance and refuses negative manual-correction lots', () => {
+    const existing = validateAdjustmentRequest(
+      adjustment({
+        lines: [
+          {
+            productId: PRODUCT_A,
+            deltaQuantityScaled: '-1000',
+            lot: { kind: 'existing', lotId: LOT_A },
+          },
+        ],
+      }),
+    );
+    expect(existing.lines[0]?.lot).toEqual({ kind: 'existing', lotId: LOT_A });
+
+    expect(
+      refusalOf(() =>
+        validateAdjustmentRequest(
+          adjustment({
+            lines: [
+              {
+                productId: PRODUCT_A,
+                deltaQuantityScaled: '-1000',
+                lot: {
+                  kind: 'manual-correction',
+                  externalBatchReference: 'COUNT-FOUND',
+                  dateKind: null,
+                  dateValue: null,
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('invalid-lot-adjustment');
+  });
+
   it('bounds the line count in both directions', () => {
     expect(refusalOf(() => validateAdjustmentRequest(adjustment({ lines: [] })))).toBe('no-lines');
     const many = Array.from({ length: MAX_STOCK_LINES + 1 }, (_, index) => ({
@@ -455,6 +491,46 @@ describe('canonical request form', () => {
     for (const changed of changes) {
       expect(JSON.stringify(canonicalAdjustmentForm(changed))).not.toBe(base);
     }
+  });
+
+  it('binds adjustment lot identity and manual provenance facts', () => {
+    const base = JSON.stringify(
+      canonicalAdjustmentForm(
+        adjustment({
+          lines: [
+            {
+              productId: PRODUCT_A,
+              deltaQuantityScaled: '1000',
+              lot: {
+                kind: 'manual-correction',
+                externalBatchReference: 'MC-1',
+                dateKind: 'best-before',
+                dateValue: '2026-10-30',
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const changed = JSON.stringify(
+      canonicalAdjustmentForm(
+        adjustment({
+          lines: [
+            {
+              productId: PRODUCT_A,
+              deltaQuantityScaled: '1000',
+              lot: {
+                kind: 'manual-correction',
+                externalBatchReference: 'MC-2',
+                dateKind: 'best-before',
+                dateValue: '2026-10-30',
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    expect(changed).not.toBe(base);
   });
 
   it('does not depend on the operation id, which is the key rather than the intent', () => {

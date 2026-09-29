@@ -44,6 +44,11 @@ export type MovementLotDirective =
       readonly lots: readonly IncomingMovementLotFact[];
     }
   | {
+      /** Governed positive correction creates explicit manual provenance. */
+      readonly kind: 'manual-correction';
+      readonly lots: readonly IncomingMovementLotFact[];
+    }
+  | {
       /**
        * Original sale predates lot snapshots. If the Product is lot-controlled
        * now, restore into a fresh explicit historical-unknown lot rather than
@@ -243,7 +248,7 @@ async function resolveIncomingLotWithin(
   fact: IncomingMovementLotFact,
   occurredAt: Date,
   dateRequired: boolean,
-  provenance: 'received' | 'produced',
+  provenance: 'received' | 'produced' | 'manual-correction',
 ): Promise<LotRow> {
   let quantity: bigint;
   try {
@@ -481,7 +486,11 @@ export async function prepareMovementLotsWithin(
     return [snapshot(row, movementQuantity)];
   }
 
-  if (directive?.kind === 'received' || directive?.kind === 'produced') {
+  if (
+    directive?.kind === 'received' ||
+    directive?.kind === 'produced' ||
+    directive?.kind === 'manual-correction'
+  ) {
     if (movementQuantity <= 0n || directive.lots.length === 0) {
       throw new LotPolicyRefusedError('invalid-lot-fact');
     }

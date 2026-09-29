@@ -44,6 +44,7 @@ export type StockRequestRefusal =
   | 'duplicate-product'
   | 'duplicate-lot'
   | 'lot-count-mismatch'
+  | 'invalid-lot-adjustment'
   | 'no-lines'
   | 'too-many-lines'
   | 'same-branch'
@@ -151,10 +152,27 @@ export function assertQuantityShape(
 // Requests
 // ---------------------------------------------------------------------------
 
+export type AdjustmentLotDirective =
+  | {
+      readonly kind: 'existing';
+      readonly lotId: string;
+    }
+  | {
+      readonly kind: 'manual-correction';
+      readonly externalBatchReference: string | null;
+      readonly dateKind: 'expiry' | 'best-before' | null;
+      readonly dateValue: string | null;
+    };
+
 export interface AdjustmentLineRequest {
   readonly productId: string;
   /** Signed. This is the one delta a client is allowed to state. */
   readonly deltaQuantityScaled: string;
+  /**
+   * Required by persistence only for positive lot-controlled adjustments.
+   * Existing lot identity may also govern a negative correction.
+   */
+  readonly lot?: AdjustmentLotDirective | undefined;
 }
 
 export interface AdjustmentRequest {
@@ -278,6 +296,7 @@ function byProductId<T extends { readonly productId: string }>(lines: readonly T
 export interface ValidatedAdjustmentLine {
   readonly productId: string;
   readonly deltaQuantityScaled: bigint;
+  readonly lot?: AdjustmentLotDirective | undefined;
 }
 
 export interface ValidatedAdjustment {
@@ -304,7 +323,37 @@ export function validateAdjustmentRequest(request: AdjustmentRequest): Validated
     if (delta === 0n) {
       throw new StockRequestError('zero-delta', 'An adjustment line must move a non-zero amount.');
     }
-    return { productId: line.productId, deltaQuantityScaled: delta };
+
+    let lot: AdjustmentLotDirective | undefined;
+    if (line.lot?.kind === 'existing') {
+      lot = { kind: 'existing', lotId: canonicalUuid(line.lot.lotId, 'lotId') };
+    } else if (line.lot?.kind === 'manual-correction') {
+      if (delta < 0n) {
+        throw new StockRequestError(
+          'invalid-lot-adjustment',
+          'A manual-correction lot can only receive positive stock.',
+        );
+      }
+      const batch = line.lot.externalBatchReference?.trim() ?? null;
+      if (
+        (batch !== null && (batch.length === 0 || batch.length > 120)) ||
+        (line.lot.dateKind === null) !== (line.lot.dateValue === null)
+      ) {
+        throw new StockRequestError('invalid-lot-adjustment', 'Invalid manual lot facts.');
+      }
+      lot = {
+        kind: 'manual-correction',
+        externalBatchReference: batch,
+        dateKind: line.lot.dateKind,
+        dateValue: line.lot.dateValue,
+      };
+    }
+
+    return {
+      productId: line.productId,
+      deltaQuantityScaled: delta,
+      ...(lot === undefined ? {} : { lot }),
+    };
   });
 
   return { branchId, reason: request.reason.trim(), lines };
@@ -475,13 +524,23 @@ function sortedByProduct(lines: readonly (readonly string[])[]): readonly (reado
 
 export function canonicalAdjustmentForm(request: AdjustmentRequest): readonly unknown[] {
   return [
-    'inventory-adjustment.v1',
+    'inventory-adjustment.v2',
     canonicalUuid(request.branchId, 'branchId'),
     normalizedReason(request.reason),
     sortedByProduct(
       request.lines.map((line) => [
         canonicalUuid(line.productId, 'productId'),
         parseSignedScaled(line.deltaQuantityScaled, 'deltaQuantityScaled').toString(),
+        line.lot === undefined
+          ? null
+          : line.lot.kind === 'existing'
+            ? ['existing', canonicalUuid(line.lot.lotId, 'lotId')]
+            : [
+                'manual-correction',
+                line.lot.externalBatchReference?.trim() ?? null,
+                line.lot.dateKind,
+                line.lot.dateValue,
+              ],
       ]),
     ),
   ];
@@ -570,6 +629,10 @@ export const STOCK_AUTHORITY_REFUSALS = [
   'stock-changed',
   'lot-count-required',
   'lot-count-not-applicable',
+  'lot-adjustment-required',
+  'lot-adjustment-not-applicable',
+  'invalid-lot-adjustment',
+  'lot-unavailable',
   'unknown-lot',
   'idempotency-conflict',
 ] as const;

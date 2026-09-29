@@ -539,26 +539,78 @@ export async function recordInventoryAdjustment(
       }
 
       const lineId = newId();
-      const applied = await applyMovementWithin(
-        tx,
-        tenant,
-        {
-          id: newId(),
-          branchId: plan.branchId,
-          productId: line.productId,
-          kind: 'adjustment',
-          quantityScaled: line.deltaQuantityScaled.toString(),
-          reason: plan.reason,
-          sourceType: STOCK_SOURCE_TYPES.adjustment,
-          sourceId: documentId,
-          actorUserId: actor.userId,
-          occurredAt: at.toISOString(),
-        },
-        // The row is held, and the floor is already decided above, so the
-        // primitive is not asked to re-decide it with its own predicate.
-        true,
-        lineId,
-      );
+      const lotDirective =
+        line.lot === undefined
+          ? undefined
+          : line.lot.kind === 'existing'
+            ? {
+                kind: 'explicit' as const,
+                allocations: [
+                  {
+                    lotId: line.lot.lotId,
+                    quantityScaled: line.deltaQuantityScaled.toString(),
+                  },
+                ],
+              }
+            : {
+                kind: 'manual-correction' as const,
+                lots: [
+                  {
+                    quantityScaled: line.deltaQuantityScaled.toString(),
+                    externalBatchReference: line.lot.externalBatchReference,
+                    dateKind: line.lot.dateKind,
+                    dateValue: line.lot.dateValue,
+                  },
+                ],
+              };
+
+      let applied;
+      try {
+        applied = await applyMovementWithin(
+          tx,
+          tenant,
+          {
+            id: newId(),
+            branchId: plan.branchId,
+            productId: line.productId,
+            kind: 'adjustment',
+            quantityScaled: line.deltaQuantityScaled.toString(),
+            reason: plan.reason,
+            sourceType: STOCK_SOURCE_TYPES.adjustment,
+            sourceId: documentId,
+            actorUserId: actor.userId,
+            occurredAt: at.toISOString(),
+          },
+          // The row is held, and the floor is already decided above, so the
+          // primitive is not asked to re-decide it with its own predicate.
+          true,
+          lineId,
+          undefined,
+          lotDirective,
+        );
+      } catch (error) {
+        if (error instanceof LotPolicyRefusedError) {
+          switch (error.detail) {
+            case 'incoming-lot-required':
+              throw new StockOperationRefusedError('lot-adjustment-required', line.productId);
+            case 'lot-product-mismatch':
+              throw new StockOperationRefusedError(
+                'lot-adjustment-not-applicable',
+                line.productId,
+              );
+            case 'unknown-lot':
+              throw new StockOperationRefusedError('unknown-lot', line.productId);
+            case 'lot-unavailable':
+              throw new StockOperationRefusedError('lot-unavailable', line.productId);
+            case 'invalid-business-time-zone':
+            case 'lot-date-required':
+            case 'lot-identity-conflict':
+            case 'invalid-lot-fact':
+              throw new StockOperationRefusedError('invalid-lot-adjustment', line.productId);
+          }
+        }
+        throw error;
+      }
 
       await tx.inventoryAdjustmentLine.create({
         data: {

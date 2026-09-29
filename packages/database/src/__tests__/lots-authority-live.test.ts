@@ -11,9 +11,13 @@ import {
   createInventoryRepository,
 } from '../repositories/inventory-repository.js';
 import { withTenant } from '../tenant-context.js';
-import { recordInventoryCount, recordInventoryTransfer } from '../inventory/stock-ledger.js';
+import {
+  recordInventoryAdjustment,
+  recordInventoryCount,
+  recordInventoryTransfer,
+} from '../inventory/stock-ledger.js';
 import type { LotAdminRefusedError } from '../administration/lots.js';
-import type { LotPolicyRefusedError } from '../errors.js';
+import type { LotPolicyRefusedError, StockOperationRefusedError } from '../errors.js';
 import type { PrismaClient } from '../client.js';
 import type { InventoryMovementInput, TenantScope } from '@korvi/domain';
 
@@ -28,6 +32,7 @@ const A = {
   datedProduct: '018fd240-0000-7000-8000-0000000000d2',
   transferProduct: '018fd240-0000-7000-8000-0000000000d3',
   countProduct: '018fd240-0000-7000-8000-0000000000d4',
+  adjustmentProduct: '018fd240-0000-7000-8000-0000000000d5',
 } as const;
 
 const B = {
@@ -157,6 +162,7 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
         [A.datedProduct, 'LOT-LIVE-DATE', 0n],
         [A.transferProduct, 'LOT-LIVE-TRANSFER', 4_000n],
         [A.countProduct, 'LOT-LIVE-COUNT', 4_000n],
+        [A.adjustmentProduct, 'LOT-LIVE-ADJUST', 0n],
       ] as const) {
         await tx.product.create({
           data: {
@@ -661,7 +667,116 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     );
   });
 
-  it('L. finalized lot distribution entries reject historical rewrites', async () => {
+  it('L. positive adjustments require provenance and create manual-correction lots explicitly', async () => {
+    await enableProductLotTracking(prisma, scope, actor, A.adjustmentProduct, {
+      selectionPolicy: 'fifo',
+      dateRequirement: 'required',
+      occurredAt: '2026-09-29T00:09:00.000Z',
+    });
+
+    await expect(
+      recordInventoryAdjustment(
+        prisma,
+        { tenantId: A.tenant, userId: A.user },
+        {
+          operationId: newId(),
+          branchId: A.branch,
+          reason: 'found stock without system history',
+          lines: [{ productId: A.adjustmentProduct, deltaQuantityScaled: '1000' }],
+        },
+        'lot-adjust-missing'.padEnd(43, 'M'),
+        () => new Date('2026-09-29T00:10:00.000Z'),
+      ),
+    ).rejects.toMatchObject<Partial<StockOperationRefusedError>>({
+      detail: 'lot-adjustment-required',
+      productId: A.adjustmentProduct,
+    });
+
+    const before = await withTenant(prisma, scope.tenantId, async (tx) =>
+      tx.inventoryBalance.findFirst({
+        where: { branchId: A.branch, productId: A.adjustmentProduct },
+      }),
+    );
+    expect(before?.quantityScaled).toBe(0n);
+
+    const operationId = newId();
+    const result = await recordInventoryAdjustment(
+      prisma,
+      { tenantId: A.tenant, userId: A.user },
+      {
+        operationId,
+        branchId: A.branch,
+        reason: 'governed manual lot correction',
+        lines: [
+          {
+            productId: A.adjustmentProduct,
+            deltaQuantityScaled: '1000',
+            lot: {
+              kind: 'manual-correction',
+              externalBatchReference: 'MANUAL-FOUND-001',
+              dateKind: 'expiry',
+              dateValue: '2026-11-30',
+            },
+          },
+        ],
+      },
+      'lot-adjust-manual'.padEnd(43, 'A'),
+      () => new Date('2026-09-29T00:11:00.000Z'),
+    );
+    expect(result.lines[0]?.afterQuantityScaled).toBe('1000');
+
+    const facts = await withTenant(prisma, scope.tenantId, async (tx) => {
+      const lot = await tx.inventoryLot.findFirst({
+        where: {
+          productId: A.adjustmentProduct,
+          externalBatchReference: 'MANUAL-FOUND-001',
+        },
+      });
+      const movements = await tx.inventoryMovement.findMany({
+        where: {
+          productId: A.adjustmentProduct,
+          sourceType: 'inventory-adjustment',
+          sourceId: result.id,
+        },
+      });
+      return { lot, movements };
+    });
+    expect(facts.lot).toMatchObject({
+      provenance: 'manual-correction',
+      dateKind: 'expiry',
+      status: 'active',
+    });
+    expect(facts.lot?.dateValue?.toISOString().slice(0, 10)).toBe('2026-11-30');
+    expect(facts.movements).toHaveLength(1);
+
+    const replay = await recordInventoryAdjustment(
+      prisma,
+      { tenantId: A.tenant, userId: A.user },
+      {
+        operationId,
+        branchId: A.branch,
+        reason: 'governed manual lot correction',
+        lines: [
+          {
+            productId: A.adjustmentProduct,
+            deltaQuantityScaled: '1000',
+            lot: {
+              kind: 'manual-correction',
+              externalBatchReference: 'MANUAL-FOUND-001',
+              dateKind: 'expiry',
+              dateValue: '2026-11-30',
+            },
+          },
+        ],
+      },
+      'lot-adjust-manual'.padEnd(43, 'A'),
+      () => new Date('2026-09-29T00:12:00.000Z'),
+    );
+    expect(replay.id).toBe(result.id);
+    expect(replay.replayed).toBe(true);
+  });
+
+  it('M. finalized lot distribution entries reject historical rewrites', async () => {
     const entry = await withTenant(prisma, scope.tenantId, async (tx) =>
       tx.inventoryLotEntry.findFirst({ where: { productId: A.product } }),
     );

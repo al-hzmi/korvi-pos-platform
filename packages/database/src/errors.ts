@@ -285,6 +285,10 @@ export type StockOperationRefusal =
   | 'stock-changed'
   | 'lot-count-required'
   | 'lot-count-not-applicable'
+  | 'lot-adjustment-required'
+  | 'lot-adjustment-not-applicable'
+  | 'invalid-lot-adjustment'
+  | 'lot-unavailable'
   | 'unknown-lot'
   | 'idempotency-conflict';
 

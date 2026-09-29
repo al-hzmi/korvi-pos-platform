@@ -66,13 +66,41 @@ const LOT_COUNT_OBSERVATION = z
   })
   .strict();
 
+const ADJUSTMENT_LOT = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('existing'),
+      lotId: UUID,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('manual-correction'),
+      externalBatchReference: z.string().trim().min(1).max(120).nullable(),
+      dateKind: z.enum(['expiry', 'best-before']).nullable(),
+      dateValue: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    })
+    .strict()
+    .refine((lot) => (lot.dateKind === null) === (lot.dateValue === null), {
+      message: 'dateKind and dateValue must be paired',
+    }),
+]);
+
 const adjustmentBody = z
   .object({
     operationId: OPERATION_ID,
     branchId: UUID,
     reason: REASON,
     lines: z
-      .array(z.object({ productId: UUID, deltaQuantityScaled: SIGNED_SCALED }).strict())
+      .array(
+        z
+          .object({
+            productId: UUID,
+            deltaQuantityScaled: SIGNED_SCALED,
+            lot: ADJUSTMENT_LOT.optional(),
+          })
+          .strict(),
+      )
       .min(1)
       .max(MAX_STOCK_LINES),
   })
@@ -234,6 +262,7 @@ const MESSAGES: Readonly<Record<StockFailureReason, string>> = {
   'duplicate-product': 'لا يمكن تكرار الصنف نفسه في نفس العملية.',
   'duplicate-lot': 'لا يمكن تكرار الدفعة نفسها في جرد الصنف.',
   'lot-count-mismatch': 'مجموع كميات الدفعات يجب أن يساوي كمية الصنف المجرودة.',
+  'invalid-lot-adjustment': 'بيانات الدفعة في التسوية غير صالحة.',
   'no-lines': 'يجب إدخال صنف واحد على الأقل.',
   'too-many-lines': 'عدد الأصناف في العملية تجاوز الحد المسموح.',
   'same-branch': 'لا يمكن التحويل إلى نفس الفرع.',
@@ -247,6 +276,9 @@ const MESSAGES: Readonly<Record<StockFailureReason, string>> = {
   'stock-changed': 'تغيّر رصيد المخزون أثناء الجرد. يرجى تحديث الأرصدة وإعادة الجرد.',
   'lot-count-required': 'هذا الصنف يتطلب جرد الكمية حسب الدفعات.',
   'lot-count-not-applicable': 'هذا الصنف لا يستخدم تتبع الدفعات.',
+  'lot-adjustment-required': 'زيادة هذا الصنف تتطلب تحديد دفعة موجودة أو دفعة تصحيح جديدة.',
+  'lot-adjustment-not-applicable': 'هذا الصنف لا يستخدم تتبع الدفعات في التسويات.',
+  'lot-unavailable': 'الدفعة المحددة غير متاحة للاستهلاك أو انتهت صلاحيتها.',
   'unknown-lot': 'إحدى الدفعات غير موجودة لهذا الصنف.',
   'cost-state-changed':
     'تغيّرت حقائق المخزون أو التكلفة منذ المراجعة. حدّث البيانات واتخذ قرار تقييم جديدًا.',
@@ -274,6 +306,7 @@ const STATUS: Readonly<Record<StockFailureReason, number>> = {
   'duplicate-product': 422,
   'duplicate-lot': 422,
   'lot-count-mismatch': 422,
+  'invalid-lot-adjustment': 422,
   'no-lines': 422,
   'too-many-lines': 422,
   'same-branch': 422,
@@ -287,6 +320,9 @@ const STATUS: Readonly<Record<StockFailureReason, number>> = {
   'stock-changed': 409,
   'lot-count-required': 422,
   'lot-count-not-applicable': 422,
+  'lot-adjustment-required': 422,
+  'lot-adjustment-not-applicable': 422,
+  'lot-unavailable': 409,
   'unknown-lot': 404,
   'cost-state-changed': 409,
   'idempotency-conflict': 409,
