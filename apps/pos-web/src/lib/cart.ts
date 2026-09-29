@@ -33,6 +33,8 @@ export interface CartLine {
   /** Snapshot of the price the catalogue showed. For display only. */
   readonly unitPriceMinor: string;
   readonly vatBasisPoints: number;
+  /** True means this line must never enter a newly captured offline sale. */
+  readonly lotTrackingRequired?: boolean;
   readonly quantityScaled: string;
   /** Server-owned identity when this cart line resumes an open restaurant order. */
   readonly restaurantOrderLineId?: string;
@@ -117,6 +119,9 @@ function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
         }),
     unitPriceMinor: fallbackPackagePriceMinor,
     vatBasisPoints: product.vatBasisPoints,
+    ...(product.lotTrackingRequired === undefined
+      ? {}
+      : { lotTrackingRequired: product.lotTrackingRequired }),
     quantityScaled,
     preparationNote: '',
     preparationOptions: '',
@@ -192,6 +197,20 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
  * hardcoded assumption is exactly the kind of thing nobody notices until an
  * auditor does.
  */
+export function canQueueOfflineRetailBaseSale(
+  lines: readonly CartLine[],
+  priceContext: 'retail' | 'wholesale',
+): boolean {
+  return (
+    priceContext === 'retail' &&
+    lines.every(
+      (line) =>
+        (line.packageId === undefined || line.packageId === null) &&
+        line.lotTrackingRequired !== true,
+    )
+  );
+}
+
 export function previewCart(lines: readonly CartLine[], priceMode: PriceMode): PricedCart {
   return priceCart({
     priceMode,

@@ -246,6 +246,8 @@ export interface ProductSummary {
   /** Present only when an exact barcode resolved one commercial selling unit. */
   readonly matchedPackageId?: string | null;
   readonly trackInventory: boolean;
+  /** Additive V2-4 safety metadata; absent only on pre-upgrade durable catalogue rows. */
+  readonly lotTrackingRequired?: boolean;
 }
 
 /**

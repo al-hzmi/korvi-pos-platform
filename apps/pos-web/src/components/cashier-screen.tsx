@@ -16,7 +16,7 @@ import { RestaurantOrderTypeControl } from './restaurant-order-type-control';
 import { RestaurantOpenOrdersControl } from './restaurant-open-orders-control';
 import { RestaurantTableControl } from './restaurant-table-control';
 import { StatusNote } from './status-note';
-import { previewCart } from '../lib/cart';
+import { canQueueOfflineRetailBaseSale, previewCart } from '../lib/cart';
 import { canOpenControlCentre } from '../lib/control-access';
 import { intentLocked, signOutBlocked } from '../lib/checkout';
 import { createDurableProductSource } from '../lib/offline-search-source';
@@ -288,9 +288,10 @@ export function CashierScreen({
   } = useDurableSaleDraft(durableScope, offlineStoreProtector);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
-  const offlineRetailBaseEligible =
-    priceContext === 'retail' &&
-    cart.lines.every((line) => line.packageId === undefined || line.packageId === null);
+  const offlineRetailBaseEligible = canQueueOfflineRetailBaseSale(
+    cart.lines,
+    priceContext,
+  );
 
   useEffect(() => {
     if (quickService || cart.lines.length === 0) {

@@ -234,7 +234,8 @@ export function isProductSummary(value: unknown): value is ProductSummary {
     (value.matchedPackageId === undefined ||
       value.matchedPackageId === null ||
       typeof value.matchedPackageId === 'string') &&
-    typeof value.trackInventory === 'boolean'
+    typeof value.trackInventory === 'boolean' &&
+    (value.lotTrackingRequired === undefined || typeof value.lotTrackingRequired === 'boolean')
   );
 }
 
@@ -261,6 +262,7 @@ function isCartLine(value: unknown): value is CartLine {
     Number.isInteger(value.vatBasisPoints) &&
     value.vatBasisPoints >= 0 &&
     value.vatBasisPoints <= 10_000 &&
+    (value.lotTrackingRequired === undefined || typeof value.lotTrackingRequired === 'boolean') &&
     isIntegerString(value.quantityScaled, false) &&
     (value.restaurantOrderLineId === undefined ||
       (typeof value.restaurantOrderLineId === 'string' && isUuidV7(value.restaurantOrderLineId))) &&
@@ -596,6 +598,9 @@ function fromStoredProduct(value: unknown, tenantId: string): ProductSummary {
     ...(value.packages === undefined ? {} : { packages: value.packages }),
     ...(value.matchedPackageId === undefined ? {} : { matchedPackageId: value.matchedPackageId }),
     trackInventory: value.trackInventory,
+    ...(value.lotTrackingRequired === undefined
+      ? {}
+      : { lotTrackingRequired: value.lotTrackingRequired }),
   };
 }
 

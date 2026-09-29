@@ -177,6 +177,12 @@ export interface Product {
   readonly primaryBarcode: string | null;
   readonly barcodes: readonly string[];
   readonly trackInventory: boolean;
+  /**
+   * Read-side safety metadata only. True means stock consumption is lot-controlled
+   * and therefore may never be captured as a new offline sale (ADR-0039).
+   * Optional only for legacy/in-memory adapters that predate V2-4.
+   */
+  readonly lotTrackingRequired?: boolean;
   readonly isActive: boolean;
 }
 

@@ -49,6 +49,7 @@ interface ProductRow {
   vatBasisPoints: number;
   trackInventory: boolean;
   isActive: boolean;
+  lotPolicy: { trackingMode: string } | null;
   barcodes: BarcodeRow[];
 }
 
@@ -71,6 +72,7 @@ function toDomain(scope: TenantScope, row: ProductRow): Product {
     primaryBarcode: primary === undefined ? null : primary.barcode,
     barcodes: row.barcodes.map((candidate) => candidate.barcode),
     trackInventory: row.trackInventory,
+    lotTrackingRequired: row.lotPolicy?.trackingMode === 'required',
     isActive: row.isActive,
   };
 }
@@ -78,6 +80,7 @@ function toDomain(scope: TenantScope, row: ProductRow): Product {
 const WITH_CATALOGUE_SURFACE = {
   barcodes: { select: { barcode: true, isPrimary: true }, orderBy: { isPrimary: 'desc' } },
   category: { select: { nameAr: true, sortOrder: true, isActive: true } },
+  lotPolicy: { select: { trackingMode: true } },
 } as const;
 
 export function createProductRepository(prisma: PrismaClient): ProductRepository {

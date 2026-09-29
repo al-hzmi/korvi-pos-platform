@@ -172,6 +172,10 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
       'لا يمكن اعتماد عرض أو كوبون من عملية محفوظة دون اتصال. راجع العملية عند عودة الاتصال.',
     action: 'blocking',
   },
+  'lot-offline-unsupported': {
+    message: 'هذا الصنف يتطلب اختيار دفعة لحظي من الخادم ولا يمكن حفظ بيعه دون اتصال.',
+    action: 'amend-cart',
+  },
   'tenant-misconfigured': { message: 'إعدادات المنشأة غير مكتملة.', action: 'blocking' },
   'order-type-required': { message: 'حدّد نوع الطلب قبل إتمام البيع.', action: 'amend-cart' },
   'order-type-not-applicable': {

@@ -109,6 +109,8 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'retail-pricing-policy-stale': 'تغيّرت وحدة البيع أو قائمة الأسعار. حدّث السلة.',
   'retail-pricing-not-applicable': 'وحدات البيع وسياق السعر هذا غير متاحان لمسار المطعم الحالي.',
   'promotion-offline-unsupported': 'تغيّر السعر أثناء الانقطاع. راجع العملية قبل اعتمادها.',
+  'lot-offline-unsupported':
+    'هذا الصنف يتطلب اختيار دفعة لحظي من الخادم، لذلك لا يمكن حفظ بيعه دون اتصال.',
   'promotions-not-applicable': 'العروض والكوبونات غير متاحة لمسار الطلب الحالي.',
   'idempotency-conflict': 'طلب سابق بنفس المعرّف يحمل محتوى مختلفاً.',
   'duplicate-line': 'الصنف مكرر في السلة. ادمج الكمية في سطر واحد.',
@@ -155,6 +157,7 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'retail-pricing-policy-stale': 409,
   'retail-pricing-not-applicable': 422,
   'promotion-offline-unsupported': 409,
+  'lot-offline-unsupported': 409,
   'promotions-not-applicable': 422,
   'idempotency-conflict': 409,
   'duplicate-line': 422,
@@ -506,6 +509,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
             ? { matchedPackageId: exactSellingUnit.package?.id ?? null }
             : {}),
           trackInventory: product.trackInventory,
+          lotTrackingRequired: product.lotTrackingRequired === true,
         })),
         limit: parsed.data.limit,
       });

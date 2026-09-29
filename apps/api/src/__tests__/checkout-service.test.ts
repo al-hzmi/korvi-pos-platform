@@ -109,6 +109,17 @@ describe('a cash sale', () => {
     expect(result.replayed).toBe(false);
   });
 
+  it('refuses a newly captured offline sale when current product truth requires lot selection', async () => {
+    store.products[0] = { ...store.products[0]!, lotTrackingRequired: true };
+
+    const result = await checkout({ offlineCaptured: true });
+
+    expect(result.outcome === 'failure' && result.reason).toBe('lot-offline-unsupported');
+    expect(store.sales).toHaveLength(0);
+    expect(store.movements).toHaveLength(0);
+    expect(store.keys).toHaveLength(0);
+  });
+
   it('reconciles: net + vat = total, and the lines sum to it', async () => {
     const result = await checkout({
       lines: [

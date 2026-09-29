@@ -109,6 +109,7 @@ export type CheckoutFailureReason =
   | 'retail-pricing-policy-stale'
   | 'retail-pricing-not-applicable'
   | 'promotion-offline-unsupported'
+  | 'lot-offline-unsupported'
   | 'promotions-not-applicable'
   | 'idempotency-conflict'
   | 'duplicate-line'
@@ -427,6 +428,7 @@ interface CheckoutProductSnapshot {
   readonly priceMinor: string;
   readonly vatBasisPoints: number;
   readonly trackInventory: boolean;
+  readonly lotTrackingRequired?: boolean;
 }
 
 interface CheckoutLoadedEntry {
@@ -821,12 +823,24 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               priceMinor: authority?.unitPriceMinor ?? product.priceMinor,
               vatBasisPoints: Number(product.vatBasisPoints),
               trackInventory: product.trackInventory,
+              ...(product.lotTrackingRequired === undefined
+                ? {}
+                : { lotTrackingRequired: product.lotTrackingRequired }),
             },
             scaled,
             inventoryScaled,
             retailAuthority: authority,
           });
         }
+      }
+
+      // ADR-0039: a newly captured offline sale may never defer lot selection.
+      // The correct lot is current branch state and cannot be frozen safely while disconnected.
+      if (
+        input.offlineCaptured === true &&
+        loaded.some((entry) => entry.product.lotTrackingRequired === true)
+      ) {
+        return fail('lot-offline-unsupported');
       }
 
       // Distinct packages still consume one Product stock truth. Aggregate the

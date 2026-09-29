@@ -23,6 +23,7 @@ const PRODUCT_INCLUDE = {
     orderBy: { isPrimary: 'desc' as const },
   },
   category: { select: { nameAr: true, sortOrder: true, isActive: true } },
+  lotPolicy: { select: { trackingMode: true } },
 } as const;
 
 interface ProductRow {
@@ -40,6 +41,7 @@ interface ProductRow {
   vatBasisPoints: number;
   trackInventory: boolean;
   isActive: boolean;
+  lotPolicy: { trackingMode: string } | null;
   barcodes: { barcode: string; isPrimary: boolean }[];
 }
 
@@ -75,6 +77,7 @@ function productToDomain(scope: TenantScope, row: ProductRow): Product {
     primaryBarcode: primary?.barcode ?? null,
     barcodes: row.barcodes.map((candidate) => candidate.barcode),
     trackInventory: row.trackInventory,
+    lotTrackingRequired: row.lotPolicy?.trackingMode === 'required',
     isActive: row.isActive,
   };
 }
