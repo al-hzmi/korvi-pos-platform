@@ -241,6 +241,7 @@ function recordingPurchasing(): MerchantPurchasingService {
             beforeQuantityScaled: '0',
             afterQuantityScaled: '30000',
             resultRevision: '1',
+            lots: [],
           },
         ],
       });

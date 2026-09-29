@@ -1,15 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId, tenantId as brandTenantId } from '@korvi/domain';
+import { createPrismaClient } from '../client.js';
 import {
-  createInventoryRepository,
-  createPrismaClient,
   enableProductLotTracking,
   readProductLotConfig,
   recordInventoryLotReclassification,
-  withTenant,
-} from '@korvi/database';
-import { applyMovementWithin } from '../repositories/inventory-repository.js';
-import type { LotAdminRefusedError, LotPolicyRefusedError, PrismaClient } from '@korvi/database';
+  LotAdminRefusedError,
+} from '../administration/lots.js';
+import {
+  applyMovementWithin,
+  createInventoryRepository,
+} from '../repositories/inventory-repository.js';
+import { withTenant } from '../tenant-context.js';
+import { LotPolicyRefusedError } from '../errors.js';
+import type { PrismaClient } from '../client.js';
 import type { InventoryMovementInput, TenantScope } from '@korvi/domain';
 
 const url = process.env['KORVI_TEST_DATABASE_URL'] ?? '';
