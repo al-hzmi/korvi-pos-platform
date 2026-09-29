@@ -32,6 +32,14 @@ export type MovementLotDirective =
   | {
       readonly kind: 'received';
       readonly lots: readonly ReceivedMovementLotFact[];
+    }
+  | {
+      /**
+       * Original sale predates lot snapshots. If the Product is lot-controlled
+       * now, restore into a fresh explicit historical-unknown lot rather than
+       * fabricating a batch/date or silently choosing a current lot.
+       */
+      readonly kind: 'historical-return';
     };
 
 export interface PreparedMovementLotAllocation {
@@ -193,6 +201,31 @@ function lotCode(id: string): string {
   return `LOT-${id.replaceAll('-', '').slice(-16).toUpperCase()}`;
 }
 
+async function createHistoricalReturnLotWithin(
+  tx: TransactionClient,
+  tenant: string,
+  productId: string,
+  occurredAt: Date,
+): Promise<LotRow> {
+  const id = newId();
+  return tx.inventoryLot.create({
+    data: {
+      id,
+      tenantId: tenant,
+      productId,
+      internalCode: `HRET-${id.replaceAll('-', '').slice(-16).toUpperCase()}`,
+      provenance: 'historical-unknown',
+      externalBatchReference: null,
+      dateKind: null,
+      dateValue: null,
+      status: 'active',
+      revision: 1n,
+      firstObservedAt: occurredAt,
+      updatedAt: occurredAt,
+    },
+  });
+}
+
 async function resolveReceivedLotWithin(
   tx: TransactionClient,
   tenant: string,
@@ -275,6 +308,7 @@ export async function prepareMovementLotsWithin(
 ): Promise<readonly PreparedMovementLotAllocation[]> {
   const policy = await trackingPolicy(tx, tenant, movement.productId);
   if (policy === null) {
+    if (directive?.kind === 'historical-return') return [];
     if (
       directive !== undefined &&
       (directive.kind === 'explicit' ? directive.allocations.length > 0 : directive.lots.length > 0)
@@ -286,6 +320,19 @@ export async function prepareMovementLotsWithin(
 
   const movementQuantity = BigInt(movement.quantityScaled);
   await lockAllProductLots(tx, tenant, movement.productId);
+
+  if (directive?.kind === 'historical-return') {
+    if (movementQuantity <= 0n) {
+      throw new LotPolicyRefusedError('invalid-lot-fact');
+    }
+    const row = await createHistoricalReturnLotWithin(
+      tx,
+      tenant,
+      movement.productId,
+      new Date(movement.occurredAt),
+    );
+    return [snapshot(row, movementQuantity)];
+  }
 
   if (directive?.kind === 'received') {
     if (movementQuantity <= 0n || directive.lots.length === 0) {

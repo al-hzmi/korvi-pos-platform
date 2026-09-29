@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   LotDomainError,
+  allocateOriginalSaleLotReturn,
   assertLotEntriesReconcile,
   deriveLotCountPlan,
   lotDateState,
@@ -137,6 +138,84 @@ describe('deterministic outgoing lot selection', () => {
       { lotId: LOT_A, quantityScaled: 3_000n },
       { lotId: LOT_B, quantityScaled: 1_000n },
     ]);
+  });
+});
+
+describe('historical sale lot return allocation', () => {
+  it('allocates repeated partial returns cumulatively and restores the exact original lots', () => {
+    const original = [
+      { lotId: LOT_A, quantityScaled: 3_000n },
+      { lotId: LOT_B, quantityScaled: 2_000n },
+    ];
+
+    const first = allocateOriginalSaleLotReturn({
+      original,
+      previouslyReturned: [],
+      returnQuantityScaled: 1_000n,
+    });
+    expect(first).toEqual([
+      { lotId: LOT_A, quantityScaled: 600n },
+      { lotId: LOT_B, quantityScaled: 400n },
+    ]);
+
+    const second = allocateOriginalSaleLotReturn({
+      original,
+      previouslyReturned: first,
+      returnQuantityScaled: 1_500n,
+    });
+    expect(second).toEqual([
+      { lotId: LOT_A, quantityScaled: 900n },
+      { lotId: LOT_B, quantityScaled: 600n },
+    ]);
+
+    const cumulative = [
+      { lotId: LOT_A, quantityScaled: 1_500n },
+      { lotId: LOT_B, quantityScaled: 1_000n },
+    ];
+    const final = allocateOriginalSaleLotReturn({
+      original,
+      previouslyReturned: cumulative,
+      returnQuantityScaled: 2_500n,
+    });
+    expect(final).toEqual([
+      { lotId: LOT_A, quantityScaled: 1_500n },
+      { lotId: LOT_B, quantityScaled: 1_000n },
+    ]);
+  });
+
+  it('uses deterministic lot-id rounding and never exceeds the original allocation', () => {
+    const first = allocateOriginalSaleLotReturn({
+      original: [
+        { lotId: LOT_A, quantityScaled: 1n },
+        { lotId: LOT_B, quantityScaled: 1n },
+        { lotId: LOT_C, quantityScaled: 1n },
+      ],
+      previouslyReturned: [],
+      returnQuantityScaled: 1n,
+    });
+    expect(first).toEqual([{ lotId: LOT_A, quantityScaled: 1n }]);
+
+    expect(
+      refusal(() =>
+        allocateOriginalSaleLotReturn({
+          original: [{ lotId: LOT_A, quantityScaled: 1_000n }],
+          previouslyReturned: [{ lotId: LOT_A, quantityScaled: 1_000n }],
+          returnQuantityScaled: 1n,
+        }),
+      ),
+    ).toBe('return-exceeds-original');
+  });
+
+  it('refuses a previous return that names a lot absent from the sale snapshot', () => {
+    expect(
+      refusal(() =>
+        allocateOriginalSaleLotReturn({
+          original: [{ lotId: LOT_A, quantityScaled: 1_000n }],
+          previouslyReturned: [{ lotId: LOT_B, quantityScaled: 1n }],
+          returnQuantityScaled: 1n,
+        }),
+      ),
+    ).toBe('unknown-original-lot');
   });
 });
 

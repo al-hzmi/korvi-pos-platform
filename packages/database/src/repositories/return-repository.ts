@@ -1,4 +1,9 @@
-import { ELECTRONIC_SCHEMES, allocateOriginalSaleReturnBasis } from '@korvi/domain';
+import {
+  ELECTRONIC_SCHEMES,
+  allocateOriginalSaleLotReturn,
+  allocateOriginalSaleReturnBasis,
+  newId,
+} from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import {
   DatabaseError,
@@ -649,6 +654,53 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
         });
         const returned = await returnedSoFar(tx, tenant, input.saleId);
 
+        const originalLotRows =
+          wanted.length === 0
+            ? []
+            : await tx.saleLineLotAllocation.findMany({
+                where: { tenantId: tenant, saleLineId: { in: wanted } },
+                orderBy: [{ saleLineId: 'asc' }, { lotId: 'asc' }],
+              });
+        const previousReturnLotRows =
+          wanted.length === 0
+            ? []
+            : await tx.returnLine.findMany({
+                where: {
+                  tenantId: tenant,
+                  saleLineId: { in: wanted },
+                  return: { status: 'finalized' },
+                },
+                select: {
+                  saleLineId: true,
+                  lotAllocations: {
+                    select: { lotId: true, quantityScaled: true },
+                    orderBy: { lotId: 'asc' },
+                  },
+                },
+              });
+
+        const originalLotsByLine = new Map<
+          string,
+          { readonly lotId: string; readonly quantityScaled: bigint }[]
+        >();
+        for (const row of originalLotRows) {
+          const current = originalLotsByLine.get(row.saleLineId) ?? [];
+          current.push({ lotId: row.lotId, quantityScaled: row.quantityScaled });
+          originalLotsByLine.set(row.saleLineId, current);
+        }
+
+        const returnedLotsByLine = new Map<string, Map<string, bigint>>();
+        for (const row of previousReturnLotRows) {
+          const current = returnedLotsByLine.get(row.saleLineId) ?? new Map<string, bigint>();
+          for (const allocation of row.lotAllocations) {
+            current.set(
+              allocation.lotId,
+              (current.get(allocation.lotId) ?? 0n) + allocation.quantityScaled,
+            );
+          }
+          returnedLotsByLine.set(row.saleLineId, current);
+        }
+
         // Pure, and inside the lock. Its refusals roll everything back.
         const plan = input.plan(stateFrom(sale, lines, returned, invoice?.invoiceNumber ?? null));
 
@@ -707,10 +759,31 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               allocation.unknownQuantityScaled,
             ),
           };
+
+          const originalLots = originalLotsByLine.get(line.saleLineId) ?? [];
+          const previousLots = returnedLotsByLine.get(line.saleLineId) ?? new Map<string, bigint>();
+          const lotDirective =
+            originalLots.length === 0
+              ? ({ kind: 'historical-return' } as const)
+              : ({
+                  kind: 'explicit',
+                  allocations: allocateOriginalSaleLotReturn({
+                    original: originalLots,
+                    previouslyReturned: [...previousLots.entries()].map(
+                      ([lotId, quantityScaled]) => ({ lotId, quantityScaled }),
+                    ),
+                    returnQuantityScaled: BigInt(line.inventoryQuantityScaled),
+                  }).map((lot) => ({
+                    lotId: lot.lotId,
+                    quantityScaled: lot.quantityScaled.toString(),
+                  })),
+                } as const);
+
           return {
             id,
             line,
             cost,
+            lotDirective,
             packageSnapshot: {
               code: original.packageCode,
               nameAr: original.packageNameAr,
@@ -818,7 +891,7 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               'A stock reversal was planned without an id to write it under.',
             );
           }
-          await applyMovementWithin(
+          const applied = await applyMovementWithin(
             tx,
             tenant,
             {
@@ -841,7 +914,31 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
               unknownQuantityScaled: cost.unknownQuantityScaled,
               knownValueMinor: cost.knownValueMinor,
             },
+            preparedLine.lotDirective,
           );
+
+          if (applied.lots.length > 0) {
+            const snapshots = applied.lots.map((lot) => {
+              if (lot.quantityScaled <= 0n) {
+                throw new DatabaseError('Return lot allocation must be an incoming quantity.');
+              }
+              return {
+                id: newId(),
+                tenantId: tenant,
+                returnLineId,
+                productId: line.productId,
+                lotId: lot.lotId,
+                quantityScaled: lot.quantityScaled,
+                internalCode: lot.internalCode,
+                provenance: lot.provenance,
+                externalBatchReference: lot.externalBatchReference,
+                dateKind: lot.dateKind,
+                dateValue:
+                  lot.dateValue === null ? null : new Date(`${lot.dateValue}T00:00:00.000Z`),
+              };
+            });
+            await tx.returnLineLotAllocation.createMany({ data: snapshots });
+          }
         }
 
         await tx.refund.create({

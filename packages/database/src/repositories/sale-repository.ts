@@ -1,4 +1,4 @@
-import { ELECTRONIC_SCHEMES, evaluatePromotions } from '@korvi/domain';
+import { ELECTRONIC_SCHEMES, evaluatePromotions, newId } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import {
   DatabaseError,
@@ -1093,6 +1093,31 @@ export async function recordSaleWithin(
       allowNegativeStock,
       saleLine.id,
     );
+
+    if (applied.lots.length > 0) {
+      const lotSnapshots = applied.lots.map((allocation) => {
+        if (allocation.quantityScaled >= 0n) {
+          throw new DatabaseError('Sale lot allocation must be an outgoing quantity.');
+        }
+        return {
+          id: newId(),
+          tenantId: tenant,
+          saleLineId: saleLine.id,
+          productId: movement.productId,
+          lotId: allocation.lotId,
+          quantityScaled: -allocation.quantityScaled,
+          internalCode: allocation.internalCode,
+          provenance: allocation.provenance,
+          externalBatchReference: allocation.externalBatchReference,
+          dateKind: allocation.dateKind,
+          dateValue:
+            allocation.dateValue === null
+              ? null
+              : new Date(`${allocation.dateValue}T00:00:00.000Z`),
+        };
+      });
+      await tx.saleLineLotAllocation.createMany({ data: lotSnapshots });
+    }
 
     // Frozen before commit. A future return reads these four fields from
     // the original sale line and never consults today's branch average.
