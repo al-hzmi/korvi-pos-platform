@@ -265,10 +265,12 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
 
   it('C. refuses a positive lot-controlled movement that supplies no lot provenance', async () => {
     const inventory = createInventoryRepository(prisma);
-    await expect(inventory.applyMovement(scope, movement(A.product, '1000'))).rejects.toMatchObject({
-      name: 'LotPolicyRefusedError',
-      detail: 'incoming-lot-required',
-    } satisfies Partial<LotPolicyRefusedError>);
+    await expect(inventory.applyMovement(scope, movement(A.product, '1000'))).rejects.toMatchObject(
+      {
+        name: 'LotPolicyRefusedError',
+        detail: 'incoming-lot-required',
+      } satisfies Partial<LotPolicyRefusedError>,
+    );
   });
 
   it('D. accepts explicit incoming provenance and returns immutable lot snapshots from the movement primitive', async () => {
@@ -411,10 +413,7 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     expect(bestBeforeRow?.availabilityByBranch[0]?.quantityScaled).toBe('0');
 
     await expect(
-      inventory.applyMovement(
-        scope,
-        movement(A.datedProduct, '-1', '2026-09-29T12:01:00.000Z'),
-      ),
+      inventory.applyMovement(scope, movement(A.datedProduct, '-1', '2026-09-29T12:01:00.000Z')),
     ).rejects.toMatchObject({
       name: 'LotDomainError',
       detail: 'insufficient-eligible-lot',
@@ -433,12 +432,8 @@ describe.skipIf(url === '')('Mastermind V2-4 lot authority, PostgreSQL live', ()
     const second = movement(A.product, '-3000', '2026-09-29T00:03:00.000Z');
 
     const results = await Promise.allSettled([
-      withTenant(prisma, scope.tenantId, (tx) =>
-        applyMovementWithin(tx, A.tenant, first, true),
-      ),
-      withTenant(prisma, scope.tenantId, (tx) =>
-        applyMovementWithin(tx, A.tenant, second, true),
-      ),
+      withTenant(prisma, scope.tenantId, (tx) => applyMovementWithin(tx, A.tenant, first, true)),
+      withTenant(prisma, scope.tenantId, (tx) => applyMovementWithin(tx, A.tenant, second, true)),
     ]);
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
