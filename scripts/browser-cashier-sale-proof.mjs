@@ -1144,13 +1144,15 @@ try {
   const receivedProofLot = lotTruthAfterReceiving.config.lots.find(
     (lot) => lot.externalBatchReference === 'V24-BATCH-001',
   );
-  assert.ok(receivedProofLot !== undefined, 'UI receipt did not create the authoritative received lot.');
+  assert.ok(
+    receivedProofLot !== undefined,
+    'UI receipt did not create the authoritative received lot.',
+  );
   assert.equal(receivedProofLot.provenance, 'received');
   assert.equal(receivedProofLot.dateKind, 'expiry');
   assert.equal(receivedProofLot.dateValue, '2027-12-31');
   assert.equal(
-    receivedProofLot.availabilityByBranch.find((row) => row.branchId === branch.id)
-      ?.quantityScaled,
+    receivedProofLot.availabilityByBranch.find((row) => row.branchId === branch.id)?.quantityScaled,
     '1000',
   );
   record(
