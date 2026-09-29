@@ -32,6 +32,7 @@ import { createMerchantCustomerService } from './customers/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { createNoReceiptExchangeService } from './no-receipt-exchange/service.js';
+import { createMerchantLotAdminService } from './lots/service.js';
 import { createMerchantPromotionAdminService } from './promotions/service.js';
 import { createMerchantRetailAdminService } from './retail-admin/service.js';
 import { createMerchantCategoryMigrationService } from './migration/category-import-service.js';
@@ -59,6 +60,7 @@ import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
 import { registerCustomerRoutes } from './routes/customers.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
+import { registerLotAdminRoutes } from './routes/lots-admin.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerCategoryMigrationRoutes } from './routes/category-migration.js';
 import { registerCustomerMigrationRoutes } from './routes/customer-migration.js';
@@ -86,6 +88,7 @@ import type { OwnerBootstrapService } from './bootstrap/service.js';
 import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantCustomerService } from './customers/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
+import type { MerchantLotAdminService } from './lots/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
 import type { MerchantCategoryMigrationService } from './migration/category-import-service.js';
 import type { MerchantCustomerMigrationService } from './migration/customer-import-service.js';
@@ -137,6 +140,8 @@ export interface ServerDeps {
   readonly catalog?: MerchantProductService;
   /** Merchant stock authority: adjustments, counts and branch transfers. */
   readonly inventory?: MerchantInventoryService;
+  /** V2-4 lot/batch/expiry administration authority, guarded by lot.manage. */
+  readonly lotAdmin?: MerchantLotAdminService;
   /** Purchasing and receiving authority: suppliers, orders and receipts. */
   readonly purchasing?: MerchantPurchasingService;
   /** Merchant promotion/coupon configuration authority, guarded by promotion.manage. */
@@ -409,6 +414,27 @@ function lazyAdminService(config: ApiConfig): MerchantAdminService {
     listRoles: (principal) => resolve().listRoles(principal),
     assignRole: (principal, userId, roleId) => resolve().assignRole(principal, userId, roleId),
     removeRole: (principal, userId, roleId) => resolve().removeRole(principal, userId, roleId),
+  };
+}
+
+function lazyLotAdminService(config: ApiConfig): MerchantLotAdminService {
+  let built: MerchantLotAdminService | null = null;
+
+  const resolve = (): MerchantLotAdminService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantLotAdminService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    read: (principal, productId) => resolve().read(principal, productId),
+    enable: (principal, productId, input) => resolve().enable(principal, productId, input),
+    updatePolicy: (principal, productId, input) =>
+      resolve().updatePolicy(principal, productId, input),
+    updateStatus: (principal, lotId, input) => resolve().updateStatus(principal, lotId, input),
+    reclassify: (principal, input) => resolve().reclassify(principal, input),
   };
 }
 
@@ -913,6 +939,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   });
   registerPurchasingAdminRoutes(app, {
     service: deps.purchasing ?? lazyPurchasingService(config),
+    guards,
+  });
+  registerLotAdminRoutes(app, {
+    service: deps.lotAdmin ?? lazyLotAdminService(config),
     guards,
   });
   registerPromotionAdminRoutes(app, {
