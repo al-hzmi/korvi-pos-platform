@@ -7,10 +7,7 @@ import {
   updateInventoryLotStatus,
   updateProductLotPolicy,
 } from '@korvi/database';
-import {
-  requirePrincipalPermission,
-  tenantId as brandTenantId,
-} from '@korvi/domain';
+import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
 import type {
   EnableLotTrackingRequest,
   LotAdminRefusal,
@@ -57,10 +54,7 @@ export interface LotReclassificationInput {
 }
 
 export interface MerchantLotAdminService {
-  read(
-    principal: AuthenticatedPrincipal,
-    productId: string,
-  ): Promise<ProductLotAdminConfig | null>;
+  read(principal: AuthenticatedPrincipal, productId: string): Promise<ProductLotAdminConfig | null>;
   enable(
     principal: AuthenticatedPrincipal,
     productId: string,

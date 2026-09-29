@@ -85,13 +85,17 @@ export function LotsPanel({
     const rows: InventoryBranch[] = [];
     let cursor: string | undefined;
     do {
-      const page = await api.inventoryBranches({ limit: 100, ...(cursor === undefined ? {} : { cursor }) });
+      const page = await api.inventoryBranches({
+        limit: 100,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
       rows.push(...page.rows);
       cursor = page.nextCursor ?? undefined;
     } while (cursor !== undefined && rows.length < 1000);
     setBranches(rows);
     if (branchId === '') {
-      const preferred = preferredBranchId === null ? null : rows.find((row) => row.id === preferredBranchId);
+      const preferred =
+        preferredBranchId === null ? null : rows.find((row) => row.id === preferredBranchId);
       setBranchId(preferred?.id ?? rows[0]?.id ?? '');
     }
   }, [api, branchId, preferredBranchId]);
@@ -210,15 +214,7 @@ export function LotsPanel({
         if (safeToUnlock) onCommandLockChange?.(false);
       }
     },
-    [
-      branchId,
-      busy,
-      loadBalance,
-      loadConfig,
-      onCommandLockChange,
-      selectedProduct,
-      unresolved,
-    ],
+    [branchId, busy, loadBalance, loadConfig, onCommandLockChange, selectedProduct, unresolved],
   );
 
   const reconcile = async (): Promise<void> => {
@@ -361,10 +357,12 @@ export function LotsPanel({
 
       <CardSurface className="p-5">
         <div className="mb-4">
-          <h2 className="text-base font-semibold text-foreground">إدارة الدفعات وتواريخ الصلاحية</h2>
+          <h2 className="text-base font-semibold text-foreground">
+            إدارة الدفعات وتواريخ الصلاحية
+          </h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            الرصيد الإجمالي يبقى من سجل المخزون الأساسي. هذه الشاشة تدير هوية الدفعات فقط،
-            ولا تنشئ رصيدًا موازيًا أو تكلفة جديدة.
+            الرصيد الإجمالي يبقى من سجل المخزون الأساسي. هذه الشاشة تدير هوية الدفعات فقط، ولا تنشئ
+            رصيدًا موازيًا أو تكلفة جديدة.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -468,8 +466,8 @@ export function LotsPanel({
             </div>
             {config.trackingMode === 'none' ? (
               <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                عند التفعيل، أي رصيد موجود مسبقًا سيُحفظ كـ «رصيد تاريخي غير معروف» لكل فرع.
-                لن ينسب كورفي هذا الرصيد إلى فاتورة أو دفعة لم يثبتها.
+                عند التفعيل، أي رصيد موجود مسبقًا سيُحفظ كـ «رصيد تاريخي غير معروف» لكل فرع. لن ينسب
+                كورفي هذا الرصيد إلى فاتورة أو دفعة لم يثبتها.
               </p>
             ) : null}
           </CardSurface>
@@ -646,7 +644,10 @@ export function LotsPanel({
                 />
               </fieldset>
               <div className="mt-4 flex justify-end">
-                <Button disabled={busy || unresolved || balance === null} onClick={() => void reclassify()}>
+                <Button
+                  disabled={busy || unresolved || balance === null}
+                  onClick={() => void reclassify()}
+                >
                   اعتماد إعادة التصنيف
                 </Button>
               </div>

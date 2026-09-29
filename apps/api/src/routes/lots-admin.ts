@@ -32,10 +32,9 @@ const policyBody = z
     dateRequirement: z.enum(['optional', 'required']).optional(),
   })
   .strict()
-  .refine(
-    (body) => body.selectionPolicy !== undefined || body.dateRequirement !== undefined,
-    { message: 'empty lot policy patch' },
-  );
+  .refine((body) => body.selectionPolicy !== undefined || body.dateRequirement !== undefined, {
+    message: 'empty lot policy patch',
+  });
 
 const statusBody = z
   .object({
@@ -130,7 +129,9 @@ export function registerLotAdminRoutes(
     if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
     const config = await service.read(principal, params.data.productId);
     if (config === null) {
-      return reply.code(404).send({ error: 'product_not_found', message: MESSAGES['product-not-found'] });
+      return reply
+        .code(404)
+        .send({ error: 'product_not_found', message: MESSAGES['product-not-found'] });
     }
     return reply.code(200).send({ config });
   });
@@ -145,11 +146,7 @@ export function registerLotAdminRoutes(
       const body = enableBody.safeParse(request.body);
       if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
       if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
-      return respond(
-        reply,
-        await service.enable(principal, params.data.productId, body.data),
-        201,
-      );
+      return respond(reply, await service.enable(principal, params.data.productId, body.data), 201);
     },
   );
 
