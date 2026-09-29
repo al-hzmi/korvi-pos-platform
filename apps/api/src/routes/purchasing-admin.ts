@@ -147,6 +147,22 @@ const purchaseOrderQuery = z
   })
   .strict();
 
+const LOT_DATE = z
+  .string()
+  .regex(/^\\d{4}-\\d{2}-\\d{2}$/, 'must be YYYY-MM-DD');
+
+const receiptLotBody = z
+  .object({
+    acceptedQuantityScaled: UNSIGNED_SCALED,
+    externalBatchReference: REFERENCE.nullable(),
+    dateKind: z.enum(['expiry', 'best-before']).nullable(),
+    dateValue: LOT_DATE.nullable(),
+  })
+  .strict()
+  .refine((lot) => (lot.dateKind === null) === (lot.dateValue === null), {
+    message: 'dateKind and dateValue must be paired',
+  });
+
 const receiptBody = z
   .object({
     operationId: OPERATION_ID,
@@ -159,6 +175,7 @@ const receiptBody = z
             purchaseOrderLineId: UUID,
             acceptedQuantityScaled: UNSIGNED_SCALED,
             inventoryValueMinor: NON_NEGATIVE_MINOR.optional(),
+            lots: z.array(receiptLotBody).max(MAX_PURCHASING_LINES).optional(),
           })
           .strict(),
       )
@@ -314,6 +331,7 @@ const MESSAGES: Readonly<Record<PurchasingFailureReason, string>> = {
   'invalid-name': 'اسم المورد غير صالح.',
   'invalid-reference': 'الرقم المرجعي غير صالح.',
   'invalid-money': 'قيمة المخزون غير صالحة.',
+  'invalid-lot': 'بيانات الدفعة أو تاريخ الصلاحية غير صالحة.',
   'unknown-supplier': 'المورد غير موجود.',
   'inactive-supplier': 'المورد غير مفعل.',
   'unknown-branch': 'الفرع غير موجود.',
@@ -328,6 +346,14 @@ const MESSAGES: Readonly<Record<PurchasingFailureReason, string>> = {
   'purchase-order-closed': 'تم استلام أمر الشراء بالكامل.',
   'over-receipt': 'الكمية المستلمة تتجاوز الكمية المتبقية في أمر الشراء.',
   'idempotency-conflict': 'رقم العملية مستخدم لطلب مختلف.',
+  'incoming-lot-required': 'هذا الصنف يتطلب تحديد الدفعة المستلمة.',
+  'unknown-lot': 'الدفعة غير موجودة.',
+  'lot-product-mismatch': 'بيانات الدفعة لا تخص هذا الصنف.',
+  'lot-unavailable': 'الكمية المطلوبة غير متاحة في الدفعة.',
+  'invalid-business-time-zone': 'إعداد المنطقة الزمنية للمنشأة غير صالح.',
+  'lot-date-required': 'تاريخ الصلاحية أو الأفضل قبل مطلوب لهذا الصنف.',
+  'lot-identity-conflict': 'رقم الدفعة موجود مسبقًا ببيانات تاريخ مختلفة.',
+  'invalid-lot-fact': 'بيانات الدفعة غير صالحة.',
 };
 
 /**
@@ -350,6 +376,7 @@ const STATUS: Readonly<Record<PurchasingFailureReason, number>> = {
   'invalid-name': 422,
   'invalid-reference': 422,
   'invalid-money': 422,
+  'invalid-lot': 422,
   'unknown-supplier': 404,
   'inactive-supplier': 409,
   'unknown-branch': 404,
@@ -364,6 +391,14 @@ const STATUS: Readonly<Record<PurchasingFailureReason, number>> = {
   'purchase-order-closed': 409,
   'over-receipt': 409,
   'idempotency-conflict': 409,
+  'incoming-lot-required': 422,
+  'unknown-lot': 404,
+  'lot-product-mismatch': 422,
+  'lot-unavailable': 409,
+  'invalid-business-time-zone': 409,
+  'lot-date-required': 422,
+  'lot-identity-conflict': 409,
+  'invalid-lot-fact': 422,
 };
 
 function principalOf(request: FastifyRequest): AuthenticatedPrincipal | undefined {

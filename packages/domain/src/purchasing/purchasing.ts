@@ -7,6 +7,7 @@ import {
   isWholeUnitScaled,
   parseSignedScaled,
 } from '../inventory/stock.js';
+import { parseCalendarDate } from '../inventory/lot.js';
 import type { StockProductType } from '../inventory/stock.js';
 
 /**
@@ -57,7 +58,8 @@ export type PurchasingRequestRefusal =
   | 'too-many-lines'
   | 'invalid-name'
   | 'invalid-reference'
-  | 'invalid-money';
+  | 'invalid-money'
+  | 'invalid-lot';
 
 /** The same ceiling stock operations use: one request, one bounded row set. */
 export const MAX_PURCHASING_LINES = MAX_STOCK_LINES;
@@ -411,6 +413,23 @@ export function derivePurchaseOrderStatus(
 // Receipt
 // ---------------------------------------------------------------------------
 
+export interface PurchaseReceiptLotRequest {
+  /**
+   * Commercial quantity accepted into this physical lot/batch. For a package
+   * PO this is cartons/packages, not base Product quantity; receiving converts
+   * it using the locked PO package snapshot before stock authority.
+   */
+  readonly acceptedQuantityScaled: string;
+  /**
+   * Supplier/manufacturer batch identity. Null means explicitly unknown and is
+   * never merged with another unknown batch by the authority.
+   */
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  /** Calendar date only (YYYY-MM-DD), paired exactly with dateKind. */
+  readonly dateValue: string | null;
+}
+
 export interface PurchaseReceiptLineRequest {
   /**
    * The PO line being filled, not the product.
@@ -429,6 +448,8 @@ export interface PurchaseReceiptLineRequest {
    * or retail selling price. Omission means explicit unknown cost.
    */
   readonly inventoryValueMinor?: string | undefined;
+  /** Present only when the receiver is stating physical lot provenance. */
+  readonly lots?: readonly PurchaseReceiptLotRequest[] | undefined;
 }
 
 export interface PurchaseReceiptRequest {
@@ -439,10 +460,18 @@ export interface PurchaseReceiptRequest {
   readonly lines: readonly PurchaseReceiptLineRequest[];
 }
 
+export interface ValidatedPurchaseReceiptLot {
+  readonly acceptedQuantityScaled: bigint;
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  readonly dateValue: string | null;
+}
+
 export interface ValidatedPurchaseReceiptLine {
   readonly purchaseOrderLineId: string;
   readonly acceptedQuantityScaled: bigint;
   readonly inventoryValueMinor: bigint | null;
+  readonly lots: readonly ValidatedPurchaseReceiptLot[];
 }
 
 export interface ValidatedPurchaseReceipt {
@@ -477,19 +506,82 @@ export function validatePurchaseReceiptRequest(
       purchaseOrderLineId: lineIds[index] ?? '',
     })),
     (line) => line.purchaseOrderLineId,
-  ).map((line) => ({
-    purchaseOrderLineId: line.purchaseOrderLineId,
-    acceptedQuantityScaled: parsePositiveScaled(
+  ).map((line) => {
+    const acceptedQuantityScaled = parsePositiveScaled(
       line.acceptedQuantityScaled,
       'acceptedQuantityScaled',
-    ),
-    inventoryValueMinor:
-      line.inventoryValueMinor === undefined
-        ? null
-        : inPurchasingVocabulary(() =>
-            parseNonNegativeMinor(line.inventoryValueMinor ?? '', 'inventoryValueMinor'),
-          ),
-  }));
+    );
+    const lots = (line.lots ?? []).map((lot): ValidatedPurchaseReceiptLot => {
+      const quantity = parsePositiveScaled(
+        lot.acceptedQuantityScaled,
+        'lot.acceptedQuantityScaled',
+      );
+      const batch =
+        lot.externalBatchReference === null
+          ? null
+          : normalizedReference(lot.externalBatchReference);
+      if ((lot.dateKind === null) !== (lot.dateValue === null)) {
+        throw new PurchasingRequestError(
+          'invalid-lot',
+          'Lot dateKind and dateValue must both be present or both be null.',
+        );
+      }
+      if (lot.dateValue !== null) {
+        try {
+          parseCalendarDate(lot.dateValue, 'lot.dateValue');
+        } catch {
+          throw new PurchasingRequestError('invalid-lot', 'Lot dateValue must be a valid date.');
+        }
+      }
+      return {
+        acceptedQuantityScaled: quantity,
+        externalBatchReference: batch,
+        dateKind: lot.dateKind,
+        dateValue: lot.dateValue,
+      };
+    });
+
+    if (lots.length > MAX_PURCHASING_LINES) {
+      throw new PurchasingRequestError('too-many-lines', 'Too many lot rows in one receipt line.');
+    }
+    if (
+      lots.length > 0 &&
+      lots.reduce((sum, lot) => sum + lot.acceptedQuantityScaled, 0n) !==
+        acceptedQuantityScaled
+    ) {
+      throw new PurchasingRequestError(
+        'invalid-lot',
+        'Receipt lot commercial quantities must sum exactly to the accepted commercial quantity.',
+      );
+    }
+    const knownBatches = lots
+      .map((lot) => lot.externalBatchReference)
+      .filter((batch): batch is string => batch !== null);
+    if (new Set(knownBatches).size !== knownBatches.length) {
+      throw new PurchasingRequestError(
+        'invalid-lot',
+        'The same external batch may appear only once per receipt line.',
+      );
+    }
+    if (lots.filter((lot) => lot.externalBatchReference === null).length > 1) {
+      throw new PurchasingRequestError(
+        'invalid-lot',
+        'At most one explicitly unknown batch may appear per receipt line.',
+      );
+    }
+
+    return {
+      purchaseOrderLineId: line.purchaseOrderLineId,
+      acceptedQuantityScaled,
+      inventoryValueMinor:
+        line.inventoryValueMinor === undefined
+          ? null
+          : inPurchasingVocabulary(() =>
+              parseNonNegativeMinor(line.inventoryValueMinor ?? '', 'inventoryValueMinor'),
+            ),
+      lots,
+    };
+  });
 
   return { purchaseOrderId, reference, lines };
 }
@@ -576,6 +668,42 @@ export function canonicalPurchaseOrderForm(request: PurchaseOrderRequest): reado
 export function canonicalPurchaseReceiptForm(request: PurchaseReceiptRequest): readonly unknown[] {
   const validated = validatePurchaseReceiptRequest(request);
   const carriesInventoryValue = validated.lines.some((line) => line.inventoryValueMinor !== null);
+  const carriesLots = validated.lines.some((line) => line.lots.length > 0);
+
+  if (carriesLots) {
+    return [
+      'purchasing-receipt-create.v3',
+      validated.purchaseOrderId,
+      validated.reference,
+      validated.lines.map((line) => [
+        line.purchaseOrderLineId,
+        line.acceptedQuantityScaled.toString(),
+        line.inventoryValueMinor === null ? null : line.inventoryValueMinor.toString(),
+        [...line.lots]
+          .sort((left, right) =>
+            JSON.stringify([
+              left.externalBatchReference,
+              left.dateKind,
+              left.dateValue,
+              left.acceptedQuantityScaled.toString(),
+            ]).localeCompare(
+              JSON.stringify([
+                right.externalBatchReference,
+                right.dateKind,
+                right.dateValue,
+                right.acceptedQuantityScaled.toString(),
+              ]),
+            ),
+          )
+          .map((lot) => [
+            lot.acceptedQuantityScaled.toString(),
+            lot.externalBatchReference,
+            lot.dateKind,
+            lot.dateValue,
+          ]),
+      ]),
+    ];
+  }
 
   // Compatibility is an idempotency invariant, not a convenience. A 5B
   // receipt with no cost evidence must fingerprint byte-for-byte as it did

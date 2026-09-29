@@ -2,6 +2,8 @@ import {
   assertLotEntriesReconcile,
   canonicalUuid,
   lotDateState,
+  newId,
+  parseCalendarDate,
   selectLotAllocations,
 } from '@korvi/domain';
 import { LotPolicyRefusedError } from '../errors.js';
@@ -14,10 +16,23 @@ export interface ExplicitMovementLotAllocation {
   readonly quantityScaled: string;
 }
 
-export interface MovementLotDirective {
-  readonly kind: 'explicit';
-  readonly allocations: readonly ExplicitMovementLotAllocation[];
+export interface ReceivedMovementLotFact {
+  /** Positive base Product quantity after package conversion. */
+  readonly quantityScaled: string;
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  readonly dateValue: string | null;
 }
+
+export type MovementLotDirective =
+  | {
+      readonly kind: 'explicit';
+      readonly allocations: readonly ExplicitMovementLotAllocation[];
+    }
+  | {
+      readonly kind: 'received';
+      readonly lots: readonly ReceivedMovementLotFact[];
+    };
 
 export interface PreparedMovementLotAllocation {
   readonly lotId: string;
@@ -144,6 +159,110 @@ function snapshot(row: LotRow, quantityScaled: bigint): PreparedMovementLotAlloc
   };
 }
 
+function cleanBatch(value: string | null): string | null {
+  if (value === null) return null;
+  const cleaned = value.trim();
+  if (cleaned.length === 0 || cleaned.length > 120) {
+    throw new LotPolicyRefusedError('invalid-lot-fact');
+  }
+  return cleaned;
+}
+
+function receivedDate(
+  kind: 'expiry' | 'best-before' | null,
+  value: string | null,
+  required: boolean,
+): { readonly kind: 'expiry' | 'best-before' | null; readonly value: string | null } {
+  if ((kind === null) !== (value === null)) {
+    throw new LotPolicyRefusedError('invalid-lot-fact');
+  }
+  if (required && value === null) {
+    throw new LotPolicyRefusedError('lot-date-required');
+  }
+  if (value !== null) {
+    try {
+      parseCalendarDate(value, 'dateValue');
+    } catch {
+      throw new LotPolicyRefusedError('invalid-lot-fact');
+    }
+  }
+  return { kind, value };
+}
+
+function lotCode(id: string): string {
+  return `LOT-${id.replaceAll('-', '').slice(-16).toUpperCase()}`;
+}
+
+async function resolveReceivedLotWithin(
+  tx: TransactionClient,
+  tenant: string,
+  productId: string,
+  fact: ReceivedMovementLotFact,
+  occurredAt: Date,
+  dateRequired: boolean,
+): Promise<LotRow> {
+  let quantity: bigint;
+  try {
+    quantity = BigInt(fact.quantityScaled);
+  } catch {
+    throw new LotPolicyRefusedError('invalid-lot-fact');
+  }
+  if (quantity <= 0n) throw new LotPolicyRefusedError('invalid-lot-fact');
+
+  const externalBatchReference = cleanBatch(fact.externalBatchReference);
+  const received = receivedDate(fact.dateKind, fact.dateValue, dateRequired);
+  const dateValue =
+    received.value === null ? null : new Date(`${received.value}T00:00:00.000Z`);
+
+  if (externalBatchReference === null) {
+    const id = newId();
+    return tx.inventoryLot.create({
+      data: {
+        id,
+        tenantId: tenant,
+        productId,
+        internalCode: lotCode(id),
+        provenance: 'received',
+        externalBatchReference: null,
+        dateKind: received.kind,
+        dateValue,
+        status: 'active',
+        revision: 1n,
+        firstObservedAt: occurredAt,
+        updatedAt: occurredAt,
+      },
+    });
+  }
+
+  const candidateId = newId();
+  await tx.$executeRawUnsafe(
+    'INSERT INTO "inventory_lots" ("id","tenantId","productId","internalCode","provenance","externalBatchReference","dateKind","dateValue","status","revision","firstObservedAt","createdAt","updatedAt") VALUES ($1::uuid,$2::uuid,$3::uuid,$4,\'received\',$5,$6,$7::date,\'active\',1,$8,$8,$8) ON CONFLICT ("tenantId","productId","externalBatchReference") DO NOTHING',
+    candidateId,
+    tenant,
+    productId,
+    lotCode(candidateId),
+    externalBatchReference,
+    received.kind,
+    received.value,
+    occurredAt,
+  );
+
+  const row = await tx.inventoryLot.findFirst({
+    where: { tenantId: tenant, productId, externalBatchReference },
+  });
+  if (row === null) throw new LotPolicyRefusedError('lot-identity-conflict');
+
+  const existingDate = dateOnly(row.dateValue);
+  if (
+    row.provenance !== 'received' ||
+    row.dateKind !== received.kind ||
+    existingDate !== received.value
+  ) {
+    throw new LotPolicyRefusedError('lot-identity-conflict');
+  }
+  return row;
+}
+
 /**
  * Called only after the canonical InventoryBalance and cost rows are locked.
  * It then locks lot identities in deterministic id order and derives the
@@ -157,7 +276,12 @@ export async function prepareMovementLotsWithin(
 ): Promise<readonly PreparedMovementLotAllocation[]> {
   const policy = await trackingPolicy(tx, tenant, movement.productId);
   if (policy === null) {
-    if (directive !== undefined && directive.allocations.length > 0) {
+    if (
+      directive !== undefined &&
+      (directive.kind === 'explicit'
+        ? directive.allocations.length > 0
+        : directive.lots.length > 0)
+    ) {
       throw new LotPolicyRefusedError('lot-product-mismatch');
     }
     return [];
@@ -166,7 +290,40 @@ export async function prepareMovementLotsWithin(
   const movementQuantity = BigInt(movement.quantityScaled);
   await lockAllProductLots(tx, tenant, movement.productId);
 
-  if (directive !== undefined) {
+  if (directive?.kind === 'received') {
+    if (movementQuantity <= 0n || directive.lots.length === 0) {
+      throw new LotPolicyRefusedError('invalid-lot-fact');
+    }
+    const occurredAt = new Date(movement.occurredAt);
+    const resolved: PreparedMovementLotAllocation[] = [];
+    for (const fact of directive.lots) {
+      const row = await resolveReceivedLotWithin(
+        tx,
+        tenant,
+        movement.productId,
+        fact,
+        occurredAt,
+        policy.dateRequirement === 'required',
+      );
+      let quantity: bigint;
+      try {
+        quantity = BigInt(fact.quantityScaled);
+      } catch {
+        throw new LotPolicyRefusedError('invalid-lot-fact');
+      }
+      resolved.push(snapshot(row, quantity));
+    }
+    assertLotEntriesReconcile(
+      movementQuantity,
+      resolved.map((allocation) => ({
+        lotId: allocation.lotId,
+        quantityScaled: allocation.quantityScaled,
+      })),
+    );
+    return resolved;
+  }
+
+  if (directive?.kind === 'explicit') {
     const requested = directive.allocations.map((allocation) => ({
       lotId: canonicalUuid(allocation.lotId, 'lotId'),
       quantityScaled: BigInt(allocation.quantityScaled),

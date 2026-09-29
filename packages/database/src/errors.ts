@@ -425,7 +425,10 @@ export type LotPolicyRefusal =
   | 'unknown-lot'
   | 'lot-product-mismatch'
   | 'lot-unavailable'
-  | 'invalid-business-time-zone';
+  | 'invalid-business-time-zone'
+  | 'lot-date-required'
+  | 'lot-identity-conflict'
+  | 'invalid-lot-fact';
 
 export class LotPolicyRefusedError extends DatabaseError {
   public override readonly name = 'LotPolicyRefusedError';

@@ -249,6 +249,7 @@ CREATE TABLE "purchase_receipt_lot_allocations" (
   "purchaseReceiptLineId" UUID NOT NULL,
   "productId" UUID NOT NULL,
   "lotId" UUID NOT NULL,
+  "commercialQuantityScaled" BIGINT NOT NULL,
   "quantityScaled" BIGINT NOT NULL,
   "internalCode" TEXT NOT NULL,
   "provenance" TEXT NOT NULL,
@@ -264,7 +265,8 @@ CREATE TABLE "purchase_receipt_lot_allocations" (
     FOREIGN KEY ("tenantId","productId") REFERENCES "products"("tenantId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
   CONSTRAINT "purchase_receipt_lot_allocations_lot_fkey"
     FOREIGN KEY ("tenantId","productId","lotId") REFERENCES "inventory_lots"("tenantId","productId","id") ON DELETE NO ACTION ON UPDATE CASCADE,
-  CONSTRAINT "purchase_receipt_lot_allocations_quantity_positive" CHECK ("quantityScaled" > 0),
+  CONSTRAINT "purchase_receipt_lot_allocations_quantity_positive"
+    CHECK ("commercialQuantityScaled" > 0 AND "quantityScaled" > 0),
   CONSTRAINT "purchase_receipt_lot_allocations_date_shape"
     CHECK (
       ("dateKind" IS NULL AND "dateValue" IS NULL)

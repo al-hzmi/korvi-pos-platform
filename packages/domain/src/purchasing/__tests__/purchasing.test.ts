@@ -351,6 +351,127 @@ describe('canonical request forms', () => {
     ]);
   });
 
+  it('uses v3 only when lot provenance is present and keeps lot row order non-material', () => {
+    const lots = [
+      {
+        acceptedQuantityScaled: '10000',
+        externalBatchReference: 'BATCH-A',
+        dateKind: 'expiry' as const,
+        dateValue: '2027-01-31',
+      },
+      {
+        acceptedQuantityScaled: '20000',
+        externalBatchReference: 'BATCH-B',
+        dateKind: null,
+        dateValue: null,
+      },
+    ];
+    const forward = canonicalPurchaseReceiptForm(
+      receipt({
+        lines: [
+          {
+            purchaseOrderLineId: LINE_A,
+            acceptedQuantityScaled: '30000',
+            lots,
+          },
+        ],
+      }),
+    );
+    const reversed = canonicalPurchaseReceiptForm(
+      receipt({
+        lines: [
+          {
+            purchaseOrderLineId: LINE_A,
+            acceptedQuantityScaled: '30000',
+            lots: [...lots].reverse(),
+          },
+        ],
+      }),
+    );
+
+    expect(forward[0]).toBe('purchasing-receipt-create.v3');
+    expect(JSON.stringify(forward)).toBe(JSON.stringify(reversed));
+  });
+
+  it('requires lot commercial quantities to reconcile exactly to the accepted receipt quantity', () => {
+    expect(
+      refusalOf(() =>
+        validatePurchaseReceiptRequest(
+          receipt({
+            lines: [
+              {
+                purchaseOrderLineId: LINE_A,
+                acceptedQuantityScaled: '30000',
+                lots: [
+                  {
+                    acceptedQuantityScaled: '29000',
+                    externalBatchReference: 'BATCH-A',
+                    dateKind: null,
+                    dateValue: null,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('invalid-lot');
+  });
+
+  it('keeps date identity paired and refuses duplicate external batches in one receipt line', () => {
+    expect(
+      refusalOf(() =>
+        validatePurchaseReceiptRequest(
+          receipt({
+            lines: [
+              {
+                purchaseOrderLineId: LINE_A,
+                acceptedQuantityScaled: '30000',
+                lots: [
+                  {
+                    acceptedQuantityScaled: '30000',
+                    externalBatchReference: 'BATCH-A',
+                    dateKind: 'expiry',
+                    dateValue: null,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('invalid-lot');
+
+    expect(
+      refusalOf(() =>
+        validatePurchaseReceiptRequest(
+          receipt({
+            lines: [
+              {
+                purchaseOrderLineId: LINE_A,
+                acceptedQuantityScaled: '30000',
+                lots: [
+                  {
+                    acceptedQuantityScaled: '10000',
+                    externalBatchReference: 'BATCH-A',
+                    dateKind: null,
+                    dateValue: null,
+                  },
+                  {
+                    acceptedQuantityScaled: '20000',
+                    externalBatchReference: 'BATCH-A',
+                    dateKind: null,
+                    dateValue: null,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toBe('invalid-lot');
+  });
+
   it('uses v2 only for cost-bearing receipts and binds exact value into intent', () => {
     const valued = canonicalPurchaseReceiptForm(
       receipt({

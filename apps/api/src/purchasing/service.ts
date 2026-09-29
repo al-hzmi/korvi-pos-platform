@@ -6,6 +6,7 @@ import {
   tenantId as brandTenantId,
 } from '@korvi/domain';
 import {
+  LotPolicyRefusedError,
   PurchasingRefusedError,
   createPurchaseOrder,
   createSupplier,
@@ -43,6 +44,7 @@ import type {
   PurchaseReceiptResult,
   PurchaseReceiptSummary,
   PurchasingProductPage,
+  LotPolicyRefusal,
   PurchasingRefusal,
   SupplierPage,
   SupplierRecord,
@@ -60,7 +62,10 @@ import type {
  * (ADR-0024 §4).
  */
 
-export type PurchasingFailureReason = PurchasingRequestRefusal | PurchasingRefusal;
+export type PurchasingFailureReason =
+  | PurchasingRequestRefusal
+  | PurchasingRefusal
+  | LotPolicyRefusal;
 
 export type PurchasingResult<T> =
   | { readonly outcome: 'success'; readonly value: T }
@@ -157,6 +162,9 @@ async function attempt<T>(work: () => Promise<T>): Promise<PurchasingResult<T>> 
     }
     if (error instanceof PurchasingRefusedError) {
       return { outcome: 'failure', reason: error.detail, subjectId: error.subjectId };
+    }
+    if (error instanceof LotPolicyRefusedError) {
+      return { outcome: 'failure', reason: error.detail, subjectId: null };
     }
     throw error;
   }

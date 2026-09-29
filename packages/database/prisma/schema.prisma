@@ -1225,6 +1225,9 @@ model PurchaseReceiptLotAllocation {
   purchaseReceiptLineId String @db.Uuid
   productId             String @db.Uuid
   lotId                 String @db.Uuid
+  /// Commercial receipt quantity (cartons/packages/base units as ordered).
+  commercialQuantityScaled BigInt
+  /// Canonical base Product inventory quantity allocated to the lot.
   quantityScaled        BigInt
 
   internalCode           String

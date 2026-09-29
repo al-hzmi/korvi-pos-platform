@@ -101,6 +101,17 @@ export interface ReceivingActor {
   readonly userId: string;
 }
 
+export interface PurchaseReceiptLotResult {
+  readonly lotId: string;
+  readonly acceptedCommercialQuantityScaled: string;
+  readonly acceptedQuantityScaled: string;
+  readonly internalCode: string;
+  readonly provenance: string;
+  readonly externalBatchReference: string | null;
+  readonly dateKind: 'expiry' | 'best-before' | null;
+  readonly dateValue: string | null;
+}
+
 export interface PurchaseReceiptLineResult {
   readonly id: string;
   readonly purchaseOrderLineId: string;
@@ -119,6 +130,7 @@ export interface PurchaseReceiptLineResult {
   readonly beforeQuantityScaled: string;
   readonly afterQuantityScaled: string;
   readonly resultRevision: string;
+  readonly lots: readonly PurchaseReceiptLotResult[];
 }
 
 export interface PurchaseReceiptResult {
@@ -292,6 +304,24 @@ function receiptFromSnapshot(value: unknown): PurchaseReceiptResult {
       beforeQuantityScaled: snapshotString(line, 'beforeQuantityScaled'),
       afterQuantityScaled: snapshotString(line, 'afterQuantityScaled'),
       resultRevision: snapshotString(line, 'resultRevision'),
+      lots: Object.hasOwn(line, 'lots')
+        ? snapshotRows(line, 'lots').map((lot) => ({
+            lotId: snapshotString(lot, 'lotId'),
+            acceptedCommercialQuantityScaled: snapshotString(
+              lot,
+              'acceptedCommercialQuantityScaled',
+            ),
+            acceptedQuantityScaled: snapshotString(lot, 'acceptedQuantityScaled'),
+            internalCode: snapshotString(lot, 'internalCode'),
+            provenance: snapshotString(lot, 'provenance'),
+            externalBatchReference: snapshotNullableString(lot, 'externalBatchReference'),
+            dateKind: snapshotNullableString(lot, 'dateKind') as
+              | 'expiry'
+              | 'best-before'
+              | null,
+            dateValue: snapshotNullableString(lot, 'dateValue'),
+          }))
+        : [],
     })),
   };
 }
@@ -383,10 +413,34 @@ export async function recordPurchaseReceipt(
           });
         }
 
+        const lots = line.lots.map((lot) => {
+          const acceptedLotInventory =
+            held.packageId === null
+              ? lot.acceptedQuantityScaled
+              : packageInventoryQuantityScaled({
+                  commercialQuantityScaled: lot.acceptedQuantityScaled,
+                  packageBaseQuantityScaled: held.packageBaseQuantityScaled ?? 0n,
+                });
+          return {
+            acceptedCommercial: lot.acceptedQuantityScaled,
+            acceptedInventory: acceptedLotInventory,
+            externalBatchReference: lot.externalBatchReference,
+            dateKind: lot.dateKind,
+            dateValue: lot.dateValue,
+          };
+        });
+        if (
+          lots.length > 0 &&
+          lots.reduce((sum, lot) => sum + lot.acceptedInventory, 0n) !== acceptedInventory
+        ) {
+          throw new Error('Receipt lot base quantities do not reconcile after package conversion.');
+        }
+
         return {
           acceptedCommercial,
           acceptedInventory,
           inventoryValueMinor: line.inventoryValueMinor,
+          lots,
           line: held,
         };
       });
@@ -515,6 +569,17 @@ export async function recordPurchaseReceipt(
           true,
           receiptLineId,
           incomingCostBasis,
+          entry.lots.length === 0
+            ? undefined
+            : {
+                kind: 'received',
+                lots: entry.lots.map((lot) => ({
+                  quantityScaled: lot.acceptedInventory.toString(),
+                  externalBatchReference: lot.externalBatchReference,
+                  dateKind: lot.dateKind,
+                  dateValue: lot.dateValue,
+                })),
+              },
         );
 
         await tx.purchaseReceiptLine.create({
@@ -544,6 +609,50 @@ export async function recordPurchaseReceipt(
           },
         });
 
+        if (applied.lots.length > 0) {
+          const commercialByIdentity = new Map(
+            entry.lots.map((lot) => [
+              JSON.stringify([
+                lot.externalBatchReference,
+                lot.dateKind,
+                lot.dateValue,
+                lot.acceptedInventory.toString(),
+              ]),
+              lot.acceptedCommercial,
+            ]),
+          );
+          await tx.purchaseReceiptLotAllocation.createMany({
+            data: applied.lots.map((lot) => {
+              const commercial =
+                commercialByIdentity.get(
+                  JSON.stringify([
+                    lot.externalBatchReference,
+                    lot.dateKind,
+                    lot.dateValue,
+                    lot.quantityScaled.toString(),
+                  ]),
+                ) ?? lot.quantityScaled;
+              return {
+                id: newId(),
+                tenantId: tenant,
+                purchaseReceiptLineId: receiptLineId,
+                productId: entry.line.productId,
+                lotId: lot.lotId,
+                commercialQuantityScaled: commercial,
+                quantityScaled: lot.quantityScaled,
+                internalCode: lot.internalCode,
+                provenance: lot.provenance,
+                externalBatchReference: lot.externalBatchReference,
+                dateKind: lot.dateKind,
+                dateValue:
+                  lot.dateValue === null
+                    ? null
+                    : new Date(`${lot.dateValue}T00:00:00.000Z`),
+              };
+            }),
+          });
+        }
+
         results.push({
           id: receiptLineId,
           purchaseOrderLineId: entry.line.id,
@@ -563,6 +672,26 @@ export async function recordPurchaseReceipt(
           beforeQuantityScaled: balance.quantityScaled.toString(),
           afterQuantityScaled: applied.quantityScaled.toString(),
           resultRevision: applied.revision.toString(),
+          lots: applied.lots.map((lot) => {
+            const source = entry.lots.find(
+              (candidate) =>
+                candidate.externalBatchReference === lot.externalBatchReference &&
+                candidate.dateKind === lot.dateKind &&
+                candidate.dateValue === lot.dateValue &&
+                candidate.acceptedInventory === lot.quantityScaled,
+            );
+            return {
+              lotId: lot.lotId,
+              acceptedCommercialQuantityScaled:
+                source?.acceptedCommercial.toString() ?? lot.quantityScaled.toString(),
+              acceptedQuantityScaled: lot.quantityScaled.toString(),
+              internalCode: lot.internalCode,
+              provenance: lot.provenance,
+              externalBatchReference: lot.externalBatchReference,
+              dateKind: lot.dateKind,
+              dateValue: lot.dateValue,
+            };
+          }),
         });
       }
 
@@ -694,6 +823,7 @@ export async function listPurchaseReceipts(
 
     const lines = await tx.purchaseReceiptLine.findMany({
       where: { tenantId, purchaseReceiptId: { in: headers.map((header) => header.id) } },
+      include: { lotAllocations: { orderBy: { lotId: 'asc' } } },
       orderBy: [{ purchaseReceiptId: 'asc' }, { purchaseOrderLineId: 'asc' }],
     });
 
@@ -722,6 +852,16 @@ export async function listPurchaseReceipts(
         beforeQuantityScaled: line.beforeQuantityScaled.toString(),
         afterQuantityScaled: line.afterQuantityScaled.toString(),
         resultRevision: line.resultRevision.toString(),
+        lots: line.lotAllocations.map((lot) => ({
+          lotId: lot.lotId,
+          acceptedCommercialQuantityScaled: lot.commercialQuantityScaled.toString(),
+          acceptedQuantityScaled: lot.quantityScaled.toString(),
+          internalCode: lot.internalCode,
+          provenance: lot.provenance,
+          externalBatchReference: lot.externalBatchReference,
+          dateKind: lot.dateKind as 'expiry' | 'best-before' | null,
+          dateValue: lot.dateValue?.toISOString().slice(0, 10) ?? null,
+        })),
       });
       byReceipt.set(line.purchaseReceiptId, bucket);
     }
