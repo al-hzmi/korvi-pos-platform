@@ -650,6 +650,53 @@ describe('identity, quantities and refusals across the wire', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('accepts a canonical lot calendar date across the HTTP boundary and rejects malformed dates', async () => {
+    const server = await build(ROLE_PERMISSIONS.owner);
+    const cookie = await cookieFor(server);
+    const lotBody = {
+      ...RECEIPT_BODY,
+      operationId: 'op-receipt-lot-date',
+      lines: [
+        {
+          purchaseOrderLineId: ORDER_LINE,
+          acceptedQuantityScaled: '1000',
+          lots: [
+            {
+              acceptedQuantityScaled: '1000',
+              externalBatchReference: 'BATCH-2027',
+              dateKind: 'expiry',
+              dateValue: '2027-12-31',
+            },
+          ],
+        },
+      ],
+    };
+
+    const accepted = await send('POST', '/v1/admin/purchasing/receipts', cookie, lotBody);
+    expect(accepted.statusCode).toBe(201);
+    const request = seen.at(0)?.request as PurchaseReceiptRequest;
+    expect(request.lines[0]?.lots?.[0]).toEqual({
+      acceptedQuantityScaled: '1000',
+      externalBatchReference: 'BATCH-2027',
+      dateKind: 'expiry',
+      dateValue: '2027-12-31',
+    });
+
+    const malformed = await send('POST', '/v1/admin/purchasing/receipts', cookie, {
+      ...lotBody,
+      operationId: 'op-receipt-lot-date-malformed',
+      lines: [
+        {
+          ...lotBody.lines[0],
+          lots: [{ ...lotBody.lines[0].lots[0], dateValue: '2027/12/31' }],
+        },
+      ],
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json()).toEqual({ error: 'invalid_body' });
+    expect(seen).toHaveLength(1);
+  });
+
   it('refuses non-canonical or out-of-range inventory value before authority execution', async () => {
     const server = await build(ROLE_PERMISSIONS.owner);
     const cookie = await cookieFor(server);
@@ -747,6 +794,8 @@ describe('identity, quantities and refusals across the wire', () => {
     expect(Object.keys(row ?? {}).sort()).toEqual([
       'id',
       'isActive',
+      'lotDateRequirement',
+      'lotTrackingRequired',
       'nameAr',
       'nameEn',
       'packages',
