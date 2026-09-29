@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { canQueueOfflineRetailBaseSale, cartReducer, cartToRequestLines, previewCart } from '../cart';
+import {
+  canQueueOfflineRetailBaseSale,
+  cartReducer,
+  cartToRequestLines,
+  previewCart,
+} from '../cart';
 import type { CartLine } from '../cart';
 import type { ProductSummary } from '../api-types';
 
@@ -95,9 +100,7 @@ describe('the cart', () => {
 
   it('fails closed for lot-controlled products before a new offline sale can be queued', () => {
     const ordinary = build([{ type: 'add', product: MILK }]);
-    const lotControlled = build([
-      { type: 'add', product: { ...MILK, lotTrackingRequired: true } },
-    ]);
+    const lotControlled = build([{ type: 'add', product: { ...MILK, lotTrackingRequired: true } }]);
 
     expect(canQueueOfflineRetailBaseSale(ordinary, 'retail')).toBe(true);
     expect(canQueueOfflineRetailBaseSale(lotControlled, 'retail')).toBe(false);

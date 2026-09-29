@@ -288,10 +288,7 @@ export function CashierScreen({
   } = useDurableSaleDraft(durableScope, offlineStoreProtector);
 
   const preview = useMemo(() => previewCart(cart.lines, priceMode), [cart.lines, priceMode]);
-  const offlineRetailBaseEligible = canQueueOfflineRetailBaseSale(
-    cart.lines,
-    priceContext,
-  );
+  const offlineRetailBaseEligible = canQueueOfflineRetailBaseSale(cart.lines, priceContext);
 
   useEffect(() => {
     if (quickService || cart.lines.length === 0) {
