@@ -688,7 +688,14 @@ describe('identity, quantities and refusals across the wire', () => {
       lines: [
         {
           ...lotBody.lines[0],
-          lots: [{ ...lotBody.lines[0].lots[0], dateValue: '2027/12/31' }],
+          lots: [
+            {
+              acceptedQuantityScaled: '1000',
+              externalBatchReference: 'BATCH-2027',
+              dateKind: 'expiry',
+              dateValue: '2027/12/31',
+            },
+          ],
         },
       ],
     });
