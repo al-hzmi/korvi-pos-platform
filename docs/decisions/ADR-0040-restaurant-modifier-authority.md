@@ -1,17 +1,29 @@
 # ADR-0040 — Restaurant Modifier Authority
 
-Status: Accepted for STRIKE V2-5 foundation  
+Status: Accepted for STRIKE V2-5  
 Date: 2026-10-01  
 Branch: `mastermind/v2-strengthening`
 
 ## Context
 
-Korvi already has authoritative restaurant order snapshots, dining modes, tables/zones,
-preparation routing, KDS, recipes, production and waste. A restaurant order line currently
-also carries bounded free-text `preparationOptions`, but that text is operational instruction
-only. It is not a governed menu-option or pricing authority.
+Korvi already has authoritative restaurant order snapshots, dine-in/takeaway/delivery,
+zones/tables, table occupancy and transfer, preparation routing, KDS, recipes/BOM, production,
+waste and canonical checkout settlement.
 
-V2-5 closes that gap without forking checkout, tax, stock or recipe truth.
+A restaurant order line also carries bounded free-text `preparationOptions`, but that field is
+operational instruction only. It is not a governed menu-option or pricing authority.
+
+Korvi has two valid restaurant sale paths today:
+
+1. direct restaurant checkout without a durable `RestaurantOrder`; and
+2. settlement of an existing server-authored open `RestaurantOrder`.
+
+V2-5 must serve both paths through one modifier authority. Supporting modifiers only on open
+orders would make quick takeaway checkout a weaker pricing path and would violate One Platform /
+One Truth.
+
+V2-5 therefore adds governed modifier policy and immutable modifier pricing history without
+forking checkout, VAT, promotions, stock, cost, recipe or ZATCA truth.
 
 ## Decision
 
@@ -30,7 +42,7 @@ A modifier option belongs to exactly one group and defines:
 
 - stable tenant-scoped identity and code;
 - Arabic/English display name;
-- a non-negative integer price delta in halalas;
+- a non-negative integer per-unit price delta in halalas;
 - deterministic display order;
 - active lifecycle;
 - optimistic revision.
@@ -38,109 +50,215 @@ A modifier option belongs to exactly one group and defines:
 Products are attached to modifier groups through an explicit tenant-scoped mapping. Groups may
 be reused across products.
 
+Configuration uses lifecycle and revisions. Physical deletion may not erase a policy object that
+historical order/sale snapshots reference.
+
 ### 2. The client selects identities, never prices
 
-The operator may submit selected modifier option IDs for a restaurant order line.
+For a restaurant line the client may submit selected modifier option IDs only.
 
 The server must:
 
-1. resolve the groups attached to that product;
-2. resolve active options;
+1. resolve the active groups attached to that Product;
+2. resolve active options under those groups;
 3. prove every selected option belongs to an active attached group;
-4. prove every active group's min/max selection rule;
+4. prove every active attached group's min/max selection rule;
 5. reject duplicate, unknown, inactive or out-of-policy selections;
-6. calculate the modifier delta using integer money only.
+6. deterministically order the accepted selections;
+7. calculate the modifier delta using integer money only.
 
 The client may never submit modifier names, price deltas, revisions, totals or tax facts as
 authority.
 
-### 3. V2-5 modifier effects are non-negative only
+### 3. One resolver serves direct checkout and open orders
+
+The same deterministic modifier resolver is used for:
+
+- direct restaurant checkout pricing; and
+- RestaurantOrder create / editable-line replacement.
+
+The resolver returns immutable policy facts: group/option identity, code, name, revision,
+ordering and per-unit price delta.
+
+An open-order settlement never re-runs current modifier policy. It consumes the exact
+server-authored RestaurantOrderLine snapshot already accepted for that order revision.
+
+A direct checkout resolves current modifier policy before finalization and snapshots the same
+facts directly onto the finalized SaleLine.
+
+### 4. Menu policy is serialized against authoritative pricing
+
+Optimistic revision alone is not enough under PostgreSQL READ COMMITTED: group, option and
+product-attachment rows could otherwise be read from different policy revisions while an
+administrator changes menu configuration.
+
+V2-5 therefore owns a tenant-scoped restaurant-menu policy lock:
+
+`korvi:restaurant-menu-policy:<tenantId>`
+
+- authoritative modifier resolution used for pricing takes the shared transaction lock;
+- configuration insert/update/delete/attachment mutation takes the matching exclusive
+  transaction lock;
+- deterministic row ordering remains mandatory;
+- administration retains optimistic revisions so stale human edits are refused explicitly.
+
+No checkout/order transaction may commit a mixed-revision modifier policy snapshot.
+
+### 5. Modifier effects are non-negative only
 
 `priceDeltaMinor >= 0`.
 
 Negative modifier deltas would create a second discount authority and overlap Korvi's governed
 discount/promotion rules. They are deliberately outside this strike.
 
-A zero-price option is valid and covers instructions such as size/preparation choices that do
-not change price.
+A zero-price option is valid and covers governed choices that do not change price.
 
-### 4. Modifier price inherits the parent line tax rate
+### 6. Modifier price inherits the parent line VAT rate
 
-V2-5 does not create independently taxed sub-lines. The modifier delta is part of the
-restaurant item's final unit price and therefore uses the parent product's VAT rate.
+V2-5 does not create independently taxed sub-lines.
 
-### 5. Restaurant order line owns the historical price snapshot
-
-For a newly priced restaurant line:
+For one commercial unit:
 
 `unitPriceMinor = baseUnitPriceMinor + modifierTotalMinor`
 
-The order line persists all three values.
+The resulting unit price flows into the existing canonical cart/VAT engine. Modifier delta uses
+the parent product's VAT rate; there is no modifier-specific tax engine.
 
-Each selected option is persisted as an immutable snapshot containing the group/option identity,
-code, name, revision, price delta and ordering facts used at that moment.
+### 7. RestaurantOrderLine owns editable operational history
 
-Checkout continues to consume the server-authored open-order line snapshot. It must not
-re-evaluate current modifier policy when the order settles.
+A newly priced RestaurantOrderLine persists:
 
-Returns continue from the finalized SaleLine financial truth; current modifier configuration is
-never replayed to explain a historical refund.
+- `baseUnitPriceMinor`;
+- `modifierTotalMinor`;
+- final `unitPriceMinor`;
+- exact selected modifier snapshots.
 
-### 6. Preparation/KDS receives a server-authored modifier summary
+Each selection snapshot contains group/option identity, code, Arabic name, revision, ordering and
+per-unit delta.
 
-The existing free-text `preparationOptions` remains a legacy/operator instruction field and is
-not priced.
+An unfired open-order line may change selections only through the governed replace-lines
+authority. A retained line keeps its historical base product price while a newly requested
+modifier set is resolved against current menu policy.
+
+Once preparation has been fired for that line, quantity, preparation instructions and modifier
+selection remain operational history and cannot be rewritten.
+
+### 8. SaleLine is final financial history
+
+Every finalized restaurant sale carrying modifiers persists the same financial decomposition:
+
+- `baseUnitPriceMinor`;
+- `modifierTotalMinor`;
+- final `unitPriceMinor`;
+- immutable SaleLine modifier-selection snapshots.
+
+For direct checkout these facts come from the current locked modifier resolution.
+
+For open-order settlement they are copied from the immutable RestaurantOrderLine snapshots under
+the existing order revision/settlement lock; current menu policy is not consulted.
+
+This keeps SaleLine the final sale/refund financial authority. A historical sale remains
+explainable even if menu configuration changes later or the operational order is eventually
+archived.
+
+Returns continue from finalized SaleLine money/stock/cost facts and never re-evaluate current
+modifier policy.
+
+### 9. Preparation/KDS receives a server-authored modifier summary
+
+The existing free-text `preparationOptions` remains a non-priced operator instruction field.
 
 When a line is fired to preparation, Korvi snapshots a bounded server-authored modifier summary
-alongside the existing note/options fields so the kitchen sees the governed selections.
+from the governed line selections alongside the existing preparation note/options fields.
 
-Once a line has been fired, changing its modifier selections is forbidden by the same historical
-operational rule that already freezes quantity and preparation instructions.
+KDS never interprets free text as pricing authority.
 
-### 7. Modifier options are not stock or recipe identities
+### 10. Modifier options are not stock or recipe identities
 
 Selecting a modifier does not directly mutate stock or cost in V2-5.
 
-Recipe/BOM remains Korvi's ingredient authority. Modifier-dependent recipe substitution or
-ingredient deltas require a later explicit architecture decision; V2-5 must not infer them.
+Recipe/BOM remains Korvi's ingredient authority. Modifier-dependent ingredient substitution,
+extra ingredient quantities or recipe deltas require a later explicit architecture decision.
+V2-5 must not infer them.
 
-### 8. Configuration authority
+### 11. Configuration authority
 
 A dedicated `restaurant.menu.manage` permission governs modifier configuration and is granted
-to the default manager/admin/owner roles. Cashiers may select configured options while operating
-orders through `sale.create`; that does not grant menu-administration authority.
+to the default manager/admin/owner roles.
 
-### 9. Tenant isolation and history
+Cashiers may select configured options while operating restaurant sales/orders through existing
+sale/order authority; that does not grant menu-administration authority.
 
-All new tenant-owned rows carry `tenantId`, composite tenant foreign keys and FORCE RLS.
+### 12. Tenant isolation and immutable history
 
-Existing restaurant order rows migrate with:
+Every new tenant-owned row carries `tenantId`, composite tenant foreign keys and FORCE RLS.
 
-- `baseUnitPriceMinor = unitPriceMinor`;
-- `modifierTotalMinor = 0`;
-- no modifier selections.
+Historical selection rows are immutable after their parent financial/operational fact is locked.
+Configuration rows referenced by history cannot be physically deleted to erase provenance.
 
-Historical migrations are never rewritten.
+Existing historical rows migrate exactly:
+
+- RestaurantOrderLine `baseUnitPriceMinor = unitPriceMinor`;
+- RestaurantOrderLine `modifierTotalMinor = 0`;
+- SaleLine `baseUnitPriceMinor = unitPriceMinor`;
+- SaleLine `modifierTotalMinor = 0`;
+- no historical modifier selection is invented.
+
+### 13. Offline boundary
+
+A browser/native client never becomes modifier pricing authority.
+
+A newly captured direct restaurant sale that requires governed modifier selections may not be
+accepted from an offline replay without a future explicitly signed policy-snapshot architecture.
+
+Plain restaurant/retail behavior that does not require modifier policy keeps its existing
+separate offline rules.
+
+Open-order modifier workflows remain server-authoritative.
+
+### 14. Promotions, retail packaging and ZATCA remain separate authorities
+
+V2-5 does not reinterpret V2-2 or V2-3.
+
+- modifiers establish the restaurant item's effective unit price before canonical downstream
+  cart pricing;
+- discounts/promotions remain their existing separate authorities;
+- retail package/wholesale price-list authority remains inapplicable to restaurant order
+  settlement as today;
+- Production ZATCA receives only finalized ordinary sale/tax truth and gains no modifier-specific
+  fiscal side channel.
 
 ## Deliberately deferred
 
-V2-5 modifier foundation does not yet claim:
+V2-5 does not claim:
 
 - meal/bundle composition;
 - negative modifier pricing;
 - modifier-specific VAT;
 - modifier-driven ingredient/recipe consumption;
-- courses or seat-level split/merge;
-- kiosk/QR/online ordering adapters.
+- seat-level split/merge;
+- kiosk/QR/online ordering adapters;
+- offline signed modifier-policy snapshots.
 
-Those capabilities must compose with this authority rather than bypass it.
+Courses and broader waiter/operator parity may be addressed only if repository audit identifies
+a concrete authority gap after modifier flow is complete.
 
 ## Required evidence before V2-5 closure
 
-- pure deterministic modifier-selection tests;
-- schema/RLS/tenant-isolation tests;
-- live PostgreSQL configuration and order-snapshot proof;
-- negative authorization for menu administration;
-- optimistic revision/concurrency proof for configuration;
-- actual Chrome Control configuration + cashier selection + open-order/KDS + settlement proof;
-- exact-head CI and installed-client regression gates.
+- pure deterministic modifier-selection tests for min/max, duplicates, unknown/inactive,
+  unattached options, zero-price, positive deltas, ordering, overflow and negative refusal;
+- valid forward-only migration rehearsal and schema invariants;
+- FORCE-RLS / cross-tenant negative proof;
+- live PostgreSQL menu-policy shared/exclusive lock and mixed-revision concurrency proof;
+- negative authorization for `restaurant.menu.manage`;
+- direct restaurant checkout modifier pricing + SaleLine immutable snapshot proof;
+- RestaurantOrder create/replace modifier snapshot proof;
+- fired-line modifier mutation refusal;
+- KDS server-authored modifier summary proof;
+- open-order settlement copies historical modifier facts without current-policy re-evaluation;
+- original-sale return remains exact after menu policy changes;
+- offline modifier-required direct checkout fail-closed proof;
+- actual Chrome Control configuration + Cashier modifier selection + direct sale + open-order/KDS
+  + settlement proof;
+- exact-head CI, PostgreSQL, browser and installed-client regression gates;
+- Gap Audit + Current Source of Truth reconciliation only after exact-head proof.
