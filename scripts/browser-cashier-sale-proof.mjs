@@ -76,7 +76,9 @@ class CdpClient {
     return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
-        reject(new Error(`Chrome DevTools command ${method} timed out after ${String(timeoutMs)}ms.`));
+        reject(
+          new Error(`Chrome DevTools command ${method} timed out after ${String(timeoutMs)}ms.`),
+        );
       }, timeoutMs);
       this.#pending.set(id, { resolve, reject, timer });
       try {
