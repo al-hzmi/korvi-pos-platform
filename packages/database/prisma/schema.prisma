@@ -125,6 +125,7 @@ model Tenant {
   restaurantModifierOptions              RestaurantModifierOption[]
   restaurantProductModifierGroups        RestaurantProductModifierGroup[]
   restaurantOrderLineModifierSelections  RestaurantOrderLineModifierSelection[]
+  saleLineModifierSelections             SaleLineModifierSelection[]
   restaurantPreparationStations          RestaurantPreparationStation[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
@@ -595,6 +596,7 @@ model RestaurantModifierGroup {
   options             RestaurantModifierOption[]
   products            RestaurantProductModifierGroup[]
   orderLineSelections RestaurantOrderLineModifierSelection[]
+  saleLineSelections  SaleLineModifierSelection[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, code])
@@ -621,6 +623,7 @@ model RestaurantModifierOption {
   tenant              Tenant                                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   group               RestaurantModifierGroup               @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: Cascade)
   orderLineSelections RestaurantOrderLineModifierSelection[]
+  saleLineSelections  SaleLineModifierSelection[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, groupId, id])
@@ -678,6 +681,37 @@ model RestaurantOrderLineModifierSelection {
   @@index([tenantId, orderLineId, groupSortOrder, optionSortOrder])
   @@index([tenantId, groupId, optionId])
   @@map("restaurant_order_line_modifier_selections")
+}
+
+model SaleLineModifierSelection {
+  id         String @id @db.Uuid
+  tenantId   String @db.Uuid
+  saleLineId String @db.Uuid
+  groupId    String @db.Uuid
+  optionId   String @db.Uuid
+
+  groupCode      String
+  groupNameAr    String
+  groupRevision  BigInt
+  groupSortOrder Int
+  optionCode      String
+  optionNameAr    String
+  optionRevision  BigInt
+  optionSortOrder Int
+  priceDeltaMinor BigInt
+
+  createdAt DateTime @default(now())
+
+  tenant   Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  saleLine SaleLine                 @relation(fields: [tenantId, saleLineId], references: [tenantId, id], onDelete: Cascade)
+  group    RestaurantModifierGroup  @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: NoAction)
+  option   RestaurantModifierOption @relation(fields: [tenantId, groupId, optionId], references: [tenantId, groupId, id], onDelete: NoAction)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, saleLineId, optionId])
+  @@index([tenantId, saleLineId, groupSortOrder, optionSortOrder])
+  @@index([tenantId, groupId, optionId])
+  @@map("sale_line_modifier_selections")
 }
 
 model User {
@@ -2148,6 +2182,8 @@ model SaleLine {
   /// fractional (ADR-0016).
   productType    String?
   unitPriceMinor BigInt
+  baseUnitPriceMinor BigInt
+  modifierTotalMinor BigInt @default(0)
   vatBasisPoints Int
   quantityScaled BigInt
   /// Base Product quantity restored by this return. Null means legacy = quantityScaled.
@@ -2184,6 +2220,7 @@ model SaleLine {
   returnLines ReturnLine[]
   promotionAllocations SalePromotionAllocation[]
   lotAllocations SaleLineLotAllocation[]
+  modifierSelections SaleLineModifierSelection[]
 
   @@unique([tenantId, saleId, lineNumber])
   /// The tenant-consistency key. A child row references this table by
