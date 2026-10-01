@@ -1,7 +1,7 @@
 # KORVI — PROJECT CURRENT SOURCE OF TRUTH
 
-Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT — V2-3 VERIFIED**
-Date: 2026-09-29
+Status: **AUTHORITATIVE PROJECT CONTINUATION SNAPSHOT — V2-4 VERIFIED**
+Date: 2026-10-01
 Protected acquisition source: `61dbb34dea08809756fd767b907b0e852b7e5978`
 Acquisition branch: `release/canonical-acquisition-v1`
 Active future-development branch: `mastermind/v2-strengthening`
@@ -132,7 +132,7 @@ Still accepted where not already fully closed:
 - weighted/scale-driven workflows beyond V2-3's fixed unit-product packages;
 - customer-specific price assignment once checkout owns customer identity;
 - labels/price lookup/printing where not already covered by the current catalogue/control surfaces;
-- batch/lot/expiry;
+- batch/lot/expiry is closed by V2-4 while stronger expiry/replenishment intelligence remains future scope;
 - stronger replenishment;
 - explicit customer credit/balance capability;
 - supported device integration.
@@ -261,7 +261,9 @@ V2-2 deterministic promotions/coupons: **COMPLETE / EXACT-HEAD VERIFIED**.
 
 V2-3 retail packaging + price lists: **COMPLETE / EXACT-HEAD VERIFIED**.
 
-Next authorized strike: **V2-4 Batch/Lot/Expiry**.
+V2-4 batch/lot/expiry: **COMPLETE / EXACT-HEAD VERIFIED**.
+
+Next authorized strike: **V2-5 Restaurant modifiers + operator parity**.
 
 ### V2-2 — Deterministic Promotions + Coupons — VERIFIED COMPLETE
 
@@ -330,16 +332,39 @@ Exact-head evidence for `2bcd8dcede3cec8ecf2808831a99670030cfdf0b`:
 
 The frozen acquisition candidate remains untouched. V2-3 exists only on the Mastermind V2 lineage.
 
-### V2-4 — Batch/Lot/Expiry foundation
+### V2-4 — Batch/Lot/Expiry — VERIFIED COMPLETE
 
-One inventory truth:
+Verified implementation HEAD:
 
-- lot/batch identity;
-- expiry;
-- receiving;
-- sale/consumption policy where configured;
-- adjustment/transfer/count compatibility;
-- Expiry Intelligence-ready data model.
+`8e92788f6ceb9850fc69373dac4a954d787d36f3`
+
+Closed scope:
+
+- Product/branch `InventoryBalance` remains the only stock total and `InventoryMovement` remains the only quantity-changing stock ledger;
+- lot identity and availability are modeled as immutable provenance/distribution facts, with no parallel mutable lot balance or lot cost pool;
+- per-Product lot policy governs required tracking, FEFO/FIFO selection and optional/required date capture;
+- enabling tracking over existing positive stock creates explicit historical-unknown provenance without fabricating batch or expiry history, and negative stock blocks activation;
+- expiry uses the tenant business date; expired lots are ineligible for ordinary consumption, while best-before remains informational/orderable rather than silently becoming expiry;
+- receiving creates/resolves immutable received lots and snapshots exact batch/date provenance while canonical stock/cost movement remains base Product quantity/value;
+- sale, transfer, negative adjustment, count delta, production consumption and waste use deterministic concurrency-safe lot selection;
+- positive adjustment requires explicit existing/manual-correction provenance rather than silently increasing an arbitrary lot;
+- zero-net count/distribution correction uses governed lot reclassification without inventing a Product stock movement;
+- original-sale returns restore immutable historical lot allocations; pre-V2-4 sales restore into explicit historical-unknown provenance rather than guessed batches;
+- lot-controlled production output requires explicit produced-lot provenance;
+- lot entries, snapshots and tenant relationships are FORCE-RLS/composite-key protected and finalized distribution history is immutable;
+- cashier and offline boundaries fail closed when current lot availability/expiry cannot be proven; ordinary non-lot offline retail remains separate;
+- Arabic RTL Control exposes lot policy/status/availability/expiry facts and purchasing exposes lot-aware receiving;
+- Expiry Intelligence-ready read facts exist without granting recommendation/AI authority to mutate stock;
+- Production ZATCA remains unchanged and fail-closed; lot metadata never becomes tax authority.
+
+Exact-head evidence for `8e92788f6ceb9850fc69373dac4a954d787d36f3`:
+
+- full CI: GitHub Actions run `36826361930` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / concurrency / full verify: run `36826361998` — **SUCCESS**;
+- actual Chrome Control + cashier + purchasing lot/expiry workflow: run `36826362021` — **SUCCESS**;
+- independent PR full CI: run `36826369807` — **SUCCESS**.
+
+The frozen acquisition candidate remains untouched. V2-4 exists only on the Mastermind V2 lineage.
 
 ### V2-5 — Restaurant modifiers + dining modes + table ownership completion
 

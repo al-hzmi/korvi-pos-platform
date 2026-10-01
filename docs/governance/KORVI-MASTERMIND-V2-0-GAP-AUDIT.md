@@ -1,7 +1,7 @@
 # KORVI — MASTERMIND V2-0 CURRENT REPOSITORY GAP AUDIT
 
-Status: **UPDATED REPOSITORY-GROUNDED AUDIT — V2-3 CLOSED**
-Date: 2026-09-29
+Status: **UPDATED REPOSITORY-GROUNDED AUDIT — V2-4 CLOSED**
+Date: 2026-10-01
 Branch: `mastermind/v2-strengthening`
 Base acquisition SHA: `61dbb34dea08809756fd767b907b0e852b7e5978`
 
@@ -149,15 +149,39 @@ Recommended after promotion/retail parity foundations.
 
 ## 4. Batch / lot / expiry
 
-### Batch/lot/expiry inventory authority — ABSENT / ACCEPTED
+### Batch/lot/expiry inventory authority — PRESENT / V2-4 CLOSED
 
-No dedicated batch/lot/expiry domain/persistence implementation was found in the audited source tree.
+V2-4 now establishes a shared lot/batch/expiry provenance authority without creating a second stock or costing truth.
 
-The only filename match discovered outside schema wording was acquisition/pilot documentation.
+Repository evidence includes:
 
-The Master Product Directive explicitly accepts batch/lot/expiry where required.
+- ADR-0039 batch/lot/expiry authority contract;
+- tenant-owned Product lot policy, immutable lot identity and immutable signed lot-distribution entries;
+- explicit historical-unknown, received, produced and manual-correction provenance;
+- business-time-zone-aware expiry semantics and deterministic FEFO/FIFO selection;
+- activation baseline that reconciles existing positive stock exactly and refuses negative stock;
+- canonical movement ↔ lot allocation reconciliation with concurrency-safe lot identity locking;
+- lot-aware purchasing/receiving with immutable batch/date snapshots;
+- sale and original-return immutable lot provenance, including explicit historical-unknown restoration for legacy sales;
+- transfer, adjustment and count compatibility, including zero-net lot reclassification with no Product stock movement;
+- lot-aware production consumption/output and waste;
+- FORCE-RLS, composite tenant consistency, immutable finalized lot history and negative cross-tenant proof;
+- Arabic RTL Control lot management and lot-aware receiving workflow;
+- offline fail-closed boundary for lot-controlled sales;
+- Expiry Intelligence-ready read facts that remain advisory only.
 
-**Recommended V2-4.**
+Verified implementation HEAD:
+
+`8e92788f6ceb9850fc69373dac4a954d787d36f3`
+
+Evidence:
+
+- full CI `36826361930` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / concurrency / full verify `36826361998` — **SUCCESS**;
+- actual Chrome Control + cashier + purchasing proof `36826362021` — **SUCCESS**;
+- independent PR CI `36826369807` — **SUCCESS**.
+
+**V2-4 gap is closed. Next strike: V2-5.**
 
 ## 5. Retail / grocery packaging and price lists
 
@@ -175,7 +199,7 @@ The repository now contains governed `PriceList` / `PriceListEntry` authority, d
 
 Customer-specific automatic assignment is deliberately not claimed: direct checkout still has no authoritative customer identity.
 
-**V2-3 gap is closed. Next strike: V2-4.**
+**V2-3 gap is closed. V2-4 is also now closed; next strike: V2-5.**
 
 ## 6. Restaurant
 
@@ -244,8 +268,8 @@ Initial evidence supports this order:
 1. **V2-1 No-receipt return/exchange — CLOSED**
 2. **V2-2 Deterministic promotions/coupons — CLOSED**
 3. **V2-3 Retail packaging + price lists — CLOSED**
-4. **V2-4 Batch/lot/expiry — NEXT**
-5. **V2-5 Restaurant modifiers/operator parity**
+4. **V2-4 Batch/lot/expiry — CLOSED**
+5. **V2-5 Restaurant modifiers/operator parity — NEXT**
 6. **V2-6 Loyalty/credit explicit ledgers**
 7. **V2-7 Attention Center**
 8. **V2-8 Explainable Reorder / Expiry Intelligence**
@@ -324,21 +348,32 @@ Evidence:
 
 **V2-3 gap is closed.**
 
-## 13. Next audit target — V2-4
+## 13. V2-4 closure reconciliation
 
-The next repository audit must establish the smallest shared Batch/Lot/Expiry authority that preserves one inventory truth while supporting:
+The V2-4 architecture targets were reconciled in ADR-0039 and the verified implementation at
+`8e92788f6ceb9850fc69373dac4a954d787d36f3`.
 
-- tenant-owned lot/batch identity and immutable received provenance;
-- expiry / best-before facts without fabricating dates;
-- receiving allocation into lots where policy requires;
-- sale/consumption selection policy only where configured and deterministic;
-- transfer, adjustment and count compatibility;
-- return/restoration treatment from original immutable lot facts where available;
-- base stock/cost reconciliation across lot allocations;
-- concurrency, idempotency, audit and FORCE-RLS isolation;
-- explicit offline boundaries;
-- Arabic RTL operator workflows;
-- Expiry Intelligence-ready facts without autonomous inventory authority;
-- unchanged Production ZATCA fail-closed boundary.
+Resolved decisions:
 
-No parallel stock/cost ledger and no mutable “lot balance counter” may become the primary inventory truth.
+- Product/branch InventoryBalance remains the only stock total and InventoryMovement remains the only quantity-changing stock ledger;
+- lot availability is derived from immutable lot-distribution facts, never a mutable parallel lot balance;
+- lot metadata never carries cost and does not fork the existing known/unknown cost authority;
+- historical stock is initialized as explicit historical-unknown provenance rather than fabricated receipt/batch/expiry history;
+- expiry decisions use tenant business date; best-before does not silently become a hard expiry;
+- FEFO/FIFO selection is deterministic under lot identity locks and cannot oversell or consume expired/blocked lots;
+- receiving, sale, transfer, adjustment, count, production, waste and return paths all reconcile lot provenance to canonical Product movement truth;
+- zero-net lot redistribution is represented as reclassification, not a fake Product movement;
+- original-sale returns restore historical lot facts; legacy returns use explicit historical-unknown provenance;
+- lot-controlled offline checkout fails closed because the client has no signed current lot-availability snapshot;
+- Control and purchasing expose Arabic RTL operational workflows while mutation authority remains permissioned/audited;
+- Expiry Intelligence is a read/recommendation seam only;
+- Production ZATCA/tax authority remains unchanged and fail-closed.
+
+Evidence:
+
+- full CI `36826361930` — **SUCCESS**;
+- PostgreSQL 17 / migrations / FORCE-RLS / live suite / full verify `36826361998` — **SUCCESS**;
+- actual Chrome operator workflow `36826362021` — **SUCCESS**;
+- independent PR CI `36826369807` — **SUCCESS**.
+
+**V2-4 gap is closed. Next repository architecture target: V2-5 Restaurant modifiers/operator parity.**
