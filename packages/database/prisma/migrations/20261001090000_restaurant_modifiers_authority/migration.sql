@@ -210,7 +210,7 @@ CREATE INDEX "restaurant_order_line_modifier_selections_group_option_idx"
 -- the exact line has not been fired to preparation. Once kitchen execution or
 -- settlement exists, they are historical operational/financial truth.
 CREATE FUNCTION guard_restaurant_modifier_selection_mutation() RETURNS trigger
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $$
 DECLARE
   selected_tenant UUID;
   selected_line UUID;
@@ -245,7 +245,7 @@ BEGIN
   RAISE EXCEPTION 'restaurant modifier selection snapshot is locked by order/preparation history'
     USING ERRCODE = '55000';
 END;
-$;
+$$;
 
 CREATE TRIGGER "restaurant_modifier_selection_guard_insert"
 BEFORE INSERT ON "restaurant_order_line_modifier_selections"
@@ -264,7 +264,7 @@ FOR EACH ROW EXECUTE FUNCTION guard_restaurant_modifier_selection_mutation();
 -- then update the line (or the reverse) without creating a false intermediate
 -- failure.
 CREATE FUNCTION assert_restaurant_modifier_total_reconciles() RETURNS trigger
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $$
 DECLARE
   selected_tenant UUID;
   selected_line UUID;
@@ -301,7 +301,7 @@ BEGIN
 
   RETURN NULL;
 END;
-$;
+$$;
 
 CREATE CONSTRAINT TRIGGER "restaurant_order_lines_modifier_total_reconciles"
 AFTER INSERT OR UPDATE ON "restaurant_order_lines"
