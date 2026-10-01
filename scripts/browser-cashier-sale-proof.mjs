@@ -405,23 +405,40 @@ async function pressEnter() {
   });
 }
 
-async function browserRequest(path, init = {}) {
+async function browserRequest(path, init = {}, timeoutMs = 30_000) {
   const result = await evaluate(`(async () => {
-    const response = await fetch(${jsString(path)}, {
-      credentials: 'same-origin',
-      ...${JSON.stringify(init)},
-      headers: {
-        accept: 'application/json',
-        ...(${JSON.stringify(init.headers ?? {})})
-      }
-    });
-    const body = await response.json().catch(() => null);
-    return { ok: response.ok, status: response.status, body };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ${timeoutMs});
+    try {
+      const response = await fetch(${jsString(path)}, {
+        credentials: 'same-origin',
+        ...${JSON.stringify(init)},
+        signal: controller.signal,
+        headers: {
+          accept: 'application/json',
+          ...(${JSON.stringify(init.headers ?? {})})
+        }
+      });
+      const body = await response.json().catch(() => null);
+      return { ok: response.ok, status: response.status, body, transportError: null };
+    } catch (error) {
+      return {
+        ok: false,
+        status: 0,
+        body: null,
+        transportError:
+          error instanceof Error ? \`${error.name}: ${error.message}\` : String(error)
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   })()`);
   assert.equal(
     result.ok,
     true,
-    `${path} returned HTTP ${String(result.status)}: ${JSON.stringify(result.body)}`,
+    result.transportError === null
+      ? `${path} returned HTTP ${String(result.status)}: ${JSON.stringify(result.body)}`
+      : `${path} transport failed after ${timeoutMs}ms: ${String(result.transportError)}`,
   );
   return result.body;
 }
