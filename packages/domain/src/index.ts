@@ -4,7 +4,6 @@ export * from './tax/index.js';
 export * from './quantity/index.js';
 export * from './pricing/index.js';
 export * from './promotions/index.js';
-export * from './restaurant/index.js';
 export * from './tender/tender.js';
 export * from './sale/index.js';
 export * from './returns/index.js';

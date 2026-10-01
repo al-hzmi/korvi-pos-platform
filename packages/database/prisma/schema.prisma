@@ -119,13 +119,9 @@ model Tenant {
   sales                         Sale[]
   restaurantZones               RestaurantZone[]
   restaurantTables              RestaurantTable[]
-  restaurantOrders                       RestaurantOrder[]
-  restaurantOrderLines                   RestaurantOrderLine[]
-  restaurantModifierGroups               RestaurantModifierGroup[]
-  restaurantModifierOptions              RestaurantModifierOption[]
-  restaurantProductModifierGroups        RestaurantProductModifierGroup[]
-  restaurantOrderLineModifierSelections  RestaurantOrderLineModifierSelection[]
-  restaurantPreparationStations          RestaurantPreparationStation[]
+  restaurantOrders              RestaurantOrder[]
+  restaurantOrderLines          RestaurantOrderLine[]
+  restaurantPreparationStations RestaurantPreparationStation[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
   restaurantRecipes                 RestaurantRecipe[]
@@ -319,8 +315,6 @@ model RestaurantPreparationTask {
   quantityScaled BigInt
   preparationNote    String?
   preparationOptions String?
-  /// Server-authored summary of governed modifier selections for kitchen display.
-  modifierSummary     String?
 
   status   String @default("queued")
   revision BigInt @default(1)
@@ -534,12 +528,7 @@ model RestaurantOrderLine {
   nameAr         String
   nameEn         String?
   productType    String
-  /// Final per-unit price consumed by canonical checkout.
   unitPriceMinor BigInt
-  /// Base catalogue price before governed restaurant modifiers.
-  baseUnitPriceMinor BigInt
-  /// Exact sum of selected modifier option deltas for one commercial unit.
-  modifierTotalMinor BigInt @default(0)
   vatBasisPoints Int
   /// Commercial selling-unit quantity. Pre-V2-3 rows are also base quantity.
   quantityScaled BigInt
@@ -563,121 +552,15 @@ model RestaurantOrderLine {
   trackInventory     Boolean?
   createdAt          DateTime @default(now())
 
-  tenant             Tenant                                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  order              RestaurantOrder                        @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
-  product            Product                                @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
-  modifierSelections RestaurantOrderLineModifierSelection[]
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order   RestaurantOrder @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  product Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: NoAction)
 
   @@unique([tenantId, id])
   @@unique([tenantId, orderId, lineNumber])
   @@index([tenantId, orderId])
   @@index([tenantId, productId])
   @@map("restaurant_order_lines")
-}
-
-model RestaurantModifierGroup {
-  id       String @id @db.Uuid
-  tenantId String @db.Uuid
-
-  code          String
-  nameAr        String
-  nameEn        String?
-  minSelections Int     @default(0)
-  maxSelections Int     @default(1)
-  sortOrder     Int     @default(0)
-  isActive      Boolean @default(true)
-  revision      BigInt  @default(1)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant              Tenant                                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  options             RestaurantModifierOption[]
-  products            RestaurantProductModifierGroup[]
-  orderLineSelections RestaurantOrderLineModifierSelection[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, code])
-  @@index([tenantId, isActive, sortOrder])
-  @@map("restaurant_modifier_groups")
-}
-
-model RestaurantModifierOption {
-  id       String @id @db.Uuid
-  tenantId String @db.Uuid
-  groupId  String @db.Uuid
-
-  code            String
-  nameAr          String
-  nameEn          String?
-  priceDeltaMinor BigInt  @default(0)
-  sortOrder       Int     @default(0)
-  isActive        Boolean @default(true)
-  revision        BigInt  @default(1)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant              Tenant                                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  group               RestaurantModifierGroup               @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: Cascade)
-  orderLineSelections RestaurantOrderLineModifierSelection[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, groupId, id])
-  @@unique([tenantId, groupId, code])
-  @@index([tenantId, groupId, isActive, sortOrder])
-  @@map("restaurant_modifier_options")
-}
-
-model RestaurantProductModifierGroup {
-  id        String @id @db.Uuid
-  tenantId  String @db.Uuid
-  productId String @db.Uuid
-  groupId   String @db.Uuid
-  sortOrder Int    @default(0)
-
-  createdAt DateTime @default(now())
-
-  tenant  Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  product Product                 @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
-  group   RestaurantModifierGroup @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: Cascade)
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, productId, groupId])
-  @@index([tenantId, productId, sortOrder])
-  @@index([tenantId, groupId])
-  @@map("restaurant_product_modifier_groups")
-}
-
-model RestaurantOrderLineModifierSelection {
-  id          String @id @db.Uuid
-  tenantId    String @db.Uuid
-  orderLineId String @db.Uuid
-  groupId     String @db.Uuid
-  optionId    String @db.Uuid
-
-  groupCode      String
-  groupNameAr    String
-  groupRevision  BigInt
-  groupSortOrder Int
-  optionCode      String
-  optionNameAr    String
-  optionRevision  BigInt
-  optionSortOrder Int
-  priceDeltaMinor BigInt
-
-  createdAt DateTime @default(now())
-
-  tenant    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  orderLine RestaurantOrderLine      @relation(fields: [tenantId, orderLineId], references: [tenantId, id], onDelete: Cascade)
-  group     RestaurantModifierGroup  @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: NoAction)
-  option    RestaurantModifierOption @relation(fields: [tenantId, groupId, optionId], references: [tenantId, groupId, id], onDelete: NoAction)
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, orderLineId, optionId])
-  @@index([tenantId, orderLineId, groupSortOrder, optionSortOrder])
-  @@index([tenantId, groupId, optionId])
-  @@map("restaurant_order_line_modifier_selections")
 }
 
 model User {
@@ -1058,7 +941,6 @@ model Product {
   purchaseReceiptLines     PurchaseReceiptLine[]
   saleLines                SaleLine[]
   restaurantOrderLines          RestaurantOrderLine[]
-  restaurantModifierGroups      RestaurantProductModifierGroup[]
   restaurantPreparationRoutes   RestaurantPreparationRoute[]
   restaurantPreparationTasks    RestaurantPreparationTask[]
   restaurantRecipe                RestaurantRecipe?                @relation("RestaurantRecipeFinishedProduct")
