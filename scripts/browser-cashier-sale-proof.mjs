@@ -443,7 +443,7 @@ async function browserRequest(path, init = {}, timeoutMs = 30_000) {
         status: 0,
         body: null,
         transportError:
-          error instanceof Error ? \`${error.name}: ${error.message}\` : String(error)
+          error instanceof Error ? error.name + ': ' + error.message : String(error)
       };
     } finally {
       clearTimeout(timer);
