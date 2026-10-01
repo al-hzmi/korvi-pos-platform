@@ -673,8 +673,8 @@ model RestaurantOrderLineModifierSelection {
 
   tenant    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   orderLine RestaurantOrderLine      @relation(fields: [tenantId, orderLineId], references: [tenantId, id], onDelete: Cascade)
-  group     RestaurantModifierGroup  @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: NoAction)
-  option    RestaurantModifierOption @relation(fields: [tenantId, groupId, optionId], references: [tenantId, groupId, id], onDelete: NoAction)
+  group     RestaurantModifierGroup  @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: NoAction, map: "restaurant_order_line_modifier_selections_group_fk")
+  option    RestaurantModifierOption @relation(fields: [tenantId, groupId, optionId], references: [tenantId, groupId, id], onDelete: NoAction, map: "restaurant_order_line_modifier_selections_option_fk")
 
   @@unique([tenantId, id])
   @@unique([tenantId, orderLineId, optionId])
@@ -704,8 +704,8 @@ model SaleLineModifierSelection {
 
   tenant   Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   saleLine SaleLine                 @relation(fields: [tenantId, saleLineId], references: [tenantId, id], onDelete: Cascade)
-  group    RestaurantModifierGroup  @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: NoAction)
-  option   RestaurantModifierOption @relation(fields: [tenantId, groupId, optionId], references: [tenantId, groupId, id], onDelete: NoAction)
+  group    RestaurantModifierGroup  @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: NoAction, map: "sale_line_modifier_selections_group_fk")
+  option   RestaurantModifierOption @relation(fields: [tenantId, groupId, optionId], references: [tenantId, groupId, id], onDelete: NoAction, map: "sale_line_modifier_selections_option_fk")
 
   @@unique([tenantId, id])
   @@unique([tenantId, saleLineId, optionId])
