@@ -1,0 +1,47 @@
+name: V2-4 One-Shot Security Patch
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-4-one-shot-security-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply bounded security patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pkg set overrides.brace-expansion=5.0.11
+          npm install --workspace @korvi/pos-web next@16.3.8 --save-exact --registry=https://registry.npmjs.org
+          npm ci --registry=https://registry.npmjs.org
+          npm run versions:verify
+          npm run audit
+          rm .github/workflows/v2-4-one-shot-security-patch.yml
+          git diff --check
+      - name: Commit exact security patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-security-patch"
+          git config user.email "actions@users.noreply.github.com"
+          git add package.json package-lock.json apps/pos-web/package.json .github/workflows/v2-4-one-shot-security-patch.yml
+          git commit -m "fix(security): patch Next.js and brace-expansion advisories"
+          git push origin HEAD:mastermind/v2-strengthening
