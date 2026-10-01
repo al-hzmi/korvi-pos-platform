@@ -56,7 +56,9 @@ export class InvalidRestaurantModifierSelectionError extends DomainError {
 
 function assertSafeOrder(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
-    throw new InvalidRestaurantModifierDefinitionError(`${label} must be a non-negative safe integer.`);
+    throw new InvalidRestaurantModifierDefinitionError(
+      `${label} must be a non-negative safe integer.`,
+    );
   }
 }
 
@@ -71,7 +73,9 @@ function validatePolicy(groups: readonly RestaurantModifierGroupPolicy[]): void 
     groupIds.add(group.groupId);
 
     if (group.revision <= 0n) {
-      throw new InvalidRestaurantModifierDefinitionError('Modifier group revision must be positive.');
+      throw new InvalidRestaurantModifierDefinitionError(
+        'Modifier group revision must be positive.',
+      );
     }
     if (
       !Number.isSafeInteger(group.minSelections) ||
@@ -81,17 +85,23 @@ function validatePolicy(groups: readonly RestaurantModifierGroupPolicy[]): void 
       group.maxSelections > MAX_SELECTIONS_PER_GROUP ||
       group.minSelections > group.maxSelections
     ) {
-      throw new InvalidRestaurantModifierDefinitionError('Modifier group selection bounds are invalid.');
+      throw new InvalidRestaurantModifierDefinitionError(
+        'Modifier group selection bounds are invalid.',
+      );
     }
     assertSafeOrder(group.sortOrder, 'Modifier group sort order');
 
     for (const option of group.options) {
       if (optionIds.has(option.optionId)) {
-        throw new InvalidRestaurantModifierDefinitionError('Modifier option ids must be globally unique.');
+        throw new InvalidRestaurantModifierDefinitionError(
+          'Modifier option ids must be globally unique.',
+        );
       }
       optionIds.add(option.optionId);
       if (option.revision <= 0n) {
-        throw new InvalidRestaurantModifierDefinitionError('Modifier option revision must be positive.');
+        throw new InvalidRestaurantModifierDefinitionError(
+          'Modifier option revision must be positive.',
+        );
       }
       if (option.priceDeltaMinor < 0n || option.priceDeltaMinor > MAX_MONEY_MINOR) {
         throw new InvalidRestaurantModifierDefinitionError(
@@ -149,10 +159,7 @@ export function resolveRestaurantModifiers(input: {
     const chosen = activeOptions.filter((option) => selected.has(option.optionId));
     for (const option of chosen) known.add(option.optionId);
 
-    if (
-      chosen.length < group.minSelections ||
-      chosen.length > group.maxSelections
-    ) {
+    if (chosen.length < group.minSelections || chosen.length > group.maxSelections) {
       throw new InvalidRestaurantModifierSelectionError(
         `Modifier group ${group.groupId} requires between ${String(group.minSelections)} and ${String(group.maxSelections)} selections.`,
       );
