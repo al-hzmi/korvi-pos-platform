@@ -1,0 +1,46 @@
+name: V2 Dependency Patch Maintenance
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-dependency-patch-maintenance.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply bounded patch updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pkg set overrides.mysql2=3.24.5
+          npm install --save-dev --save-exact globals@17.13.0
+          npm install --workspace @korvi/database --save-exact pg@8.23.1
+          npm run versions:verify
+          rm .github/workflows/v2-dependency-patch-maintenance.yml
+          git diff --check
+      - name: Commit exact maintenance delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-maintenance"
+          git config user.email "actions@users.noreply.github.com"
+          git add package.json packages/database/package.json package-lock.json .github/workflows/v2-dependency-patch-maintenance.yml
+          git commit -m "chore(deps): refresh safe patch dependencies"
+          git push origin HEAD:mastermind/v2-strengthening
