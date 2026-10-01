@@ -34,6 +34,7 @@ class CdpClient {
         const pending = this.#pending.get(message.id);
         if (pending === undefined) return;
         this.#pending.delete(message.id);
+        clearTimeout(pending.timer);
         if (message.error !== undefined) pending.reject(new Error(JSON.stringify(message.error)));
         else pending.resolve(message.result ?? {});
         return;
@@ -70,15 +71,30 @@ class CdpClient {
     this.#listeners.set(method, listeners);
   }
 
-  async send(method, params = {}) {
+  async send(method, params = {}, timeoutMs = 30_000) {
     const id = this.#nextId++;
     return await new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
-      this.#socket.send(JSON.stringify({ id, method, params }));
+      const timer = setTimeout(() => {
+        if (!this.#pending.delete(id)) return;
+        reject(new Error(`Chrome DevTools command ${method} timed out after ${String(timeoutMs)}ms.`));
+      }, timeoutMs);
+      this.#pending.set(id, { resolve, reject, timer });
+      try {
+        this.#socket.send(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        clearTimeout(timer);
+        this.#pending.delete(id);
+        reject(error);
+      }
     });
   }
 
   close() {
+    for (const pending of this.#pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Chrome DevTools connection closed before command completion.'));
+    }
+    this.#pending.clear();
     this.#socket.close();
   }
 }
