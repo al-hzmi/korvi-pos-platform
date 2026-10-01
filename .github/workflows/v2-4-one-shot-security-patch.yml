@@ -29,8 +29,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm pkg set overrides.brace-expansion=5.0.11
+          npm pkg set overrides.brace-expansion=5.0.12
           npm install --workspace @korvi/pos-web next@16.3.8 --save-exact --registry=https://registry.npmjs.org
+
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+
+          const verifyPath = 'scripts/verify-versions.mjs';
+          let verify = fs.readFileSync(verifyPath, 'utf8');
+          const before = verify;
+          verify = verify.replace(
+            /\n  next: 'Canonical Acquisition Release freeze \(2026-09-22\):[^']*',/,
+            '',
+          );
+          if (verify === before) throw new Error('Expected stale Next.js ALLOWED_BEHIND entry was not found.');
+          fs.writeFileSync(verifyPath, verify);
+
+          const root = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const web = JSON.parse(fs.readFileSync('apps/pos-web/package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+
+          if (root.overrides?.['brace-expansion'] !== '5.0.12') {
+            throw new Error('brace-expansion override was not pinned to 5.0.12');
+          }
+          if (web.dependencies?.next !== '16.3.8') {
+            throw new Error('Next.js manifest was not pinned to 16.3.8');
+          }
+          if (lock.packages?.['node_modules/brace-expansion']?.version !== '5.0.12') {
+            throw new Error('brace-expansion lock entry is not 5.0.12');
+          }
+          if (lock.packages?.['node_modules/next']?.version !== '16.3.8') {
+            throw new Error('Next.js lock entry is not 16.3.8');
+          }
+          NODE
+
           npm ci --registry=https://registry.npmjs.org
           npm run versions:verify
           npm run audit
@@ -42,6 +74,6 @@ jobs:
           set -euo pipefail
           git config user.name "korvi-security-patch"
           git config user.email "actions@users.noreply.github.com"
-          git add package.json package-lock.json apps/pos-web/package.json .github/workflows/v2-4-one-shot-security-patch.yml
+          git add             package.json             package-lock.json             apps/pos-web/package.json             scripts/verify-versions.mjs             .github/workflows/v2-4-one-shot-security-patch.yml
           git commit -m "fix(security): patch Next.js and brace-expansion advisories"
           git push origin HEAD:mastermind/v2-strengthening
