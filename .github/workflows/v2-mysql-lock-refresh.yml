@@ -1,0 +1,53 @@
+name: V2 MySQL Lock Refresh
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-mysql-lock-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Refresh mysql2 override in lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm update mysql2 --package-lock-only --ignore-scripts
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const row = lock.packages?.['node_modules/mysql2'];
+          if (row?.version !== '3.24.5') {
+            throw new Error(`mysql2 lock mismatch: ${String(row?.version)}`);
+          }
+          NODE
+          npm ci --ignore-scripts
+          npm run versions:verify
+          rm .github/workflows/v2-mysql-lock-refresh.yml
+          git diff --check
+      - name: Commit lockfile correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-maintenance"
+          git config user.email "actions@users.noreply.github.com"
+          git add package-lock.json .github/workflows/v2-mysql-lock-refresh.yml
+          git commit -m "chore(deps): reconcile mysql2 override lock"
+          git push origin HEAD:mastermind/v2-strengthening
