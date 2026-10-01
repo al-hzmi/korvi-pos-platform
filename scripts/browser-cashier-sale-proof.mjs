@@ -1269,6 +1269,20 @@ try {
   );
   await capture('control-v2-4-lot-aware-receiving-success');
 
+  // A successful purchasing command intentionally keeps Control's global
+  // navigation lock until the operator acknowledges the refreshed server truth
+  // and starts a new decision. Follow that real operator contract before
+  // leaving the page; bypassing it with Page.navigate triggers the deliberate
+  // beforeunload guard and can strand headless Chrome behind a dialog.
+  await clickButton('بدء عملية جديدة');
+  await waitFor(
+    `![...document.querySelectorAll('button')].some(
+      (button) => (button.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'بدء عملية جديدة'
+    )`,
+    'purchasing success decision to release navigation lock',
+    20_000,
+  );
+
   await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText('ابحث أو امسح الباركود', 30_000);
 
