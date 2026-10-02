@@ -75,20 +75,14 @@ describe('transaction-scoped restaurant modifier policy', () => {
         where: { tenantId: scope.tenantId, productId: 'product-1' },
       }),
     );
-    expect(lock.mock.invocationCallOrder[0]!).toBeLessThan(
-      findMany.mock.invocationCallOrder[0]!,
-    );
+    expect(lock.mock.invocationCallOrder[0]!).toBeLessThan(findMany.mock.invocationCallOrder[0]!);
   });
 
   it('derives the final price and immutable snapshot from the linked group and option', async () => {
     const { tx } = fakeTransaction(attached);
-    const result = await resolveRestaurantModifierPolicyWithin(
-      tx,
-      scope,
-      'product-1',
-      1_500n,
-      ['option-1'],
-    );
+    const result = await resolveRestaurantModifierPolicyWithin(tx, scope, 'product-1', 1_500n, [
+      'option-1',
+    ]);
     expect(result.baseUnitPriceMinor).toBe(1_500n);
     expect(result.modifierTotalMinor).toBe(250n);
     expect(result.unitPriceMinor).toBe(1_750n);
