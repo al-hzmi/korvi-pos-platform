@@ -259,6 +259,6 @@ a concrete authority gap after modifier flow is complete.
 - original-sale return remains exact after menu policy changes;
 - offline modifier-required direct checkout fail-closed proof;
 - actual Chrome Control configuration + Cashier modifier selection + direct sale + open-order/KDS
-  + settlement proof;
+  - settlement proof;
 - exact-head CI, PostgreSQL, browser and installed-client regression gates;
 - Gap Audit + Current Source of Truth reconciliation only after exact-head proof.
