@@ -202,10 +202,10 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
       await client.query(
         `INSERT INTO "sale_lines"
           ("id","tenantId","saleId","productId","lineNumber","sku","nameAr",
-           "unitPriceMinor","vatBasisPoints","quantityScaled",
+           "unitPriceMinor","baseUnitPriceMinor","modifierTotalMinor","vatBasisPoints","quantityScaled",
            "costUnknownQuantityScaled","costProvenance",
            "grossMinor","lineDiscountMinor","basketDiscountMinor","netMinor","vatMinor","totalMinor")
-         VALUES ($1,$2,$3,$4,1,'SKU-rls-live-a','حليب',1150,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
+         VALUES ($1,$2,$3,$4,1,'SKU-rls-live-a','حليب',1150,1150,0,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
         [A.saleLine, A.tenant, A.sale, A.product],
       );
     });
@@ -499,10 +499,10 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
       A.tenant,
       `INSERT INTO "sale_lines"
         ("id","tenantId","saleId","productId","lineNumber","sku","nameAr",
-         "unitPriceMinor","vatBasisPoints","quantityScaled",
+         "unitPriceMinor","baseUnitPriceMinor","modifierTotalMinor","vatBasisPoints","quantityScaled",
          "costUnknownQuantityScaled","costProvenance",
          "grossMinor","lineDiscountMinor","basketDiscountMinor","netMinor","vatMinor","totalMinor")
-       VALUES ($1,$2,$3,$4,2,'X','منتج',1150,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
+       VALUES ($1,$2,$3,$4,2,'X','منتج',1150,1150,0,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
       [SCRATCH.saleLine, A.tenant, A.sale, B.product],
     );
     expect(message).toMatch(/foreign key constraint "sale_lines_tenantId_productId_fkey"/);
@@ -513,10 +513,10 @@ describe.skipIf(url === '')('tenant isolation, live', () => {
       A.tenant,
       `INSERT INTO "sale_lines"
         ("id","tenantId","saleId","productId","lineNumber","sku","nameAr",
-         "unitPriceMinor","vatBasisPoints","quantityScaled",
+         "unitPriceMinor","baseUnitPriceMinor","modifierTotalMinor","vatBasisPoints","quantityScaled",
          "costUnknownQuantityScaled","costProvenance",
          "grossMinor","lineDiscountMinor","basketDiscountMinor","netMinor","vatMinor","totalMinor")
-       VALUES ($1,$2,$3,$4,3,'X','منتج',1150,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
+       VALUES ($1,$2,$3,$4,3,'X','منتج',1150,1150,0,1500,1000,1000,'unknown',1150,0,0,1000,150,1150)`,
       [SCRATCH.saleLine, A.tenant, B.sale, A.product],
     );
     expect(message).toMatch(/foreign key constraint "sale_lines_tenantId_saleId_fkey"/);

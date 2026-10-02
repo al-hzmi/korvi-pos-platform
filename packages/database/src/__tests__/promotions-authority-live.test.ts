@@ -158,6 +158,8 @@ describe.skipIf(url === '')('V2-2 promotions/coupons PostgreSQL authority, live'
             nameAr: 'صنف العرض',
             productType: 'unit',
             unitPriceMinor: 1_150n,
+            baseUnitPriceMinor: 1_150n,
+            modifierTotalMinor: 0n,
             vatBasisPoints: 1500,
             quantityScaled: 1_000n,
             grossMinor: 1_150n,

@@ -132,6 +132,8 @@ describe.skipIf(url === '')('merchant period reports, live', () => {
           nameAr: 'منتج التقرير',
           productType: 'unit',
           unitPriceMinor: 11_500n,
+          baseUnitPriceMinor: 11_500n,
+          modifierTotalMinor: 0n,
           vatBasisPoints: 1500,
           quantityScaled: 1000n,
           grossMinor: 11_500n,
