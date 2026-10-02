@@ -211,6 +211,51 @@ async function userIsViableAdministrator(
   return rows[0]?.present === true;
 }
 
+/**
+ * If operations were provisioned before the Owner accepted the invitation,
+ * attach the new Owner to the same branch they would have received had the
+ * order been reversed.
+ *
+ * Operational bootstrap binds an already-established Owner to the first branch
+ * it creates. The reverse order must converge to the same state instead of
+ * leaving a valid Owner with `defaultBranchId = null`. Selecting the oldest
+ * active branch is deterministic and mirrors that first-branch rule. This is
+ * tenant-local routing context, not new authority: the system Owner role is
+ * established independently below and this function never crosses tenants.
+ *
+ * The tenant row is locked for the acceptance transaction before this executes,
+ * serialising it with Platform operational bootstrap. If there is no branch yet
+ * we do nothing; the existing operational-bootstrap bridge will bind the Owner
+ * when the first branch is created later.
+ */
+async function bindInitialOwnerToExistingBranch(
+  tx: TransactionClient,
+  tenant: string,
+  userId: string,
+  at: Date,
+): Promise<string | null> {
+  const branches = await tx.$queryRaw<{ id: string }[]>`
+    SELECT "id"
+      FROM "branches"
+     WHERE "tenantId" = ${tenant}::uuid
+       AND "isActive" = true
+     ORDER BY "createdAt" ASC, "id" ASC
+     LIMIT 1`;
+  const branch = branches[0];
+  if (branch === undefined) return null;
+
+  const changed = await tx.tenantMembership.updateMany({
+    where: {
+      tenantId: tenant,
+      userId,
+      status: 'active',
+      defaultBranchId: null,
+    },
+    data: { defaultBranchId: branch.id, updatedAt: at },
+  });
+  return changed.count === 1 ? branch.id : null;
+}
+
 async function appendAudit(
   tx: TransactionClient,
   tenant: string,
@@ -469,12 +514,14 @@ async function invitationLooksAcceptable(
  *  10. create or claim the account named **by the row**, activate a membership,
  *      grant the tenant's *system* `owner` role found by key, write the
  *      already-derived hash;
- *  11. assert the postcondition — that this account is now a viable
+ *  11. bind that membership to the first active branch when operations were
+ *      provisioned before the invitation was accepted;
+ *  12. assert the postcondition — that this account is now a viable
  *      administrator in 4D's own terms — against the tables, not against the
  *      steps just taken;
- *  12. consume the invitation and write the audit row.
+ *  13. consume the invitation and write the audit row.
  *
- * Steps 5 to 12 are one transaction. A failure anywhere in them leaves no user,
+ * Steps 5 to 13 are one transaction. A failure anywhere in them leaves no user,
  * no membership, no grant, no credential, no consumed invitation and no audit
  * row (ADR-0021).
  *
@@ -667,6 +714,8 @@ export async function acceptOwnerBootstrap(
       });
     }
 
+    const defaultBranchId = await bindInitialOwnerToExistingBranch(tx, tenant, userId, at);
+
     // The postcondition, asked of the tables rather than assumed from the four
     // writes above, and asked *before* the capability is spent.
     //
@@ -702,6 +751,7 @@ export async function acceptOwnerBootstrap(
         email,
         // Never the token, never the password, never the hash.
         credentialEstablished: true,
+        ...(defaultBranchId === null ? {} : { defaultBranchId }),
       },
       at,
     );

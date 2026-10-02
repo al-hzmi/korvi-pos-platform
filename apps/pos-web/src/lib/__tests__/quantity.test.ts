@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { addScaled, formatScaled, parseQuantityToScaled, stepScaled } from '../quantity';
+import {
+  addScaled,
+  formatScaled,
+  parseAdjustmentQuantityToScaled,
+  parseCountedQuantityToScaled,
+  parseInventoryQuantityToScaled,
+  parseQuantityToScaled,
+  stepScaled,
+} from '../quantity';
 
 describe('parseQuantityToScaled, unit products', () => {
   it.each([
@@ -45,6 +53,47 @@ describe('parseQuantityToScaled, weighted products', () => {
     const parsed = parseQuantityToScaled(input, 'weighted');
     expect(parsed.ok).toBe(false);
     expect(!parsed.ok && parsed.reason).toBe(reason);
+  });
+});
+
+describe('inventory command quantities', () => {
+  it('allows an exact zero count without allowing a zero transfer', () => {
+    expect(parseCountedQuantityToScaled('0', 'unit')).toEqual({ ok: true, value: '0' });
+    expect(parseCountedQuantityToScaled('0.000', 'weighted')).toEqual({ ok: true, value: '0' });
+    expect(parseQuantityToScaled('0', 'unit')).toEqual({ ok: false, reason: 'not-positive' });
+  });
+
+  it.each([
+    ['-2', 'unit', '-2000'],
+    ['+3', 'unit', '3000'],
+    ['-1.25', 'weighted', '-1250'],
+    ['0.001', 'weighted', '1'],
+  ] as const)('parses adjustment %s exactly', (input, productType, expected) => {
+    expect(parseAdjustmentQuantityToScaled(input, productType)).toEqual({
+      ok: true,
+      value: expected,
+    });
+  });
+
+  it.each([
+    ['0', 'unit', 'zero'],
+    ['-0.000', 'weighted', 'zero'],
+    ['1.5', 'unit', 'precision'],
+    ['1.2345', 'weighted', 'precision'],
+    ['1e3', 'weighted', 'format'],
+  ] as const)('refuses adjustment %s as %s', (input, productType, reason) => {
+    expect(parseAdjustmentQuantityToScaled(input, productType)).toEqual({ ok: false, reason });
+  });
+
+  it('preserves inventory quantities beyond JavaScript safe integer range', () => {
+    expect(parseCountedQuantityToScaled('900719925474099', 'unit')).toEqual({
+      ok: true,
+      value: '900719925474099000',
+    });
+    expect(parseInventoryQuantityToScaled('999999999999999.999', 'weighted')).toEqual({
+      ok: true,
+      value: '999999999999999999',
+    });
   });
 });
 

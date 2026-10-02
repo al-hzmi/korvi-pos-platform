@@ -32,6 +32,8 @@ const OPERATION = '018f1000-0000-7000-8000-0000000000f1';
 let store: MemoryBusinessStore;
 let service: CheckoutService;
 let counter: number;
+let fiscalizedInvoiceIds: string[];
+let fiscalizationFailures: number;
 
 function principal(overrides: Partial<AuthenticatedPrincipal> = {}): AuthenticatedPrincipal {
   return {
@@ -53,6 +55,8 @@ beforeEach(() => {
   store = new MemoryBusinessStore();
   seedStore(store, A);
   counter = 0;
+  fiscalizedInvoiceIds = [];
+  fiscalizationFailures = 0;
   service = createCheckoutService({
     tenants: memoryTenantRepository(store),
     products: memoryProductRepository(store),
@@ -61,6 +65,15 @@ beforeEach(() => {
     sales: memorySaleRepository(store),
     idempotency: memoryIdempotencyRepository(store),
     audit: memoryAuditRepository(store),
+    fiscalization: {
+      fiscalize: async (_scope, _sale, invoice) => {
+        fiscalizedInvoiceIds.push(invoice.id);
+        if (fiscalizationFailures > 0) {
+          fiscalizationFailures -= 1;
+          throw new Error('fiscalization unavailable');
+        }
+      },
+    },
     now: () => new Date('2026-08-12T09:00:00.000Z'),
     newId: () => {
       counter += 1;
@@ -94,6 +107,17 @@ describe('a cash sale', () => {
     expect(result.sale.cashReceivedMinor).toBe('5000');
     expect(result.sale.changeMinor).toBe('2700');
     expect(result.replayed).toBe(false);
+  });
+
+  it('refuses a newly captured offline sale when current product truth requires lot selection', async () => {
+    store.products[0] = { ...store.products[0]!, lotTrackingRequired: true };
+
+    const result = await checkout({ offlineCaptured: true });
+
+    expect(result.outcome === 'failure' && result.reason).toBe('lot-offline-unsupported');
+    expect(store.sales).toHaveLength(0);
+    expect(store.movements).toHaveLength(0);
+    expect(store.keys).toHaveLength(0);
   });
 
   it('reconciles: net + vat = total, and the lines sum to it', async () => {
@@ -338,9 +362,14 @@ describe('the intent fingerprint', () => {
   const base = {
     branchId: A.branch,
     terminalId: A.terminal,
+    orderType: '',
+    tableId: '',
+    restaurantOrderId: '',
+    restaurantOrderRevision: '',
     lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
     tenders: [{ kind: 'cash', amountMinor: '5000', scheme: '', reference: '' }],
     basketDiscount: '',
+    couponCodes: [],
   };
 
   it('is stable across line order', () => {
@@ -350,6 +379,18 @@ describe('the intent fingerprint', () => {
     };
     const reversed = { ...two, lines: [...two.lines].reverse() };
     expect(fingerprintIntent(two)).toBe(fingerprintIntent(reversed));
+  });
+
+  it('is stable across coupon-code order', () => {
+    const two = { ...base, couponCodes: ['SAVE-10', 'VIP-5'] };
+    const reversed = { ...two, couponCodes: [...two.couponCodes].reverse() };
+    expect(fingerprintIntent(two)).toBe(fingerprintIntent(reversed));
+  });
+
+  it('changes when coupon activation intent changes', () => {
+    expect(fingerprintIntent({ ...base, couponCodes: ['SAVE-10'] })).not.toBe(
+      fingerprintIntent(base),
+    );
   });
 
   it('is stable across tender order', () => {
@@ -502,8 +543,13 @@ describe('the canonical form cannot be forged', () => {
   const base = {
     branchId: A.branch,
     terminalId: A.terminal,
+    orderType: '',
+    tableId: '',
+    restaurantOrderId: '',
+    restaurantOrderRevision: '',
     lines: [{ productId: A.milk, quantityScaled: '2000', discount: '' }],
     basketDiscount: '',
+    couponCodes: [],
   };
 
   it('cannot be made to collide with a delimiter-bearing reference', () => {
@@ -606,5 +652,34 @@ describe('what the audit says', () => {
     ]);
     // Nothing that belongs to somebody else's system.
     expect(JSON.stringify(store.audit)).not.toContain('AUTH-');
+  });
+});
+
+describe('fiscal checkout wiring', () => {
+  it('fiscalizes the same durable invoice on fresh checkout and exact replay', async () => {
+    const first = await checkout();
+    const second = await checkout();
+    if (first.outcome !== 'success' || second.outcome !== 'success') {
+      throw new Error('expected success');
+    }
+    expect(store.invoices).toHaveLength(1);
+    expect(fiscalizedInvoiceIds).toEqual([store.invoices[0]?.id, store.invoices[0]?.id]);
+    expect(second.replayed).toBe(true);
+    expect(second.sale.saleId).toBe(first.sale.saleId);
+  });
+
+  it('keeps the sale durable when fiscalization fails and resumes it on replay', async () => {
+    fiscalizationFailures = 1;
+    await expect(checkout()).rejects.toThrow('fiscalization unavailable');
+    expect(store.sales).toHaveLength(1);
+    expect(store.invoices).toHaveLength(1);
+    expect(store.movements).toHaveLength(1);
+
+    const replay = await checkout();
+    if (replay.outcome !== 'success') throw new Error(replay.reason);
+    expect(replay.replayed).toBe(true);
+    expect(store.sales).toHaveLength(1);
+    expect(store.invoices).toHaveLength(1);
+    expect(fiscalizedInvoiceIds).toEqual([store.invoices[0]?.id, store.invoices[0]?.id]);
   });
 });

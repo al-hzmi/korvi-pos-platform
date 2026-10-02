@@ -3,6 +3,7 @@
 **/node_modules/**
 **/coverage/**
 packages/database/generated/**
+apps/cashier-client/src-tauri/gen/**
 docs/design/**
 docs/governance/**
 *.svg

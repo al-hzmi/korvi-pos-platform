@@ -12,6 +12,7 @@ import {
   createShiftRepository,
   createTenantRepository,
   createTerminalRepository,
+  enableProductLotTracking,
   provisionPermissionCatalogue,
   provisionTenantRbac,
   withTenant,
@@ -51,6 +52,9 @@ const R = {
   milk: '018f6000-0000-7000-8000-0000000000f1',
   odd: '018f6000-0000-7000-8000-0000000000f2',
   loose: '018f6000-0000-7000-8000-0000000000f3',
+  costed: '018f6000-0000-7000-8000-0000000000f4',
+  lotted: '018f6000-0000-7000-8000-0000000000f5',
+  legacyLot: '018f6000-0000-7000-8000-0000000000f6',
 } as const;
 
 /** A second merchant, used only to prove it can see nothing of the first. */
@@ -177,6 +181,10 @@ describe.skipIf(url === '')('returns, live', () => {
         [R.odd, 'ODD-1', 1_000n, 'unit', true],
         // Sold by weight, and never tracked in stock.
         [R.loose, 'LOOSE-1', 2_275n, 'weighted', false],
+        // Dedicated to original-sale cost-basis restoration proofs.
+        [R.costed, 'COSTED-1', 1_150n, 'unit', true],
+        [R.lotted, 'LOTTED-1', 1_150n, 'unit', true],
+        [R.legacyLot, 'LEGACY-LOT-1', 1_150n, 'unit', true],
       ] as const) {
         await tx.product.create({
           data: {
@@ -612,8 +620,10 @@ describe.skipIf(url === '')('returns, live', () => {
                 productType: line.productType,
                 vatBasisPoints: line.vatBasisPoints,
                 quantityScaled: '1000',
+                inventoryQuantityScaled: '1000',
                 grossMinor: '1150',
                 lineDiscountMinor: '0',
+                promotionDiscountMinor: '0',
                 basketDiscountMinor: '0',
                 netMinor: '1000',
                 vatMinor: '150',
@@ -622,6 +632,7 @@ describe.skipIf(url === '')('returns, live', () => {
             ],
             grossMinor: '1150',
             lineDiscountMinor: '0',
+            promotionDiscountMinor: '0',
             basketDiscountMinor: '0',
             netMinor: '1000',
             vatMinor: '150',
@@ -696,6 +707,7 @@ describe.skipIf(url === '')('returns, live', () => {
     expect(sum((row) => row.quantityScaled)).toBe(original?.quantityScaled);
     expect(sum((row) => row.grossMinor)).toBe(original?.grossMinor);
     expect(sum((row) => row.lineDiscountMinor)).toBe(original?.lineDiscountMinor);
+    expect(sum((row) => row.promotionDiscountMinor)).toBe(original?.promotionDiscountMinor);
     expect(sum((row) => row.basketDiscountMinor)).toBe(original?.basketDiscountMinor);
     expect(sum((row) => row.netMinor)).toBe(original?.netMinor);
     expect(sum((row) => row.vatMinor)).toBe(original?.vatMinor);
@@ -739,5 +751,274 @@ describe.skipIf(url === '')('returns, live', () => {
         data: { priceMinor: 1_150n, vatBasisPoints: 1500, isActive: true, nameAr: 'صنف' },
       });
     });
+  });
+  it('M. partial returns restore the immutable original sale basis with exact remainder', async () => {
+    // Four units are on hand: one historical/unknown and three carrying exactly
+    // 100 halalas of recorded value. Selling all four therefore freezes a
+    // mixed basis (unknown first, then known); reversing the sale must restore
+    // the known segment first as 33 + 33 + 34, then the unknown unit.
+    await withTenant(prisma, scope.tenantId, async (tx) => {
+      const balance = await tx.inventoryBalance.update({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: R.tenant,
+            branchId: R.branch,
+            productId: R.costed,
+          },
+        },
+        data: { quantityScaled: 4_000n },
+        select: { revision: true },
+      });
+      await tx.inventoryCostBalance.upsert({
+        where: {
+          tenantId_branchId_productId: {
+            tenantId: R.tenant,
+            branchId: R.branch,
+            productId: R.costed,
+          },
+        },
+        create: {
+          tenantId: R.tenant,
+          branchId: R.branch,
+          productId: R.costed,
+          knownQuantityScaled: 3_000n,
+          knownValueMinor: 100n,
+          stockRevision: balance.revision,
+          costRevision: 0n,
+        },
+        update: {
+          knownQuantityScaled: 3_000n,
+          knownValueMinor: 100n,
+          stockRevision: balance.revision,
+          costRevision: 0n,
+        },
+      });
+    });
+
+    const sale = await sell(R.costed, '4000');
+    const afterSale = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      line: await tx.saleLine.findFirst({ where: { id: sale.lineId } }),
+      cost: await tx.inventoryCostBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+      stock: await tx.inventoryBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+    }));
+    expect(afterSale.line).toMatchObject({
+      costKnownQuantityScaled: 3_000n,
+      costUnknownQuantityScaled: 1_000n,
+      costValueMinor: 100n,
+      costProvenance: 'mixed',
+    });
+    expect(afterSale.cost).toMatchObject({ knownQuantityScaled: 0n, knownValueMinor: 0n });
+    expect(afterSale.stock?.quantityScaled).toBe(0n);
+
+    const snapshots: Array<{
+      line: {
+        id: string;
+        costKnownQuantityScaled: bigint;
+        costUnknownQuantityScaled: bigint;
+        costValueMinor: bigint;
+        costProvenance: string;
+      };
+      movement: {
+        sourceLineId: string | null;
+        costKnownQuantityScaled: bigint;
+        costUnknownQuantityScaled: bigint;
+        costValueMinor: bigint;
+        costProvenance: string;
+      };
+    }> = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const result = await returns.create({
+        principal,
+        operationId: newId(),
+        terminalId: R.terminal,
+        saleId: sale.saleId,
+        lines: [{ saleLineId: sale.lineId, quantityScaled: '1000' }],
+        refund: { kind: 'cash' },
+      });
+      if (result.outcome !== 'success') throw new Error(result.reason);
+
+      const evidence = await withTenant(prisma, scope.tenantId, async (tx) => {
+        const line = await tx.returnLine.findFirstOrThrow({
+          where: { returnId: result.document.returnId, saleLineId: sale.lineId },
+          select: {
+            id: true,
+            costKnownQuantityScaled: true,
+            costUnknownQuantityScaled: true,
+            costValueMinor: true,
+            costProvenance: true,
+          },
+        });
+        const movement = await tx.inventoryMovement.findFirstOrThrow({
+          where: { sourceType: 'return', sourceId: result.document.returnId },
+          select: {
+            sourceLineId: true,
+            costKnownQuantityScaled: true,
+            costUnknownQuantityScaled: true,
+            costValueMinor: true,
+            costProvenance: true,
+          },
+        });
+        return { line, movement };
+      });
+      snapshots.push(evidence);
+    }
+
+    expect(snapshots.map(({ line }) => line.costValueMinor)).toEqual([33n, 33n, 34n, 0n]);
+    expect(snapshots.map(({ line }) => line.costKnownQuantityScaled)).toEqual([
+      1_000n,
+      1_000n,
+      1_000n,
+      0n,
+    ]);
+    expect(snapshots.map(({ line }) => line.costUnknownQuantityScaled)).toEqual([
+      0n,
+      0n,
+      0n,
+      1_000n,
+    ]);
+    expect(snapshots.map(({ line }) => line.costProvenance)).toEqual([
+      'recorded',
+      'recorded',
+      'recorded',
+      'unknown',
+    ]);
+
+    for (const { line, movement } of snapshots) {
+      expect(movement.sourceLineId).toBe(line.id);
+      expect(movement.costKnownQuantityScaled).toBe(line.costKnownQuantityScaled);
+      expect(movement.costUnknownQuantityScaled).toBe(line.costUnknownQuantityScaled);
+      expect(movement.costValueMinor).toBe(line.costValueMinor);
+      expect(movement.costProvenance).toBe(line.costProvenance);
+    }
+
+    const final = await withTenant(prisma, scope.tenantId, async (tx) => ({
+      cost: await tx.inventoryCostBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+      stock: await tx.inventoryBalance.findFirst({
+        where: { branchId: R.branch, productId: R.costed },
+      }),
+      returnLines: await tx.returnLine.findMany({ where: { saleLineId: sale.lineId } }),
+    }));
+    expect(final.stock?.quantityScaled).toBe(4_000n);
+    expect(final.cost).toMatchObject({ knownQuantityScaled: 3_000n, knownValueMinor: 100n });
+    expect(final.returnLines.reduce((sum, line) => sum + line.costValueMinor, 0n)).toBe(
+      afterSale.line?.costValueMinor,
+    );
+    expect(final.returnLines.reduce((sum, line) => sum + line.costKnownQuantityScaled, 0n)).toBe(
+      afterSale.line?.costKnownQuantityScaled,
+    );
+    expect(final.returnLines.reduce((sum, line) => sum + line.costUnknownQuantityScaled, 0n)).toBe(
+      afterSale.line?.costUnknownQuantityScaled,
+    );
+  });
+  it('N. sale and partial returns preserve immutable lot provenance end to end', async () => {
+    const config = await enableProductLotTracking(prisma, scope, { userId: R.user }, R.lotted, {
+      selectionPolicy: 'fefo',
+      dateRequirement: 'optional',
+      occurredAt: '2026-09-29T01:00:00.000Z',
+    });
+    const lot = config.lots[0];
+    if (lot === undefined) throw new Error('tracking baseline lot was not created');
+
+    const sale = await sell(R.lotted, '3000');
+    const saleLots = await withTenant(prisma, scope.tenantId, (tx) =>
+      tx.saleLineLotAllocation.findMany({
+        where: { saleLineId: sale.lineId },
+        orderBy: { lotId: 'asc' },
+      }),
+    );
+    expect(saleLots).toHaveLength(1);
+    expect(saleLots[0]).toMatchObject({
+      lotId: lot.id,
+      productId: R.lotted,
+      quantityScaled: 3_000n,
+      provenance: 'historical-unknown',
+    });
+
+    const returnSnapshots: bigint[] = [];
+    for (const quantity of [1_000n, 2_000n]) {
+      const result = await returns.create({
+        principal,
+        operationId: newId(),
+        terminalId: R.terminal,
+        saleId: sale.saleId,
+        lines: [{ saleLineId: sale.lineId, quantityScaled: quantity.toString() }],
+        refund: { kind: 'cash' },
+      });
+      if (result.outcome !== 'success') throw new Error(result.reason);
+
+      const rows = await withTenant(prisma, scope.tenantId, (tx) =>
+        tx.returnLineLotAllocation.findMany({
+          where: { returnLine: { is: { returnId: result.document.returnId } } },
+        }),
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.lotId).toBe(lot.id);
+      returnSnapshots.push(rows[0]?.quantityScaled ?? 0n);
+    }
+    expect(returnSnapshots).toEqual([1_000n, 2_000n]);
+
+    const restored = await withTenant(prisma, scope.tenantId, async (tx) => {
+      const entries = await tx.inventoryLotEntry.aggregate({
+        where: { tenantId: R.tenant, branchId: R.branch, productId: R.lotted, lotId: lot.id },
+        _sum: { quantityScaled: true },
+      });
+      return entries._sum.quantityScaled ?? 0n;
+    });
+    expect(restored).toBe(1_000_000n);
+  });
+
+  it('O. a pre-V2-4 sale returns into explicit historical-unknown provenance after tracking is enabled', async () => {
+    const sale = await sell(R.legacyLot, '1000');
+    const preTrackingSnapshotCount = await withTenant(prisma, scope.tenantId, (tx) =>
+      tx.saleLineLotAllocation.count({ where: { saleLineId: sale.lineId } }),
+    );
+    expect(preTrackingSnapshotCount).toBe(0);
+
+    const enabled = await enableProductLotTracking(prisma, scope, { userId: R.user }, R.legacyLot, {
+      selectionPolicy: 'fifo',
+      dateRequirement: 'required',
+      occurredAt: '2026-09-29T01:10:00.000Z',
+    });
+    expect(enabled.lots).toHaveLength(1);
+
+    const result = await returns.create({
+      principal,
+      operationId: newId(),
+      terminalId: R.terminal,
+      saleId: sale.saleId,
+      lines: [{ saleLineId: sale.lineId, quantityScaled: '1000' }],
+      refund: { kind: 'cash' },
+    });
+    if (result.outcome !== 'success') throw new Error(result.reason);
+
+    const snapshot = await withTenant(prisma, scope.tenantId, (tx) =>
+      tx.returnLineLotAllocation.findFirst({
+        where: { returnLine: { is: { returnId: result.document.returnId } } },
+      }),
+    );
+    expect(snapshot).toMatchObject({
+      productId: R.legacyLot,
+      quantityScaled: 1_000n,
+      provenance: 'historical-unknown',
+      externalBatchReference: null,
+      dateKind: null,
+      dateValue: null,
+    });
+
+    const lots = await withTenant(prisma, scope.tenantId, (tx) =>
+      tx.inventoryLot.findMany({
+        where: { tenantId: R.tenant, productId: R.legacyLot },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
+    expect(lots).toHaveLength(2);
+    expect(lots.every((lot) => lot.provenance === 'historical-unknown')).toBe(true);
   });
 });

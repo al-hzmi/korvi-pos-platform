@@ -66,6 +66,8 @@ const MESSAGES: Readonly<Record<ProductAdminFailureReason, string>> = {
   'settings-missing': 'إعدادات المنشأة غير مكتملة.',
   'barcode-required': 'إعدادات المنشأة تتطلب باركود لهذا الصنف.',
   'weighted-disabled': 'الأصناف الموزونة غير مفعلة في إعدادات المنشأة.',
+  'category-not-found': 'الفئة المحددة غير موجودة في هذه المنشأة.',
+  'category-inactive': 'الفئة المحددة غير نشطة.',
   'sku-taken': 'رقم الصنف مستخدم بالفعل في هذه المنشأة.',
   'barcode-taken': 'الباركود مستخدم بالفعل في هذه المنشأة.',
 };
@@ -75,6 +77,8 @@ const STATUS: Readonly<Record<ProductAdminFailureReason, number>> = {
   'settings-missing': 409,
   'barcode-required': 409,
   'weighted-disabled': 409,
+  'category-not-found': 404,
+  'category-inactive': 409,
   'sku-taken': 409,
   'barcode-taken': 409,
 };

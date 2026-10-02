@@ -59,7 +59,7 @@ export function createProductSearch(
   emit: (state: SearchState) => void,
   options: SearchOptions = {},
 ): ProductSearch {
-  const limit = options.limit ?? 20;
+  const limit = options.limit ?? 50;
   let sequence = 0;
   let inFlight: AbortController | null = null;
 

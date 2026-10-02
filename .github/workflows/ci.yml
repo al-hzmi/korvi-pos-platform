@@ -35,6 +35,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      # setup-node installs Node's bundled npm. Korvi separately declares the
+      # package-manager binary, so a Node image refresh must not silently change
+      # lockfile/install semantics underneath a green CI run.
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
       # `npm ci` only — never a fallback to `npm install`. A fallback silently
       # resolves fresh versions when the lockfile is missing or stale, which
       # means CI stops testing the tree that will actually ship.

@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { initialSearchState } from '../lib/search';
 import { createSearchSession } from '../lib/search-session';
-import type { ApiClient } from '../lib/api';
-import type { SearchState } from '../lib/search';
+import type { SearchSource, SearchState } from '../lib/search';
 
 /**
  * React's share of the search box: two pieces of state and a cleanup.
@@ -24,13 +23,13 @@ export interface SearchHandle {
   readonly browse: () => void;
 }
 
-export function useProductSearch(api: ApiClient): SearchHandle {
+export function useProductSearch(source: SearchSource): SearchHandle {
   const [term, setTermState] = useState('');
   const [state, setState] = useState<SearchState>(initialSearchState);
 
   const session = useMemo(
-    () => createSearchSession(api, { state: setState, term: setTermState }),
-    [api],
+    () => createSearchSession(source, { state: setState, term: setTermState }),
+    [source],
   );
 
   useEffect(() => {
