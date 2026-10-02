@@ -866,6 +866,10 @@ export async function recordSaleWithin(
       nameEn: line.nameEn,
       productType: line.productType,
       unitPriceMinor: BigInt(line.unitPriceMinor),
+      // Legacy/non-modifier checkout: final and base prices are identical.
+      // Modifier-priced checkout must replace these with its authoritative snapshot.
+      baseUnitPriceMinor: BigInt(line.unitPriceMinor),
+      modifierTotalMinor: 0n,
       vatBasisPoints: Number(line.vatBasisPoints),
       quantityScaled: BigInt(line.quantityScaled),
       inventoryQuantityScaled:
