@@ -262,3 +262,15 @@ a concrete authority gap after modifier flow is complete.
   - settlement proof;
 - exact-head CI, PostgreSQL, browser and installed-client regression gates;
 - Gap Audit + Current Source of Truth reconciliation only after exact-head proof.
+
+## Implementation checkpoint (2026-10-02)
+
+The domain modifier evaluator, forward-only database schema and transaction-scoped
+menu-policy read helper now exist. The read helper acquires the tenant's shared menu-policy
+lock and derives modifier prices from server-loaded product/group/option policy.
+Focused resolver unit proofs have been added.
+
+This checkpoint is not V2-5 acceptance. Modifier configuration, direct checkout and
+open-order writes must still be connected to the same commit-time authority; sale and
+order-line selection snapshots, KDS, offline refusal and the live evidence above
+must be verified before enabling merchant modifier configuration or declaring V2-5 complete.
