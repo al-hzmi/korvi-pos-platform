@@ -529,6 +529,20 @@ export type RestaurantOrderType = 'dine-in' | 'takeaway' | 'delivery';
  * invoice says, and a deleted product must not make an old receipt
  * unprintable.
  */
+export interface SaleLineModifierSelectionRecord {
+  readonly groupId: string;
+  readonly groupRevision: string;
+  readonly groupCode: string;
+  readonly groupNameAr: string;
+  readonly groupSortOrder: number;
+  readonly optionId: string;
+  readonly optionRevision: string;
+  readonly optionCode: string;
+  readonly optionNameAr: string;
+  readonly optionSortOrder: number;
+  readonly priceDeltaMinor: string;
+}
+
 export interface SaleLineRecord {
   readonly id: string;
   readonly lineNumber: number;
@@ -550,7 +564,14 @@ export interface SaleLineRecord {
    * fact proves the type" — never "unit". See ADR-0016.
    */
   readonly productType: ProductType | null;
+  /**
+   * Additive V2-5 historical decomposition. Optional only for pre-V2 fixtures;
+   * persisted rows always carry all three fields.
+   */
+  readonly baseUnitPriceMinor?: string;
+  readonly modifierTotalMinor?: string;
   readonly unitPriceMinor: string;
+  readonly modifierSelections?: readonly SaleLineModifierSelectionRecord[];
   readonly vatBasisPoints: BasisPoints;
   /** Commercial selling-unit quantity. */
   readonly quantityScaled: string;
@@ -732,6 +753,17 @@ export interface RetailPricingSettlementInput {
   readonly lines: readonly RetailPricingSettlementLineInput[];
 }
 
+export interface RestaurantModifierSettlementLineInput {
+  readonly saleLineId: string;
+  readonly productId: string;
+  readonly baseUnitPriceMinor: string;
+  readonly selectedOptionIds: readonly string[];
+}
+
+export interface RestaurantModifierSettlementInput {
+  readonly lines: readonly RestaurantModifierSettlementLineInput[];
+}
+
 export interface RecordSaleInput {
   /**
    * `sequence` is absent on purpose, and so is the invoice number.
@@ -768,6 +800,12 @@ export interface RecordSaleInput {
    * current commercial policy and proves these facts before financial writes.
    */
   readonly retailPricingSettlement?: RetailPricingSettlementInput | undefined;
+  /**
+   * Direct restaurant checkout commit-time precondition. Persistence takes the
+   * shared menu-policy lock and re-resolves every line before writing history.
+   * Open-order settlement deliberately omits this and copies historical order facts.
+   */
+  readonly restaurantModifierSettlement?: RestaurantModifierSettlementInput | undefined;
   readonly idempotency: IdempotencyReservation;
 }
 

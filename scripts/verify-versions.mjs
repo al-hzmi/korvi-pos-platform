@@ -31,6 +31,12 @@ const ALLOWED_BEHIND = {
     'Mastermind V2-3 execution freeze (2026-09-28): retain the currently proven 2.11.1 native runtime API while package/price-list financial authority is being implemented; evaluate 2.12.0 only in a dedicated installed-client dependency-maintenance change.',
   '@tauri-apps/cli':
     'Post-V1 parallel product-development baseline (2026-09-20): retain the exact 2.11.4 installed-client toolchain already proven on the current lineage; upgrade to 2.11.5 only in a dedicated installed-client dependency-maintenance change, not inside Restaurant or Migration feature work.',
+  '@vitejs/plugin-react':
+    'Mastermind V2-5 execution freeze (2026-10-07): retain the exact 6.1.1 React/Vite integration already proven on the V2-4 lineage while restaurant modifier money/history authority is being connected; evaluate 6.1.2 only in a dedicated dependency-maintenance change.',
+  next:
+    'Mastermind V2-5 execution freeze (2026-10-07): retain the proven 16.3.8 application runtime while restaurant modifier financial and operator authority is under exact-head verification; evaluate 16.4.0 only in a dedicated dependency-maintenance change.',
+  postcss:
+    'Mastermind V2-5 execution freeze (2026-10-07): retain the proven 8.5.28 CSS toolchain during restaurant modifier authority work; evaluate 8.5.29 only in a dedicated dependency-maintenance change.',
   eslint:
     'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
   '@vitest/coverage-v8':

@@ -12,6 +12,7 @@ import {
   createPromotionRepository,
   createRetailPricingRepository,
   createRestaurantFloorRepository,
+  createRestaurantModifierPolicyRepository,
   createSaleRepository,
   createReturnRepository,
   createShiftRepository,
@@ -224,6 +225,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
     const tenants = createTenantRepository(prisma);
     const dashboard = createDashboardRepository(prisma);
     const restaurantFloor = createRestaurantFloorRepository(prisma);
+    const restaurantModifiers = createRestaurantModifierPolicyRepository(prisma);
     const idempotency = createIdempotencyRepository(prisma);
     const audit = createAuditRepository(prisma);
     const sales = createSaleRepository(prisma);
@@ -258,6 +260,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         promotions,
         retailPricing,
         restaurantFloor,
+        restaurantModifiers,
         restaurantOrders: {
           read: (scope, branchId, orderId) => readRestaurantOrder(prisma, scope, branchId, orderId),
         },

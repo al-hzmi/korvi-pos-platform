@@ -22,6 +22,8 @@ export interface CheckoutIntentLine {
   /** Empty string denotes the base Product commercial unit. */
   readonly packageId?: string;
   readonly quantityScaled: string;
+  /** Canonical selected modifier option identities. Order is not material. */
+  readonly selectedModifierOptionIds?: readonly string[];
   /** Canonical description of the line discount, or the empty string. */
   readonly discount: string;
 }
@@ -77,7 +79,7 @@ export interface CheckoutIntent {
  * the clear. No card data reaches this function because the API refuses to
  * receive any.
  *
- * `v9` because V2-3 package identity and price context joined the canonical form.
+ * `v10` because V2-5 restaurant modifier option identities joined the canonical form.\n * Two modifier choices with the same price delta are still different operational history.\n *\n * `v9` because V2-3 package identity and price context joined the canonical form.
  * A carton and a base unit of the same Product are different commercial intent.
  *
  * `v8` because the server-issued pricing precondition joined the canonical form.
@@ -124,6 +126,7 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
       line.productId,
       line.packageId ?? '',
       line.quantityScaled,
+      [...(line.selectedModifierOptionIds ?? [])].sort().join(','),
       line.discount,
     ])
     .sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1));
@@ -140,7 +143,7 @@ export function fingerprintIntent(intent: CheckoutIntent): string {
   const couponCodes = [...(intent.couponCodes ?? [])].sort();
 
   const canonical = JSON.stringify([
-    'v9',
+    'v10',
     intent.branchId,
     intent.terminalId,
     intent.orderType,

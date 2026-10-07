@@ -1,4 +1,11 @@
-import { ELECTRONIC_SCHEMES, evaluatePromotions, newId } from '@korvi/domain';
+import {
+  ELECTRONIC_SCHEMES,
+  InvalidAmountError,
+  InvalidRestaurantModifierDefinitionError,
+  InvalidRestaurantModifierSelectionError,
+  evaluatePromotions,
+  newId,
+} from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
 import {
   DatabaseError,
@@ -6,6 +13,7 @@ import {
   PromotionPolicyRefusedError,
   ShiftUnusableError,
 } from '../errors.js';
+import { resolveRestaurantModifierPolicyWithin } from '../restaurant/modifier-policy.js';
 import { RestaurantOrderRefusedError } from '../restaurant/orders.js';
 import { applyMovementWithin } from './inventory-repository.js';
 import { resolvePromotionCheckoutWithin } from './promotion-repository.js';
@@ -57,6 +65,20 @@ const PRODUCT_TYPES: readonly ProductType[] = ['unit', 'weighted'];
 const DISCOUNT_SCOPES = ['line', 'basket'] as const;
 const DISCOUNT_KINDS = ['fixed', 'percentage'] as const;
 
+interface ModifierSelectionRow {
+  groupId: string;
+  groupRevision: bigint;
+  groupCode: string;
+  groupNameAr: string;
+  groupSortOrder: number;
+  optionId: string;
+  optionRevision: bigint;
+  optionCode: string;
+  optionNameAr: string;
+  optionSortOrder: number;
+  priceDeltaMinor: bigint;
+}
+
 interface LineRow {
   id: string;
   lineNumber: number;
@@ -65,6 +87,10 @@ interface LineRow {
   nameAr: string;
   nameEn: string | null;
   productType: string | null;
+  /** Optional only for legacy repository mocks; real V2-5 rows always carry them. */
+  baseUnitPriceMinor?: bigint;
+  modifierTotalMinor?: bigint;
+  modifierSelections?: ModifierSelectionRow[];
   unitPriceMinor: bigint;
   vatBasisPoints: number;
   quantityScaled: bigint;
@@ -179,6 +205,25 @@ function lineToDomain(row: LineRow): SaleLineRecord {
       row.productType === null
         ? null
         : oneOf(PRODUCT_TYPES, row.productType, 'sale_lines.productType'),
+    ...(row.baseUnitPriceMinor === undefined
+      ? {}
+      : {
+          baseUnitPriceMinor: minor(row.baseUnitPriceMinor),
+          modifierTotalMinor: minor(row.modifierTotalMinor ?? 0n),
+          modifierSelections: (row.modifierSelections ?? []).map((selection) => ({
+            groupId: selection.groupId,
+            groupRevision: minor(selection.groupRevision),
+            groupCode: selection.groupCode,
+            groupNameAr: selection.groupNameAr,
+            groupSortOrder: selection.groupSortOrder,
+            optionId: selection.optionId,
+            optionRevision: minor(selection.optionRevision),
+            optionCode: selection.optionCode,
+            optionNameAr: selection.optionNameAr,
+            optionSortOrder: selection.optionSortOrder,
+            priceDeltaMinor: minor(selection.priceDeltaMinor),
+          })),
+        }),
     unitPriceMinor: minor(row.unitPriceMinor),
     vatBasisPoints: rate(row.vatBasisPoints),
     quantityScaled: minor(row.quantityScaled),
@@ -398,7 +443,10 @@ interface RestaurantOrderSnapshotLine {
   readonly nameAr: string;
   readonly nameEn: string | null;
   readonly productType: string;
+  readonly baseUnitPriceMinor: bigint;
+  readonly modifierTotalMinor: bigint;
   readonly unitPriceMinor: bigint;
+  readonly modifierSelections: readonly ModifierSelectionRow[];
   readonly vatBasisPoints: number;
   readonly quantityScaled: bigint;
 }
@@ -463,7 +511,25 @@ async function assertRestaurantOrderSettlement(
       nameAr: true,
       nameEn: true,
       productType: true,
+      baseUnitPriceMinor: true,
+      modifierTotalMinor: true,
       unitPriceMinor: true,
+      modifierSelections: {
+        orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
+        select: {
+          groupId: true,
+          groupRevision: true,
+          groupCode: true,
+          groupNameAr: true,
+          groupSortOrder: true,
+          optionId: true,
+          optionRevision: true,
+          optionCode: true,
+          optionNameAr: true,
+          optionSortOrder: true,
+          priceDeltaMinor: true,
+        },
+      },
       vatBasisPoints: true,
       quantityScaled: true,
     },
@@ -484,11 +550,173 @@ async function assertRestaurantOrderSettlement(
       saleLine.nameAr !== orderLine.nameAr ||
       saleLine.nameEn !== orderLine.nameEn ||
       saleLine.productType !== orderLine.productType ||
+      (saleLine.baseUnitPriceMinor ?? saleLine.unitPriceMinor) !==
+        orderLine.baseUnitPriceMinor.toString() ||
+      (saleLine.modifierTotalMinor ?? '0') !== orderLine.modifierTotalMinor.toString() ||
       saleLine.unitPriceMinor !== orderLine.unitPriceMinor.toString() ||
       Number(saleLine.vatBasisPoints) !== orderLine.vatBasisPoints ||
       saleLine.quantityScaled !== orderLine.quantityScaled.toString()
     ) {
       throw new DatabaseError('Restaurant order settlement line snapshot does not match the sale.');
+    }
+
+    const saleSelections = saleLine.modifierSelections ?? [];
+    if (saleSelections.length !== orderLine.modifierSelections.length) {
+      throw new DatabaseError(
+        'Restaurant order settlement modifier snapshot count does not match the sale.',
+      );
+    }
+    for (let selectionIndex = 0; selectionIndex < orderLine.modifierSelections.length; selectionIndex += 1) {
+      const expected = orderLine.modifierSelections[selectionIndex];
+      const actual = saleSelections[selectionIndex];
+      if (
+        expected === undefined ||
+        actual === undefined ||
+        actual.groupId !== expected.groupId ||
+        actual.groupRevision !== expected.groupRevision.toString() ||
+        actual.groupCode !== expected.groupCode ||
+        actual.groupNameAr !== expected.groupNameAr ||
+        actual.groupSortOrder !== expected.groupSortOrder ||
+        actual.optionId !== expected.optionId ||
+        actual.optionRevision !== expected.optionRevision.toString() ||
+        actual.optionCode !== expected.optionCode ||
+        actual.optionNameAr !== expected.optionNameAr ||
+        actual.optionSortOrder !== expected.optionSortOrder ||
+        actual.priceDeltaMinor !== expected.priceDeltaMinor.toString()
+      ) {
+        throw new DatabaseError(
+          'Restaurant order settlement modifier snapshot does not match the sale.',
+        );
+      }
+    }
+  }
+}
+
+function modifierSelectionMatches(
+  actual: NonNullable<RecordSaleInput['sale']['lines'][number]['modifierSelections']>[number],
+  expected: {
+    readonly groupId: string;
+    readonly groupRevision: bigint;
+    readonly groupCode: string;
+    readonly groupNameAr: string;
+    readonly groupSortOrder: number;
+    readonly optionId: string;
+    readonly optionRevision: bigint;
+    readonly optionCode: string;
+    readonly optionNameAr: string;
+    readonly optionSortOrder: number;
+    readonly priceDeltaMinor: bigint;
+  },
+): boolean {
+  return (
+    actual.groupId === expected.groupId &&
+    actual.groupRevision === expected.groupRevision.toString() &&
+    actual.groupCode === expected.groupCode &&
+    actual.groupNameAr === expected.groupNameAr &&
+    actual.groupSortOrder === expected.groupSortOrder &&
+    actual.optionId === expected.optionId &&
+    actual.optionRevision === expected.optionRevision.toString() &&
+    actual.optionCode === expected.optionCode &&
+    actual.optionNameAr === expected.optionNameAr &&
+    actual.optionSortOrder === expected.optionSortOrder &&
+    actual.priceDeltaMinor === expected.priceDeltaMinor.toString()
+  );
+}
+
+async function proveRestaurantModifierSettlementWithin(
+  tx: TransactionClient,
+  scope: TenantScope,
+  input: RecordSaleInput,
+): Promise<void> {
+  const settlement = input.restaurantModifierSettlement;
+  const orderSettlement = input.restaurantOrderSettlement;
+
+  if (settlement === undefined) {
+    // Open-order settlement is proven against immutable order snapshots above.
+    if (orderSettlement !== undefined) return;
+
+    const carriesModifierFacts = input.sale.lines.some(
+      (line) =>
+        BigInt(line.modifierTotalMinor ?? '0') !== 0n ||
+        (line.modifierSelections?.length ?? 0) !== 0,
+    );
+    if (carriesModifierFacts) {
+      throw new DatabaseError(
+        'Direct modifier-priced sale requires commit-time restaurant modifier authority.',
+      );
+    }
+    return;
+  }
+
+  if (
+    orderSettlement !== undefined ||
+    input.sale.restaurantOrderId !== null ||
+    input.sale.orderType === null ||
+    input.sale.orderType === undefined
+  ) {
+    throw new DatabaseError('Restaurant modifier settlement is valid only for direct restaurant sales.');
+  }
+  if (settlement.lines.length !== input.sale.lines.length) {
+    throw new DatabaseError('Restaurant modifier settlement must cover every sale line.');
+  }
+
+  const byLine = new Map(settlement.lines.map((line) => [line.saleLineId, line] as const));
+  if (byLine.size !== settlement.lines.length) {
+    throw new DatabaseError('Restaurant modifier settlement contains duplicate sale lines.');
+  }
+
+  for (const saleLine of input.sale.lines) {
+    if (saleLine.productId === null) {
+      throw new DatabaseError('Restaurant modifier settlement requires a Product identity.');
+    }
+    const authority = byLine.get(saleLine.id);
+    if (
+      authority === undefined ||
+      authority.productId !== saleLine.productId ||
+      authority.baseUnitPriceMinor !== (saleLine.baseUnitPriceMinor ?? saleLine.unitPriceMinor)
+    ) {
+      throw new DatabaseError('Restaurant modifier settlement line precondition is stale.');
+    }
+
+    let current;
+    try {
+      current = await resolveRestaurantModifierPolicyWithin(
+        tx,
+        scope,
+        authority.productId,
+        BigInt(authority.baseUnitPriceMinor),
+        authority.selectedOptionIds,
+      );
+    } catch (error) {
+      if (error instanceof InvalidRestaurantModifierSelectionError) {
+        throw new RestaurantOrderRefusedError('invalid-modifier-selection');
+      }
+      if (
+        error instanceof InvalidRestaurantModifierDefinitionError ||
+        error instanceof InvalidAmountError
+      ) {
+        throw new RestaurantOrderRefusedError('modifier-policy-invalid');
+      }
+      throw error;
+    }
+    if (
+      (saleLine.baseUnitPriceMinor ?? saleLine.unitPriceMinor) !==
+        current.baseUnitPriceMinor.toString() ||
+      (saleLine.modifierTotalMinor ?? '0') !== current.modifierTotalMinor.toString() ||
+      saleLine.unitPriceMinor !== current.unitPriceMinor.toString()
+    ) {
+      throw new DatabaseError('Restaurant modifier financial snapshot is stale.');
+    }
+
+    const actualSelections = saleLine.modifierSelections ?? [];
+    if (
+      actualSelections.length !== current.selections.length ||
+      current.selections.some((selection, index) => {
+        const actual = actualSelections[index];
+        return actual === undefined || !modifierSelectionMatches(actual, selection);
+      })
+    ) {
+      throw new DatabaseError('Restaurant modifier selection snapshot is stale.');
     }
   }
 }
@@ -520,7 +748,14 @@ async function reserveOperation(
 }
 
 const WITH_CHILDREN = {
-  lines: { orderBy: { lineNumber: 'asc' } },
+  lines: {
+    orderBy: { lineNumber: 'asc' },
+    include: {
+      modifierSelections: {
+        orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
+      },
+    },
+  },
   discounts: true,
   tenders: true,
 } as const;
@@ -775,6 +1010,7 @@ export async function recordSaleWithin(
     cashMovement,
     restaurantOrderSettlement,
     promotionSettlement,
+    restaurantModifierSettlement,
     idempotency,
   } = input;
 
@@ -806,6 +1042,7 @@ export async function recordSaleWithin(
   } else if (sale.restaurantOrderId !== null && sale.restaurantOrderId !== undefined) {
     throw new DatabaseError('A restaurantOrderId requires an atomic settlement precondition.');
   }
+  await proveRestaurantModifierSettlementWithin(tx, scope, input);
 
   // The merchant's overselling policy, read inside the transaction that
   // is about to move the stock.
@@ -866,10 +1103,8 @@ export async function recordSaleWithin(
       nameEn: line.nameEn,
       productType: line.productType,
       unitPriceMinor: BigInt(line.unitPriceMinor),
-      // Legacy/non-modifier checkout: final and base prices are identical.
-      // Modifier-priced checkout must replace these with its authoritative snapshot.
-      baseUnitPriceMinor: BigInt(line.unitPriceMinor),
-      modifierTotalMinor: 0n,
+      baseUnitPriceMinor: BigInt(line.baseUnitPriceMinor ?? line.unitPriceMinor),
+      modifierTotalMinor: BigInt(line.modifierTotalMinor ?? '0'),
       vatBasisPoints: Number(line.vatBasisPoints),
       quantityScaled: BigInt(line.quantityScaled),
       inventoryQuantityScaled:
@@ -909,6 +1144,28 @@ export async function recordSaleWithin(
       costProvenance: 'unknown',
     })),
   });
+
+  const modifierSelections = sale.lines.flatMap((line) =>
+    (line.modifierSelections ?? []).map((selection) => ({
+      id: newId(),
+      tenantId: tenant,
+      saleLineId: line.id,
+      groupId: selection.groupId,
+      optionId: selection.optionId,
+      groupCode: selection.groupCode,
+      groupNameAr: selection.groupNameAr,
+      groupRevision: BigInt(selection.groupRevision),
+      groupSortOrder: selection.groupSortOrder,
+      optionCode: selection.optionCode,
+      optionNameAr: selection.optionNameAr,
+      optionRevision: BigInt(selection.optionRevision),
+      optionSortOrder: selection.optionSortOrder,
+      priceDeltaMinor: BigInt(selection.priceDeltaMinor),
+    })),
+  );
+  if (modifierSelections.length > 0) {
+    await tx.saleLineModifierSelection.createMany({ data: modifierSelections });
+  }
 
   if (promotionSettlement !== undefined) {
     for (const application of promotionSettlement.applications) {

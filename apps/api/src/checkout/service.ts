@@ -5,6 +5,8 @@ import {
   InvalidCouponCodeError,
   InvalidDiscountError,
   InvalidTenderError,
+  InvalidRestaurantModifierDefinitionError,
+  InvalidRestaurantModifierSelectionError,
   PromotionManualDiscountConflictError,
   NonCashChangeError,
   UnderpaidError,
@@ -58,6 +60,7 @@ import type {
   PromotionRepository,
   RetailPriceAuthority,
   RetailPricingRepository,
+  RestaurantModifierResolution,
   RestaurantOrderType,
   RestaurantFloorRepository,
   ProductRepository,
@@ -125,7 +128,12 @@ export type CheckoutFailureReason =
   | 'restaurant-order-not-open'
   | 'restaurant-order-stale'
   | 'restaurant-order-mismatch'
-  | 'restaurant-order-incomplete';
+  | 'restaurant-order-incomplete'
+  | 'invalid-modifier-selection'
+  | 'modifier-policy-invalid'
+  | 'modifier-policy-stale'
+  | 'modifiers-not-applicable'
+  | 'modifier-offline-unsupported';
 
 export interface CheckoutFailure {
   readonly outcome: 'failure';
@@ -231,6 +239,8 @@ export interface CheckoutLineInput {
   readonly packageId?: string | null | undefined;
   /** Scaled by 1000, as a string. Never a float (ADR-0002). */
   readonly quantityScaled: string;
+  /** Restaurant modifier identities only; names, revisions and money are server-owned. */
+  readonly selectedModifierOptionIds?: readonly string[] | undefined;
   // `| undefined` rather than a bare optional: these arrive straight from a
   // parsed request body, where an absent key really is `undefined`, and
   // exactOptionalPropertyTypes treats the two as different things.
@@ -285,6 +295,15 @@ export interface CheckoutDeps {
   readonly retailPricing?: RetailPricingRepository;
   /** Required only for dine-in table validation. */
   readonly restaurantFloor?: RestaurantFloorRepository;
+  /** V2-5 read-side resolver. Sale persistence re-proves the same policy under lock. */
+  readonly restaurantModifiers?: {
+    resolve(
+      scope: TenantScope,
+      productId: string,
+      baseUnitPriceMinor: bigint,
+      selectedOptionIds: readonly string[],
+    ): Promise<RestaurantModifierResolution>;
+  };
   /** Pre-flight read; the sale repository re-proves the same snapshot under lock. */
   readonly restaurantOrders?: {
     read(
@@ -404,6 +423,7 @@ function fingerprintCheckoutIntent(
       productId: line.productId,
       packageId: line.packageId ?? '',
       quantityScaled: line.quantityScaled,
+      selectedModifierOptionIds: [...(line.selectedModifierOptionIds ?? [])].sort(),
       discount: describeDiscount(line.discount),
     })),
     priceContext: input.priceContext ?? 'retail',
@@ -439,6 +459,8 @@ interface CheckoutLoadedEntry {
   /** Canonical base Product stock/cost quantity. */
   readonly inventoryScaled: bigint;
   readonly retailAuthority: RetailPriceAuthority | null;
+  readonly modifierAuthority: RestaurantModifierResolution | null;
+  readonly selectedModifierOptionIds: readonly string[];
 }
 
 const IDEMPOTENCY_SCOPE = 'checkout';
@@ -690,7 +712,8 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             return (
               snapshot === undefined ||
               snapshot.productId !== line.productId ||
-              snapshot.quantityScaled !== line.quantityScaled
+              snapshot.quantityScaled !== line.quantityScaled ||
+              (line.selectedModifierOptionIds?.length ?? 0) !== 0
             );
           })
         ) {
@@ -727,6 +750,36 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       if (restaurantOrder !== null) {
         for (const line of restaurantOrder.lines) {
           if (line.trackInventory === null) return fail('restaurant-order-incomplete');
+          let modifierAuthority: RestaurantModifierResolution | null = null;
+          const selectedModifierOptionIds = [...(line.selectedModifierOptionIds ?? [])].sort();
+          if (settings.vertical === 'restaurant') {
+            if (deps.restaurantModifiers === undefined) {
+              return fail('modifier-policy-invalid');
+            }
+            try {
+              modifierAuthority = await deps.restaurantModifiers.resolve(
+                scope,
+                product.id,
+                BigInt(product.priceMinor),
+                selectedModifierOptionIds,
+              );
+            } catch (error) {
+              if (error instanceof InvalidRestaurantModifierSelectionError) {
+                return fail('invalid-modifier-selection');
+              }
+              if (
+                error instanceof InvalidRestaurantModifierDefinitionError ||
+                error instanceof InvalidAmountError
+              ) {
+                return fail('modifier-policy-invalid');
+              }
+              throw error;
+            }
+            if (input.offlineCaptured === true && modifierAuthority.selections.length > 0) {
+              return fail('modifier-offline-unsupported');
+            }
+          }
+
           loaded.push({
             product: {
               id: line.productId,
@@ -741,16 +794,42 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             scaled: BigInt(line.quantityScaled),
             inventoryScaled: BigInt(line.quantityScaled),
             retailAuthority: null,
+            selectedModifierOptionIds: line.modifierSelections.map((selection) => selection.optionId),
+            modifierAuthority: {
+              baseUnitPriceMinor: BigInt(line.baseUnitPriceMinor),
+              modifierTotalMinor: BigInt(line.modifierTotalMinor),
+              unitPriceMinor: BigInt(line.unitPriceMinor),
+              selections: line.modifierSelections.map((selection) => ({
+                groupId: selection.groupId,
+                groupRevision: BigInt(selection.groupRevision),
+                groupCode: selection.groupCode,
+                groupNameAr: selection.groupNameAr,
+                groupSortOrder: selection.groupSortOrder,
+                optionId: selection.optionId,
+                optionRevision: BigInt(selection.optionRevision),
+                optionCode: selection.optionCode,
+                optionNameAr: selection.optionNameAr,
+                optionSortOrder: selection.optionSortOrder,
+                priceDeltaMinor: BigInt(selection.priceDeltaMinor),
+              })),
+            },
           });
         }
       } else {
+        if (
+          settings.vertical !== 'restaurant' &&
+          input.lines.some((line) => (line.selectedModifierOptionIds?.length ?? 0) > 0)
+        ) {
+          return fail('modifiers-not-applicable');
+        }
+
         for (const line of input.lines) {
           const product = await deps.products.findById(scope, line.productId);
           if (product === null) return fail('unknown-product');
           if (!product.isActive) return fail('product-unavailable');
 
           let authority: RetailPriceAuthority | null = null;
-          if (deps.retailPricing !== undefined) {
+          if (settings.vertical !== 'restaurant' && deps.retailPricing !== undefined) {
             try {
               authority = await deps.retailPricing.resolve(scope, {
                 productId: line.productId,
@@ -775,8 +854,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                 : fail('package-unavailable');
             }
           } else if (
-            (line.packageId !== null && line.packageId !== undefined) ||
-            priceContext !== 'retail'
+            settings.vertical !== 'restaurant' &&
+            ((line.packageId !== null && line.packageId !== undefined) ||
+              priceContext !== 'retail')
           ) {
             return fail(
               line.packageId !== null && line.packageId !== undefined
@@ -821,7 +901,10 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               nameAr: product.nameAr,
               nameEn: product.nameEn,
               productType: product.productType,
-              priceMinor: authority?.unitPriceMinor ?? product.priceMinor,
+              priceMinor:
+                modifierAuthority?.unitPriceMinor.toString() ??
+                authority?.unitPriceMinor ??
+                product.priceMinor,
               vatBasisPoints: Number(product.vatBasisPoints),
               trackInventory: product.trackInventory,
               ...(product.lotTrackingRequired === undefined
@@ -831,6 +914,8 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             scaled,
             inventoryScaled,
             retailAuthority: authority,
+            modifierAuthority,
+            selectedModifierOptionIds,
           });
         }
       }
@@ -1175,7 +1260,26 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
               // not carry: unit or weighted, as the catalogue said at this
               // moment (ADR-0016). Nothing else on this path changed.
               productType: loaded[index]?.product.productType ?? null,
+              baseUnitPriceMinor:
+                loaded[index]?.modifierAuthority?.baseUnitPriceMinor.toString() ??
+                line.unitPrice.minor.toString(),
+              modifierTotalMinor:
+                loaded[index]?.modifierAuthority?.modifierTotalMinor.toString() ?? '0',
               unitPriceMinor: line.unitPrice.minor.toString(),
+              modifierSelections:
+                loaded[index]?.modifierAuthority?.selections.map((selection) => ({
+                  groupId: selection.groupId,
+                  groupRevision: selection.groupRevision.toString(),
+                  groupCode: selection.groupCode,
+                  groupNameAr: selection.groupNameAr,
+                  groupSortOrder: selection.groupSortOrder,
+                  optionId: selection.optionId,
+                  optionRevision: selection.optionRevision.toString(),
+                  optionCode: selection.optionCode,
+                  optionNameAr: selection.optionNameAr,
+                  optionSortOrder: selection.optionSortOrder,
+                  priceDeltaMinor: selection.priceDeltaMinor.toString(),
+                })) ?? [],
               vatBasisPoints: line.vatRate,
               quantityScaled: line.quantity.toString(),
               inventoryQuantityScaled:
@@ -1339,6 +1443,20 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                         },
                 },
               }),
+          ...(restaurantOrder === null && settings.vertical === 'restaurant'
+            ? {
+                restaurantModifierSettlement: {
+                  lines: loaded.map((entry, index) => ({
+                    saleLineId: saleLineIds[index] ?? '',
+                    productId: entry.product.id,
+                    baseUnitPriceMinor:
+                      entry.modifierAuthority?.baseUnitPriceMinor.toString() ??
+                      entry.product.priceMinor,
+                    selectedOptionIds: entry.selectedModifierOptionIds,
+                  })),
+                },
+              }
+            : {}),
           ...(restaurantOrder === null && loaded.every((entry) => entry.retailAuthority !== null)
             ? {
                 retailPricingSettlement: {
@@ -1405,6 +1523,10 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           if (error.detail === 'unknown-order') return fail('restaurant-order-not-found');
           if (error.detail === 'order-not-open') return fail('restaurant-order-not-open');
           if (error.detail === 'stale-revision') return fail('restaurant-order-stale');
+          if (error.detail === 'invalid-modifier-selection') {
+            return fail('invalid-modifier-selection');
+          }
+          if (error.detail === 'modifier-policy-invalid') return fail('modifier-policy-stale');
           return fail('restaurant-order-mismatch');
         }
         if (error instanceof OperationAlreadyRecordedError) {

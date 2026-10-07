@@ -242,6 +242,7 @@ export const checkoutPreviewBody = z
           .object({
             productId: UUID,
             packageId: UUID.nullable().optional(),
+            selectedModifierOptionIds: z.array(UUID).max(128).optional(),
             quantityScaled: SCALED_QUANTITY,
           })
           .strict(),
@@ -290,6 +291,7 @@ export const checkoutBody = z
         z.object({
           productId: UUID,
           packageId: UUID.nullable().optional(),
+          selectedModifierOptionIds: z.array(UUID).max(128).optional(),
           quantityScaled: SCALED_QUANTITY,
           discount: discountBody.optional(),
         }),

@@ -126,6 +126,12 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'restaurant-order-stale': 'تم تعديل حالة الطلب. أعد تحميله قبل الدفع.',
   'restaurant-order-mismatch': 'محتوى الطلب لا يطابق النسخة المفتوحة على الخادم.',
   'restaurant-order-incomplete': 'هذا الطلب قديم ولا يحمل حقيقة مخزون كافية للتسوية الآمنة.',
+  'invalid-modifier-selection': 'اختيارات الإضافات لا تطابق سياسة القائمة الحالية.',
+  'modifier-policy-invalid': 'إعداد إضافات المطعم غير صالح. راجع إعدادات القائمة.',
+  'modifier-policy-stale': 'تغيّرت إضافات القائمة أثناء العملية. حدّث السلة وأعد المحاولة.',
+  'modifiers-not-applicable': 'إضافات المطعم غير متاحة لمسار البيع الحالي.',
+  'modifier-offline-unsupported':
+    'هذه العملية تعتمد على إضافات قائمة لحظية ولا يمكن اعتمادها من عملية محفوظة دون اتصال.',
 };
 
 /** 409 for the two states a retry can resolve; 422 for a request that cannot. */
@@ -173,6 +179,11 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'restaurant-order-stale': 409,
   'restaurant-order-mismatch': 409,
   'restaurant-order-incomplete': 409,
+  'invalid-modifier-selection': 422,
+  'modifier-policy-invalid': 409,
+  'modifier-policy-stale': 409,
+  'modifiers-not-applicable': 422,
+  'modifier-offline-unsupported': 409,
 };
 
 /**

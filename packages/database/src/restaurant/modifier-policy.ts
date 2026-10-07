@@ -1,6 +1,8 @@
 import { resolveRestaurantModifiers } from '@korvi/domain';
 import { tenantParam } from '../repositories/mapping.js';
+import { withTenant } from '../tenant-context.js';
 import type { RestaurantModifierResolution } from '@korvi/domain';
+import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
 import type { TenantScope } from '@korvi/domain';
 
@@ -67,4 +69,38 @@ export async function resolveRestaurantModifierPolicyWithin(
     })),
     selectedOptionIds,
   });
+}
+
+
+export interface RestaurantModifierPolicyRepository {
+  resolve(
+    scope: TenantScope,
+    productId: string,
+    baseUnitPriceMinor: bigint,
+    selectedOptionIds: readonly string[],
+  ): Promise<RestaurantModifierResolution>;
+}
+
+/**
+ * Read-side resolver used by API preview/finalization preparation.
+ *
+ * This is deliberately not commit authority. recordSaleWithin re-runs the same
+ * resolver inside the sale transaction before any financial write.
+ */
+export function createRestaurantModifierPolicyRepository(
+  prisma: PrismaClient,
+): RestaurantModifierPolicyRepository {
+  return {
+    resolve(scope, productId, baseUnitPriceMinor, selectedOptionIds) {
+      return withTenant(prisma, scope.tenantId, (tx) =>
+        resolveRestaurantModifierPolicyWithin(
+          tx,
+          scope,
+          productId,
+          baseUnitPriceMinor,
+          selectedOptionIds,
+        ),
+      );
+    },
+  };
 }
