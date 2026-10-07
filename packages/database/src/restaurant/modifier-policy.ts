@@ -78,10 +78,7 @@ export interface RestaurantModifierPolicyRepository {
     baseUnitPriceMinor: bigint,
     selectedOptionIds: readonly string[],
   ): Promise<RestaurantModifierResolution>;
-  read(
-    scope: TenantScope,
-    productId: string,
-  ): Promise<readonly RestaurantModifierMenuGroup[]>;
+  read(scope: TenantScope, productId: string): Promise<readonly RestaurantModifierMenuGroup[]>;
 }
 
 /**
@@ -135,7 +132,7 @@ export interface RestaurantModifierMenuGroup {
 
 async function lockMenuPolicyShared(tx: TransactionClient, tenant: string): Promise<void> {
   await tx.$queryRawUnsafe<{ locked: number }[]>(
-    "SELECT 1::int4 AS \"locked\" FROM (SELECT pg_advisory_xact_lock_shared(hashtextextended('korvi:restaurant-menu-policy:' || $1, 0))) AS menu_lock",
+    'SELECT 1::int4 AS "locked" FROM (SELECT pg_advisory_xact_lock_shared(hashtextextended(\'korvi:restaurant-menu-policy:\' || $1, 0))) AS menu_lock',
     tenant,
   );
 }

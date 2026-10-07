@@ -8,10 +8,7 @@ import {
   updateRestaurantModifierGroup,
   updateRestaurantModifierOption,
 } from '@korvi/database';
-import {
-  requirePrincipalPermission,
-  tenantId as brandTenantId,
-} from '@korvi/domain';
+import { requirePrincipalPermission, tenantId as brandTenantId } from '@korvi/domain';
 import type {
   CreateModifierGroupInput,
   CreateModifierOptionInput,

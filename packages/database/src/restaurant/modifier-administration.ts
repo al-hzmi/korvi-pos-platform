@@ -185,7 +185,7 @@ async function requireRestaurantMode(tx: TransactionClient, tenant: string): Pro
 
 async function lockExclusive(tx: TransactionClient, tenant: string): Promise<void> {
   await tx.$queryRawUnsafe<{ locked: number }[]>(
-    "SELECT 1::int4 AS \"locked\" FROM (SELECT pg_advisory_xact_lock(hashtextextended('korvi:restaurant-menu-policy:' || $1, 0))) AS menu_lock",
+    'SELECT 1::int4 AS "locked" FROM (SELECT pg_advisory_xact_lock(hashtextextended(\'korvi:restaurant-menu-policy:\' || $1, 0))) AS menu_lock',
     tenant,
   );
 }
@@ -520,7 +520,12 @@ export async function setRestaurantProductModifierGroups(
       select: { groupId: true },
       orderBy: [{ sortOrder: 'asc' }, { groupId: 'asc' }],
     });
-    if (!sameIds(current.map((row) => row.groupId), expected)) {
+    if (
+      !sameIds(
+        current.map((row) => row.groupId),
+        expected,
+      )
+    ) {
       throw new RestaurantModifierAdminRefusedError('stale-attachments');
     }
 

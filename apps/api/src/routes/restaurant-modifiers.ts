@@ -104,7 +104,11 @@ function refusal(reply: FastifyReply, reason: RestaurantModifierAdminRefusal) {
   }
 }
 
-function mutation<T>(reply: FastifyReply, result: RestaurantModifierAdminResult<T>, created = false) {
+function mutation<T>(
+  reply: FastifyReply,
+  result: RestaurantModifierAdminResult<T>,
+  created = false,
+) {
   if (result.outcome === 'failure') return refusal(reply, result.reason);
   return reply.code(created ? 201 : 200).send(result.value);
 }
@@ -203,10 +207,7 @@ export function registerRestaurantModifierRoutes(
       const params = ID.safeParse(request.params);
       const body = setGroupsBody.safeParse(request.body);
       if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_body' });
-      return mutation(
-        reply,
-        await service.setProductGroups(principal, params.data.id, body.data),
-      );
+      return mutation(reply, await service.setProductGroups(principal, params.data.id, body.data));
     },
   );
 }
