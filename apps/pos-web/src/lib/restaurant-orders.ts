@@ -16,6 +16,16 @@ export function cartLinesFromRestaurantOrder(order: RestaurantOrderDetail): read
     unitLabel: null,
     unitPriceMinor: line.unitPriceMinor,
     vatBasisPoints: line.vatBasisPoints,
+    ...(line.modifierSelections.length === 0
+      ? {}
+      : {
+          selectedModifierOptionIds: line.modifierSelections
+            .map((selection) => selection.optionId)
+            .sort(),
+          modifierSummary: line.modifierSelections
+            .map((selection) => selection.optionNameAr)
+            .join(' · '),
+        }),
     quantityScaled: line.quantityScaled,
     restaurantOrderLineId: line.id,
     preparationNote: line.preparationNote ?? '',
@@ -33,6 +43,9 @@ export function restaurantOrderLinesFromCart(
     quantityScaled: line.quantityScaled,
     preparationNote: line.preparationNote?.trim() || null,
     preparationOptions: line.preparationOptions?.trim() || null,
+    ...((line.selectedModifierOptionIds?.length ?? 0) === 0
+      ? {}
+      : { selectedOptionIds: [...line.selectedModifierOptionIds!].sort() }),
   }));
 }
 
@@ -42,6 +55,9 @@ export function restaurantOrderCreateLinesFromCart(lines: readonly CartLine[]) {
     quantityScaled: line.quantityScaled,
     preparationNote: line.preparationNote?.trim() || null,
     preparationOptions: line.preparationOptions?.trim() || null,
+    ...((line.selectedModifierOptionIds?.length ?? 0) === 0
+      ? {}
+      : { selectedOptionIds: [...line.selectedModifierOptionIds!].sort() }),
   }));
 }
 
@@ -52,6 +68,7 @@ function operationalLineSignature(line: CartLine): string {
     quantityScaled: line.quantityScaled,
     preparationNote: line.preparationNote?.trim() || null,
     preparationOptions: line.preparationOptions?.trim() || null,
+    selectedModifierOptionIds: [...(line.selectedModifierOptionIds ?? [])].sort(),
   });
 }
 

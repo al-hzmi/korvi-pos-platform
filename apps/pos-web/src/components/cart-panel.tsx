@@ -53,6 +53,7 @@ function CartRow({
       type: 'set-quantity',
       productId: line.productId,
       packageId: line.packageId,
+      selectedModifierOptionIds: line.selectedModifierOptionIds,
       quantityScaled: parsed.value,
     });
   };
@@ -68,6 +69,11 @@ function CartRow({
           {line.packageId === undefined || line.packageId === null ? null : (
             <span className="w-fit rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
               {line.packageNameAr ?? line.packageCode ?? 'وحدة بيع'}
+            </span>
+          )}
+          {line.modifierSummary === undefined || line.modifierSummary === '' ? null : (
+            <span className="max-w-full truncate text-xs font-medium text-primary">
+              {line.modifierSummary}
             </span>
           )}
           <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -102,6 +108,7 @@ function CartRow({
                   type: 'step',
                   productId: line.productId,
                   packageId: line.packageId,
+      selectedModifierOptionIds: line.selectedModifierOptionIds,
                   direction: -1,
                 });
               }}
@@ -144,6 +151,7 @@ function CartRow({
                   type: 'step',
                   productId: line.productId,
                   packageId: line.packageId,
+      selectedModifierOptionIds: line.selectedModifierOptionIds,
                   direction: 1,
                 });
               }}
@@ -162,7 +170,12 @@ function CartRow({
           disabled={locked}
           aria-label={`حذف ${line.nameAr}`}
           onClick={() => {
-            dispatch({ type: 'remove', productId: line.productId, packageId: line.packageId });
+            dispatch({
+              type: 'remove',
+              productId: line.productId,
+              packageId: line.packageId,
+              selectedModifierOptionIds: line.selectedModifierOptionIds,
+            });
           }}
         >
           حذف
@@ -183,6 +196,7 @@ function CartRow({
                   type: 'set-preparation',
                   productId: line.productId,
                   packageId: line.packageId,
+      selectedModifierOptionIds: line.selectedModifierOptionIds,
                   options: event.target.value,
                   note: line.preparationNote ?? '',
                 });
@@ -202,6 +216,7 @@ function CartRow({
                   type: 'set-preparation',
                   productId: line.productId,
                   packageId: line.packageId,
+      selectedModifierOptionIds: line.selectedModifierOptionIds,
                   options: line.preparationOptions ?? '',
                   note: event.target.value,
                 });
@@ -281,7 +296,7 @@ export function CartPanel({
         <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto py-3 pe-1">
           {lines.map((line, index) => (
             <CartRow
-              key={`${line.productId}:${line.packageId ?? 'base'}`}
+              key={`${line.productId}:${line.packageId ?? 'base'}:${[...(line.selectedModifierOptionIds ?? [])].sort().join(',')}`}
               line={line}
               locked={locked}
               unitPriceMinor={authoritativeLines?.[index]?.unitPriceMinor ?? line.unitPriceMinor}

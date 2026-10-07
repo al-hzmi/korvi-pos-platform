@@ -64,6 +64,108 @@ export interface RestaurantFloorResponse {
   readonly tables: readonly RestaurantFloorTable[];
 }
 
+export interface RestaurantModifierSelection {
+  readonly groupId: string;
+  readonly groupRevision: string;
+  readonly groupCode: string;
+  readonly groupNameAr: string;
+  readonly groupSortOrder: number;
+  readonly optionId: string;
+  readonly optionRevision: string;
+  readonly optionCode: string;
+  readonly optionNameAr: string;
+  readonly optionSortOrder: number;
+  readonly priceDeltaMinor: string;
+}
+
+export interface RestaurantModifierMenuOption {
+  readonly optionId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly priceDeltaMinor: string;
+  readonly sortOrder: number;
+  readonly revision: string;
+}
+
+export interface RestaurantModifierMenuGroup {
+  readonly groupId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly minSelections: number;
+  readonly maxSelections: number;
+  readonly sortOrder: number;
+  readonly revision: string;
+  readonly options: readonly RestaurantModifierMenuOption[];
+}
+
+export interface RestaurantModifierAdminOption {
+  readonly id: string;
+  readonly groupId: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly priceDeltaMinor: string;
+  readonly sortOrder: number;
+  readonly isActive: boolean;
+  readonly revision: string;
+}
+
+export interface RestaurantModifierAdminGroup {
+  readonly id: string;
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly minSelections: number;
+  readonly maxSelections: number;
+  readonly sortOrder: number;
+  readonly isActive: boolean;
+  readonly revision: string;
+  readonly options: readonly RestaurantModifierAdminOption[];
+}
+
+export interface RestaurantModifierGroupCreateRequest {
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly minSelections: number;
+  readonly maxSelections: number;
+  readonly sortOrder: number;
+}
+
+export interface RestaurantModifierGroupPatchRequest {
+  readonly expectedRevision: string;
+  readonly nameAr?: string;
+  readonly nameEn?: string | null;
+  readonly minSelections?: number;
+  readonly maxSelections?: number;
+  readonly sortOrder?: number;
+  readonly isActive?: boolean;
+}
+
+export interface RestaurantModifierOptionCreateRequest {
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly priceDeltaMinor: string;
+  readonly sortOrder: number;
+}
+
+export interface RestaurantModifierOptionPatchRequest {
+  readonly expectedRevision: string;
+  readonly nameAr?: string;
+  readonly nameEn?: string | null;
+  readonly priceDeltaMinor?: string;
+  readonly sortOrder?: number;
+  readonly isActive?: boolean;
+}
+
+export interface RestaurantProductModifierGroupsRequest {
+  readonly expectedGroupIds: readonly string[];
+  readonly groupIds: readonly string[];
+}
+
 export interface RestaurantOrderLine {
   readonly id: string;
   readonly lineNumber: number;
@@ -72,7 +174,10 @@ export interface RestaurantOrderLine {
   readonly nameAr: string;
   readonly nameEn: string | null;
   readonly productType: 'unit' | 'weighted';
+  readonly baseUnitPriceMinor: string;
+  readonly modifierTotalMinor: string;
   readonly unitPriceMinor: string;
+  readonly modifierSelections: readonly RestaurantModifierSelection[];
   readonly vatBasisPoints: number;
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
@@ -118,6 +223,7 @@ export interface RestaurantOrderCreateRequest {
     readonly quantityScaled: string;
     readonly preparationNote: string | null;
     readonly preparationOptions: string | null;
+    readonly selectedOptionIds?: readonly string[];
   }[];
 }
 
@@ -127,12 +233,14 @@ export type RestaurantOrderReplaceLine =
       readonly quantityScaled: string;
       readonly preparationNote: string | null;
       readonly preparationOptions: string | null;
+      readonly selectedOptionIds?: readonly string[];
     }
   | {
       readonly productId: string;
       readonly quantityScaled: string;
       readonly preparationNote: string | null;
       readonly preparationOptions: string | null;
+      readonly selectedOptionIds?: readonly string[];
     };
 
 export interface RestaurantOrderReplaceLinesRequest {
@@ -1113,6 +1221,7 @@ export interface CheckoutPreviewRequest {
     readonly productId: string;
     readonly packageId?: string | null | undefined;
     readonly quantityScaled: string;
+    readonly selectedModifierOptionIds?: readonly string[];
   }[];
 }
 
@@ -1169,6 +1278,7 @@ export interface CheckoutRequest {
     readonly productId: string;
     readonly packageId?: string | null | undefined;
     readonly quantityScaled: string;
+    readonly selectedModifierOptionIds?: readonly string[];
   }[];
 }
 

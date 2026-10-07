@@ -83,6 +83,7 @@ import type {
   PurchaseReceiptSummary,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantModifierMenuGroup,
   RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
   RestaurantOrderDetail,
@@ -192,6 +193,10 @@ export interface ApiClient {
   logout(): Promise<void>;
   terminals(options?: RequestOptions): Promise<TerminalsResponse>;
   restaurantFloor(options?: RequestOptions): Promise<RestaurantFloorResponse>;
+  restaurantModifierMenu(
+    productId: string,
+    options?: RequestOptions,
+  ): Promise<readonly RestaurantModifierMenuGroup[]>;
   restaurantOrders(options?: RequestOptions): Promise<readonly RestaurantOrderSummary[]>;
   restaurantOrder(orderId: string, options?: RequestOptions): Promise<RestaurantOrderDetail>;
   createRestaurantOrder(
@@ -634,6 +639,15 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         { method: 'GET' },
         options,
       )) as RestaurantFloorResponse;
+    },
+
+    async restaurantModifierMenu(productId, options) {
+      const body = (await call(
+        `/v1/restaurant/modifiers/products/${encodeURIComponent(productId)}`,
+        { method: 'GET' },
+        options,
+      )) as { readonly groups: readonly RestaurantModifierMenuGroup[] };
+      return body.groups;
     },
 
     async restaurantOrders(options) {

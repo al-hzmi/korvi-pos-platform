@@ -38,24 +38,35 @@ export interface CartLine {
   readonly quantityScaled: string;
   /** Server-owned identity when this cart line resumes an open restaurant order. */
   readonly restaurantOrderLineId?: string;
-  /** Operational Quick-Service metadata only; never sent to checkout authority. */
+  /** Governed restaurant modifier identities only; money/revisions remain server-owned. */
+  readonly selectedModifierOptionIds?: readonly string[];
+  /** Display-only summary built from the server-provided modifier menu/snapshot. */
+  readonly modifierSummary?: string;
+  /** Operational Quick-Service metadata only; never pricing authority. */
   readonly preparationNote?: string;
   readonly preparationOptions?: string;
 }
 
 export type CartAction =
-  | { readonly type: 'add'; readonly product: ProductSummary }
+  | {
+      readonly type: 'add';
+      readonly product: ProductSummary;
+      readonly selectedModifierOptionIds?: readonly string[];
+      readonly modifierSummary?: string;
+    }
   | {
       readonly type: 'set-quantity';
       readonly productId: string;
       readonly packageId?: string | null | undefined;
       readonly quantityScaled: string;
+      readonly selectedModifierOptionIds?: readonly string[];
     }
   | {
       readonly type: 'step';
       readonly productId: string;
       readonly packageId?: string | null | undefined;
       readonly direction: 1 | -1;
+      readonly selectedModifierOptionIds?: readonly string[];
     }
   | {
       readonly type: 'set-preparation';
@@ -63,11 +74,13 @@ export type CartAction =
       readonly packageId?: string | null | undefined;
       readonly note: string;
       readonly options: string;
+      readonly selectedModifierOptionIds?: readonly string[];
     }
   | {
       readonly type: 'remove';
       readonly productId: string;
       readonly packageId?: string | null | undefined;
+      readonly selectedModifierOptionIds?: readonly string[];
     }
   | { readonly type: 'replace'; readonly lines: readonly CartLine[] }
   | { readonly type: 'clear' };
@@ -76,18 +89,38 @@ function normalizedPackageId(value: string | null | undefined): string | null {
   return value ?? null;
 }
 
+function canonicalModifierIds(value: readonly string[] | undefined): readonly string[] {
+  return [...new Set(value ?? [])].sort();
+}
+
+function sameModifierSelection(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  const a = canonicalModifierIds(left);
+  const b = canonicalModifierIds(right);
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
 function sameCommercialLine(
-  line: Pick<CartLine, 'productId' | 'packageId'>,
+  line: Pick<CartLine, 'productId' | 'packageId' | 'selectedModifierOptionIds'>,
   productId: string,
   packageId: string | null | undefined,
+  selectedModifierOptionIds?: readonly string[],
 ): boolean {
   return (
     line.productId === productId &&
-    normalizedPackageId(line.packageId) === normalizedPackageId(packageId)
+    normalizedPackageId(line.packageId) === normalizedPackageId(packageId) &&
+    sameModifierSelection(line.selectedModifierOptionIds, selectedModifierOptionIds)
   );
 }
 
-function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
+function lineFor(
+  product: ProductSummary,
+  quantityScaled: string,
+  selectedModifierOptionIds?: readonly string[],
+  modifierSummary?: string,
+): CartLine {
   const packageId = normalizedPackageId(product.matchedPackageId);
   const packageRow =
     packageId === null
@@ -123,6 +156,12 @@ function lineFor(product: ProductSummary, quantityScaled: string): CartLine {
       ? {}
       : { lotTrackingRequired: product.lotTrackingRequired }),
     quantityScaled,
+    ...(selectedModifierOptionIds === undefined || selectedModifierOptionIds.length === 0
+      ? {}
+      : { selectedModifierOptionIds: canonicalModifierIds(selectedModifierOptionIds) }),
+    ...(modifierSummary === undefined || modifierSummary.trim() === ''
+      ? {}
+      : { modifierSummary: modifierSummary.trim() }),
     preparationNote: '',
     preparationOptions: '',
   };
@@ -132,27 +171,47 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
   switch (action.type) {
     case 'add': {
       const packageId = normalizedPackageId(action.product.matchedPackageId);
-      const existing = lines.find((line) => sameCommercialLine(line, action.product.id, packageId));
+      const existing = lines.find((line) =>
+        sameCommercialLine(
+          line,
+          action.product.id,
+          packageId,
+          action.selectedModifierOptionIds,
+        ),
+      );
       if (existing === undefined) {
-        return [...lines, lineFor(action.product, QUANTITY_SCALE.toString())];
+        return [
+          ...lines,
+          lineFor(
+            action.product,
+            QUANTITY_SCALE.toString(),
+            action.selectedModifierOptionIds,
+            action.modifierSummary,
+          ),
+        ];
       }
       // Merged, not appended. A cashier scanning the same tin twice means two
       // tins, and the receipt should say so on one line.
       return lines.map((line) =>
-        sameCommercialLine(line, action.product.id, packageId)
+        sameCommercialLine(
+          line,
+          action.product.id,
+          packageId,
+          action.selectedModifierOptionIds,
+        )
           ? { ...line, quantityScaled: addScaled(line.quantityScaled, QUANTITY_SCALE.toString()) }
           : line,
       );
     }
     case 'set-quantity':
       return lines.map((line) =>
-        sameCommercialLine(line, action.productId, action.packageId)
+        sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds)
           ? { ...line, quantityScaled: action.quantityScaled }
           : line,
       );
     case 'step':
       return lines.map((line) => {
-        if (!sameCommercialLine(line, action.productId, action.packageId)) return line;
+        if (!sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds)) return line;
         // Whole-unit steps belong to whole-unit products. A weighed line is
         // 0.750 kg, not "one of something", and stepping it by a unit is
         // meaningless in one direction and dangerous in the other. The screen
@@ -163,7 +222,7 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
       });
     case 'set-preparation':
       return lines.map((line) =>
-        sameCommercialLine(line, action.productId, action.packageId)
+        sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds)
           ? {
               ...line,
               preparationNote: action.note.slice(0, 280),
@@ -172,7 +231,7 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
           : line,
       );
     case 'remove':
-      return lines.filter((line) => !sameCommercialLine(line, action.productId, action.packageId));
+      return lines.filter((line) => !sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds));
     case 'replace':
       return action.lines;
     case 'clear':
@@ -206,6 +265,7 @@ export function canQueueOfflineRetailBaseSale(
     lines.every(
       (line) =>
         (line.packageId === undefined || line.packageId === null) &&
+        (line.selectedModifierOptionIds?.length ?? 0) === 0 &&
         line.lotTrackingRequired !== true,
     )
   );
@@ -234,6 +294,7 @@ export function cartToRequestLines(lines: readonly CartLine[]): readonly {
   readonly productId: string;
   readonly packageId?: string | null | undefined;
   readonly quantityScaled: string;
+  readonly selectedModifierOptionIds?: readonly string[];
 }[] {
   return lines.map((line) => ({
     productId: line.productId,
@@ -241,5 +302,8 @@ export function cartToRequestLines(lines: readonly CartLine[]): readonly {
       ? {}
       : { packageId: line.packageId }),
     quantityScaled: line.quantityScaled,
+    ...((line.selectedModifierOptionIds?.length ?? 0) === 0
+      ? {}
+      : { selectedModifierOptionIds: canonicalModifierIds(line.selectedModifierOptionIds) }),
   }));
 }
