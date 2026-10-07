@@ -108,7 +108,7 @@ function CartRow({
                   type: 'step',
                   productId: line.productId,
                   packageId: line.packageId,
-      selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  selectedModifierOptionIds: line.selectedModifierOptionIds,
                   direction: -1,
                 });
               }}
@@ -151,7 +151,7 @@ function CartRow({
                   type: 'step',
                   productId: line.productId,
                   packageId: line.packageId,
-      selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  selectedModifierOptionIds: line.selectedModifierOptionIds,
                   direction: 1,
                 });
               }}
@@ -196,7 +196,7 @@ function CartRow({
                   type: 'set-preparation',
                   productId: line.productId,
                   packageId: line.packageId,
-      selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  selectedModifierOptionIds: line.selectedModifierOptionIds,
                   options: event.target.value,
                   note: line.preparationNote ?? '',
                 });
@@ -216,7 +216,7 @@ function CartRow({
                   type: 'set-preparation',
                   productId: line.productId,
                   packageId: line.packageId,
-      selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  selectedModifierOptionIds: line.selectedModifierOptionIds,
                   options: line.preparationOptions ?? '',
                   note: event.target.value,
                 });

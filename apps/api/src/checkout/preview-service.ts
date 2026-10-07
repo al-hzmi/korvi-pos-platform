@@ -331,7 +331,9 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
             nameAr: product.nameAr,
             nameEn: product.nameEn,
             priceMinor:
-              modifierAuthority?.unitPriceMinor.toString() ?? authority?.unitPriceMinor ?? product.priceMinor,
+              modifierAuthority?.unitPriceMinor.toString() ??
+              authority?.unitPriceMinor ??
+              product.priceMinor,
             vatBasisPoints: Number(product.vatBasisPoints),
             productType: product.productType,
           },

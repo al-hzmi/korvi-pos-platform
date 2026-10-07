@@ -29,7 +29,11 @@ export function RestaurantModifierPicker({
   const optionById = useMemo(() => {
     const map = new Map<
       string,
-      { readonly group: RestaurantModifierMenuGroup; readonly nameAr: string; readonly sort: number }
+      {
+        readonly group: RestaurantModifierMenuGroup;
+        readonly nameAr: string;
+        readonly sort: number;
+      }
     >();
     for (const group of groups) {
       for (const option of group.options) {

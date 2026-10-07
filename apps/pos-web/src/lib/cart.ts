@@ -172,12 +172,7 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
     case 'add': {
       const packageId = normalizedPackageId(action.product.matchedPackageId);
       const existing = lines.find((line) =>
-        sameCommercialLine(
-          line,
-          action.product.id,
-          packageId,
-          action.selectedModifierOptionIds,
-        ),
+        sameCommercialLine(line, action.product.id, packageId, action.selectedModifierOptionIds),
       );
       if (existing === undefined) {
         return [
@@ -193,25 +188,33 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
       // Merged, not appended. A cashier scanning the same tin twice means two
       // tins, and the receipt should say so on one line.
       return lines.map((line) =>
-        sameCommercialLine(
-          line,
-          action.product.id,
-          packageId,
-          action.selectedModifierOptionIds,
-        )
+        sameCommercialLine(line, action.product.id, packageId, action.selectedModifierOptionIds)
           ? { ...line, quantityScaled: addScaled(line.quantityScaled, QUANTITY_SCALE.toString()) }
           : line,
       );
     }
     case 'set-quantity':
       return lines.map((line) =>
-        sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds)
+        sameCommercialLine(
+          line,
+          action.productId,
+          action.packageId,
+          action.selectedModifierOptionIds,
+        )
           ? { ...line, quantityScaled: action.quantityScaled }
           : line,
       );
     case 'step':
       return lines.map((line) => {
-        if (!sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds)) return line;
+        if (
+          !sameCommercialLine(
+            line,
+            action.productId,
+            action.packageId,
+            action.selectedModifierOptionIds,
+          )
+        )
+          return line;
         // Whole-unit steps belong to whole-unit products. A weighed line is
         // 0.750 kg, not "one of something", and stepping it by a unit is
         // meaningless in one direction and dangerous in the other. The screen
@@ -222,7 +225,12 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
       });
     case 'set-preparation':
       return lines.map((line) =>
-        sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds)
+        sameCommercialLine(
+          line,
+          action.productId,
+          action.packageId,
+          action.selectedModifierOptionIds,
+        )
           ? {
               ...line,
               preparationNote: action.note.slice(0, 280),
@@ -231,7 +239,15 @@ export function cartReducer(lines: readonly CartLine[], action: CartAction): rea
           : line,
       );
     case 'remove':
-      return lines.filter((line) => !sameCommercialLine(line, action.productId, action.packageId, action.selectedModifierOptionIds));
+      return lines.filter(
+        (line) =>
+          !sameCommercialLine(
+            line,
+            action.productId,
+            action.packageId,
+            action.selectedModifierOptionIds,
+          ),
+      );
     case 'replace':
       return action.lines;
     case 'clear':

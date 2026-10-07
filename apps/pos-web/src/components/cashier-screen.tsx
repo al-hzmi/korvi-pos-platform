@@ -299,10 +299,7 @@ export function CashierScreen({
   const offlineRetailBaseEligible = canQueueOfflineRetailBaseSale(cart.lines, priceContext);
 
   useEffect(() => {
-    if (
-      cart.lines.length === 0 ||
-      (quickService && activeRestaurantOrderIdentity !== null)
-    ) {
+    if (cart.lines.length === 0 || (quickService && activeRestaurantOrderIdentity !== null)) {
       setAuthoritativePricing(null);
       setPricingStatus('idle');
       setPricingNotice(null);
