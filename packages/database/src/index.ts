@@ -292,8 +292,37 @@ export type {
 
 // Restaurant open-order authority. Rows are operational and non-fiscal; line
 // price/tax facts are server-authored snapshots for later settlement.
-export { createRestaurantModifierPolicyRepository } from './restaurant/modifier-policy.js';
-export type { RestaurantModifierPolicyRepository } from './restaurant/modifier-policy.js';
+export {
+  createRestaurantModifierPolicyRepository,
+  readRestaurantModifierMenu,
+  readRestaurantModifierMenuWithin,
+} from './restaurant/modifier-policy.js';
+export type {
+  RestaurantModifierPolicyRepository,
+  RestaurantModifierMenuGroup,
+  RestaurantModifierMenuOption,
+} from './restaurant/modifier-policy.js';
+
+export {
+  RestaurantModifierAdminRefusedError,
+  listRestaurantModifierGroups,
+  createRestaurantModifierGroup,
+  updateRestaurantModifierGroup,
+  createRestaurantModifierOption,
+  updateRestaurantModifierOption,
+  setRestaurantProductModifierGroups,
+} from './restaurant/modifier-administration.js';
+export type {
+  RestaurantModifierAdminRefusal,
+  RestaurantModifierAdminActor,
+  RestaurantModifierAdminGroup,
+  RestaurantModifierAdminOption,
+  CreateModifierGroupInput,
+  UpdateModifierGroupInput,
+  CreateModifierOptionInput,
+  UpdateModifierOptionInput,
+  SetProductModifierGroupsInput,
+} from './restaurant/modifier-administration.js';
 
 export {
   RestaurantOrderRefusedError,

@@ -48,6 +48,7 @@ import { createPlatformService } from './platform/service.js';
 import { registerPlatformSupportRoutes } from './platform/support-routes.js';
 import { createPlatformSupportService } from './platform/support-service.js';
 import { createMerchantPurchasingService } from './purchasing/service.js';
+import { createMerchantRestaurantModifierService } from './restaurant/modifier-service.js';
 import { createMerchantRestaurantOrderService } from './restaurant/order-service.js';
 import { createMerchantPreparationService } from './restaurant/preparation-service.js';
 import { createMerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
@@ -71,6 +72,7 @@ import { registerOpeningInventoryMigrationRoutes } from './routes/opening-invent
 import { registerPurchasingAdminRoutes } from './routes/purchasing-admin.js';
 import { registerPromotionAdminRoutes } from './routes/promotions-admin.js';
 import { registerRetailAdminRoutes } from './routes/retail-admin.js';
+import { registerRestaurantModifierRoutes } from './routes/restaurant-modifiers.js';
 import { registerRestaurantOrderRoutes } from './routes/restaurant-orders.js';
 import { registerRestaurantPreparationRoutes } from './routes/restaurant-preparation.js';
 import { registerRestaurantRecipeRoutes } from './routes/restaurant-recipes.js';
@@ -101,6 +103,7 @@ import type { PlatformSupportService } from './platform/support-service.js';
 import type { MerchantPurchasingService } from './purchasing/service.js';
 import type { MerchantPromotionAdminService } from './promotions/service.js';
 import type { MerchantRetailAdminService } from './retail-admin/service.js';
+import type { MerchantRestaurantModifierService } from './restaurant/modifier-service.js';
 import type { MerchantRestaurantOrderService } from './restaurant/order-service.js';
 import type { MerchantPreparationService } from './restaurant/preparation-service.js';
 import type { MerchantRestaurantRecipeService } from './restaurant/recipe-service.js';
@@ -161,6 +164,8 @@ export interface ServerDeps {
   readonly supplierMigration?: MerchantSupplierMigrationService;
   /** M5 opening inventory; business keys only, explicit causal opening-stock authority. */
   readonly openingInventoryMigration?: MerchantOpeningInventoryMigrationService;
+  /** Governed restaurant menu modifier read/admin authority. */
+  readonly restaurantModifiers?: MerchantRestaurantModifierService;
   /** Operational restaurant open-order authority; non-fiscal until checkout. */
   readonly restaurantOrders?: MerchantRestaurantOrderService;
   /** Non-fiscal preparation-station configuration and routing authority. */
@@ -682,6 +687,31 @@ function lazyProductMigrationService(config: ApiConfig): MerchantProductMigratio
   };
 }
 
+function lazyRestaurantModifierService(config: ApiConfig): MerchantRestaurantModifierService {
+  let built: MerchantRestaurantModifierService | null = null;
+
+  const resolve = (): MerchantRestaurantModifierService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantRestaurantModifierService(createPrismaClient(url));
+    return built;
+  };
+
+  return {
+    menu: (principal, productId) => resolve().menu(principal, productId),
+    list: (principal) => resolve().list(principal),
+    createGroup: (principal, input) => resolve().createGroup(principal, input),
+    updateGroup: (principal, groupId, input) => resolve().updateGroup(principal, groupId, input),
+    createOption: (principal, groupId, input) =>
+      resolve().createOption(principal, groupId, input),
+    updateOption: (principal, optionId, input) =>
+      resolve().updateOption(principal, optionId, input),
+    setProductGroups: (principal, productId, input) =>
+      resolve().setProductGroups(principal, productId, input),
+  };
+}
+
 function lazyRestaurantOrderService(config: ApiConfig): MerchantRestaurantOrderService {
   let built: MerchantRestaurantOrderService | null = null;
 
@@ -915,6 +945,10 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
   registerHealthRoutes(app);
   registerAuthRoutes(app, { service, guards, config });
   registerBusinessRoutes(app, { deps: business, guards, newId });
+  registerRestaurantModifierRoutes(app, {
+    service: deps.restaurantModifiers ?? lazyRestaurantModifierService(config),
+    guards,
+  });
   registerRestaurantOrderRoutes(app, {
     service: deps.restaurantOrders ?? lazyRestaurantOrderService(config),
     guards,
