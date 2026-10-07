@@ -145,6 +145,26 @@ describe('advisory handling', () => {
     expect(runGate(report, allow).code).toBe(0);
   });
 
+  it('does not promote a below-threshold leaf advisory through a higher-severity parent', () => {
+    const report = JSON.stringify({
+      vulnerabilities: {
+        top: {
+          name: 'top',
+          severity: 'high',
+          via: [
+            {
+              severity: 'moderate',
+              title: 'Below threshold',
+              url: 'https://github.com/advisories/GHSA-mmmm-nnnn-oooo',
+            },
+          ],
+        },
+      },
+      metadata: { vulnerabilities: { high: 1, moderate: 1 } },
+    });
+    expect(runGate(report).code).toBe(0);
+  });
+
   it('fails when metadata reports a high vulnerability but no entry is resolvable', () => {
     const report = JSON.stringify({
       vulnerabilities: {},

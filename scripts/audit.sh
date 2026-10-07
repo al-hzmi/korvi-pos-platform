@@ -164,8 +164,11 @@ const resolveVia = (packageName, inheritedSeverity, via, chain = []) => {
     return;
   }
 
+  const effectiveSeverity = via.severity ?? inheritedSeverity;
+  if (ORDER.indexOf(effectiveSeverity) < minimum) return;
+
   const id = (via.url ?? "").split("/").pop() ?? "";
-  const label = `${via.severity ?? inheritedSeverity}  ${packageName}  ${id || "(no id)"}`;
+  const label = `${effectiveSeverity}  ${packageName}  ${id || "(no id)"}`;
   const entry = allowed.get(id);
   if (entry === undefined) {
     blocking.push(`${label}\n        ${via.title ?? ""}`);
