@@ -77,6 +77,8 @@ export interface PreparationMutationResult<T> {
   readonly replayed: boolean;
 }
 
+const MAX_MODIFIER_SUMMARY_CHARS = 500;
+
 export interface PreparationRoutingLine {
   readonly lineId: string;
   readonly lineNumber: number;
@@ -86,6 +88,7 @@ export interface PreparationRoutingLine {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  readonly modifierSummary: string | null;
 }
 
 export interface PreparationRoutingGroup {
@@ -118,6 +121,7 @@ export interface PreparationTask {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  readonly modifierSummary: string | null;
   readonly status: PreparationTaskStatus;
   readonly revision: string;
   readonly queuedAt: string;
@@ -533,6 +537,37 @@ export async function setProductPreparationRoutes(
   });
 }
 
+function boundedModifierSummary(
+  selections: readonly {
+    readonly groupId: string;
+    readonly groupNameAr: string;
+    readonly optionNameAr: string;
+  }[],
+): string | null {
+  if (selections.length === 0) return null;
+
+  const groups: { groupId: string; groupNameAr: string; options: string[] }[] = [];
+  for (const selection of selections) {
+    const last = groups.at(-1);
+    if (last !== undefined && last.groupId === selection.groupId) {
+      last.options.push(selection.optionNameAr);
+      continue;
+    }
+    groups.push({
+      groupId: selection.groupId,
+      groupNameAr: selection.groupNameAr,
+      options: [selection.optionNameAr],
+    });
+  }
+
+  const full = groups
+    .map((group) => `${group.groupNameAr}: ${group.options.join('، ')}`)
+    .join(' | ');
+  const characters = Array.from(full);
+  if (characters.length <= MAX_MODIFIER_SUMMARY_CHARS) return full;
+  return characters.slice(0, MAX_MODIFIER_SUMMARY_CHARS - 1).join('') + '…';
+}
+
 async function routingWithin(
   tx: TransactionClient,
   tenant: string,
@@ -558,6 +593,19 @@ async function routingWithin(
           quantityScaled: true,
           preparationNote: true,
           preparationOptions: true,
+          modifierSelections: {
+            orderBy: [
+              { groupSortOrder: 'asc' },
+              { groupId: 'asc' },
+              { optionSortOrder: 'asc' },
+              { id: 'asc' },
+            ],
+            select: {
+              groupId: true,
+              groupNameAr: true,
+              optionNameAr: true,
+            },
+          },
         },
         orderBy: { lineNumber: 'asc' },
       },
@@ -619,6 +667,7 @@ async function routingWithin(
       quantityScaled: source.quantityScaled.toString(),
       preparationNote: source.preparationNote,
       preparationOptions: source.preparationOptions,
+      modifierSummary: boundedModifierSummary(source.modifierSelections),
     };
     const stationIds = routesByProduct.get(source.productId) ?? [];
     if (stationIds.length === 0) {
@@ -657,6 +706,7 @@ function asTask(row: {
   quantityScaled: bigint;
   preparationNote: string | null;
   preparationOptions: string | null;
+  modifierSummary: string | null;
   status: string;
   revision: bigint;
   queuedAt: Date;
@@ -686,6 +736,7 @@ function asTask(row: {
     quantityScaled: row.quantityScaled.toString(),
     preparationNote: row.preparationNote,
     preparationOptions: row.preparationOptions,
+    modifierSummary: row.modifierSummary,
     status: row.status,
     revision: row.revision.toString(),
     queuedAt: row.queuedAt.toISOString(),
@@ -709,6 +760,7 @@ const TASK_SELECT = {
   quantityScaled: true,
   preparationNote: true,
   preparationOptions: true,
+  modifierSummary: true,
   status: true,
   revision: true,
   queuedAt: true,
@@ -801,6 +853,7 @@ export async function fireRestaurantOrderForPreparation(
           quantityScaled: BigInt(line.quantityScaled),
           preparationNote: line.preparationNote,
           preparationOptions: line.preparationOptions,
+          modifierSummary: line.modifierSummary,
           status: 'queued',
           revision: 1n,
           queuedAt: at,

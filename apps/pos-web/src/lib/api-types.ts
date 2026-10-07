@@ -178,6 +178,8 @@ export interface RestaurantPreparationTask {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  /** Server-authored from immutable order-line modifier snapshots. */
+  readonly modifierSummary?: string | null;
   readonly status: RestaurantPreparationTaskStatus;
   readonly revision: string;
   readonly queuedAt: string;

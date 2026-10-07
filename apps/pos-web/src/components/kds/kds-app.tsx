@@ -78,6 +78,11 @@ function TaskCard({
           {task.preparationNote}
         </p>
       )}
+      {task.modifierSummary === undefined || task.modifierSummary === null ? null : (
+        <p className="rounded-md bg-muted px-3 py-2 text-sm font-semibold text-foreground">
+          الإضافات: {task.modifierSummary}
+        </p>
+      )}
       {task.preparationOptions === null ? null : (
         <p className="text-sm text-muted-foreground">{task.preparationOptions}</p>
       )}
