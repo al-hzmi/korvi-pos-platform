@@ -172,6 +172,26 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
       'لا يمكن اعتماد عرض أو كوبون من عملية محفوظة دون اتصال. راجع العملية عند عودة الاتصال.',
     action: 'blocking',
   },
+  'invalid-modifier-selection': {
+    message: 'اختيارات الإضافات لا تطابق قواعد الصنف. راجع الخيارات ثم أعد المحاولة.',
+    action: 'amend-cart',
+  },
+  'modifier-policy-invalid': {
+    message: 'إعداد خيارات هذا الصنف غير مكتمل. راجع إعدادات قائمة المطعم.',
+    action: 'blocking',
+  },
+  'modifier-policy-stale': {
+    message: 'تغيّرت خيارات الصنف أثناء العملية. أعد فتح الخيارات بالسعر الحالي.',
+    action: 'amend-cart',
+  },
+  'modifiers-not-applicable': {
+    message: 'الإضافات غير متاحة لمسار البيع أو وحدة البيع الحالية.',
+    action: 'amend-cart',
+  },
+  'modifier-offline-unsupported': {
+    message: 'خيارات المطعم تحتاج اتصالاً بالخادم ولا يمكن اعتمادها دون اتصال.',
+    action: 'blocking',
+  },
   'lot-offline-unsupported': {
     message: 'هذا الصنف يتطلب اختيار دفعة لحظي من الخادم ولا يمكن حفظ بيعه دون اتصال.',
     action: 'amend-cart',

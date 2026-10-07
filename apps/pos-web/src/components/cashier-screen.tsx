@@ -14,6 +14,7 @@ import { ShiftCloseControl } from './shift-close-control';
 import { PreparationTicketControl } from './preparation-ticket-control';
 import { RestaurantOrderTypeControl } from './restaurant-order-type-control';
 import { RestaurantOpenOrdersControl } from './restaurant-open-orders-control';
+import { RestaurantModifierPicker } from './restaurant-modifier-picker';
 import { RestaurantTableControl } from './restaurant-table-control';
 import { StatusNote } from './status-note';
 import { canQueueOfflineRetailBaseSale, previewCart } from '../lib/cart';
@@ -56,6 +57,7 @@ import type {
   RestaurantOrderDetail,
   RestaurantOrderReplaceLinesRequest,
   RestaurantOrderSummary,
+  RestaurantModifierMenuGroup,
   RestaurantOrderTransferTableRequest,
   RestaurantPreparationFireRequest,
   ShiftSummary,
@@ -203,6 +205,12 @@ export function CashierScreen({
   const [pendingRestaurantOrderCommand, setPendingRestaurantOrderCommand] =
     useState<PendingRestaurantOrderCommand | null>(null);
   const [restaurantOrderNotice, setRestaurantOrderNotice] = useState<string | null>(null);
+  const [modifierMenuNotice, setModifierMenuNotice] = useState<string | null>(null);
+  const [modifierMenuLoading, setModifierMenuLoading] = useState(false);
+  const [modifierPicker, setModifierPicker] = useState<{
+    readonly product: ProductSummary;
+    readonly groups: readonly RestaurantModifierMenuGroup[];
+  } | null>(null);
   const [operatorCommandLocked, setOperatorCommandLocked] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -291,7 +299,10 @@ export function CashierScreen({
   const offlineRetailBaseEligible = canQueueOfflineRetailBaseSale(cart.lines, priceContext);
 
   useEffect(() => {
-    if (quickService || cart.lines.length === 0) {
+    if (
+      cart.lines.length === 0 ||
+      (quickService && activeRestaurantOrderIdentity !== null)
+    ) {
       setAuthoritativePricing(null);
       setPricingStatus('idle');
       setPricingNotice(null);
@@ -312,9 +323,14 @@ export function CashierScreen({
               productId: line.productId,
               ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
               quantityScaled: line.quantityScaled,
+              ...((line.selectedModifierOptionIds?.length ?? 0) === 0
+                ? {}
+                : { selectedModifierOptionIds: [...line.selectedModifierOptionIds!] }),
             })),
-            priceContext,
-            ...(couponCode.trim() === '' ? {} : { couponCodes: [couponCode.trim()] }),
+            ...(!quickService ? { priceContext } : {}),
+            ...(!quickService && couponCode.trim() !== ''
+              ? { couponCodes: [couponCode.trim()] }
+              : {}),
           },
           { signal: controller.signal },
         )
@@ -331,7 +347,12 @@ export function CashierScreen({
           setAuthoritativePricing(null);
 
           const transportUnavailable = failure.code === 'network' || failure.code === 'timeout';
-          if (transportUnavailable && couponCode.trim() === '' && offlineRetailBaseEligible) {
+          if (
+            !quickService &&
+            transportUnavailable &&
+            couponCode.trim() === '' &&
+            offlineRetailBaseEligible
+          ) {
             setPricingStatus('offline');
             setPricingNotice(
               'تعذّر الوصول إلى تسعير الخادم. بيع التجزئة للوحدة الأساسية فقط يمكن حفظه دون اتصال، وسيعيد الخادم التحقق قبل اعتماده.',
@@ -341,7 +362,9 @@ export function CashierScreen({
           if (transportUnavailable) {
             setPricingStatus('failed');
             setPricingNotice(
-              'وحدة البيع المعبأة أو سعر الجملة يحتاجان اتصالاً بالخادم للتحقق من سياسة السعر قبل الدفع.',
+              quickService
+                ? 'خيارات المطعم تحتاج اتصالاً بالخادم للتحقق من سياسة الإضافات والسعر قبل الدفع.'
+                : 'وحدة البيع المعبأة أو سعر الجملة يحتاجان اتصالاً بالخادم للتحقق من سياسة السعر قبل الدفع.',
             );
             return;
           }
@@ -364,6 +387,7 @@ export function CashierScreen({
     onExpired,
     priceContext,
     quickService,
+    activeRestaurantOrderIdentity,
   ]);
 
   const effectiveTotalMinor = authoritativePricing?.totalMinor ?? preview.total.minor.toString();
@@ -383,6 +407,7 @@ export function CashierScreen({
     durabilityLoading ||
     restaurantOrderContextBlocked ||
     restaurantOrderCommandStatus !== 'idle' ||
+    modifierMenuLoading ||
     operatorCommandLocked;
   const outstanding = checkout.state.attemptOutstanding;
 
@@ -529,11 +554,37 @@ export function CashierScreen({
   const add = useCallback(
     (product: ProductSummary) => {
       if (locked) return;
-      cart.dispatch({ type: 'add', product });
-      search.reset();
-      focusSearch();
+
+      if (!quickService) {
+        cart.dispatch({ type: 'add', product });
+        search.reset();
+        focusSearch();
+        return;
+      }
+
+      setModifierMenuLoading(true);
+      setModifierMenuNotice(null);
+      void api
+        .restaurantModifierMenu(product.id)
+        .then((groups) => {
+          if (groups.length === 0) {
+            cart.dispatch({ type: 'add', product });
+            search.reset();
+            focusSearch();
+            return;
+          }
+          setModifierPicker({ product, groups });
+        })
+        .catch((error: unknown) => {
+          const failure = describeFailure(error);
+          if (failure.action === 'reauthenticate') onExpired();
+          setModifierMenuNotice(failure.message);
+        })
+        .finally(() => {
+          setModifierMenuLoading(false);
+        });
     },
-    [cart, search, locked, focusSearch],
+    [api, cart, focusSearch, locked, onExpired, quickService, search],
   );
 
   const submitTerm = useCallback(() => {
@@ -892,7 +943,14 @@ export function CashierScreen({
 
   const submit = useCallback(() => {
     if (!payment.valid) return;
-    if (!quickService && pricingStatus !== 'ready' && pricingStatus !== 'offline') return;
+    const directRestaurantSale = quickService && activeRestaurantOrderIdentity === null;
+    if (
+      (directRestaurantSale || !quickService) &&
+      pricingStatus !== 'ready' &&
+      pricingStatus !== 'offline'
+    ) {
+      return;
+    }
     if (
       !quickService &&
       pricingStatus === 'offline' &&
@@ -915,7 +973,7 @@ export function CashierScreen({
       lines: cart.lines,
       ...(!quickService ? { priceContext } : {}),
       ...(!quickService && couponCode.trim() !== '' ? { couponCodes: [couponCode.trim()] } : {}),
-      ...(!quickService && authoritativePricing !== null
+      ...(activeRestaurantOrderIdentity === null && authoritativePricing !== null
         ? { expectedPricingHash: authoritativePricing.pricingHash }
         : {}),
       ...(!quickService && pricingStatus === 'offline' ? { offlineCaptured: true as const } : {}),
@@ -966,19 +1024,24 @@ export function CashierScreen({
           ? 'احفظ تعديلات الطلب المفتوح قبل إتمام الدفع.'
           : null;
   const pricingSubmissionBlocker =
-    quickService || cart.lines.length === 0
+    cart.lines.length === 0 || (quickService && activeRestaurantOrderIdentity !== null)
       ? null
       : pricingStatus === 'ready'
         ? null
-        : pricingStatus === 'offline' &&
+        : !quickService &&
+            pricingStatus === 'offline' &&
             couponCode.trim() === '' &&
             paymentMode === 'cash' &&
             offlineRetailBaseEligible
           ? null
           : (pricingNotice ??
             (pricingStatus === 'loading'
-              ? 'جاري التحقق من السعر والعروض على الخادم.'
-              : 'تعذّر التحقق من السعر والعروض. أعد الاتصال قبل إتمام هذا الدفع.'));
+              ? quickService
+                ? 'جاري التحقق من خيارات المطعم والسعر على الخادم.'
+                : 'جاري التحقق من السعر والعروض على الخادم.'
+              : quickService
+                ? 'تعذّر التحقق من خيارات المطعم. أعد الاتصال قبل إتمام الدفع.'
+                : 'تعذّر التحقق من السعر والعروض. أعد الاتصال قبل إتمام هذا الدفع.'));
   const submissionBlocker =
     restaurantOrderSubmissionBlocker ?? tableSubmissionBlocker ?? pricingSubmissionBlocker;
 
@@ -1089,6 +1152,11 @@ export function CashierScreen({
               onClosed={onShiftChanged}
             />
           </div>
+          {modifierMenuNotice === null ? null : (
+            <StatusNote tone="warning" className="mb-3" live>
+              {modifierMenuNotice}
+            </StatusNote>
+          )}
           <ProductPanel
             term={search.term}
             state={search.state}
@@ -1261,6 +1329,29 @@ export function CashierScreen({
           )}
         </aside>
       </main>
+
+      {modifierPicker === null ? null : (
+        <RestaurantModifierPicker
+          product={modifierPicker.product}
+          groups={modifierPicker.groups}
+          disabled={modifierMenuLoading}
+          onCancel={() => {
+            setModifierPicker(null);
+            focusSearch();
+          }}
+          onConfirm={({ optionIds, summary }) => {
+            cart.dispatch({
+              type: 'add',
+              product: modifierPicker.product,
+              selectedModifierOptionIds: optionIds,
+              modifierSummary: summary,
+            });
+            setModifierPicker(null);
+            search.reset();
+            focusSearch();
+          }}
+        />
+      )}
     </div>
   );
 }
