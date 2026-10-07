@@ -495,6 +495,29 @@ export async function updateRestaurantModifierOption(
   });
 }
 
+export async function readRestaurantProductModifierGroupIds(
+  prisma: PrismaClient,
+  scope: TenantScope,
+  productId: string,
+): Promise<readonly string[]> {
+  const tenant = tenantParam(scope);
+  return withTenant(prisma, scope.tenantId, async (tx) => {
+    await requireRestaurantMode(tx, tenant);
+    const product = await tx.product.findFirst({
+      where: { tenantId: tenant, id: productId },
+      select: { id: true },
+    });
+    if (product === null) throw new RestaurantModifierAdminRefusedError('unknown-product');
+
+    const rows = await tx.restaurantProductModifierGroup.findMany({
+      where: { tenantId: tenant, productId },
+      select: { groupId: true },
+      orderBy: [{ sortOrder: 'asc' }, { groupId: 'asc' }],
+    });
+    return rows.map((row) => row.groupId);
+  });
+}
+
 export async function setRestaurantProductModifierGroups(
   prisma: PrismaClient,
   scope: TenantScope,

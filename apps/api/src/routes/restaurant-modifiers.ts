@@ -198,6 +198,20 @@ export function registerRestaurantModifierRoutes(
     },
   );
 
+  app.get(
+    '/v1/admin/restaurant/products/:id/modifier-groups',
+    { preHandler: canManage },
+    async (request, reply) => {
+      const principal = principalOf(request);
+      if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
+      const params = ID.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
+      const result = await service.productGroups(principal, params.data.id);
+      if (result.outcome === 'failure') return refusal(reply, result.reason);
+      return reply.code(200).send({ groupIds: result.value });
+    },
+  );
+
   app.put(
     '/v1/admin/restaurant/products/:id/modifier-groups',
     { preHandler: canManage },

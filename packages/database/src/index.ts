@@ -306,6 +306,7 @@ export type {
 export {
   RestaurantModifierAdminRefusedError,
   listRestaurantModifierGroups,
+  readRestaurantProductModifierGroupIds,
   createRestaurantModifierGroup,
   updateRestaurantModifierGroup,
   createRestaurantModifierOption,

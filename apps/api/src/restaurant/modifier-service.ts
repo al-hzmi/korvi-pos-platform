@@ -4,6 +4,7 @@ import {
   createRestaurantModifierOption,
   listRestaurantModifierGroups,
   readRestaurantModifierMenu,
+  readRestaurantProductModifierGroupIds,
   setRestaurantProductModifierGroups,
   updateRestaurantModifierGroup,
   updateRestaurantModifierOption,
@@ -32,6 +33,10 @@ export interface MerchantRestaurantModifierService {
     productId: string,
   ): Promise<readonly RestaurantModifierMenuGroup[]>;
   list(principal: AuthenticatedPrincipal): Promise<readonly RestaurantModifierAdminGroup[]>;
+  productGroups(
+    principal: AuthenticatedPrincipal,
+    productId: string,
+  ): Promise<RestaurantModifierAdminResult<readonly string[]>>;
   createGroup(
     principal: AuthenticatedPrincipal,
     input: CreateModifierGroupInput,
@@ -92,6 +97,13 @@ export function createMerchantRestaurantModifierService(
     async list(principal) {
       requirePrincipalPermission(principal, 'restaurant.menu.manage');
       return listRestaurantModifierGroups(prisma, scopeOf(principal));
+    },
+
+    async productGroups(principal, productId) {
+      requirePrincipalPermission(principal, 'restaurant.menu.manage');
+      return attempt(() =>
+        readRestaurantProductModifierGroupIds(prisma, scopeOf(principal), productId),
+      );
     },
 
     async createGroup(principal, input) {
