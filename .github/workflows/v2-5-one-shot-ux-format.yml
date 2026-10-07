@@ -1,0 +1,45 @@
+name: V2-5 One-Shot Modifier UX Format
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-5-one-shot-ux-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Format V2-5 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prettier --write             apps/api/src/checkout/preview-service.ts             apps/api/src/checkout/service.ts             apps/api/src/routes/validation.ts             apps/api/src/routes/business.ts             apps/api/src/server.ts             apps/pos-web/src/lib/api-types.ts             apps/pos-web/src/lib/api.ts             apps/pos-web/src/lib/cart.ts             apps/pos-web/src/lib/restaurant-orders.ts             apps/pos-web/src/components/cart-panel.tsx             apps/pos-web/src/components/cashier-screen.tsx             apps/pos-web/src/components/restaurant-modifier-picker.tsx             apps/pos-web/src/lib/failures.ts
+          rm .github/workflows/v2-5-one-shot-ux-format.yml
+          git diff --check
+      - name: Commit exact formatter output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-format"
+          git config user.email "actions@users.noreply.github.com"
+          git add             apps/api/src/checkout/preview-service.ts             apps/api/src/checkout/service.ts             apps/api/src/routes/validation.ts             apps/api/src/routes/business.ts             apps/api/src/server.ts             apps/pos-web/src/lib/api-types.ts             apps/pos-web/src/lib/api.ts             apps/pos-web/src/lib/cart.ts             apps/pos-web/src/lib/restaurant-orders.ts             apps/pos-web/src/components/cart-panel.tsx             apps/pos-web/src/components/cashier-screen.tsx             apps/pos-web/src/components/restaurant-modifier-picker.tsx             apps/pos-web/src/lib/failures.ts             .github/workflows/v2-5-one-shot-ux-format.yml
+          git commit -m "style(v2-5): format modifier preview and cashier UX"
+          git push origin HEAD:mastermind/v2-strengthening
