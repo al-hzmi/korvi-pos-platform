@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
+          npm update sharp source-map-js --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
           node -e "const l=require('./package-lock.json'); const p=l.packages; if(p['node_modules/sharp']?.version!=='0.35.5') process.exit(21); if(p['node_modules/source-map-js']?.version!=='1.2.2') process.exit(22)"
           rm .github/workflows/v2-one-shot-security-lock.yml
           git diff --check
