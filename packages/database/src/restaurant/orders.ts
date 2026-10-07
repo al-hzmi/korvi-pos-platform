@@ -355,13 +355,13 @@ async function readOrderWithin(
     include: {
       table: { select: { code: true, nameAr: true } },
       lines: {
-          orderBy: { lineNumber: 'asc' },
-          include: {
-            modifierSelections: {
-              orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
-            },
+        orderBy: { lineNumber: 'asc' },
+        include: {
+          modifierSelections: {
+            orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
           },
         },
+      },
     },
   })) as OrderRow | null;
   return row === null ? null : asOrder(row);
@@ -1088,13 +1088,11 @@ export async function replaceRestaurantOrderLines(
         if (snapshot === undefined) throw new RestaurantOrderRefusedError('unknown-line');
         retainedIds.add(line.lineId);
 
-        let modifierReplacement:
-          | {
-              readonly unitPriceMinor: bigint;
-              readonly modifierTotalMinor: bigint;
-              readonly selections: readonly RestaurantModifierSelectionSnapshot[];
-            }
-          | null = null;
+        let modifierReplacement: {
+          readonly unitPriceMinor: bigint;
+          readonly modifierTotalMinor: bigint;
+          readonly selections: readonly RestaurantModifierSelectionSnapshot[];
+        } | null = null;
 
         if (line.selectedOptionIds !== undefined) {
           const historicalIds = snapshot.modifierSelections
@@ -1241,10 +1239,7 @@ export async function replaceRestaurantOrderLines(
       });
       if (updated.count !== 1) throw new RestaurantOrderRefusedError('stale-revision');
 
-      if (
-        line.modifierReplacement !== null &&
-        line.modifierReplacement.selections.length > 0
-      ) {
+      if (line.modifierReplacement !== null && line.modifierReplacement.selections.length > 0) {
         await tx.restaurantOrderLineModifierSelection.createMany({
           data: line.modifierReplacement.selections.map((selection) =>
             selectionCreate(tenant, line.id, selection, nextId),

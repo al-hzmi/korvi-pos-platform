@@ -71,7 +71,6 @@ export async function resolveRestaurantModifierPolicyWithin(
   });
 }
 
-
 export interface RestaurantModifierPolicyRepository {
   resolve(
     scope: TenantScope,

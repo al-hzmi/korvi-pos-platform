@@ -768,7 +768,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             scaled: BigInt(line.quantityScaled),
             inventoryScaled: BigInt(line.quantityScaled),
             retailAuthority: null,
-            selectedModifierOptionIds: line.modifierSelections.map((selection) => selection.optionId),
+            selectedModifierOptionIds: line.modifierSelections.map(
+              (selection) => selection.optionId,
+            ),
             modifierAuthority: {
               baseUnitPriceMinor: BigInt(line.baseUnitPriceMinor),
               modifierTotalMinor: BigInt(line.modifierTotalMinor),
@@ -829,8 +831,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             }
           } else if (
             settings.vertical !== 'restaurant' &&
-            ((line.packageId !== null && line.packageId !== undefined) ||
-              priceContext !== 'retail')
+            ((line.packageId !== null && line.packageId !== undefined) || priceContext !== 'retail')
           ) {
             return fail(
               line.packageId !== null && line.packageId !== undefined

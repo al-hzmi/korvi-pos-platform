@@ -292,12 +292,8 @@ export type {
 
 // Restaurant open-order authority. Rows are operational and non-fiscal; line
 // price/tax facts are server-authored snapshots for later settlement.
-export {
-  createRestaurantModifierPolicyRepository,
-} from './restaurant/modifier-policy.js';
-export type {
-  RestaurantModifierPolicyRepository,
-} from './restaurant/modifier-policy.js';
+export { createRestaurantModifierPolicyRepository } from './restaurant/modifier-policy.js';
+export type { RestaurantModifierPolicyRepository } from './restaurant/modifier-policy.js';
 
 export {
   RestaurantOrderRefusedError,

@@ -140,8 +140,7 @@ describe('advisory handling', () => {
       },
       metadata: { vulnerabilities: { high: 2 } },
     });
-    const allow =
-      'GHSA-aaaa-bbbb-cccc  reviewed inherited root | reviewer | expires 2099-01-01';
+    const allow = 'GHSA-aaaa-bbbb-cccc  reviewed inherited root | reviewer | expires 2099-01-01';
     expect(runGate(report, allow).code).toBe(0);
   });
 

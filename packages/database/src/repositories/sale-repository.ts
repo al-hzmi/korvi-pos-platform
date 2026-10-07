@@ -566,7 +566,11 @@ async function assertRestaurantOrderSettlement(
         'Restaurant order settlement modifier snapshot count does not match the sale.',
       );
     }
-    for (let selectionIndex = 0; selectionIndex < orderLine.modifierSelections.length; selectionIndex += 1) {
+    for (
+      let selectionIndex = 0;
+      selectionIndex < orderLine.modifierSelections.length;
+      selectionIndex += 1
+    ) {
       const expected = orderLine.modifierSelections[selectionIndex];
       const actual = saleSelections[selectionIndex];
       if (
@@ -654,7 +658,9 @@ async function proveRestaurantModifierSettlementWithin(
     input.sale.orderType === null ||
     input.sale.orderType === undefined
   ) {
-    throw new DatabaseError('Restaurant modifier settlement is valid only for direct restaurant sales.');
+    throw new DatabaseError(
+      'Restaurant modifier settlement is valid only for direct restaurant sales.',
+    );
   }
   if (settlement.lines.length !== input.sale.lines.length) {
     throw new DatabaseError('Restaurant modifier settlement must cover every sale line.');
