@@ -19,6 +19,7 @@ const orderLine = z
     quantityScaled: QUANTITY,
     preparationNote: OPTIONAL_PREP.optional().default(null),
     preparationOptions: OPTIONAL_PREP.optional().default(null),
+    selectedOptionIds: z.array(UUID).max(128).optional(),
   })
   .strict();
 const createBody = z
@@ -50,6 +51,7 @@ const retainedLine = z
     quantityScaled: QUANTITY,
     preparationNote: OPTIONAL_PREP.optional().default(null),
     preparationOptions: OPTIONAL_PREP.optional().default(null),
+    selectedOptionIds: z.array(UUID).max(128).optional(),
   })
   .strict();
 const newLine = z
@@ -58,6 +60,7 @@ const newLine = z
     quantityScaled: QUANTITY,
     preparationNote: OPTIONAL_PREP.optional().default(null),
     preparationOptions: OPTIONAL_PREP.optional().default(null),
+    selectedOptionIds: z.array(UUID).max(128).optional(),
   })
   .strict();
 const replaceLinesBody = z
@@ -100,6 +103,10 @@ function refusal(reply: FastifyReply, reason: RestaurantOrderRefusal) {
       return reply.code(409).send({ error: 'product_unavailable' });
     case 'invalid-quantity':
       return reply.code(422).send({ error: 'invalid_quantity' });
+    case 'invalid-modifier-selection':
+      return reply.code(422).send({ error: 'invalid_modifier_selection' });
+    case 'modifier-policy-invalid':
+      return reply.code(409).send({ error: 'modifier_policy_invalid' });
     case 'unknown-line':
       return reply.code(404).send({ error: 'restaurant_order_line_not_found' });
     case 'duplicate-line':

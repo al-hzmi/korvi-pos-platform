@@ -1,10 +1,16 @@
 import { createHash } from 'node:crypto';
-import { newId } from '@korvi/domain';
+import {
+  InvalidAmountError,
+  InvalidRestaurantModifierDefinitionError,
+  InvalidRestaurantModifierSelectionError,
+  newId,
+} from '@korvi/domain';
 import { DatabaseError } from '../errors.js';
 import { tenantParam } from '../repositories/mapping.js';
 import { withTenant } from '../tenant-context.js';
+import { resolveRestaurantModifierPolicyWithin } from './modifier-policy.js';
 import { preparationReplacementPreservesFiredLines } from './preparation-policy.js';
-import type { TenantScope } from '@korvi/domain';
+import type { RestaurantModifierSelectionSnapshot, TenantScope } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 import type { TransactionClient } from '../tenant-context.js';
 
@@ -24,6 +30,8 @@ export type RestaurantOrderRefusal =
   | 'unknown-product'
   | 'product-unavailable'
   | 'invalid-quantity'
+  | 'invalid-modifier-selection'
+  | 'modifier-policy-invalid'
   | 'unknown-line'
   | 'duplicate-line'
   | 'preparation-started'
@@ -52,6 +60,8 @@ export interface RestaurantOrderCreateLine {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  /** Client intent only. Server resolves names, revisions and price deltas. */
+  readonly selectedOptionIds?: readonly string[] | undefined;
 }
 
 export interface RestaurantOrderCreateRequest {
@@ -79,6 +89,11 @@ export interface RestaurantOrderRetainedLine {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  /**
+   * Omitted = preserve exact historical modifier snapshot.
+   * Present = explicit modifier replacement against current menu policy.
+   */
+  readonly selectedOptionIds?: readonly string[] | undefined;
 }
 
 export interface RestaurantOrderNewLine {
@@ -86,12 +101,28 @@ export interface RestaurantOrderNewLine {
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
   readonly preparationOptions: string | null;
+  /** Client intent only. */
+  readonly selectedOptionIds?: readonly string[] | undefined;
 }
 
 export interface RestaurantOrderReplaceLinesRequest {
   readonly operationId: string;
   readonly expectedRevision: string;
   readonly lines: readonly (RestaurantOrderRetainedLine | RestaurantOrderNewLine)[];
+}
+
+export interface RestaurantOrderModifierSelection {
+  readonly groupId: string;
+  readonly groupRevision: string;
+  readonly groupCode: string;
+  readonly groupNameAr: string;
+  readonly groupSortOrder: number;
+  readonly optionId: string;
+  readonly optionRevision: string;
+  readonly optionCode: string;
+  readonly optionNameAr: string;
+  readonly optionSortOrder: number;
+  readonly priceDeltaMinor: string;
 }
 
 export interface RestaurantOrderLine {
@@ -102,7 +133,10 @@ export interface RestaurantOrderLine {
   readonly nameAr: string;
   readonly nameEn: string | null;
   readonly productType: 'unit' | 'weighted';
+  readonly baseUnitPriceMinor: string;
+  readonly modifierTotalMinor: string;
   readonly unitPriceMinor: string;
+  readonly modifierSelections: readonly RestaurantOrderModifierSelection[];
   readonly vatBasisPoints: number;
   readonly quantityScaled: string;
   readonly preparationNote: string | null;
@@ -139,6 +173,20 @@ export interface RestaurantOrderMutationResult {
   readonly replayed: boolean;
 }
 
+interface ModifierSelectionRow {
+  groupId: string;
+  groupRevision: bigint;
+  groupCode: string;
+  groupNameAr: string;
+  groupSortOrder: number;
+  optionId: string;
+  optionRevision: bigint;
+  optionCode: string;
+  optionNameAr: string;
+  optionSortOrder: number;
+  priceDeltaMinor: bigint;
+}
+
 interface LineRow {
   id: string;
   lineNumber: number;
@@ -147,7 +195,10 @@ interface LineRow {
   nameAr: string;
   nameEn: string | null;
   productType: string;
+  baseUnitPriceMinor: bigint;
+  modifierTotalMinor: bigint;
   unitPriceMinor: bigint;
+  modifierSelections: readonly ModifierSelectionRow[];
   vatBasisPoints: number;
   quantityScaled: bigint;
   preparationNote: string | null;
@@ -220,7 +271,22 @@ function asLine(row: LineRow): RestaurantOrderLine {
     nameAr: row.nameAr,
     nameEn: row.nameEn,
     productType: row.productType,
+    baseUnitPriceMinor: row.baseUnitPriceMinor.toString(),
+    modifierTotalMinor: row.modifierTotalMinor.toString(),
     unitPriceMinor: row.unitPriceMinor.toString(),
+    modifierSelections: row.modifierSelections.map((selection) => ({
+      groupId: selection.groupId,
+      groupRevision: selection.groupRevision.toString(),
+      groupCode: selection.groupCode,
+      groupNameAr: selection.groupNameAr,
+      groupSortOrder: selection.groupSortOrder,
+      optionId: selection.optionId,
+      optionRevision: selection.optionRevision.toString(),
+      optionCode: selection.optionCode,
+      optionNameAr: selection.optionNameAr,
+      optionSortOrder: selection.optionSortOrder,
+      priceDeltaMinor: selection.priceDeltaMinor.toString(),
+    })),
     vatBasisPoints: row.vatBasisPoints,
     quantityScaled: row.quantityScaled.toString(),
     preparationNote: row.preparationNote,
@@ -288,7 +354,14 @@ async function readOrderWithin(
     where: { tenantId: tenant, branchId, id: orderId },
     include: {
       table: { select: { code: true, nameAr: true } },
-      lines: { orderBy: { lineNumber: 'asc' } },
+      lines: {
+          orderBy: { lineNumber: 'asc' },
+          include: {
+            modifierSelections: {
+              orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
+            },
+          },
+        },
     },
   })) as OrderRow | null;
   return row === null ? null : asOrder(row);
@@ -398,6 +471,59 @@ async function appendAudit(
   });
 }
 
+async function resolveModifiers(
+  tx: TransactionClient,
+  scope: TenantScope,
+  productId: string,
+  baseUnitPriceMinor: bigint,
+  selectedOptionIds: readonly string[],
+) {
+  try {
+    return await resolveRestaurantModifierPolicyWithin(
+      tx,
+      scope,
+      productId,
+      baseUnitPriceMinor,
+      selectedOptionIds,
+    );
+  } catch (error) {
+    if (error instanceof InvalidRestaurantModifierSelectionError) {
+      throw new RestaurantOrderRefusedError('invalid-modifier-selection');
+    }
+    if (
+      error instanceof InvalidRestaurantModifierDefinitionError ||
+      error instanceof InvalidAmountError
+    ) {
+      throw new RestaurantOrderRefusedError('modifier-policy-invalid');
+    }
+    throw error;
+  }
+}
+
+function selectionCreate(
+  tenantId: string,
+  orderLineId: string,
+  selection: RestaurantModifierSelectionSnapshot,
+  nextId: () => string,
+) {
+  return {
+    id: nextId(),
+    tenantId,
+    orderLineId,
+    groupId: selection.groupId,
+    optionId: selection.optionId,
+    groupCode: selection.groupCode,
+    groupNameAr: selection.groupNameAr,
+    groupRevision: selection.groupRevision,
+    groupSortOrder: selection.groupSortOrder,
+    optionCode: selection.optionCode,
+    optionNameAr: selection.optionNameAr,
+    optionRevision: selection.optionRevision,
+    optionSortOrder: selection.optionSortOrder,
+    priceDeltaMinor: selection.priceDeltaMinor,
+  };
+}
+
 async function requireRestaurantSettings(
   tx: TransactionClient,
   tenant: string,
@@ -465,7 +591,14 @@ export async function listOpenRestaurantOrders(
       where: { tenantId: tenant, branchId, status: 'open' },
       include: {
         table: { select: { code: true, nameAr: true } },
-        lines: { orderBy: { lineNumber: 'asc' } },
+        lines: {
+          orderBy: { lineNumber: 'asc' },
+          include: {
+            modifierSelections: {
+              orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
+            },
+          },
+        },
       },
       orderBy: [{ openedAt: 'asc' }, { id: 'asc' }],
     })) as OrderRow[];
@@ -497,6 +630,7 @@ export async function createRestaurantOrder(
     quantityScaled: line.quantityScaled,
     preparationNote: normalizeOptionalText(line.preparationNote),
     preparationOptions: normalizeOptionalText(line.preparationOptions),
+    selectedOptionIds: [...(line.selectedOptionIds ?? [])].sort(),
   }));
   const requestHash = fingerprint({
     terminalId: request.terminalId,
@@ -539,6 +673,13 @@ export async function createRestaurantOrder(
       if (product === null) throw new RestaurantOrderRefusedError('unknown-product');
       if (!product.isActive) throw new RestaurantOrderRefusedError('product-unavailable');
       const scaled = quantity(line.quantityScaled, product.productType);
+      const modifiers = await resolveModifiers(
+        tx,
+        scope,
+        product.id,
+        product.priceMinor,
+        line.selectedOptionIds,
+      );
       snapshots.push({
         id: nextId(),
         tenantId: tenant,
@@ -548,9 +689,10 @@ export async function createRestaurantOrder(
         nameAr: product.nameAr,
         nameEn: product.nameEn,
         productType: product.productType,
-        unitPriceMinor: product.priceMinor,
-        baseUnitPriceMinor: product.priceMinor,
-        modifierTotalMinor: 0n,
+        unitPriceMinor: modifiers.unitPriceMinor,
+        baseUnitPriceMinor: modifiers.baseUnitPriceMinor,
+        modifierTotalMinor: modifiers.modifierTotalMinor,
+        modifierSelections: modifiers.selections,
         vatBasisPoints: product.vatBasisPoints,
         quantityScaled: scaled,
         preparationNote: line.preparationNote,
@@ -591,14 +733,23 @@ export async function createRestaurantOrder(
               nameEn: line.nameEn,
               productType: line.productType,
               unitPriceMinor: line.unitPriceMinor,
-              baseUnitPriceMinor: line.unitPriceMinor,
-              modifierTotalMinor: 0n,
+              baseUnitPriceMinor: line.baseUnitPriceMinor,
+              modifierTotalMinor: line.modifierTotalMinor,
               vatBasisPoints: line.vatBasisPoints,
               quantityScaled: line.quantityScaled,
               preparationNote: line.preparationNote,
               preparationOptions: line.preparationOptions,
               trackInventory: line.trackInventory,
               createdAt: at,
+              ...(line.modifierSelections.length === 0
+                ? {}
+                : {
+                    modifierSelections: {
+                      create: line.modifierSelections.map((selection) =>
+                        selectionCreate(tenant, line.id, selection, nextId),
+                      ),
+                    },
+                  }),
             })),
           },
         },
@@ -872,6 +1023,9 @@ export async function replaceRestaurantOrderLines(
     ...line,
     preparationNote: normalizeOptionalText(line.preparationNote),
     preparationOptions: normalizeOptionalText(line.preparationOptions),
+    ...('selectedOptionIds' in line && line.selectedOptionIds !== undefined
+      ? { selectedOptionIds: [...line.selectedOptionIds].sort() }
+      : {}),
   }));
   const requestHash = fingerprint({
     orderId,
@@ -927,12 +1081,51 @@ export async function replaceRestaurantOrderLines(
         const snapshot = existingById.get(line.lineId);
         if (snapshot === undefined) throw new RestaurantOrderRefusedError('unknown-line');
         retainedIds.add(line.lineId);
+
+        let modifierReplacement:
+          | {
+              readonly unitPriceMinor: bigint;
+              readonly modifierTotalMinor: bigint;
+              readonly selections: readonly RestaurantModifierSelectionSnapshot[];
+            }
+          | null = null;
+
+        if (line.selectedOptionIds !== undefined) {
+          const historicalIds = snapshot.modifierSelections
+            .map((selection) => selection.optionId)
+            .sort();
+          const requestedIds = [...line.selectedOptionIds].sort();
+          const sameSelection =
+            historicalIds.length === requestedIds.length &&
+            historicalIds.every((id, selectionIndex) => id === requestedIds[selectionIndex]);
+
+          if (firedLineIds.has(snapshot.id)) {
+            if (!sameSelection) {
+              throw new RestaurantOrderRefusedError('preparation-started');
+            }
+          } else {
+            const modifiers = await resolveModifiers(
+              tx,
+              scope,
+              snapshot.productId,
+              BigInt(snapshot.baseUnitPriceMinor),
+              requestedIds,
+            );
+            modifierReplacement = {
+              unitPriceMinor: modifiers.unitPriceMinor,
+              modifierTotalMinor: modifiers.modifierTotalMinor,
+              selections: modifiers.selections,
+            };
+          }
+        }
+
         retained.push({
           id: snapshot.id,
           lineNumber: index + 1,
           quantityScaled: quantity(line.quantityScaled, snapshot.productType),
           preparationNote: line.preparationNote,
           preparationOptions: line.preparationOptions,
+          modifierReplacement,
         });
         continue;
       }
@@ -953,6 +1146,13 @@ export async function replaceRestaurantOrderLines(
       });
       if (product === null) throw new RestaurantOrderRefusedError('unknown-product');
       if (!product.isActive) throw new RestaurantOrderRefusedError('product-unavailable');
+      const modifiers = await resolveModifiers(
+        tx,
+        scope,
+        product.id,
+        product.priceMinor,
+        line.selectedOptionIds ?? [],
+      );
       added.push({
         id: nextId(),
         tenantId: tenant,
@@ -963,9 +1163,10 @@ export async function replaceRestaurantOrderLines(
         nameAr: product.nameAr,
         nameEn: product.nameEn,
         productType: product.productType,
-        unitPriceMinor: product.priceMinor,
-        baseUnitPriceMinor: product.priceMinor,
-        modifierTotalMinor: 0n,
+        unitPriceMinor: modifiers.unitPriceMinor,
+        baseUnitPriceMinor: modifiers.baseUnitPriceMinor,
+        modifierTotalMinor: modifiers.modifierTotalMinor,
+        modifierSelections: modifiers.selections,
         vatBasisPoints: product.vatBasisPoints,
         quantityScaled: quantity(line.quantityScaled, product.productType),
         preparationNote: line.preparationNote,
@@ -1011,6 +1212,12 @@ export async function replaceRestaurantOrderLines(
     });
 
     for (const line of retained) {
+      if (line.modifierReplacement !== null) {
+        await tx.restaurantOrderLineModifierSelection.deleteMany({
+          where: { tenantId: tenant, orderLineId: line.id },
+        });
+      }
+
       const updated = await tx.restaurantOrderLine.updateMany({
         where: { tenantId: tenant, orderId, id: line.id },
         data: {
@@ -1018,18 +1225,43 @@ export async function replaceRestaurantOrderLines(
           quantityScaled: line.quantityScaled,
           preparationNote: line.preparationNote,
           preparationOptions: line.preparationOptions,
+          ...(line.modifierReplacement === null
+            ? {}
+            : {
+                unitPriceMinor: line.modifierReplacement.unitPriceMinor,
+                modifierTotalMinor: line.modifierReplacement.modifierTotalMinor,
+              }),
         },
       });
       if (updated.count !== 1) throw new RestaurantOrderRefusedError('stale-revision');
+
+      if (
+        line.modifierReplacement !== null &&
+        line.modifierReplacement.selections.length > 0
+      ) {
+        await tx.restaurantOrderLineModifierSelection.createMany({
+          data: line.modifierReplacement.selections.map((selection) =>
+            selectionCreate(tenant, line.id, selection, nextId),
+          ),
+        });
+      }
     }
 
     if (added.length > 0) {
       await tx.restaurantOrderLine.createMany({
-        data: added.map((line) => ({
+        data: added.map(({ modifierSelections: _modifierSelections, ...line }) => ({
           ...line,
           createdAt: at,
         })),
       });
+      const selections = added.flatMap((line) =>
+        line.modifierSelections.map((selection) =>
+          selectionCreate(tenant, line.id, selection, nextId),
+        ),
+      );
+      if (selections.length > 0) {
+        await tx.restaurantOrderLineModifierSelection.createMany({ data: selections });
+      }
     }
 
     const order = await readOrderWithin(tx, tenant, actor.branchId, orderId);
