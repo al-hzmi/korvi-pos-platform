@@ -1,0 +1,45 @@
+name: V2-5 One-Shot Canonical Format
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-5-one-shot-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Apply canonical formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prettier --write             apps/api/src/checkout/service.ts             packages/config/src/__tests__/audit-gate.test.ts             packages/database/src/index.ts             packages/database/src/repositories/sale-repository.ts             packages/database/src/restaurant/modifier-policy.ts             packages/database/src/restaurant/orders.ts             scripts/verify-versions.mjs
+          rm .github/workflows/v2-5-one-shot-format.yml
+          git diff --check
+      - name: Commit formatter output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-format"
+          git config user.email "actions@users.noreply.github.com"
+          git add             apps/api/src/checkout/service.ts             packages/config/src/__tests__/audit-gate.test.ts             packages/database/src/index.ts             packages/database/src/repositories/sale-repository.ts             packages/database/src/restaurant/modifier-policy.ts             packages/database/src/restaurant/orders.ts             scripts/verify-versions.mjs             .github/workflows/v2-5-one-shot-format.yml
+          git commit -m "style(v2-5): apply canonical formatter"
+          git push origin HEAD:mastermind/v2-strengthening
