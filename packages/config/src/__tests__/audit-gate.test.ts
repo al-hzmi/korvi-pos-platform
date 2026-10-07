@@ -122,6 +122,29 @@ describe('advisory handling', () => {
     expect(runGate(report).code).not.toBe(0);
   });
 
+  it('resolves an inherited string via only when its root advisory is reviewed', () => {
+    const report = JSON.stringify({
+      vulnerabilities: {
+        top: { name: 'top', severity: 'high', via: ['dependency'] },
+        dependency: {
+          name: 'dependency',
+          severity: 'high',
+          via: [
+            {
+              severity: 'high',
+              title: 'Example',
+              url: 'https://github.com/advisories/GHSA-aaaa-bbbb-cccc',
+            },
+          ],
+        },
+      },
+      metadata: { vulnerabilities: { high: 2 } },
+    });
+    const allow =
+      'GHSA-aaaa-bbbb-cccc  reviewed inherited root | reviewer | expires 2099-01-01';
+    expect(runGate(report, allow).code).toBe(0);
+  });
+
   it('fails when metadata reports a high vulnerability but no entry is resolvable', () => {
     const report = JSON.stringify({
       vulnerabilities: {},
@@ -166,11 +189,14 @@ describe('advisory handling', () => {
 });
 
 describe('the shipped allowlist', () => {
-  it('is empty, because next 16.3.0 needs no exceptions', () => {
+  it('contains only the current time-bounded reviewed exception', () => {
     const entries = readFileSync(join(root, 'scripts/audit-allowlist.txt'), 'utf8')
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line !== '' && !line.startsWith('#'));
-    expect(entries).toEqual([]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatch(
+      /^GHSA-vfj7-8cjw-p6xm\s+.+\|\s+Korvi CTO\s+\|\s+expires 2026-11-07$/,
+    );
   });
 });

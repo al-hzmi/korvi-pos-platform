@@ -125,6 +125,57 @@ const excepted = [];
 const expired = [];
 let qualifyingPackages = 0;
 
+const resolveVia = (packageName, inheritedSeverity, via, chain = []) => {
+  if (typeof via === "string") {
+    if (chain.includes(via)) {
+      blocking.push(
+        `${inheritedSeverity}  ${packageName}  (cyclic vulnerability chain: ${[
+          ...chain,
+          via,
+        ].join(" -> ")})`,
+      );
+      return;
+    }
+
+    const dependency = report.vulnerabilities[via];
+    if (dependency === null || typeof dependency !== "object") {
+      blocking.push(
+        `${inheritedSeverity}  ${packageName}  (unresolved via dependency: ${via})`,
+      );
+      return;
+    }
+
+    const dependencyVias = Array.isArray(dependency.via) ? dependency.via : [];
+    if (dependencyVias.length === 0) {
+      blocking.push(
+        `${inheritedSeverity}  ${packageName}  (dependency ${via} has no resolvable advisory)`,
+      );
+      return;
+    }
+
+    for (const dependencyVia of dependencyVias) {
+      resolveVia(packageName, inheritedSeverity, dependencyVia, [...chain, via]);
+    }
+    return;
+  }
+
+  if (via === null || typeof via !== "object") {
+    blocking.push(`${inheritedSeverity}  ${packageName}  (unrecognised via entry)`);
+    return;
+  }
+
+  const id = (via.url ?? "").split("/").pop() ?? "";
+  const label = `${via.severity ?? inheritedSeverity}  ${packageName}  ${id || "(no id)"}`;
+  const entry = allowed.get(id);
+  if (entry === undefined) {
+    blocking.push(`${label}\n        ${via.title ?? ""}`);
+  } else if (entry.expiry < today) {
+    expired.push(`${label} — exception expired ${entry.expiry}`);
+  } else {
+    excepted.push(`${label} — ${entry.line}`);
+  }
+};
+
 for (const advisory of Object.values(report.vulnerabilities)) {
   if (advisory === null || typeof advisory !== "object") {
     fail("A vulnerability entry is not an object — unrecognised audit schema.");
@@ -138,37 +189,9 @@ for (const advisory of Object.values(report.vulnerabilities)) {
     continue;
   }
 
+  const packageName = advisory.name ?? "(unknown package)";
   for (const via of vias) {
-    // npm may represent an inherited vulnerability as the name of another
-    // package rather than an advisory object. That is not enough information
-    // to match a reviewed GHSA exception, so the gate must fail closed.
-    if (typeof via === "string") {
-      blocking.push(
-        `${advisory.severity}  ${advisory.name ?? "(unknown package)"}  ` +
-          `(unresolved via dependency: ${via})`,
-      );
-      continue;
-    }
-    if (via === null || typeof via !== "object") {
-      blocking.push(
-        `${advisory.severity}  ${advisory.name ?? "(unknown package)"}  (unrecognised via entry)`,
-      );
-      continue;
-    }
-
-    const id = (via.url ?? "").split("/").pop() ?? "";
-    const label = `${via.severity ?? advisory.severity}  ${advisory.name ?? "(unknown package)"}  ${id || "(no id)"}`;
-    const entry = allowed.get(id);
-
-    // An advisory with no resolvable id can never be matched to a reviewed
-    // exception, so it blocks. Unknown means blocked.
-    if (entry === undefined) {
-      blocking.push(`${label}\n        ${via.title ?? ""}`);
-    } else if (entry.expiry < today) {
-      expired.push(`${label} — exception expired ${entry.expiry}`);
-    } else {
-      excepted.push(`${label} — ${entry.line}`);
-    }
+    resolveVia(packageName, advisory.severity, via, [packageName]);
   }
 }
 

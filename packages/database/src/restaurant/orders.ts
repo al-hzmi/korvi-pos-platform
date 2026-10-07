@@ -431,7 +431,13 @@ async function completeOperation(
       status: 'completed',
       resultType: 'restaurant-order',
       resultId: order.id,
-      resultSnapshot: { ...order, lines: order.lines.map((line) => ({ ...line })) },
+      resultSnapshot: {
+        ...order,
+        lines: order.lines.map((line) => ({
+          ...line,
+          modifierSelections: line.modifierSelections.map((selection) => ({ ...selection })),
+        })),
+      },
       completedAt: at,
     },
   });

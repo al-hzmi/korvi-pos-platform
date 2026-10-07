@@ -750,36 +750,10 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       if (restaurantOrder !== null) {
         for (const line of restaurantOrder.lines) {
           if (line.trackInventory === null) return fail('restaurant-order-incomplete');
-          let modifierAuthority: RestaurantModifierResolution | null = null;
-          const selectedModifierOptionIds = [...(line.selectedModifierOptionIds ?? [])].sort();
-          if (settings.vertical === 'restaurant') {
-            if (deps.restaurantModifiers === undefined) {
-              return fail('modifier-policy-invalid');
-            }
-            try {
-              modifierAuthority = await deps.restaurantModifiers.resolve(
-                scope,
-                product.id,
-                BigInt(product.priceMinor),
-                selectedModifierOptionIds,
-              );
-            } catch (error) {
-              if (error instanceof InvalidRestaurantModifierSelectionError) {
-                return fail('invalid-modifier-selection');
-              }
-              if (
-                error instanceof InvalidRestaurantModifierDefinitionError ||
-                error instanceof InvalidAmountError
-              ) {
-                return fail('modifier-policy-invalid');
-              }
-              throw error;
-            }
-            if (input.offlineCaptured === true && modifierAuthority.selections.length > 0) {
-              return fail('modifier-offline-unsupported');
-            }
-          }
 
+          // ADR-0040: settlement consumes the immutable RestaurantOrderLine
+          // modifier snapshot. Current menu policy must never reinterpret a
+          // historical open-order line.
           loaded.push({
             product: {
               id: line.productId,
@@ -863,6 +837,39 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
                 ? 'package-unavailable'
                 : 'wholesale-price-incomplete',
             );
+          }
+
+          let modifierAuthority: RestaurantModifierResolution | null = null;
+          const selectedModifierOptionIds = [...(line.selectedModifierOptionIds ?? [])].sort();
+          if (settings.vertical === 'restaurant') {
+            if (line.packageId !== null && line.packageId !== undefined) {
+              return fail('modifiers-not-applicable');
+            }
+            if (deps.restaurantModifiers === undefined) {
+              return fail('modifier-policy-invalid');
+            }
+            try {
+              modifierAuthority = await deps.restaurantModifiers.resolve(
+                scope,
+                product.id,
+                BigInt(product.priceMinor),
+                selectedModifierOptionIds,
+              );
+            } catch (error) {
+              if (error instanceof InvalidRestaurantModifierSelectionError) {
+                return fail('invalid-modifier-selection');
+              }
+              if (
+                error instanceof InvalidRestaurantModifierDefinitionError ||
+                error instanceof InvalidAmountError
+              ) {
+                return fail('modifier-policy-invalid');
+              }
+              throw error;
+            }
+            if (input.offlineCaptured === true && modifierAuthority.selections.length > 0) {
+              return fail('modifier-offline-unsupported');
+            }
           }
 
           let scaled: bigint;

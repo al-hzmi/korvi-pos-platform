@@ -749,16 +749,20 @@ async function reserveOperation(
 
 const WITH_CHILDREN = {
   lines: {
-    orderBy: { lineNumber: 'asc' },
+    orderBy: { lineNumber: 'asc' as const },
     include: {
       modifierSelections: {
-        orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
+        orderBy: [
+          { groupSortOrder: 'asc' as const },
+          { optionSortOrder: 'asc' as const },
+          { id: 'asc' as const },
+        ],
       },
     },
   },
   discounts: true,
   tenders: true,
-} as const;
+};
 
 async function loadSale(
   tx: TransactionClient,
