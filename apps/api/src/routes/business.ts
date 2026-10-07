@@ -208,6 +208,9 @@ const PREVIEW_MESSAGES: Readonly<Record<CheckoutPreviewFailureReason, string>> =
   'retail-pricing-policy-stale': MESSAGES['retail-pricing-policy-stale'],
   'tenant-misconfigured': MESSAGES['tenant-misconfigured'],
   'promotions-not-applicable': MESSAGES['promotions-not-applicable'],
+  'invalid-modifier-selection': MESSAGES['invalid-modifier-selection'],
+  'modifier-policy-invalid': MESSAGES['modifier-policy-invalid'],
+  'modifiers-not-applicable': MESSAGES['modifiers-not-applicable'],
 };
 
 const PREVIEW_STATUS: Readonly<Record<CheckoutPreviewFailureReason, number>> = {
@@ -226,6 +229,9 @@ const PREVIEW_STATUS: Readonly<Record<CheckoutPreviewFailureReason, number>> = {
   'retail-pricing-policy-stale': 409,
   'tenant-misconfigured': 409,
   'promotions-not-applicable': 422,
+  'invalid-modifier-selection': 422,
+  'modifier-policy-invalid': 409,
+  'modifiers-not-applicable': 422,
 };
 
 const RETURN_MESSAGES: Readonly<Record<ReturnFailureReason, string>> = {

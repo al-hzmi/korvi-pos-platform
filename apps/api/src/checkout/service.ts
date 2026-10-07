@@ -595,12 +595,14 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
         throw error;
       }
 
-      // V2-3 commercial identity is (Product, Package). One Product may appear
-      // once as a base unit and once as a carton, but the same commercial unit
-      // twice is still a duplicate request.
+      // V2-5 restaurant identity includes the canonical modifier selection.
+      // The same Product with different governed options is a different
+      // commercial line; an exact duplicate selection is still refused.
       const seen = new Set<string>();
       for (const line of input.lines) {
-        const identity = line.productId + '\u0000' + (line.packageId ?? '');
+        const modifierIdentity = [...(line.selectedModifierOptionIds ?? [])].sort().join(',');
+        const identity =
+          line.productId + '\u0000' + (line.packageId ?? '') + '\u0000' + modifierIdentity;
         if (seen.has(identity)) return fail('duplicate-line');
         seen.add(identity);
       }

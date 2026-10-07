@@ -1,7 +1,10 @@
 import { checkoutPricingHash } from './pricing-hash.js';
 import {
   ContextPriceError,
+  InvalidAmountError,
   InvalidCouponCodeError,
+  InvalidRestaurantModifierDefinitionError,
+  InvalidRestaurantModifierSelectionError,
   baseInventoryQuantityScaled,
   basisPoints,
   evaluatePromotions,
@@ -23,6 +26,7 @@ import type {
   PromotionRepository,
   RetailPriceAuthority,
   RetailPricingRepository,
+  RestaurantModifierResolution,
   TenantRepository,
   TenantScope,
 } from '@korvi/domain';
@@ -42,7 +46,10 @@ export type CheckoutPreviewFailureReason =
   | 'price-context-not-authorized'
   | 'retail-pricing-policy-stale'
   | 'tenant-misconfigured'
-  | 'promotions-not-applicable';
+  | 'promotions-not-applicable'
+  | 'invalid-modifier-selection'
+  | 'modifier-policy-invalid'
+  | 'modifiers-not-applicable';
 
 export interface CheckoutPreviewInput {
   readonly principal: AuthenticatedPrincipal;
@@ -50,6 +57,7 @@ export interface CheckoutPreviewInput {
     readonly productId: string;
     readonly packageId?: string | null | undefined;
     readonly quantityScaled: string;
+    readonly selectedModifierOptionIds?: readonly string[] | undefined;
   }[];
   readonly priceContext?: PriceContext | undefined;
   readonly couponCodes?: readonly string[] | undefined;
@@ -100,6 +108,14 @@ export interface CheckoutPreviewDeps {
   readonly products: ProductRepository;
   readonly retailPricing?: RetailPricingRepository;
   readonly promotions?: PromotionRepository;
+  readonly restaurantModifiers?: {
+    resolve(
+      scope: TenantScope,
+      productId: string,
+      baseUnitPriceMinor: bigint,
+      selectedOptionIds: readonly string[],
+    ): Promise<RestaurantModifierResolution>;
+  };
   readonly now?: () => Date;
 }
 
@@ -158,7 +174,9 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
 
       const seen = new Set<string>();
       for (const line of input.lines) {
-        const identity = line.productId + '\u0000' + (line.packageId ?? '');
+        const modifierIdentity = [...(line.selectedModifierOptionIds ?? [])].sort().join(',');
+        const identity =
+          line.productId + '\u0000' + (line.packageId ?? '') + '\u0000' + modifierIdentity;
         if (seen.has(identity)) return { outcome: 'failure', reason: 'duplicate-line' };
         seen.add(identity);
       }
@@ -178,7 +196,10 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
       if (settings === null || settings.currency !== 'SAR') {
         return { outcome: 'failure', reason: 'tenant-misconfigured' };
       }
-      if (settings.vertical === 'restaurant') {
+      if (
+        settings.vertical === 'restaurant' &&
+        (couponCodes.length > 0 || priceContext !== 'retail')
+      ) {
         return { outcome: 'failure', reason: 'promotions-not-applicable' };
       }
 
@@ -195,6 +216,7 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
         readonly scaled: bigint;
         readonly inventoryScaled: bigint;
         readonly authority: RetailPriceAuthority | null;
+        readonly modifierAuthority: RestaurantModifierResolution | null;
         readonly lineId: string;
       }[] = [];
 
@@ -204,7 +226,36 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
         if (!product.isActive) return { outcome: 'failure', reason: 'product-unavailable' };
 
         let authority: RetailPriceAuthority | null = null;
-        if (deps.retailPricing !== undefined) {
+        let modifierAuthority: RestaurantModifierResolution | null = null;
+        const selectedModifierOptionIds = [...(line.selectedModifierOptionIds ?? [])].sort();
+
+        if (settings.vertical === 'restaurant') {
+          if (line.packageId !== null && line.packageId !== undefined) {
+            return { outcome: 'failure', reason: 'modifiers-not-applicable' };
+          }
+          if (deps.restaurantModifiers === undefined) {
+            return { outcome: 'failure', reason: 'modifier-policy-invalid' };
+          }
+          try {
+            modifierAuthority = await deps.restaurantModifiers.resolve(
+              scope,
+              product.id,
+              BigInt(product.priceMinor),
+              selectedModifierOptionIds,
+            );
+          } catch (error) {
+            if (error instanceof InvalidRestaurantModifierSelectionError) {
+              return { outcome: 'failure', reason: 'invalid-modifier-selection' };
+            }
+            if (
+              error instanceof InvalidRestaurantModifierDefinitionError ||
+              error instanceof InvalidAmountError
+            ) {
+              return { outcome: 'failure', reason: 'modifier-policy-invalid' };
+            }
+            throw error;
+          }
+        } else if (deps.retailPricing !== undefined) {
           try {
             authority = await deps.retailPricing.resolve(scope, {
               productId: line.productId,
@@ -279,13 +330,15 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
             sku: product.sku,
             nameAr: product.nameAr,
             nameEn: product.nameEn,
-            priceMinor: authority?.unitPriceMinor ?? product.priceMinor,
+            priceMinor:
+              modifierAuthority?.unitPriceMinor.toString() ?? authority?.unitPriceMinor ?? product.priceMinor,
             vatBasisPoints: Number(product.vatBasisPoints),
             productType: product.productType,
           },
           scaled,
           inventoryScaled,
           authority,
+          modifierAuthority,
           lineId: 'preview-' + String(index + 1),
         });
       }
@@ -300,18 +353,22 @@ export function createCheckoutPreviewService(deps: CheckoutPreviewDeps): Checkou
       }));
 
       let policies: readonly PromotionCheckoutPolicy[] = [];
-      if (deps.promotions === undefined) {
-        if (couponCodes.length > 0) return { outcome: 'failure', reason: 'coupon-unavailable' };
-      } else {
-        const resolution = await deps.promotions.resolveForCheckout(scope, {
-          evaluatedAt,
-          productIds: loaded.map(({ product }) => product.id),
-          normalizedCouponCodes: couponCodes,
-        });
-        if (resolution.unavailableCouponCodes.length > 0) {
-          return { outcome: 'failure', reason: 'coupon-unavailable' };
+      if (settings.vertical !== 'restaurant') {
+        if (deps.promotions === undefined) {
+          if (couponCodes.length > 0) {
+            return { outcome: 'failure', reason: 'coupon-unavailable' };
+          }
+        } else {
+          const resolution = await deps.promotions.resolveForCheckout(scope, {
+            evaluatedAt,
+            productIds: loaded.map(({ product }) => product.id),
+            normalizedCouponCodes: couponCodes,
+          });
+          if (resolution.unavailableCouponCodes.length > 0) {
+            return { outcome: 'failure', reason: 'coupon-unavailable' };
+          }
+          policies = resolution.policies;
         }
-        policies = resolution.policies;
       }
 
       const evaluation = evaluatePromotions({

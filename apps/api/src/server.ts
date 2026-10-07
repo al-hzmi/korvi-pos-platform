@@ -255,6 +255,7 @@ function lazyBusinessDeps(config: ApiConfig): BusinessDeps {
         products,
         retailPricing,
         promotions,
+        restaurantModifiers,
       }),
       checkout: createCheckoutService({
         tenants,
