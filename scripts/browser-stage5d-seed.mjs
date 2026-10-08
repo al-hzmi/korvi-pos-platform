@@ -15,6 +15,7 @@ const signingKey = process.env.BOOTSTRAP_SIGNING_KEY;
 const password = process.env.KORVI_BROWSER_PASSWORD;
 const tenantSlug = process.env.KORVI_BROWSER_TENANT_SLUG ?? 'stage5d-browser-proof';
 const ownerEmail = process.env.KORVI_BROWSER_OWNER_EMAIL ?? 'owner@stage5d-browser-proof.test';
+const vertical = process.env.KORVI_BROWSER_VERTICAL ?? 'retail';
 
 if (databaseUrl === undefined || databaseUrl.trim() === '') {
   throw new Error('DATABASE_URL is required.');
@@ -39,7 +40,7 @@ try {
     slug: tenantSlug,
     name: 'متجر برهان المتصفح',
     vatNumber: null,
-    vertical: 'retail',
+    vertical,
     controlPlaneActorRef: CONTROL_PLANE_ACTOR,
   });
   assert.equal(tenant.created, true, 'Browser proof requires a fresh synthetic tenant.');
