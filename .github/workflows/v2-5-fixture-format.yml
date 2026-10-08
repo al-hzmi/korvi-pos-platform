@@ -1,0 +1,45 @@
+name: V2-5 Fixture Format Repair
+
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-5-fixture-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - name: Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+      - name: Format and self-remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prettier --write apps/api/src/__tests__/support/memory-business.ts
+          rm .github/workflows/v2-5-fixture-format.yml
+          git diff --check
+      - name: Commit exact formatter result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-format"
+          git config user.email "actions@users.noreply.github.com"
+          git add apps/api/src/__tests__/support/memory-business.ts .github/workflows/v2-5-fixture-format.yml
+          git commit -m "style(v2-5): format restaurant modifier memory fixture"
+          git push origin HEAD:mastermind/v2-strengthening
