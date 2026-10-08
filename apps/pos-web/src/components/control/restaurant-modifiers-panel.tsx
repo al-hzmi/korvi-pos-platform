@@ -497,8 +497,11 @@ export function RestaurantModifiersPanel({
                             checked={checked}
                             disabled={busy}
                             onChange={(event) => {
+                              // React releases currentTarget after the handler; capture the
+                              // checked intent before passing a callback to the state queue.
+                              const checked = event.currentTarget.checked;
                               setDraftGroupIds((current) =>
-                                event.currentTarget.checked
+                                checked
                                   ? [...current, group.id]
                                   : current.filter((id) => id !== group.id),
                               );
