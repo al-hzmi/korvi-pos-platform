@@ -8,10 +8,7 @@ import { ApiError } from '../../lib/api';
 import { formatMinor, parseSarToMinor } from '../../lib/money';
 import type { JSX } from 'react';
 import type { ApiClient } from '../../lib/api';
-import type {
-  ProductSummary,
-  RestaurantModifierAdminGroup,
-} from '../../lib/api-types';
+import type { ProductSummary, RestaurantModifierAdminGroup } from '../../lib/api-types';
 
 function messageFor(error: unknown, fallback: string): string {
   if (error instanceof ApiError && error.serverMessage !== null) return error.serverMessage;
@@ -227,10 +224,7 @@ export function RestaurantModifiersPanel({
     });
   };
 
-  const activeGroups = useMemo(
-    () => groups?.filter((group) => group.isActive) ?? [],
-    [groups],
-  );
+  const activeGroups = useMemo(() => groups?.filter((group) => group.isActive) ?? [], [groups]);
 
   if (groups === null) {
     return (
@@ -248,8 +242,8 @@ export function RestaurantModifiersPanel({
         <div className="flex flex-col gap-1">
           <h2 className="text-base font-semibold text-foreground">إدارة إضافات المطعم</h2>
           <p className="text-sm text-muted-foreground">
-            عرّف مجموعات وخيارات قابلة لإعادة الاستخدام. الكاشير يختار الهوية فقط، والخادم
-            يحسم الأهلية والسعر والمراجعة قبل إنشاء الطلب أو البيع.
+            عرّف مجموعات وخيارات قابلة لإعادة الاستخدام. الكاشير يختار الهوية فقط، والخادم يحسم
+            الأهلية والسعر والمراجعة قبل إنشاء الطلب أو البيع.
           </p>
         </div>
 

@@ -146,9 +146,7 @@ function Section({
     case 'promotions':
       return <PromotionsPanel api={api} onCommandLockChange={onCommandLockChange} />;
     case 'restaurantMenu':
-      return (
-        <RestaurantModifiersPanel api={api} onCommandLockChange={onCommandLockChange} />
-      );
+      return <RestaurantModifiersPanel api={api} onCommandLockChange={onCommandLockChange} />;
     case 'customers':
       return (
         <CustomersPanel

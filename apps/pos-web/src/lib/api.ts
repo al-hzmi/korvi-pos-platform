@@ -699,10 +699,10 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     },
 
     async updateRestaurantModifierGroup(groupId, request) {
-      return (await call(
-        `/v1/admin/restaurant/modifier-groups/${encodeURIComponent(groupId)}`,
-        { ...json(request), method: 'PATCH' },
-      )) as RestaurantModifierAdminGroup;
+      return (await call(`/v1/admin/restaurant/modifier-groups/${encodeURIComponent(groupId)}`, {
+        ...json(request),
+        method: 'PATCH',
+      })) as RestaurantModifierAdminGroup;
     },
 
     async createRestaurantModifierOption(groupId, request) {
@@ -713,10 +713,10 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
     },
 
     async updateRestaurantModifierOption(optionId, request) {
-      return (await call(
-        `/v1/admin/restaurant/modifier-options/${encodeURIComponent(optionId)}`,
-        { ...json(request), method: 'PATCH' },
-      )) as RestaurantModifierAdminGroup;
+      return (await call(`/v1/admin/restaurant/modifier-options/${encodeURIComponent(optionId)}`, {
+        ...json(request),
+        method: 'PATCH',
+      })) as RestaurantModifierAdminGroup;
     },
 
     async restaurantProductModifierGroups(productId, options) {
