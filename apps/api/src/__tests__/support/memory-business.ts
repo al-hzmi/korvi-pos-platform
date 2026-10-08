@@ -26,6 +26,7 @@ import type {
   ProductRepository,
   ProductSearchQuery,
   RestaurantFloorRepository,
+  RestaurantModifierResolution,
   RecordReturnInput,
   RecordSaleInput,
   ReturnRecord,
@@ -112,6 +113,36 @@ export function memoryRestaurantFloorRepository(): RestaurantFloorRepository {
     listTablesForBranch: () => Promise.resolve([]),
   };
 }
+
+/**
+ * No modifier policy configured in memory. An empty selection is the base
+ * price, but a non-empty unconfigured selection must not acquire invented
+ * pricing authority. Real modifier resolution/concurrency is tested against
+ * the PostgreSQL adapter separately (ADR-0040).
+ */
+export function memoryRestaurantModifierResolver(): {
+  resolve(
+    scope: TenantScope,
+    productId: string,
+    baseUnitPriceMinor: bigint,
+    selectedOptionIds: readonly string[],
+  ): Promise<RestaurantModifierResolution>;
+} {
+  return {
+    resolve: (_scope, _productId, baseUnitPriceMinor, selectedOptionIds) => {
+      if (selectedOptionIds.length > 0) {
+        return Promise.reject(new Error('No modifier policy configured in memory fixture.'));
+      }
+      return Promise.resolve({
+        baseUnitPriceMinor,
+        modifierTotalMinor: 0n,
+        unitPriceMinor: baseUnitPriceMinor,
+        selections: [],
+      });
+    },
+  };
+}
+
 
 export function memoryDashboardRepository(store: MemoryBusinessStore): DashboardRepository {
   return {

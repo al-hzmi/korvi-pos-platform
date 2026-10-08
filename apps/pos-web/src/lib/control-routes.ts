@@ -30,8 +30,6 @@ export function controlSectionFromSlug(slug: string): ControlSection | null {
     case 'lots':
     case 'purchasing':
     case 'promotions':
-    case 'restaurant-menu':
-      return 'restaurantMenu';
     case 'customers':
     case 'branches':
     case 'staff':
@@ -40,6 +38,8 @@ export function controlSectionFromSlug(slug: string): ControlSection | null {
     case 'migration':
     case 'zatca':
       return slug;
+    case 'restaurant-menu':
+      return 'restaurantMenu';
     default:
       return null;
   }

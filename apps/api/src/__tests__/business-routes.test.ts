@@ -19,6 +19,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantModifierResolver,
   memoryRestaurantFloorRepository,
   memoryReturnRepository,
   memorySaleRepository,
@@ -101,6 +102,7 @@ async function build(role: RoleName, openShift = true): Promise<FastifyInstance>
         inventory: memoryInventoryRepository(business),
         shifts: memoryShiftRepository(business),
         sales: memorySaleRepository(business),
+        restaurantModifiers: memoryRestaurantModifierResolver(),
         idempotency: memoryIdempotencyRepository(business),
         audit: memoryAuditRepository(business),
         newId: () => {

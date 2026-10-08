@@ -7,6 +7,7 @@ import {
   memoryIdempotencyRepository,
   memoryInventoryRepository,
   memoryProductRepository,
+  memoryRestaurantModifierResolver,
   memorySaleRepository,
   memoryShiftRepository,
   memoryTenantRepository,
@@ -58,6 +59,7 @@ beforeEach(() => {
     inventory: memoryInventoryRepository(store),
     shifts: memoryShiftRepository(store),
     sales: memorySaleRepository(store),
+    restaurantModifiers: memoryRestaurantModifierResolver(),
     restaurantFloor: {
       findTableById: (_scope, id) =>
         Promise.resolve(

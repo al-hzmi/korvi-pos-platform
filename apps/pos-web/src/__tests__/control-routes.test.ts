@@ -11,6 +11,7 @@ const SECTIONS: readonly ControlSection[] = [
   'sales',
   'products',
   'inventory',
+  'lots',
   'purchasing',
   'promotions',
   'restaurantMenu',
