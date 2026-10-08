@@ -143,7 +143,6 @@ export function memoryRestaurantModifierResolver(): {
   };
 }
 
-
 export function memoryDashboardRepository(store: MemoryBusinessStore): DashboardRepository {
   return {
     summary: (scope, since) => {
