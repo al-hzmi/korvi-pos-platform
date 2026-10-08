@@ -567,6 +567,19 @@ try {
   await clickButtonWithinDialog('كبير');
   await clickButtonWithinDialog('إضافة للسلة');
   await waitForText('كبير', 20_000);
+  // Preview is server-authoritative and debounced. The immediate fallback is the
+  // product's base price, not proof that the selected option was priced.
+  await waitFor(
+    `(() => {
+      const label = [...document.querySelectorAll('dt')].find(
+        (candidate) => (candidate.textContent ?? '').trim() === 'الإجمالي المستحق'
+      );
+      const displayed = (label?.nextElementSibling?.textContent ?? '').replace(/,/g, '');
+      return displayed.match(/-?\\d+(?:\\.\\d{1,2})?/)?.[0] === '14.50';
+    })()`,
+    'server-authoritative modifier total of 14.50 SAR',
+    30_000,
+  );
 
   const selectedTotal = majorToMinor(await amountAfterLabel('الإجمالي المستحق'));
   assert.equal(
