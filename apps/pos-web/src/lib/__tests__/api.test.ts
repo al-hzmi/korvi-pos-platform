@@ -114,6 +114,55 @@ describe('the API client', () => {
     );
   });
 
+  it('retains restaurant modifier identities through both server preview and finalized checkout', async () => {
+    const transport = stub([
+      ok({ pricingHash: 'server-pricing-hash', totalMinor: '1450' }),
+      ok({ sale: { saleId: 'sale-1' }, replayed: false }, 201),
+    ]);
+    const api = createApiClient(transport.fetch);
+    const productId = '018fb900-0000-7000-8000-0000000000a1';
+    const optionId = '018fb900-0000-7000-8000-0000000000b1';
+    const lines = [{ productId, quantityScaled: '1000', selectedModifierOptionIds: [optionId] }];
+
+    await api.checkoutPreview({ lines });
+    await api.checkout({
+      operationId: '018fb900-0000-7000-8000-0000000000c1',
+      terminalId: '018fb900-0000-7000-8000-0000000000c2',
+      cashReceivedMinor: '1450',
+      expectedPricingHash: 'server-pricing-hash',
+      lines,
+    });
+
+    expect(transport.calls.map((call) => call.url)).toEqual([
+      '/v1/checkout/preview',
+      '/v1/sales',
+    ]);
+    for (const call of transport.calls) {
+      expect(bodyOf(call.init).lines).toEqual([
+        { productId, quantityScaled: '1000', selectedModifierOptionIds: [optionId] },
+      ]);
+      const serialized = JSON.stringify(bodyOf(call.init));
+      expect(serialized).not.toMatch(/priceDeltaMinor|modifierTotalMinor|baseUnitPriceMinor|vatBasisPoints/);
+    }
+    expect(bodyOf(transport.calls[1]!.init).expectedPricingHash).toBe('server-pricing-hash');
+  });
+
+  it('does not invent modifiers for ordinary retail preview or checkout', async () => {
+    const transport = stub([ok({ totalMinor: '1250' }), ok({ sale: {}, replayed: false }, 201)]);
+    const api = createApiClient(transport.fetch);
+    const lines = [{ productId: '018fb900-0000-7000-8000-0000000000a1', quantityScaled: '1000' }];
+    await api.checkoutPreview({ lines });
+    await api.checkout({
+      operationId: '018fb900-0000-7000-8000-0000000000c3',
+      terminalId: '018fb900-0000-7000-8000-0000000000c2',
+      cashReceivedMinor: '1250',
+      lines,
+    });
+    for (const call of transport.calls) {
+      expect(bodyOf(call.init).lines).toEqual(lines);
+    }
+  });
+
   it('gives up on a checkout that is never answered, and calls it ambiguous', async () => {
     // Deliberately not an AbortError. A cancelled search means nothing
     // happened; a checkout that timed out may already have committed, and the
