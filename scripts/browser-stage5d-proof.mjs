@@ -654,9 +654,14 @@ try {
     await waitForText('تمت إضافة خيار modifier إلى المجموعة.', 30_000);
 
     await setLabeledValue('ابحث عن منتج', 'BROWSER-SKU-001');
+    const productSearchBefore = requestCounts.get('GET /v1/products') ?? 0;
     await clickButton('بحث');
-    await waitForText('صنف برهان المتصفح', 30_000);
-    await clickButton('صنف برهان المتصفح');
+    await waitForRequest('GET /v1/products', productSearchBefore + 1, 20_000);
+    // Search result buttons render the product name AND SKU as one accessible label.
+    // Prove that exact result before clicking; the selected product then renders its name alone.
+    await waitForText('صنف برهان المتصفح · BROWSER-SKU-001', 30_000);
+    await clickButton('صنف برهان المتصفح · BROWSER-SKU-001');
+    await waitForText('صنف برهان المتصفح', 20_000);
     await waitForText('الحجم', 20_000);
     await clickLabel('الحجم');
     await clickButton('حفظ ربط المجموعات');
