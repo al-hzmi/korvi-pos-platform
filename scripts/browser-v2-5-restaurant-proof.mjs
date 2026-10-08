@@ -469,7 +469,6 @@ async function capture(name) {
   });
 }
 
-
 try {
   await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
   await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -500,14 +499,11 @@ try {
       label: 'صندوق برهان V2-5',
     }),
   });
-  await browserRequest(
-    `/v1/admin/members/${encodeURIComponent(principal.user.id)}`,
-    {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ defaultBranchId: branch.id }),
-    },
-  );
+  await browserRequest(`/v1/admin/members/${encodeURIComponent(principal.user.id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ defaultBranchId: branch.id }),
+  });
 
   const station = await browserRequest('/v1/admin/restaurant/preparation-stations', {
     method: 'POST',
@@ -532,7 +528,9 @@ try {
       }),
     },
   );
-  record('restaurant preparation station and product routing configured through authenticated admin APIs');
+  record(
+    'restaurant preparation station and product routing configured through authenticated admin APIs',
+  );
 
   await browserRequest('/v1/auth/logout', { method: 'POST' });
   await cdp.send('Page.navigate', { url: `${baseUrl}/` });
@@ -568,8 +566,14 @@ try {
   await waitForText('كبير', 20_000);
 
   const selectedTotal = majorToMinor(await amountAfterLabel('الإجمالي المستحق'));
-  assert.equal(selectedTotal, 1450n, 'Modifier +2.00 SAR did not produce the expected 14.50 SAR total.');
-  record('cashier selected the server-authored modifier identity and preview total became 14.50 SAR');
+  assert.equal(
+    selectedTotal,
+    1450n,
+    'Modifier +2.00 SAR did not produce the expected 14.50 SAR total.',
+  );
+  record(
+    'cashier selected the server-authored modifier identity and preview total became 14.50 SAR',
+  );
 
   await clickButton('حفظ كطلب مفتوح');
   await waitForText('تم حفظ الطلب مفتوحاً ويمكن استئنافه من أي صندوق مخوّل في الفرع.', 30_000);
@@ -578,7 +582,9 @@ try {
   const openOrders = await browserRequest('/v1/restaurant/orders');
   const orderSummary = openOrders.find((order) => order.status === 'open');
   assert.ok(orderSummary !== undefined, 'Browser-created restaurant order is missing.');
-  const order = await browserRequest(`/v1/restaurant/orders/${encodeURIComponent(orderSummary.id)}`);
+  const order = await browserRequest(
+    `/v1/restaurant/orders/${encodeURIComponent(orderSummary.id)}`,
+  );
   assert.equal(order.lines.length, 1);
   assert.equal(order.lines[0]?.baseUnitPriceMinor, '1250');
   assert.equal(order.lines[0]?.modifierTotalMinor, '200');
@@ -603,7 +609,9 @@ try {
   await waitForText('قيد التحضير', 20_000);
   await clickButton('جاهز');
   await waitForText('جاهز للتقديم', 20_000);
-  record('KDS rendered the modifier summary from persisted order-line snapshots and advanced task state');
+  record(
+    'KDS rendered the modifier summary from persisted order-line snapshots and advanced task state',
+  );
 
   await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText('ابحث أو امسح الباركود', 30_000);
@@ -611,21 +619,29 @@ try {
   await clickButton('سفري');
   await waitForText('مستأنف', 20_000);
   const settlementTotal = majorToMinor(await amountAfterLabel('الإجمالي المستحق'));
-  assert.equal(settlementTotal, 1450n, 'Resumed order lost its modifier financial snapshot before settlement.');
+  assert.equal(
+    settlementTotal,
+    1450n,
+    'Resumed order lost its modifier financial snapshot before settlement.',
+  );
 
   await setInput('cash-received', '14.50');
   await clickButton('إتمام البيع');
   await waitForText('تمّت العملية', 30_000);
   await waitForText('فاتورة', 30_000);
 
-  const settled = await browserRequest(`/v1/restaurant/orders/${encodeURIComponent(orderSummary.id)}`);
+  const settled = await browserRequest(
+    `/v1/restaurant/orders/${encodeURIComponent(orderSummary.id)}`,
+  );
   assert.equal(settled.status, 'settled');
   assert.equal(settled.lines[0]?.baseUnitPriceMinor, '1250');
   assert.equal(settled.lines[0]?.modifierTotalMinor, '200');
   assert.equal(settled.lines[0]?.unitPriceMinor, '1450');
   assert.equal(settled.lines[0]?.modifierSelections[0]?.optionNameAr, 'كبير');
   assert.equal(settled.lines[0]?.modifierSelections[0]?.priceDeltaMinor, '200');
-  record('same open order settled for 14.50 SAR and retained immutable modifier financial/history snapshots');
+  record(
+    'same open order settled for 14.50 SAR and retained immutable modifier financial/history snapshots',
+  );
 
   const tasks = await browserRequest(
     `/v1/restaurant/preparation-stations/${encodeURIComponent(station.id)}/tasks?includeServed=true`,
@@ -636,7 +652,9 @@ try {
   record('server KDS truth retained modifier summary after sale settlement');
 
   await capture('v2-5-cashier-settled');
-  record(`exact V2-5 Chrome operator proof completed for ${process.env.GITHUB_SHA ?? 'local-sha-unknown'}`);
+  record(
+    `exact V2-5 Chrome operator proof completed for ${process.env.GITHUB_SHA ?? 'local-sha-unknown'}`,
+  );
   await writeFile(`${artifactDirectory}/v2-5-proof.txt`, `${evidence.join('\n')}\n`, {
     mode: 0o600,
   });
