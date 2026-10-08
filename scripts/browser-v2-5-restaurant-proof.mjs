@@ -592,7 +592,18 @@ try {
   );
 
   await clickButton('حفظ كطلب مفتوح');
-  await waitForText('تم حفظ الطلب مفتوحاً ويمكن استئنافه من أي صندوق مخوّل في الفرع.', 30_000);
+  try {
+    await waitForText('تم حفظ الطلب مفتوحاً ويمكن استئنافه من أي صندوق مخوّل في الفرع.', 30_000);
+  } catch (error) {
+    const diagnostics = await evaluate(`(() => ({
+      notices: [...document.querySelectorAll('[role="alert"], [role="status"]')]
+        .map((node) => node.textContent?.trim()).filter(Boolean),
+      visibleText: document.body?.innerText?.slice(-3000) ?? '',
+    }))()`);
+    throw new Error(`Open-order save was not confirmed: ${JSON.stringify(diagnostics)}`, {
+      cause: error,
+    });
+  }
   await waitForText('سفري', 20_000);
 
   const openOrders = await browserRequest('/v1/restaurant/orders');
