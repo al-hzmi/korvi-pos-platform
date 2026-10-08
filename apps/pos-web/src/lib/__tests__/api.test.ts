@@ -114,7 +114,7 @@ describe('the API client', () => {
     );
   });
 
-  it('retains restaurant modifier identities through both server preview and finalized checkout', async () => {
+  it('forwards selected restaurant modifier IDs to preview and checkout', async () => {
     const transport = stub([
       ok({ pricingHash: 'server-pricing-hash', totalMinor: '1450' }),
       ok({ sale: { saleId: 'sale-1' }, replayed: false }, 201),
@@ -142,7 +142,9 @@ describe('the API client', () => {
         { productId, quantityScaled: '1000', selectedModifierOptionIds: [optionId] },
       ]);
       const serialized = JSON.stringify(bodyOf(call.init));
-      expect(serialized).not.toMatch(/priceDeltaMinor|modifierTotalMinor|baseUnitPriceMinor|vatBasisPoints/);
+      expect(serialized).not.toMatch(
+        /priceDeltaMinor|modifierTotalMinor|baseUnitPriceMinor|vatBasisPoints/,
+      );
     }
     expect(bodyOf(transport.calls[1]!.init).expectedPricingHash).toBe('server-pricing-hash');
   });
