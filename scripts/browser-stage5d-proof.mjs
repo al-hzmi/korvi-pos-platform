@@ -273,7 +273,7 @@ async function setLabeledValue(labelText, value) {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${js(labelText)})
     );
-    const element = label?.querySelector('input, select, textarea');
+    const element = label?.querySelector('input, select, textarea') ?? (label?.htmlFor ? document.getElementById(label.htmlFor) : null);
     if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) return false;
     const prototype = element instanceof HTMLSelectElement
       ? HTMLSelectElement.prototype
