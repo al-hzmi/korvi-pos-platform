@@ -206,25 +206,35 @@ async function pointForLabel(text) {
 }
 
 async function pointForCheckboxLabel(text) {
+  // Attachment loading is asynchronous. Wait for the real enabled checkbox,
+  // not another same-named label or a fixed delay.
+  await waitFor(
+    `[...document.querySelectorAll('label')].some((label) =>
+      (label.textContent ?? '').replace(/\\s+/g, ' ').trim() === ${js(text)} &&
+      [...label.querySelectorAll('input[type="checkbox"]')].some((input) => !input.disabled)
+    )`,
+    `enabled attachment checkbox ${text}`,
+    30_000,
+  );
   const value = await evaluate(`(async () => {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       candidate.querySelector('input[type="checkbox"]') !== null &&
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === ${js(text)}
     );
     const checkbox = label?.querySelector('input[type="checkbox"]');
-    if (!(checkbox instanceof HTMLInputElement) || checkbox.disabled) return null;
-    checkbox.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+    if (!(label instanceof HTMLLabelElement) || !(checkbox instanceof HTMLInputElement) || checkbox.disabled) return null;
+    label.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    if (!checkbox.isConnected || checkbox.disabled) return null;
-    const rect = checkbox.getBoundingClientRect();
+    if (!label.isConnected || checkbox.disabled) return null;
+    const rect = label.getBoundingClientRect();
     const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     if (rect.width <= 0 || rect.height <= 0 || point.x < 0 || point.y < 0 || point.x > innerWidth || point.y > innerHeight) return null;
     const hit = document.elementFromPoint(point.x, point.y);
-    if (hit !== checkbox) return null;
+    if (hit === null || !label.contains(hit)) return null;
     return point;
   })()`);
   if (value === null || value === undefined)
-    throw new Error(`Checkbox not found or not hit-testable: ${text}`);
+    throw new Error(`Attachment checkbox label is not hit-testable: ${text}`);
   return value;
 }
 
