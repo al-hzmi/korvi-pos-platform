@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RestaurantModifierAdminRefusedError } from '@korvi/database';
 import { UUID } from './validation.js';
 import type {
   MerchantRestaurantModifierService,
@@ -129,7 +130,14 @@ export function registerRestaurantModifierRoutes(
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
       const params = ID.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: 'invalid_params' });
-      return reply.code(200).send({ groups: await service.menu(principal, params.data.id) });
+      try {
+        return reply.code(200).send({ groups: await service.menu(principal, params.data.id) });
+      } catch (error) {
+        if (error instanceof RestaurantModifierAdminRefusedError) {
+          return refusal(reply, error.detail);
+        }
+        throw error;
+      }
     },
   );
 
@@ -139,7 +147,14 @@ export function registerRestaurantModifierRoutes(
     async (request, reply) => {
       const principal = principalOf(request);
       if (principal === undefined) return reply.code(401).send({ error: 'unauthenticated' });
-      return reply.code(200).send({ groups: await service.list(principal) });
+      try {
+        return reply.code(200).send({ groups: await service.list(principal) });
+      } catch (error) {
+        if (error instanceof RestaurantModifierAdminRefusedError) {
+          return refusal(reply, error.detail);
+        }
+        throw error;
+      }
     },
   );
 
