@@ -28,6 +28,7 @@ import { MembersPanel } from '../control/members-panel';
 import { MigrationPanel } from '../control/migration-panel';
 import { ProductsPanel } from '../control/products-panel';
 import { PromotionsPanel } from '../control/promotions-panel';
+import { RestaurantModifiersPanel } from '../control/restaurant-modifiers-panel';
 import {
   OrderDetail,
   orderLineFieldLabel,
@@ -122,6 +123,7 @@ describe('control navigation', () => {
       'الدفعات والصلاحية',
       'المشتريات',
       'العروض والكوبونات',
+      'إضافات المطعم',
       'العملاء',
       'الفروع والصناديق',
       'الموظفون والصلاحيات',
@@ -143,6 +145,7 @@ describe('control navigation', () => {
           'lot.manage',
           'purchasing.read',
           'promotion.manage',
+          'restaurant.menu.manage',
           'customer.read',
           'settings.manage',
           'users.manage',
@@ -158,6 +161,7 @@ describe('control navigation', () => {
     expect(markup).not.toContain('قريباً');
     expect(markup).toContain('/control/lots');
     expect(markup).toContain('/control/promotions');
+    expect(markup).toContain('/control/restaurant-menu');
     expect(markup).toContain('/control/zatca');
   });
 
@@ -324,6 +328,16 @@ describe('control centre first paint', () => {
     expect(markup).toContain('جارٍ تحميل العروض والكوبونات');
     expect(markup).not.toContain('لا توجد عروض بعد');
   });
+
+  it('does not claim an empty modifier menu before the server has answered', () => {
+    const markup = renderToStaticMarkup(
+      createElement(RestaurantModifiersPanel, {
+        api: idleApi,
+      }),
+    );
+    expect(markup).toContain('جارٍ تحميل مجموعات إضافات المطعم');
+    expect(markup).not.toContain('لا توجد مجموعات إضافات بعد');
+  });
 });
 
 describe('who the control centre is for', () => {
@@ -338,6 +352,8 @@ describe('who the control centre is for', () => {
     expect(firstAuthorizedSection(['purchasing.read'])).toBe('purchasing');
     expect(canOpenControlCentre(['promotion.manage'])).toBe(true);
     expect(firstAuthorizedSection(['promotion.manage'])).toBe('promotions');
+    expect(canOpenControlCentre(['restaurant.menu.manage'])).toBe(true);
+    expect(firstAuthorizedSection(['restaurant.menu.manage'])).toBe('restaurantMenu');
 
     const inventoryOnly = surface({ kind: 'ready', principal: principalWith(['inventory.read']) });
     expect(inventoryOnly).toContain('جارٍ تحميل فروع المخزون');

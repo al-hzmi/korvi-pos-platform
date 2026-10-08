@@ -14,6 +14,7 @@ import { OnboardingPanel } from './onboarding-panel';
 import { ProductsPanel } from './products-panel';
 import { PurchasingPanel } from './purchasing-panel';
 import { PromotionsPanel } from './promotions-panel';
+import { RestaurantModifiersPanel } from './restaurant-modifiers-panel';
 import { ReportsPanel } from './reports-panel';
 import { SalesPanel } from './sales-panel';
 import { SettingsPanel } from './settings-panel';
@@ -74,6 +75,8 @@ function sectionTitle(section: ControlSection): string {
       return 'المشتريات';
     case 'promotions':
       return 'العروض والكوبونات';
+    case 'restaurantMenu':
+      return 'إضافات المطعم';
     case 'customers':
       return 'العملاء';
     case 'branches':
@@ -142,6 +145,10 @@ function Section({
       );
     case 'promotions':
       return <PromotionsPanel api={api} onCommandLockChange={onCommandLockChange} />;
+    case 'restaurantMenu':
+      return (
+        <RestaurantModifiersPanel api={api} onCommandLockChange={onCommandLockChange} />
+      );
     case 'customers':
       return (
         <CustomersPanel
@@ -299,6 +306,7 @@ function Workspace({
               ) : activeSection === 'inventory' ||
                 activeSection === 'purchasing' ||
                 activeSection === 'promotions' ||
+                activeSection === 'restaurantMenu' ||
                 activeSection === 'customers' ||
                 activeSection === 'branches' ||
                 activeSection === 'staff' ||

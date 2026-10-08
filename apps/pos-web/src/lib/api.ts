@@ -83,7 +83,13 @@ import type {
   PurchaseReceiptSummary,
   ProductSummary,
   RestaurantFloorResponse,
+  RestaurantModifierAdminGroup,
+  RestaurantModifierGroupCreateRequest,
+  RestaurantModifierGroupPatchRequest,
   RestaurantModifierMenuGroup,
+  RestaurantModifierOptionCreateRequest,
+  RestaurantModifierOptionPatchRequest,
+  RestaurantProductModifierGroupsRequest,
   RestaurantOrderCancelRequest,
   RestaurantOrderCreateRequest,
   RestaurantOrderDetail,
@@ -197,6 +203,32 @@ export interface ApiClient {
     productId: string,
     options?: RequestOptions,
   ): Promise<readonly RestaurantModifierMenuGroup[]>;
+  restaurantModifierGroups(
+    options?: RequestOptions,
+  ): Promise<readonly RestaurantModifierAdminGroup[]>;
+  createRestaurantModifierGroup(
+    request: RestaurantModifierGroupCreateRequest,
+  ): Promise<RestaurantModifierAdminGroup>;
+  updateRestaurantModifierGroup(
+    groupId: string,
+    request: RestaurantModifierGroupPatchRequest,
+  ): Promise<RestaurantModifierAdminGroup>;
+  createRestaurantModifierOption(
+    groupId: string,
+    request: RestaurantModifierOptionCreateRequest,
+  ): Promise<RestaurantModifierAdminGroup>;
+  updateRestaurantModifierOption(
+    optionId: string,
+    request: RestaurantModifierOptionPatchRequest,
+  ): Promise<RestaurantModifierAdminGroup>;
+  restaurantProductModifierGroups(
+    productId: string,
+    options?: RequestOptions,
+  ): Promise<readonly string[]>;
+  setRestaurantProductModifierGroups(
+    productId: string,
+    request: RestaurantProductModifierGroupsRequest,
+  ): Promise<readonly string[]>;
   restaurantOrders(options?: RequestOptions): Promise<readonly RestaurantOrderSummary[]>;
   restaurantOrder(orderId: string, options?: RequestOptions): Promise<RestaurantOrderDetail>;
   createRestaurantOrder(
@@ -648,6 +680,59 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
         options,
       )) as { readonly groups: readonly RestaurantModifierMenuGroup[] };
       return body.groups;
+    },
+
+    async restaurantModifierGroups(options) {
+      const body = (await call(
+        '/v1/admin/restaurant/modifier-groups',
+        { method: 'GET' },
+        options,
+      )) as { readonly groups: readonly RestaurantModifierAdminGroup[] };
+      return body.groups;
+    },
+
+    async createRestaurantModifierGroup(request) {
+      return (await call(
+        '/v1/admin/restaurant/modifier-groups',
+        json(request),
+      )) as RestaurantModifierAdminGroup;
+    },
+
+    async updateRestaurantModifierGroup(groupId, request) {
+      return (await call(
+        `/v1/admin/restaurant/modifier-groups/${encodeURIComponent(groupId)}`,
+        { ...json(request), method: 'PATCH' },
+      )) as RestaurantModifierAdminGroup;
+    },
+
+    async createRestaurantModifierOption(groupId, request) {
+      return (await call(
+        `/v1/admin/restaurant/modifier-groups/${encodeURIComponent(groupId)}/options`,
+        json(request),
+      )) as RestaurantModifierAdminGroup;
+    },
+
+    async updateRestaurantModifierOption(optionId, request) {
+      return (await call(
+        `/v1/admin/restaurant/modifier-options/${encodeURIComponent(optionId)}`,
+        { ...json(request), method: 'PATCH' },
+      )) as RestaurantModifierAdminGroup;
+    },
+
+    async restaurantProductModifierGroups(productId, options) {
+      const body = (await call(
+        `/v1/admin/restaurant/products/${encodeURIComponent(productId)}/modifier-groups`,
+        { method: 'GET' },
+        options,
+      )) as { readonly groupIds: readonly string[] };
+      return body.groupIds;
+    },
+
+    async setRestaurantProductModifierGroups(productId, request) {
+      return (await call(
+        `/v1/admin/restaurant/products/${encodeURIComponent(productId)}/modifier-groups`,
+        { ...json(request), method: 'PUT' },
+      )) as readonly string[];
     },
 
     async restaurantOrders(options) {

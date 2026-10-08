@@ -6,6 +6,7 @@ export const CONTROL_SECTION_HREFS = {
   lots: '/control/lots',
   purchasing: '/control/purchasing',
   promotions: '/control/promotions',
+  restaurantMenu: '/control/restaurant-menu',
   customers: '/control/customers',
   branches: '/control/branches',
   staff: '/control/staff',
@@ -29,6 +30,8 @@ export function controlSectionFromSlug(slug: string): ControlSection | null {
     case 'lots':
     case 'purchasing':
     case 'promotions':
+    case 'restaurant-menu':
+      return 'restaurantMenu';
     case 'customers':
     case 'branches':
     case 'staff':

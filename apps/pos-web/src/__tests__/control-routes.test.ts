@@ -13,6 +13,7 @@ const SECTIONS: readonly ControlSection[] = [
   'inventory',
   'purchasing',
   'promotions',
+  'restaurantMenu',
   'customers',
   'branches',
   'staff',
@@ -32,6 +33,7 @@ describe('merchant control route authority', () => {
     expect(controlSectionHref('sales')).toBe('/control/sales');
     expect(controlSectionHref('customers')).toBe('/control/customers');
     expect(controlSectionHref('promotions')).toBe('/control/promotions');
+    expect(controlSectionHref('restaurantMenu')).toBe('/control/restaurant-menu');
     expect(controlSectionHref('reports')).toBe('/control/reports');
     expect(controlSectionHref('migration')).toBe('/control/migration');
     expect(controlSectionHref('zatca')).toBe('/control/zatca');
