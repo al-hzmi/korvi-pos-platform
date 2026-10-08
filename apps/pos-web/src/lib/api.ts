@@ -948,6 +948,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           lines: request.lines.map((line) => ({
             productId: line.productId,
             ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
+            ...(line.selectedModifierOptionIds === undefined
+              ? {}
+              : { selectedModifierOptionIds: [...line.selectedModifierOptionIds] }),
             quantityScaled: line.quantityScaled,
           })),
         }),
@@ -1007,6 +1010,9 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
             lines: request.lines.map((line) => ({
               productId: line.productId,
               ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
+              ...(line.selectedModifierOptionIds === undefined
+                ? {}
+                : { selectedModifierOptionIds: [...line.selectedModifierOptionIds] }),
               quantityScaled: line.quantityScaled,
             })),
             ...(request.priceContext === undefined ? {} : { priceContext: request.priceContext }),
