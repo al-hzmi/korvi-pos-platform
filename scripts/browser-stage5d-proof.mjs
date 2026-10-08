@@ -205,6 +205,29 @@ async function pointForLabel(text) {
   return value;
 }
 
+async function pointForCheckboxLabel(text) {
+  const value = await evaluate(`(async () => {
+    const label = [...document.querySelectorAll('label')].find((candidate) =>
+      candidate.querySelector('input[type="checkbox"]') !== null &&
+      (candidate.textContent ?? '').replace(/\\s+/g, ' ').trim() === ${js(text)}
+    );
+    const checkbox = label?.querySelector('input[type="checkbox"]');
+    if (!(checkbox instanceof HTMLInputElement) || checkbox.disabled) return null;
+    checkbox.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (!checkbox.isConnected || checkbox.disabled) return null;
+    const rect = checkbox.getBoundingClientRect();
+    const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    if (rect.width <= 0 || rect.height <= 0 || point.x < 0 || point.y < 0 || point.x > innerWidth || point.y > innerHeight) return null;
+    const hit = document.elementFromPoint(point.x, point.y);
+    if (hit !== checkbox) return null;
+    return point;
+  })()`);
+  if (value === null || value === undefined)
+    throw new Error(`Checkbox not found or not hit-testable: ${text}`);
+  return value;
+}
+
 async function pointForAriaPrefix(prefix, selector = 'input') {
   const value = await evaluate(`(async () => {
     const element = [...document.querySelectorAll(${js(selector)})].find((candidate) =>
@@ -663,7 +686,14 @@ try {
     await clickButton('صنف برهان المتصفح · BROWSER-SKU-001');
     await waitForText('صنف برهان المتصفح', 20_000);
     await waitForText('الحجم', 20_000);
-    await clickLabel('الحجم');
+    await mouseClickPoint(await pointForCheckboxLabel('الحجم'));
+    await waitFor(
+      `[...document.querySelectorAll('label')].some((label) =>
+        (label.textContent ?? '').replace(/\\s+/g, ' ').trim() === 'الحجم' &&
+        label.querySelector('input[type="checkbox"]')?.checked === true
+      )`,
+      'governed modifier attachment checkbox selected',
+    );
     await clickButton('حفظ ربط المجموعات');
     await waitForText('تم حفظ ربط مجموعات الإضافات بالمنتج.', 30_000);
 
