@@ -172,7 +172,7 @@ async function setInput(id, value) {
   assert.equal(changed, true, `Input #${id} disappeared before it could be edited.`);
 }
 
-async function setInputByAriaLabel(label, value) {
+async function _setInputByAriaLabel(label, value) {
   const changed = await evaluate(`(() => {
     const input = [...document.querySelectorAll('input')].find(
       (candidate) => candidate.getAttribute('aria-label') === ${jsString(label)}
@@ -190,7 +190,7 @@ async function setInputByAriaLabel(label, value) {
   assert.equal(changed, true, `Input with aria-label ${label} was not available.`);
 }
 
-async function setInputByAriaLabelPrefix(prefix, value) {
+async function _setInputByAriaLabelPrefix(prefix, value) {
   const changed = await evaluate(`(() => {
     const input = [...document.querySelectorAll('input')].find(
       (candidate) => (candidate.getAttribute('aria-label') ?? '').startsWith(${jsString(prefix)})
@@ -208,7 +208,7 @@ async function setInputByAriaLabelPrefix(prefix, value) {
   assert.equal(changed, true, `Input with aria-label prefix ${prefix} was not available.`);
 }
 
-async function setInputByPlaceholder(placeholder, value) {
+async function _setInputByPlaceholder(placeholder, value) {
   const changed = await evaluate(`(() => {
     const input = [...document.querySelectorAll('input')].find(
       (candidate) => candidate.getAttribute('placeholder') === ${jsString(placeholder)}
@@ -226,7 +226,7 @@ async function setInputByPlaceholder(placeholder, value) {
   assert.equal(changed, true, `Input with placeholder ${placeholder} was not available.`);
 }
 
-async function setInputByLabelText(labelText, value) {
+async function _setInputByLabelText(labelText, value) {
   const labelInputExpression = `(() => {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
@@ -259,7 +259,7 @@ async function setInputByLabelText(labelText, value) {
   );
 }
 
-async function setSelect(id, value) {
+async function _setSelect(id, value) {
   const changed = await evaluate(`(() => {
     const select = document.getElementById(${jsString(id)});
     if (!(select instanceof HTMLSelectElement)) return false;
@@ -274,7 +274,7 @@ async function setSelect(id, value) {
   assert.equal(changed, true, `Select #${id} was not available.`);
 }
 
-async function setSelectByLabelText(labelText, value) {
+async function _setSelectByLabelText(labelText, value) {
   const changed = await evaluate(`(() => {
     const label = [...document.querySelectorAll('label')].find((candidate) =>
       (candidate.textContent ?? '').replace(/\\s+/g, ' ').includes(${jsString(labelText)})
@@ -314,7 +314,7 @@ function majorToMinor(value) {
   return negative ? -minor : minor;
 }
 
-function minorToMajor(value) {
+function _minorToMajor(value) {
   const negative = value < 0n;
   const magnitude = negative ? -value : value;
   const whole = magnitude / 100n;
@@ -490,7 +490,7 @@ try {
   assert.ok(product !== undefined, 'V2-5 proof product is missing.');
 
   const principal = await browserRequest('/v1/auth/me');
-  const terminal = await browserRequest('/v1/admin/terminals', {
+  const _terminal = await browserRequest('/v1/admin/terminals', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
