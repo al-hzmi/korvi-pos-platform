@@ -111,8 +111,8 @@ function CartRow({
                   productId: line.productId,
                   packageId: line.packageId,
                   ...(line.selectedModifierOptionIds === undefined
-        ? {}
-        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
+                    ? {}
+                    : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   direction: -1,
                 });
               }}
@@ -156,8 +156,8 @@ function CartRow({
                   productId: line.productId,
                   packageId: line.packageId,
                   ...(line.selectedModifierOptionIds === undefined
-        ? {}
-        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
+                    ? {}
+                    : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   direction: 1,
                 });
               }}
@@ -181,8 +181,8 @@ function CartRow({
               productId: line.productId,
               packageId: line.packageId,
               ...(line.selectedModifierOptionIds === undefined
-        ? {}
-        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
+                ? {}
+                : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
             });
           }}
         >
@@ -205,8 +205,8 @@ function CartRow({
                   productId: line.productId,
                   packageId: line.packageId,
                   ...(line.selectedModifierOptionIds === undefined
-        ? {}
-        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
+                    ? {}
+                    : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   options: event.target.value,
                   note: line.preparationNote ?? '',
                 });
@@ -227,8 +227,8 @@ function CartRow({
                   productId: line.productId,
                   packageId: line.packageId,
                   ...(line.selectedModifierOptionIds === undefined
-        ? {}
-        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
+                    ? {}
+                    : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   options: line.preparationOptions ?? '',
                   note: event.target.value,
                 });
