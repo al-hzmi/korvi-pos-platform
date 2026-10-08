@@ -637,6 +637,50 @@ try {
     'server reads after browser actions match stock, cost history, transfer, and two-receipt purchase truth',
   );
 
+  if (process.env.KORVI_BROWSER_V2_5_PROOF === 'true') {
+    await cdp.send('Page.navigate', { url: `${baseUrl}/control/restaurant-menu` });
+    await waitForText('إدارة إضافات المطعم', 30_000);
+    await setLabeledValue('رمز المجموعة', 'V25-SIZE');
+    await setLabeledValue('اسم المجموعة', 'الحجم');
+    await setLabeledValue('الحد الأدنى للاختيار', '1');
+    await setLabeledValue('الحد الأقصى للاختيار', '1');
+    await clickButton('إنشاء المجموعة');
+    await waitForText('تم إنشاء مجموعة الإضافات.', 30_000);
+
+    await setLabeledValue('رمز الخيار', 'V25-LARGE');
+    await setLabeledValue('اسم الخيار', 'كبير');
+    await setLabeledValue('زيادة السعر (ر.س)', '2.00');
+    await clickButton('إضافة الخيار');
+    await waitForText('تمت إضافة خيار modifier إلى المجموعة.', 30_000);
+
+    await setLabeledValue('ابحث عن منتج', 'BROWSER-SKU-001');
+    await clickButton('بحث');
+    await waitForText('صنف برهان المتصفح', 30_000);
+    await clickButton('صنف برهان المتصفح');
+    await waitForText('الحجم', 20_000);
+    await clickLabel('الحجم');
+    await clickButton('حفظ ربط المجموعات');
+    await waitForText('تم حفظ ربط مجموعات الإضافات بالمنتج.', 30_000);
+
+    const modifierBook = await browserJson('/v1/admin/restaurant/modifier-groups');
+    const sizeGroup = modifierBook.groups.find((group) => group.code === 'V25-SIZE');
+    assert.ok(sizeGroup !== undefined, 'Control-created V2-5 modifier group is missing.');
+    assert.equal(sizeGroup.minSelections, 1);
+    assert.equal(sizeGroup.maxSelections, 1);
+    assert.equal(sizeGroup.options.length, 1);
+    assert.equal(sizeGroup.options[0]?.code, 'V25-LARGE');
+    assert.equal(sizeGroup.options[0]?.priceDeltaMinor, '200');
+
+    const attachments = await browserJson(
+      `/v1/admin/restaurant/products/${encodeURIComponent(rowA.productId)}/modifier-groups`,
+    );
+    assert.deepEqual(attachments.groupIds, [sizeGroup.id]);
+    record(
+      'actual Chrome Control configured reusable modifier group/option and attached it to the product under restaurant.menu.manage',
+    );
+    await capture('v2-5-control-modifier-configured');
+  }
+
   await capture('desktop-final');
   const desktopOverflow = await evaluate(
     `document.documentElement.scrollWidth > document.documentElement.clientWidth + 1`,
