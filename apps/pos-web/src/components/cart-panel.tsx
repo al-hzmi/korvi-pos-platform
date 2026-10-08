@@ -53,7 +53,9 @@ function CartRow({
       type: 'set-quantity',
       productId: line.productId,
       packageId: line.packageId,
-      selectedModifierOptionIds: line.selectedModifierOptionIds,
+      ...(line.selectedModifierOptionIds === undefined
+        ? {}
+        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
       quantityScaled: parsed.value,
     });
   };
@@ -108,7 +110,9 @@ function CartRow({
                   type: 'step',
                   productId: line.productId,
                   packageId: line.packageId,
-                  selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  ...(line.selectedModifierOptionIds === undefined
+        ? {}
+        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   direction: -1,
                 });
               }}
@@ -151,7 +155,9 @@ function CartRow({
                   type: 'step',
                   productId: line.productId,
                   packageId: line.packageId,
-                  selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  ...(line.selectedModifierOptionIds === undefined
+        ? {}
+        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   direction: 1,
                 });
               }}
@@ -174,7 +180,9 @@ function CartRow({
               type: 'remove',
               productId: line.productId,
               packageId: line.packageId,
-              selectedModifierOptionIds: line.selectedModifierOptionIds,
+              ...(line.selectedModifierOptionIds === undefined
+        ? {}
+        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
             });
           }}
         >
@@ -196,7 +204,9 @@ function CartRow({
                   type: 'set-preparation',
                   productId: line.productId,
                   packageId: line.packageId,
-                  selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  ...(line.selectedModifierOptionIds === undefined
+        ? {}
+        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   options: event.target.value,
                   note: line.preparationNote ?? '',
                 });
@@ -216,7 +226,9 @@ function CartRow({
                   type: 'set-preparation',
                   productId: line.productId,
                   packageId: line.packageId,
-                  selectedModifierOptionIds: line.selectedModifierOptionIds,
+                  ...(line.selectedModifierOptionIds === undefined
+        ? {}
+        : { selectedModifierOptionIds: line.selectedModifierOptionIds }),
                   options: line.preparationOptions ?? '',
                   note: event.target.value,
                 });

@@ -702,6 +702,7 @@ function lazyRestaurantModifierService(config: ApiConfig): MerchantRestaurantMod
   return {
     menu: (principal, productId) => resolve().menu(principal, productId),
     list: (principal) => resolve().list(principal),
+    productGroups: (principal, productId) => resolve().productGroups(principal, productId),
     createGroup: (principal, input) => resolve().createGroup(principal, input),
     updateGroup: (principal, groupId, input) => resolve().updateGroup(principal, groupId, input),
     createOption: (principal, groupId, input) => resolve().createOption(principal, groupId, input),
