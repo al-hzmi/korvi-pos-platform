@@ -1,0 +1,39 @@
+name: V2-5 One-Shot Control Format
+on:
+  push:
+    branches:
+      - mastermind/v2-strengthening
+    paths:
+      - .github/workflows/v2-5-one-shot-control-format.yml
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: mastermind/v2-strengthening
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --registry=https://registry.npmjs.org
+      - name: Format exact V2-5 surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prettier --write             apps/pos-web/src/lib/api.ts             apps/pos-web/src/lib/control-routes.ts             apps/pos-web/src/lib/control-access.ts             apps/pos-web/src/components/control/control-app.tsx             apps/pos-web/src/components/control/control-nav.tsx             apps/pos-web/src/components/control/onboarding-panel.tsx             apps/pos-web/src/components/control/restaurant-modifiers-panel.tsx             apps/pos-web/src/__tests__/control-routes.test.ts             apps/pos-web/src/components/__tests__/control.test.ts             apps/pos-web/src/__tests__/quick-service.test.ts
+          rm .github/workflows/v2-5-one-shot-control-format.yml
+          git diff --check
+      - name: Commit formatter output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "korvi-v2-format"
+          git config user.email "actions@users.noreply.github.com"
+          git add             apps/pos-web/src/lib/api.ts             apps/pos-web/src/lib/control-routes.ts             apps/pos-web/src/lib/control-access.ts             apps/pos-web/src/components/control/control-app.tsx             apps/pos-web/src/components/control/control-nav.tsx             apps/pos-web/src/components/control/onboarding-panel.tsx             apps/pos-web/src/components/control/restaurant-modifiers-panel.tsx             apps/pos-web/src/__tests__/control-routes.test.ts             apps/pos-web/src/components/__tests__/control.test.ts             apps/pos-web/src/__tests__/quick-service.test.ts             .github/workflows/v2-5-one-shot-control-format.yml
+          git commit -m "style(v2-5): format modifier control surface"
+          git push origin HEAD:mastermind/v2-strengthening
