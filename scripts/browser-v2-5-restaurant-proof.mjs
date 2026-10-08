@@ -505,7 +505,7 @@ try {
     body: JSON.stringify({ defaultBranchId: branch.id }),
   });
 
-  const station = await browserRequest('/v1/admin/restaurant/preparation-stations', {
+  const stationCreation = await browserRequest('/v1/admin/restaurant/preparation-stations', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -516,6 +516,9 @@ try {
       sortOrder: 0,
     }),
   });
+  // Administrative mutations return { value, replayed }; only value is the station.
+  const station = stationCreation.value;
+  assert.equal(typeof station?.id, 'string', 'Preparation station was not created.');
   await browserRequest(
     `/v1/admin/restaurant/preparation-routes/${encodeURIComponent(product.productId)}`,
     {
@@ -580,7 +583,8 @@ try {
   await waitForText('سفري', 20_000);
 
   const openOrders = await browserRequest('/v1/restaurant/orders');
-  const orderSummary = openOrders.find((order) => order.status === 'open');
+  assert.ok(Array.isArray(openOrders.orders), 'Restaurant list response lacks orders.');
+  const orderSummary = openOrders.orders.find((order) => order.status === 'open');
   assert.ok(orderSummary !== undefined, 'Browser-created restaurant order is missing.');
   const order = await browserRequest(
     `/v1/restaurant/orders/${encodeURIComponent(orderSummary.id)}`,
