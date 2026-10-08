@@ -461,7 +461,7 @@ export function RestaurantModifiersPanel({
             {products.map((product) => (
               <Button
                 key={product.id}
-                variant={selectedProduct?.id === product.id ? 'default' : 'outline'}
+                variant={selectedProduct?.id === product.id ? 'primary' : 'outline'}
                 size="sm"
                 disabled={busy}
                 onClick={() => void chooseProduct(product)}
