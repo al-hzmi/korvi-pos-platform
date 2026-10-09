@@ -732,6 +732,76 @@ try {
   record('server KDS truth retained modifier summary after sale settlement');
 
   await capture('v2-5-cashier-settled');
+
+  // Refunds must consume the finalized SaleLine truth, not re-price the
+  // currently attached modifier policy. The operator is the authenticated
+  // owner (sale.refund), and the refund goes through the real API/ledger.
+  const refundRequest = {
+    operationId: crypto.randomUUID(),
+    terminalId: finalizedSale.terminal.id,
+    saleId: finalizedSale.id,
+    refund: { kind: 'cash' },
+    lines: [{ saleLineId: finalizedSale.lines[0].id, quantityScaled: '1000' }],
+  };
+  const refundInit = {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(refundRequest),
+  };
+  const refunded = await browserRequest('/v1/returns', refundInit);
+  assert.equal(refunded.replayed, false);
+  assert.equal(refunded.return.totalMinor, '1450');
+  assert.equal(refunded.return.lines[0]?.totalMinor, '1450');
+  const refundReplay = await browserRequest('/v1/returns', refundInit);
+  assert.equal(refundReplay.replayed, true);
+  assert.equal(refundReplay.return.returnId, refunded.return.returnId);
+  record('original-sale modifier return refunded the exact historical 14.50 SAR once with idempotent replay');
+
+  // Second path: a DIRECT restaurant sale with the same modifier, no open
+  // restaurant order. The cashier must still select identities via the real
+  // dialog and the backend must still author the 14.50 SAR total.
+  await clickButton('بدء بيع جديد');
+  await waitForText('ابحث أو امسح الباركود', 20_000);
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+  await waitForText('تخصيص الصنف', 20_000);
+  await clickButtonWithinDialog('كبير');
+  await clickButtonWithinDialog('إضافة للسلة');
+  await waitFor(
+    `(() => {
+      const label = [...document.querySelectorAll('dt')].find(
+        (candidate) => (candidate.textContent ?? '').trim() === 'الإجمالي المستحق'
+      );
+      const displayed = (label?.nextElementSibling?.textContent ?? '').replace(/,/g, '');
+      return displayed.match(/-?\\d+(?:\\.\\d{1,2})?/)?.[0] === '14.50';
+    })()`,
+    'server-authoritative direct restaurant modifier total of 14.50 SAR',
+    30_000,
+  );
+  await setInput('cash-received', '14.50');
+  await clickButton('إتمام البيع');
+  await waitForText('تمّت العملية', 30_000);
+  const directHistory = await browserRequest('/v1/admin/sales?limit=20');
+  const direct = directHistory.items.find(
+    (item) =>
+      item.status === 'finalized' &&
+      item.totalMinor === '1450' &&
+      item.id !== finalizedSale.id &&
+      item.branch.id === branch.id,
+  );
+  assert.ok(direct !== undefined, 'Direct modifier sale did not finalize.');
+  const directDetail = await browserRequest(
+    `/v1/admin/sales/${encodeURIComponent(direct.id)}`,
+  );
+  assert.equal(directDetail.lines[0]?.baseUnitPriceMinor, '1250');
+  assert.equal(directDetail.lines[0]?.modifierTotalMinor, '200');
+  assert.equal(directDetail.lines[0]?.modifierSelections[0]?.optionNameAr, 'كبير');
+  assert.equal(directDetail.lines[0]?.modifierSelections[0]?.priceDeltaMinor, '200');
+  record('direct cashier sale finalized with independently preserved modifier price and option snapshots');
+  await capture('v2-5-cashier-direct-modifier-sale');
+
   record(
     `exact V2-5 Chrome operator proof completed for ${process.env.GITHUB_SHA ?? 'local-sha-unknown'}`,
   );
