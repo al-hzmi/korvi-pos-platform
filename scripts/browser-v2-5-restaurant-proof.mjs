@@ -669,9 +669,11 @@ try {
   })()`);
   if (!restored) await clickButton('سفري');
   await waitForText('مستأنف', 20_000);
-  record(restored
-    ? 'cashier restored the same active open order across the KDS navigation'
-    : 'cashier resumed the saved open order from the live order list');
+  record(
+    restored
+      ? 'cashier restored the same active open order across the KDS navigation'
+      : 'cashier resumed the saved open order from the live order list',
+  );
   const settlementTotal = majorToMinor(await amountAfterLabel('الإجمالي المستحق'));
   assert.equal(
     settlementTotal,
