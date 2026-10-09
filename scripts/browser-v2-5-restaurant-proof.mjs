@@ -705,9 +705,7 @@ try {
   const saleHistory = await browserRequest('/v1/admin/sales?limit=20');
   const finalizedSummary = saleHistory.items.find(
     (item) =>
-      item.status === 'finalized' &&
-      item.totalMinor === '1450' &&
-      item.branch.id === branch.id,
+      item.status === 'finalized' && item.totalMinor === '1450' && item.branch.id === branch.id,
   );
   assert.ok(finalizedSummary !== undefined, 'Settled sale missing from merchant sales history.');
   const finalizedSale = await browserRequest(

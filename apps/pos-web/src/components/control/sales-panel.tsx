@@ -210,16 +210,25 @@ function SaleDetail({
                           <div className="mt-1 space-y-1 text-xs text-muted-foreground">
                             <p className="flex flex-wrap gap-1">
                               <span>الأساسي:</span>
-                              <Amount value={line.baseUnitPriceMinor} currency={state.sale.currency} />
+                              <Amount
+                                value={line.baseUnitPriceMinor}
+                                currency={state.sale.currency}
+                              />
                               <span>· الإضافات:</span>
-                              <Amount value={line.modifierTotalMinor} currency={state.sale.currency} />
+                              <Amount
+                                value={line.modifierTotalMinor}
+                                currency={state.sale.currency}
+                              />
                             </p>
                             <ul aria-label="الإضافات التاريخية" className="space-y-0.5">
                               {line.modifierSelections.map((selection) => (
                                 <li key={selection.optionId}>
                                   {selection.groupNameAr}: {selection.optionNameAr}
                                   {' · +'}
-                                  <Amount value={selection.priceDeltaMinor} currency={state.sale.currency} />
+                                  <Amount
+                                    value={selection.priceDeltaMinor}
+                                    currency={state.sale.currency}
+                                  />
                                 </li>
                               ))}
                             </ul>
