@@ -710,6 +710,11 @@ export async function createRestaurantOrder(
     const at = clock();
     const orderId = nextId();
     try {
+      // Persist the order and its immutable line/modifier snapshots as separate
+      // scalar-authority writes in the SAME tenant transaction. Prisma nested
+      // checked create inputs cannot accept unchecked product/tenant foreign
+      // keys alongside nested relation writes; mixing those input modes caused
+      // PrismaClientValidationError during open-order creation.
       await tx.restaurantOrder.create({
         data: {
           id: orderId,
@@ -728,38 +733,25 @@ export async function createRestaurantOrder(
           closedReason: null,
           createdAt: at,
           updatedAt: at,
-          lines: {
-            create: snapshots.map((line) => ({
-              id: line.id,
-              tenantId: line.tenantId,
-              lineNumber: line.lineNumber,
-              productId: line.productId,
-              sku: line.sku,
-              nameAr: line.nameAr,
-              nameEn: line.nameEn,
-              productType: line.productType,
-              unitPriceMinor: line.unitPriceMinor,
-              baseUnitPriceMinor: line.baseUnitPriceMinor,
-              modifierTotalMinor: line.modifierTotalMinor,
-              vatBasisPoints: line.vatBasisPoints,
-              quantityScaled: line.quantityScaled,
-              preparationNote: line.preparationNote,
-              preparationOptions: line.preparationOptions,
-              trackInventory: line.trackInventory,
-              createdAt: at,
-              ...(line.modifierSelections.length === 0
-                ? {}
-                : {
-                    modifierSelections: {
-                      create: line.modifierSelections.map((selection) =>
-                        selectionCreate(tenant, line.id, selection, nextId),
-                      ),
-                    },
-                  }),
-            })),
-          },
         },
       });
+
+      await tx.restaurantOrderLine.createMany({
+        data: snapshots.map(({ modifierSelections: _modifierSelections, ...line }) => ({
+          ...line,
+          orderId,
+          createdAt: at,
+        })),
+      });
+
+      const selections = snapshots.flatMap((line) =>
+        line.modifierSelections.map((selection) =>
+          selectionCreate(tenant, line.id, selection, nextId),
+        ),
+      );
+      if (selections.length > 0) {
+        await tx.restaurantOrderLineModifierSelection.createMany({ data: selections });
+      }
     } catch (error) {
       if (request.tableId !== null && isUniqueConstraint(error)) {
         const occupied = await tx.restaurantOrder.findFirst({
