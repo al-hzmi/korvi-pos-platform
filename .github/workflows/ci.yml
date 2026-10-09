@@ -54,7 +54,20 @@ jobs:
         run: npm run audit
 
       - name: Formatting
-        run: npm run format:check
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npm run format:check; then
+            exit 0
+          fi
+          # Print the formatter's exact expected diff so any subsequent fix
+          # is precise rather than guessed; never auto-write CI source.
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            npx --no-install prettier "$file" > "$RUNNER_TEMP/korvi-prettier-expected"
+            diff -u "$file" "$RUNNER_TEMP/korvi-prettier-expected" || true
+          done < <(npx --no-install prettier --list-different .)
+          exit 1
 
       - name: Lint
         run: npm run lint
