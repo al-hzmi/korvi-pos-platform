@@ -1,0 +1,14 @@
+[package]
+name = "tauri-plugin-korvi-device-identity"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+links = "tauri-plugin-korvi-device-identity"
+
+[build-dependencies]
+tauri-plugin = { version = "=2.5.2", features = ["build"] }
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+tauri = { version = "=2.11.1", features = [] }
+thiserror = "=2.0.17"

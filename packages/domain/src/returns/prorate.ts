@@ -81,6 +81,8 @@ export function cumulativeTarget(original: bigint, returned: bigint, sold: bigin
 export interface LineComponents {
   readonly netMinor: bigint;
   readonly lineDiscountMinor: bigint;
+  /** Missing only on historical pre-V2 fixtures; no promotion authority existed then. */
+  readonly promotionDiscountMinor?: bigint;
   readonly basketDiscountMinor: bigint;
   readonly vatMinor: bigint;
   readonly grossMinor: bigint;
@@ -95,7 +97,12 @@ export interface ProrationInput {
   readonly returnedQuantityScaled: bigint;
   readonly refunded: Pick<
     LineComponents,
-    'grossMinor' | 'netMinor' | 'lineDiscountMinor' | 'basketDiscountMinor' | 'vatMinor'
+    | 'grossMinor'
+    | 'netMinor'
+    | 'lineDiscountMinor'
+    | 'promotionDiscountMinor'
+    | 'basketDiscountMinor'
+    | 'vatMinor'
   >;
   /** What is coming back now. */
   readonly quantityScaled: bigint;
@@ -109,6 +116,9 @@ export function prorateLine(input: ProrationInput): LineComponents {
   const netMinor = cumulativeTarget(original.netMinor, cumulative, sold) - refunded.netMinor;
   const lineDiscountMinor =
     cumulativeTarget(original.lineDiscountMinor, cumulative, sold) - refunded.lineDiscountMinor;
+  const promotionDiscountMinor =
+    cumulativeTarget(original.promotionDiscountMinor ?? 0n, cumulative, sold) -
+    (refunded.promotionDiscountMinor ?? 0n);
   const basketDiscountMinor =
     cumulativeTarget(original.basketDiscountMinor, cumulative, sold) - refunded.basketDiscountMinor;
   const vatMinor = cumulativeTarget(original.vatMinor, cumulative, sold) - refunded.vatMinor;
@@ -117,6 +127,7 @@ export function prorateLine(input: ProrationInput): LineComponents {
     grossMinor < 0n ||
     netMinor < 0n ||
     lineDiscountMinor < 0n ||
+    promotionDiscountMinor < 0n ||
     basketDiscountMinor < 0n ||
     vatMinor < 0n
   ) {
@@ -131,6 +142,7 @@ export function prorateLine(input: ProrationInput): LineComponents {
     grossMinor,
     netMinor,
     lineDiscountMinor,
+    promotionDiscountMinor,
     basketDiscountMinor,
     vatMinor,
     totalMinor: netMinor + vatMinor,

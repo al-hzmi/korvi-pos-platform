@@ -20,6 +20,28 @@ export class DiscountNotPermittedError extends DomainError {
   public override readonly name = 'DiscountNotPermittedError';
 }
 
+/**
+ * V2-2 deliberately keeps operator-authored discounts and merchant-policy
+ * promotions as different authorities. A sale may use either in this strike,
+ * never both (ADR-0037).
+ */
+export class PromotionManualDiscountConflictError extends DomainError {
+  public override readonly name = 'PromotionManualDiscountConflictError';
+}
+
+export class PromotionAuthorizationError extends DomainError {
+  public override readonly name = 'PromotionAuthorizationError';
+}
+
+export interface PromotionAuthorization {
+  readonly totalDiscountMinor: bigint;
+  /** Exactly one server-evaluated entry per cart line, including zero allocations. */
+  readonly lineDiscounts: readonly {
+    readonly lineId: string;
+    readonly amountMinor: bigint;
+  }[];
+}
+
 export interface FinalizeSaleInput {
   /** UUIDv7. Also the idempotency key for the whole operation. */
   readonly saleId: string;
@@ -36,6 +58,11 @@ export interface FinalizeSaleInput {
   readonly issuedAt: string;
   /** Ceiling in basis points the acting user may discount, from their role. */
   readonly maxDiscountBasisPoints: bigint;
+  /**
+   * Server-evaluated promotion plan. Required whenever promotionDiscountMinor
+   * is present; the cart value is never authority by itself (ADR-0037).
+   */
+  readonly promotionAuthorization?: PromotionAuthorization;
 }
 
 export interface FinalizedSale {
@@ -70,6 +97,8 @@ export function finalizeSale(input: FinalizeSaleInput): FinalizedSale {
     throw new InvalidAmountError('A sale needs at least one line.');
   }
 
+  assertPromotionAuthorization(input.cart, input.promotionAuthorization);
+  assertPromotionManualBoundary(input.cart);
   assertDiscountsPermitted(input);
 
   const priced = priceCart(input.cart);
@@ -130,6 +159,74 @@ export function finalizeSale(input: FinalizeSaleInput): FinalizedSale {
  * 4.60 reads back as exactly 2000 bp. The merchant set a rate; the rate is
  * what is checked.
  */
+function assertPromotionAuthorization(
+  cart: PriceCartInput,
+  authorization: PromotionAuthorization | undefined,
+): void {
+  const promoted = cart.lines.some((line) => (line.promotionDiscountMinor ?? 0n) > 0n);
+  if (!promoted && authorization === undefined) return;
+  if (authorization === undefined) {
+    throw new PromotionAuthorizationError(
+      'Promotion pricing requires the server-evaluated promotion authorization plan.',
+    );
+  }
+
+  if (authorization.totalDiscountMinor < 0n) {
+    throw new PromotionAuthorizationError('Promotion authorization total must not be negative.');
+  }
+
+  const expectedIds = new Set(cart.lines.map((line) => line.lineId));
+  if (
+    authorization.lineDiscounts.length !== cart.lines.length ||
+    new Set(authorization.lineDiscounts.map((line) => line.lineId)).size !==
+      authorization.lineDiscounts.length ||
+    authorization.lineDiscounts.some((line) => !expectedIds.has(line.lineId))
+  ) {
+    throw new PromotionAuthorizationError(
+      'Promotion authorization must name every cart line exactly once.',
+    );
+  }
+
+  const byLine = new Map(
+    authorization.lineDiscounts.map((line) => [line.lineId, line.amountMinor] as const),
+  );
+  let total = 0n;
+  for (const line of cart.lines) {
+    const authorized = byLine.get(line.lineId);
+    const actual = line.promotionDiscountMinor ?? 0n;
+    if (authorized === undefined || authorized < 0n || authorized !== actual) {
+      throw new PromotionAuthorizationError(
+        'Promotion cart allocation does not match the server-evaluated authorization plan.',
+      );
+    }
+    total += authorized;
+  }
+
+  if (total !== authorization.totalDiscountMinor) {
+    throw new PromotionAuthorizationError(
+      'Promotion authorization total does not reconcile to its line allocations.',
+    );
+  }
+}
+
+function assertPromotionManualBoundary(cart: PriceCartInput): void {
+  const hasPromotion = cart.lines.some((line) => (line.promotionDiscountMinor ?? 0n) > 0n);
+  if (!hasPromotion) return;
+
+  const hasManualLine = cart.lines.some(
+    (line) =>
+      line.discount !== undefined && line.discount.kind !== 'none' && line.discount.value > 0n,
+  );
+  const basket = cart.basketDiscount;
+  const hasManualBasket = basket !== undefined && basket.kind !== 'none' && basket.value > 0n;
+
+  if (hasManualLine || hasManualBasket) {
+    throw new PromotionManualDiscountConflictError(
+      'Manual discounts and promotion/coupon discounts cannot be combined in V2-2.',
+    );
+  }
+}
+
 function assertDiscountsPermitted(input: FinalizeSaleInput): void {
   const ceiling = input.maxDiscountBasisPoints;
 
@@ -225,7 +322,10 @@ function assertDiscountsPermitted(input: FinalizeSaleInput): void {
 export function saleReconciles(sale: FinalizedSale): boolean {
   const { priced, settlement } = sale;
   const discounted =
-    priced.gross.minor - priced.lineDiscountTotal.minor - priced.basketDiscountTotal.minor;
+    priced.gross.minor -
+    priced.lineDiscountTotal.minor -
+    priced.promotionDiscountTotal.minor -
+    priced.basketDiscountTotal.minor;
   const netPlusVat = priced.net.minor + priced.vat.minor;
   const lineSum = priced.lines.reduce((sum, line) => sum + line.total.minor, 0n);
   const vatSum = priced.vatBreakdown.reduce((sum, bucket) => sum + bucket.vat.minor, 0n);

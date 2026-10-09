@@ -25,6 +25,8 @@ import type {
   Product,
   ProductRepository,
   ProductSearchQuery,
+  RestaurantFloorRepository,
+  RestaurantModifierResolution,
   RecordReturnInput,
   RecordSaleInput,
   ReturnRecord,
@@ -104,6 +106,43 @@ export function memoryTenantRepository(store: MemoryBusinessStore): TenantReposi
  * Deliberately derived rather than stubbed: a test that asserts a hardcoded
  * total proves the assertion, not the aggregate.
  */
+export function memoryRestaurantFloorRepository(): RestaurantFloorRepository {
+  return {
+    findTableById: () => Promise.resolve(null),
+    listZonesForBranch: () => Promise.resolve([]),
+    listTablesForBranch: () => Promise.resolve([]),
+  };
+}
+
+/**
+ * No modifier policy configured in memory. An empty selection is the base
+ * price, but a non-empty unconfigured selection must not acquire invented
+ * pricing authority. Real modifier resolution/concurrency is tested against
+ * the PostgreSQL adapter separately (ADR-0040).
+ */
+export function memoryRestaurantModifierResolver(): {
+  resolve(
+    scope: TenantScope,
+    productId: string,
+    baseUnitPriceMinor: bigint,
+    selectedOptionIds: readonly string[],
+  ): Promise<RestaurantModifierResolution>;
+} {
+  return {
+    resolve: (_scope, _productId, baseUnitPriceMinor, selectedOptionIds) => {
+      if (selectedOptionIds.length > 0) {
+        return Promise.reject(new Error('No modifier policy configured in memory fixture.'));
+      }
+      return Promise.resolve({
+        baseUnitPriceMinor,
+        modifierTotalMinor: 0n,
+        unitPriceMinor: baseUnitPriceMinor,
+        selections: [],
+      });
+    },
+  };
+}
+
 export function memoryDashboardRepository(store: MemoryBusinessStore): DashboardRepository {
   return {
     summary: (scope, since) => {
@@ -197,6 +236,10 @@ export function memoryInventoryRepository(store: MemoryBusinessStore): Inventory
               branchId,
               productId,
               quantityScaled: scaled,
+              // The fake keeps no movement history, so it reports the same
+              // "unknown history" a migrated balance carries. Nothing in the
+              // cashier paths reads it; the revision contract is proved live.
+              revision: '0',
             } satisfies InventoryBalance),
       );
     },
@@ -208,6 +251,7 @@ export function memoryInventoryRepository(store: MemoryBusinessStore): Inventory
         branchId: movement.branchId,
         productId: movement.productId,
         quantityScaled: movement.quantityScaled,
+        revision: '0',
       });
     },
   };
@@ -583,8 +627,14 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
       const sum = (pick: (row: (typeof prior)[number]) => string): bigint =>
         prior.reduce((total, row) => total + BigInt(pick(row)), 0n);
       const returned = sum((row) => row.quantityScaled);
+      const returnedInventory = prior.reduce(
+        (total, row) => total + BigInt(row.inventoryQuantityScaled ?? row.quantityScaled),
+        0n,
+      );
+      const soldInventory = BigInt(line.inventoryQuantityScaled ?? line.quantityScaled);
       refundedTotal += sum((row) => row.totalMinor);
       const remaining = BigInt(line.quantityScaled) - returned;
+      const remainingInventory = soldInventory - returnedInventory;
       return {
         saleLineId: line.id,
         lineNumber: line.lineNumber,
@@ -598,8 +648,15 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         soldQuantityScaled: line.quantityScaled,
         returnedQuantityScaled: returned.toString(),
         remainingQuantityScaled: (remaining > 0n ? remaining : 0n).toString(),
+        soldInventoryQuantityScaled: soldInventory.toString(),
+        returnedInventoryQuantityScaled: returnedInventory.toString(),
+        remainingInventoryQuantityScaled: (remainingInventory > 0n
+          ? remainingInventory
+          : 0n
+        ).toString(),
         grossMinor: line.grossMinor,
         lineDiscountMinor: line.lineDiscountMinor,
+        promotionDiscountMinor: line.promotionDiscountMinor ?? '0',
         basketDiscountMinor: line.basketDiscountMinor,
         netMinor: line.netMinor,
         vatMinor: line.vatMinor,
@@ -607,6 +664,9 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         refundedGrossMinor: sum((row) => row.grossMinor).toString(),
         refundedNetMinor: sum((row) => row.netMinor).toString(),
         refundedLineDiscountMinor: sum((row) => row.lineDiscountMinor).toString(),
+        refundedPromotionDiscountMinor: prior
+          .reduce((total, row) => total + BigInt(row.promotionDiscountMinor ?? '0'), 0n)
+          .toString(),
         refundedBasketDiscountMinor: sum((row) => row.basketDiscountMinor).toString(),
         refundedVatMinor: sum((row) => row.vatMinor).toString(),
       };
@@ -727,6 +787,7 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
         currency: input.currency,
         grossMinor: plan.grossMinor,
         lineDiscountMinor: plan.lineDiscountMinor,
+        promotionDiscountMinor: plan.promotionDiscountMinor,
         basketDiscountMinor: plan.basketDiscountMinor,
         netMinor: plan.netMinor,
         vatMinor: plan.vatMinor,
@@ -743,8 +804,10 @@ export function memoryReturnRepository(store: MemoryBusinessStore): ReturnReposi
           productType: line.productType,
           vatBasisPoints: line.vatBasisPoints,
           quantityScaled: line.quantityScaled,
+          inventoryQuantityScaled: line.inventoryQuantityScaled,
           grossMinor: line.grossMinor,
           lineDiscountMinor: line.lineDiscountMinor,
+          promotionDiscountMinor: line.promotionDiscountMinor,
           basketDiscountMinor: line.basketDiscountMinor,
           netMinor: line.netMinor,
           vatMinor: line.vatMinor,

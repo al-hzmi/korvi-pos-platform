@@ -8,6 +8,7 @@ const READY: OnboardingReadinessFacts = {
   activeBranchPresent: true,
   activeTerminalPresent: true,
   viableAdministratorPresent: true,
+  viablePosOperatorPresent: true,
   activeProductPresent: true,
 };
 
@@ -26,6 +27,7 @@ describe('onboarding readiness', () => {
     ['activeBranchPresent', false, 'no-active-branch'],
     ['activeTerminalPresent', false, 'no-active-terminal'],
     ['viableAdministratorPresent', false, 'no-viable-administrator'],
+    ['viablePosOperatorPresent', false, 'no-viable-pos-operator'],
     ['activeProductPresent', false, 'no-active-product'],
   ] as const;
 

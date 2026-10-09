@@ -13,3 +13,4 @@
 # EMPTY IS THE CORRECT STATE, and it is currently empty: next 16.3.0 carries no
 # advisories, so the postcss and sharp exceptions carried in revision 2 were
 # deleted rather than renewed. Upgrading beat excusing.
+GHSA-vfj7-8cjw-p6xm  braces 3.0.3 has no patched release; Korvi reaches it only through dev-only Tailwind/micromatch/chokidar glob tooling, and no shipped API, cashier, file import, or runtime surface passes user-controlled brace patterns to it. Remove this exception when upstream publishes a patched braces line or the dev-tool chain drops it. | Korvi CTO | expires 2026-11-07

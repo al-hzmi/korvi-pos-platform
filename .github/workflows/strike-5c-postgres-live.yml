@@ -1,0 +1,292 @@
+name: Strike 5C PostgreSQL Live Proof
+
+on:
+  push:
+    branches:
+      - review/operations-50-production-readiness
+      - strike/5c-costing-authority
+      - product/post-v1-restaurant-production
+      - product/post-v1-restaurant-waste
+      - product/post-v1-restaurant-foundation
+      - integration/acquisition-ar2
+      - release/canonical-acquisition-v1
+      - mastermind/v2-strengthening
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-live:
+    name: PostgreSQL 17 / migrations / RLS / live suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Production-like authority split: the provider administrator creates two
+      # restricted identities, then leaves the application path entirely.
+      MIGRATION_DATABASE_URL: postgresql://korvi_migrator:korvi_migrator_ci_5c@localhost:5432/korvi_5c?schema=public
+      POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/korvi_5c
+      KORVI_TEST_DATABASE_URL: postgresql://korvi_runtime:korvi_runtime_ci_5c@localhost:5432/korvi_5c
+      DATABASE_URL: postgresql://korvi_runtime:korvi_runtime_ci_5c@localhost:5432/korvi_5c
+      PRODUCTION_RUNTIME_DB_ROLE: korvi_runtime
+      PROOF_LOG: artifacts/strike-5c-postgres-proof.txt
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: korvi_5c
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d korvi_5c"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Record PostgreSQL authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          server_major="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align \
+            --command "SELECT current_setting('server_version_num')::integer / 10000")"
+          if [ "$server_major" != '17' ]; then
+            echo "Expected PostgreSQL major 17, got $server_major" >&2
+            exit 1
+          fi
+
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "postgres_major=$server_major"
+            echo "migration_directories=$(find packages/database/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l)"
+            echo 'migration_runtime_identity_separation=required'
+          } | tee "$PROOF_LOG"
+
+      - name: Create restricted migration and application runtime roles
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_ADMIN_URL" --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE korvi_migrator
+            LOGIN PASSWORD 'korvi_migrator_ci_5c'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          CREATE ROLE korvi_runtime
+            LOGIN PASSWORD 'korvi_runtime_ci_5c'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          ALTER DATABASE korvi_5c OWNER TO korvi_migrator;
+          SQL
+
+          migrator_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls,
+                    (SELECT count(*)::integer FROM pg_auth_members WHERE member = r.oid)
+               FROM pg_roles r WHERE r.rolname = 'korvi_migrator'")"
+          if [ "$migrator_flags" != 'f|f|f|f|f|f|0' ]; then
+            echo "Migration role has unsafe authority: $migrator_flags" >&2
+            exit 1
+          fi
+
+          runtime_flags="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls,
+                    (SELECT count(*)::integer FROM pg_auth_members WHERE member = r.oid)
+               FROM pg_roles r WHERE r.rolname = 'korvi_runtime'")"
+          if [ "$runtime_flags" != 'f|f|f|f|f|f|0' ]; then
+            echo "Runtime role has unsafe authority: $runtime_flags" >&2
+            exit 1
+          fi
+
+          {
+            echo "migration_role_flags=$migrator_flags"
+            echo "runtime_role_flags=$runtime_flags"
+          } | tee -a "$PROOF_LOG"
+
+      - name: Apply migrations through restricted production authority
+        shell: bash
+        env:
+          NODE_ENV: production
+          KORVI_ENVIRONMENT: production
+        run: |
+          set -euo pipefail
+          bash scripts/deploy/production-migrate.sh 2>&1 | tee -a "$PROOF_LOG"
+
+      - name: Prove migration owner and runtime least privilege
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          table_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(DISTINCT tableowner)::text || '|' || min(tableowner)
+               FROM pg_tables WHERE schemaname = 'public'")"
+          if [ "$table_ownership" != '1|korvi_migrator' ]; then
+            echo "Expected restricted migration authority to own every public table, got $table_ownership" >&2
+            exit 1
+          fi
+
+          runtime_ownership="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = 'korvi_runtime'")"
+          if [ "$runtime_ownership" != '0' ]; then
+            echo "Runtime role unexpectedly owns $runtime_ownership public table(s)" >&2
+            exit 1
+          fi
+
+          boundary="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT has_database_privilege('korvi_runtime', 'korvi_5c', 'CONNECT'),
+                    has_database_privilege('korvi_runtime', 'korvi_5c', 'TEMPORARY'),
+                    has_schema_privilege('korvi_runtime', 'public', 'USAGE'),
+                    has_schema_privilege('korvi_runtime', 'public', 'CREATE'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'SELECT'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'INSERT'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'UPDATE'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'DELETE')")"
+          if [ "$boundary" != 't|f|t|f|t|f|f|f' ]; then
+            echo "Runtime privilege boundary drifted: $boundary" >&2
+            exit 1
+          fi
+
+          {
+            echo "public_table_ownership=$table_ownership"
+            echo "runtime_public_table_ownership=$runtime_ownership"
+            echo "runtime_boundary=$boundary"
+            echo 'migration_runtime_identity_separation=PASS'
+            echo 'restricted_migration_authority=PASS'
+            echo 'runtime_migration_ledger_write=DENIED'
+          } | tee -a "$PROOF_LOG"
+
+      - name: Build live test runtime
+        run: |
+          npm run db:generate
+          npm run build
+
+      - name: Run every live proof as the restricted runtime role (runtime-safe set)
+        shell: bash
+        env:
+          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          mapfile -t live_tests < <(find apps packages -path '*/src/__tests__/*-live.test.ts' -type f | sort)
+          mapfile -t migration_tests < <(find packages -path '*/src/__tests__/*-migration-live.test.ts' -type f | sort)
+          if [ "${#live_tests[@]}" -eq 0 ] || [ "${#migration_tests[@]}" -eq 0 ]; then
+            echo 'Live or migration rehearsal test discovery returned no files' >&2
+            exit 1
+          fi
+
+          declare -A migration_set=()
+          for file in "${migration_tests[@]}"; do migration_set["$file"]=1; done
+          runtime_tests=()
+          for file in "${live_tests[@]}"; do
+            if [ -z "${migration_set[$file]+x}" ]; then runtime_tests+=("$file"); fi
+          done
+
+          # Six rollback tests intentionally install test-only trigger faults.
+          # Their DDL setup is a migration-plane concern and is exercised in the
+          # next step under the restricted migrator. Every other application
+          # live test runs here under the exact production runtime boundary.
+          fault_pattern='rolls back pool, evidence, audit and idempotency when the final write fails|rolls back document, ledger, balance, audit and idempotency when a write fails late|a failure after the write rolls back the access change and its audit|rolls back the whole establishment when it fails after writing|Q: a late failure rolls back receipt, stock, cost, audit and idempotency|a failure after the reservation undoes the reservation too'
+          runtime_pattern="^(?!.*(${fault_pattern})).*$"
+
+          {
+            echo "live_test_files=${#live_tests[@]}"
+            echo "runtime_live_test_files=${#runtime_tests[@]}"
+            echo "migration_rehearsal_files=${#migration_tests[@]}"
+            printf 'runtime_live_test=%s\n' "${runtime_tests[@]}"
+          } | tee -a "$PROOF_LOG"
+
+          npx --no-install vitest run "${runtime_tests[@]}" \
+            --testNamePattern "$runtime_pattern" 2>&1 | tee -a "$PROOF_LOG"
+          echo 'runtime_live_proofs=PASS' | tee -a "$PROOF_LOG"
+
+      - name: Run migration rehearsals and DDL fault harness as restricted migrator
+        shell: bash
+        env:
+          KORVI_TEST_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
+          DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          mapfile -t migration_tests < <(find packages -path '*/src/__tests__/*-migration-live.test.ts' -type f | sort)
+          if [ "${#migration_tests[@]}" -eq 0 ]; then
+            echo 'No migration rehearsal live tests were discovered' >&2
+            exit 1
+          fi
+
+          echo "migration_rehearsal_files=${#migration_tests[@]}" | tee -a "$PROOF_LOG"
+          printf 'migration_rehearsal=%s\n' "${migration_tests[@]}" | tee -a "$PROOF_LOG"
+          npx --no-install vitest run "${migration_tests[@]}" 2>&1 | tee -a "$PROOF_LOG"
+          echo 'migration_rehearsal_proofs=PASS' | tee -a "$PROOF_LOG"
+
+          fault_files=(
+            apps/api/src/__tests__/inventory-cost-bootstrap-live.test.ts
+            apps/api/src/__tests__/inventory-stock-live.test.ts
+            apps/api/src/__tests__/merchant-admin-live.test.ts
+            apps/api/src/__tests__/owner-bootstrap-live.test.ts
+            apps/api/src/__tests__/purchasing-receiving-live.test.ts
+            apps/api/src/__tests__/tenant-lifecycle-live.test.ts
+          )
+          fault_pattern='rolls back pool, evidence, audit and idempotency when the final write fails|rolls back document, ledger, balance, audit and idempotency when a write fails late|a failure after the write rolls back the access change and its audit|rolls back the whole establishment when it fails after writing|Q: a late failure rolls back receipt, stock, cost, audit and idempotency|a failure after the reservation undoes the reservation too'
+          printf 'migration_fault_harness_file=%s\n' "${fault_files[@]}" | tee -a "$PROOF_LOG"
+          npx --no-install vitest run "${fault_files[@]}" \
+            --testNamePattern "$fault_pattern" 2>&1 | tee -a "$PROOF_LOG"
+          echo 'migration_fault_harness=PASS' | tee -a "$PROOF_LOG"
+
+      - name: Re-prove runtime authority after privileged test harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          boundary="$(psql "$POSTGRES_ADMIN_URL" --no-psqlrc --tuples-only --no-align --command \
+            "SELECT has_database_privilege('korvi_runtime', 'korvi_5c', 'CONNECT'),
+                    has_database_privilege('korvi_runtime', 'korvi_5c', 'TEMPORARY'),
+                    has_schema_privilege('korvi_runtime', 'public', 'USAGE'),
+                    has_schema_privilege('korvi_runtime', 'public', 'CREATE'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'SELECT'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'INSERT'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'UPDATE'),
+                    has_table_privilege('korvi_runtime', 'public._prisma_migrations', 'DELETE')")"
+          if [ "$boundary" != 't|f|t|f|t|f|f|f' ]; then
+            echo "Runtime privilege boundary changed during test harness: $boundary" >&2
+            exit 1
+          fi
+          echo 'runtime_boundary_after_test_harness=PASS' | tee -a "$PROOF_LOG"
+
+      - name: Run full verification against PostgreSQL as runtime
+        shell: bash
+        env:
+          # The complete live suite already ran above under its exact authority.
+          # Disable the opt-in live hooks here so verify cannot accidentally
+          # re-run migration-plane DDL as the runtime identity.
+          KORVI_TEST_DATABASE_URL: ''
+          DATABASE_URL: ${{ env.KORVI_TEST_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          npm run verify 2>&1 | tee -a "$PROOF_LOG"
+          git diff --check
+
+      - name: Preserve PostgreSQL proof log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: strike-5c-postgres-proof-${{ github.sha }}
+          path: artifacts/strike-5c-postgres-proof.txt
+          if-no-files-found: error
+          retention-days: 14

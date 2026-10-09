@@ -4,6 +4,7 @@ import {
   basisPoints,
   normalizeProductBarcode,
   normalizeProductBootstrap,
+  normalizeOptionalCategoryId,
   normalizeProductPriceMinor,
   normalizeProductSku,
 } from '../../index.js';
@@ -76,6 +77,12 @@ describe('product bootstrap invariants', () => {
         DEFAULT_VAT,
       ),
     ).toThrow(ProductBootstrapError);
+  });
+
+  it('accepts only canonical UUIDv7 category ids when supplied server-side', () => {
+    const categoryId = '018fb900-0000-7000-8000-000000000001';
+    expect(normalizeOptionalCategoryId(categoryId.toUpperCase())).toBe(categoryId);
+    expect(() => normalizeOptionalCategoryId('not-a-uuid')).toThrow(ProductBootstrapError);
   });
 
   it('turns an absent or blank optional English name and barcode into null', () => {

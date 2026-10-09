@@ -264,3 +264,185 @@ export class PlanEntitlementRefusedError extends DatabaseError {
     this.detail = detail;
   }
 }
+
+/**
+ * A merchant stock operation was refused while its rows were held.
+ *
+ * Every detail here is decided *after* the balance rows have been locked in
+ * canonical order, which is what makes it an answer rather than a guess:
+ * `insufficient-stock` means the shelf was empty when the mutation ran, not
+ * that a preflight read thought so, and `stock-changed` means the balance the
+ * counter observed had genuinely moved on by the time the count was submitted
+ * (ADR-0024 §5, Strike 5A §E).
+ */
+export type StockOperationRefusal =
+  | 'unknown-branch'
+  | 'inactive-branch'
+  | 'unknown-product'
+  | 'inactive-product'
+  | 'untracked-product'
+  | 'insufficient-stock'
+  | 'stock-changed'
+  | 'lot-count-required'
+  | 'lot-count-not-applicable'
+  | 'lot-adjustment-required'
+  | 'lot-adjustment-not-applicable'
+  | 'invalid-lot-adjustment'
+  | 'lot-unavailable'
+  | 'unknown-lot'
+  | 'idempotency-conflict';
+
+export class StockOperationRefusedError extends DatabaseError {
+  public override readonly name = 'StockOperationRefusedError';
+  public readonly detail: StockOperationRefusal;
+  /** The product the refusal is about, when one line is responsible. */
+  public readonly productId: string | null;
+
+  public constructor(detail: StockOperationRefusal, productId: string | null = null) {
+    super(`Stock operation refused: ${detail}`);
+    this.detail = detail;
+    this.productId = productId;
+  }
+}
+
+/** A valuation decision no longer describes the locked facts the manager reviewed. */
+export type CostBootstrapRefusal = 'cost-state-changed';
+
+export class CostBootstrapRefusedError extends DatabaseError {
+  public override readonly name = 'CostBootstrapRefusedError';
+  public readonly detail: CostBootstrapRefusal;
+  public readonly productId: string;
+
+  public constructor(productId: string) {
+    super('Cost bootstrap refused: cost-state-changed');
+    this.detail = 'cost-state-changed';
+    this.productId = productId;
+  }
+}
+
+/**
+ * A purchasing or receiving operation was refused.
+ *
+ * The receiving details are all decided *after* the purchase-order line rows
+ * are held `FOR UPDATE`, which is what makes each of them an answer rather
+ * than a guess. `over-receipt` in particular means the remaining quantity was
+ * genuinely insufficient at the moment of the write — not that a preflight
+ * read thought so — which is the whole of the concurrency rule two receipts
+ * racing for one remaining quantity have to obey (ADR-0024 §7, Strike 5B §11).
+ *
+ *   unknown-supplier / unknown-branch / unknown-product / unknown-purchase-order
+ *   / unknown-purchase-order-line
+ *                        the thing named does not exist *in this tenant*. Under
+ *                        RLS a row belonging to another merchant simply is not
+ *                        there, so "missing" and "somebody else's" are one
+ *                        answer — which is the answer both callers should get.
+ *   inactive-supplier    the supplier is deactivated, so they cannot be chosen
+ *                        for a new order. Existing orders naming them stay
+ *                        valid; this refusal is only ever about a new one.
+ *   inactive-branch / inactive-product / untracked-product
+ *                        the physical stock rule, decided from the locked rows
+ *                        rather than from what was true when the order was
+ *                        placed. A branch stood down since the order went out
+ *                        cannot take a delivery today.
+ *   purchase-order-closed
+ *                        every line is already fully received. Distinct from
+ *                        `over-receipt` because the remedy differs: one means
+ *                        "this order is finished", the other "this line has
+ *                        less room than you asked for".
+ *   over-receipt         the accepted quantity exceeds what the line still has
+ *                        outstanding. Strike 5B allows no exception; ADR-0024
+ *                        defers any tolerance policy until one is designed.
+ */
+export type PurchasingRefusal =
+  | 'unknown-supplier'
+  | 'inactive-supplier'
+  | 'unknown-branch'
+  | 'inactive-branch'
+  | 'unknown-product'
+  | 'inactive-product'
+  | 'untracked-product'
+  | 'unknown-package'
+  | 'package-unavailable'
+  | 'unknown-purchase-order'
+  | 'unknown-purchase-order-line'
+  | 'purchase-order-closed'
+  | 'over-receipt'
+  | 'idempotency-conflict';
+
+export class PurchasingRefusedError extends DatabaseError {
+  public override readonly name = 'PurchasingRefusedError';
+  public readonly detail: PurchasingRefusal;
+  /** The line or product the refusal is about, when one is responsible. */
+  public readonly subjectId: string | null;
+
+  public constructor(detail: PurchasingRefusal, subjectId: string | null = null) {
+    super(`Purchasing operation refused: ${detail}`);
+    this.detail = detail;
+    this.subjectId = subjectId;
+  }
+}
+
+/**
+ * Promotion/coupon checkout policy changed or cannot authorize the requested
+ * coupon. These are business refusals decided from tenant-scoped rows, not
+ * driver errors.
+ */
+export type PromotionPolicyRefusal =
+  | 'unknown-coupon'
+  | 'coupon-unavailable'
+  | 'coupon-exhausted'
+  | 'duplicate-promotion-coupon'
+  | 'policy-stale';
+
+export class PromotionPolicyRefusedError extends DatabaseError {
+  public override readonly name = 'PromotionPolicyRefusedError';
+  public readonly detail: PromotionPolicyRefusal;
+
+  public constructor(detail: PromotionPolicyRefusal) {
+    super(`Promotion policy refused: ${detail}`);
+    this.detail = detail;
+  }
+}
+
+/**
+ * V2-3 commercial selling-unit / contextual pricing policy changed or cannot
+ * authorize the requested commercial unit. These are tenant-scoped business
+ * refusals, never client-authored price decisions.
+ */
+export type RetailPricingPolicyRefusal =
+  'unknown-package' | 'package-unavailable' | 'wholesale-price-incomplete' | 'policy-stale';
+
+export class RetailPricingPolicyRefusedError extends DatabaseError {
+  public override readonly name = 'RetailPricingPolicyRefusedError';
+  public readonly detail: RetailPricingPolicyRefusal;
+
+  public constructor(detail: RetailPricingPolicyRefusal) {
+    super(`Retail pricing policy refused: ${detail}`);
+    this.detail = detail;
+  }
+}
+
+/**
+ * A lot-controlled inventory movement cannot be proven from the facts supplied
+ * by its parent operation. These refusals are decided under canonical stock +
+ * lot locks, not from a preflight read (ADR-0039).
+ */
+export type LotPolicyRefusal =
+  | 'incoming-lot-required'
+  | 'unknown-lot'
+  | 'lot-product-mismatch'
+  | 'lot-unavailable'
+  | 'invalid-business-time-zone'
+  | 'lot-date-required'
+  | 'lot-identity-conflict'
+  | 'invalid-lot-fact';
+
+export class LotPolicyRefusedError extends DatabaseError {
+  public override readonly name = 'LotPolicyRefusedError';
+  public readonly detail: LotPolicyRefusal;
+
+  public constructor(detail: LotPolicyRefusal) {
+    super(`Lot policy refused: ${detail}`);
+    this.detail = detail;
+  }
+}

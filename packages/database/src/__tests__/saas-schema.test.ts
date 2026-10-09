@@ -162,19 +162,14 @@ describe('row-level security', () => {
   });
 
   it.each(tenantOwnedTables)('defines an isolation policy for %s', (table) => {
-    expect(migration).toMatch(new RegExp(`CREATE POLICY "\\w+" ON "${table}"`));
+    expect(migration).toMatch(new RegExp(`CREATE POLICY "\\w+"\\s+ON "${table}"`));
   });
 
-  it('gives every isolation policy both USING and WITH CHECK', () => {
-    // USING alone governs reads. Without WITH CHECK a caller could UPDATE a
-    // visible row and reassign it to another tenant.
-    //
-    // The statement body ends at the first semicolon. Reading past it would
-    // pick up the next migration's commentary, which discusses policies and
-    // would make this assertion answer a question about prose.
-    const isolation = policyBodies().filter((body) => !body.includes('FOR SELECT'));
-    // At least one per table: Phase 0 wrote the first policy for tenants and
-    // products, and Strike 2A restated both.
+  it('gives every tenant isolation policy both USING and WITH CHECK', () => {
+    // Standard tenant policies protect merchant-owned rows for reads and
+    // writes. Control-plane support notes are intentionally a separate
+    // authority boundary and have their own dedicated policy tests.
+    const isolation = policyBodies().filter((body) => /^\w+_isolation" ON /.test(body));
     expect(isolation.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
     for (const body of isolation) {
       expect(body).toContain('USING');
@@ -184,32 +179,57 @@ describe('row-level security', () => {
   });
 
   it('keeps every read-only policy read-only, and keyed on its own setting', () => {
-    // The login-resolution door. FOR SELECT means PostgreSQL will not consider
-    // it for INSERT, UPDATE or DELETE at all, so there is no version of this
-    // policy that writes. It carries no WITH CHECK because it cannot.
+    // Read-only doors are explicit exceptions to tenant write isolation. Each
+    // must remain SELECT-only and must be keyed by its own transaction-local
+    // authority setting rather than inheriting another trust boundary.
     const readOnly = policyBodies().filter((body) => body.includes('FOR SELECT'));
-    expect(readOnly.length).toBe(1);
+    const loginResolution = readOnly.filter((body) => body.includes('login_tenant_slug()'));
+    const controlPlaneRead = readOnly.filter((body) =>
+      body.includes('current_control_plane_actor()'),
+    );
+
+    expect(loginResolution).toHaveLength(1);
+    expect(controlPlaneRead).toHaveLength(3);
+    expect(controlPlaneRead.some((body) => body.startsWith('tenants_control_plane_read"'))).toBe(
+      true,
+    );
+    expect(
+      controlPlaneRead.some((body) =>
+        body.startsWith('platform_support_notes_control_plane_read"'),
+      ),
+    ).toBe(true);
+    expect(
+      controlPlaneRead.some((body) => body.startsWith('platform_admin_sessions_select"')),
+    ).toBe(true);
+    expect(readOnly).toHaveLength(loginResolution.length + controlPlaneRead.length);
     for (const body of readOnly) {
       expect(body).toContain('USING');
       expect(body).not.toContain('WITH CHECK');
-      expect(body).toContain('login_tenant_slug()');
     }
   });
 
-  it('recreates each policy rather than assuming it is absent', () => {
-    // Phase 0 already created policies on tenants and products, and
-    // PostgreSQL has no CREATE POLICY ... IF NOT EXISTS, so a bare CREATE
-    // would abort this migration on any database that has run Phase 0.
-    // Phase 0 wrote the first policies onto an empty database and had
-    // nothing to drop. Every migration after it does.
+  it('recreates each current policy rather than assuming it is absent', () => {
+    // Migration history is immutable. A policy that was originally created
+    // bare can be repaired only by a later DROP + CREATE. Therefore the
+    // contract is on the latest definition of each policy identity, not on
+    // rewriting every historical CREATE statement.
     const created = [...afterBaseline.matchAll(/\nCREATE POLICY "(\w+)" ON "(\w+)"/g)];
-    const pairs = [
-      ...afterBaseline.matchAll(
-        /DROP POLICY IF EXISTS "(\w+)" ON "(\w+)";\nCREATE POLICY "\1" ON "\2"/g,
-      ),
-    ];
-    expect(created.length).toBeGreaterThanOrEqual(tenantOwnedTables.length);
-    expect(pairs.length).toBe(created.length);
+    const latest = new Map<string, RegExpMatchArray>();
+    for (const match of created) {
+      latest.set(`${match[1] ?? ''}\u0000${match[2] ?? ''}`, match);
+    }
+
+    expect(latest.size).toBeGreaterThanOrEqual(tenantOwnedTables.length);
+    for (const match of latest.values()) {
+      const name = match[1] ?? '';
+      const table = match[2] ?? '';
+      const index = match.index ?? -1;
+      expect(index, `${name} on ${table}`).toBeGreaterThanOrEqual(0);
+      const beforeCreate = afterBaseline.slice(0, index).trimEnd();
+      expect(beforeCreate, `${name} on ${table}`).toMatch(
+        new RegExp(`DROP POLICY IF EXISTS "${name}" ON "${table}";$`),
+      );
+    }
   });
 
   it('keys the tenants policy on its own id, not on a tenantId column', () => {
@@ -328,13 +348,17 @@ describe('tenant-consistent foreign keys', () => {
   });
 
   it.each(tenantOwnedRefs.map((reference) => `${reference.model}.${reference.field}`))(
-    '%s references its parent by (tenantId, id), not by id alone',
+    '%s references its parent with tenantId leading and id anchored',
     (label) => {
       const reference = tenantOwnedRefs.find(
         (candidate) => `${candidate.model}.${candidate.field}` === label,
       );
-      expect(reference?.references).toBe('tenantId, id');
-      expect(reference?.fields.startsWith('tenantId, ')).toBe(true);
+      const fields = reference?.fields.split(',').map((column) => column.trim()) ?? [];
+      const parentKeys = reference?.references.split(',').map((column) => column.trim()) ?? [];
+      expect(fields.length).toBe(parentKeys.length);
+      expect(fields[0]).toBe('tenantId');
+      expect(parentKeys[0]).toBe('tenantId');
+      expect(parentKeys.at(-1)).toBe('id');
     },
   );
 

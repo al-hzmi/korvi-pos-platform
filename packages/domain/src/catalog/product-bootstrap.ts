@@ -1,4 +1,5 @@
 import { DomainError, InvalidRateError } from '../errors.js';
+import { isUuidV7 } from '../ids/uuidv7.js';
 import { basisPoints } from '../tax/basis-points.js';
 import type { BasisPoints } from '../tax/basis-points.js';
 import type { ProductType } from '../ports/persistence.js';
@@ -43,6 +44,11 @@ export interface ProductBootstrapDraft {
   /** Omitted means the tenant's configured default VAT rate. */
   readonly vatBasisPoints?: number | undefined;
   readonly barcode?: string | null | undefined;
+  /**
+   * Server-derived catalogue relationship. Public HTTP surfaces do not gain
+   * authority merely because this write contract can carry it.
+   */
+  readonly categoryId?: string | null | undefined;
 }
 
 export interface NormalizedProductBootstrap {
@@ -54,6 +60,7 @@ export interface NormalizedProductBootstrap {
   readonly priceMinor: string;
   readonly vatBasisPoints: BasisPoints;
   readonly barcode: string | null;
+  readonly categoryId: string | null;
 }
 
 function normalizedText(value: string, max: number, label: string): string {
@@ -106,6 +113,15 @@ export function normalizeProductBarcode(value: string | null | undefined): strin
   return candidate;
 }
 
+export function normalizeOptionalCategoryId(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const candidate = value.normalize('NFKC').trim().toLowerCase();
+  if (!isUuidV7(candidate)) {
+    throw new ProductBootstrapError('Invalid product category id.');
+  }
+  return candidate;
+}
+
 export function normalizeProductPriceMinor(value: string): string {
   if (!MINOR_PATTERN.test(value)) {
     throw new ProductBootstrapError(
@@ -145,5 +161,6 @@ export function normalizeProductBootstrap(
     priceMinor: normalizeProductPriceMinor(draft.priceMinor),
     vatBasisPoints: vat,
     barcode: normalizeProductBarcode(draft.barcode),
+    categoryId: normalizeOptionalCategoryId(draft.categoryId),
   };
 }
