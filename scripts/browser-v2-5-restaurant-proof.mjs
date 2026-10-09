@@ -644,8 +644,34 @@ try {
   await cdp.send('Page.navigate', { url: `${baseUrl}/cashier` });
   await waitForText('ابحث أو امسح الباركود', 30_000);
   await waitForText('الطلبات المفتوحة', 20_000);
-  await clickButton('سفري');
+  // Cashier intentionally persists an active open-order identity in its
+  // durable draft. On return from KDS it may restore that exact order
+  // automatically; in that case the list-entry button is intentionally
+  // disabled/absent. Prove the real UI path in either valid state.
+  await waitFor(
+    `(() => {
+      const panel = document.querySelector('section[aria-label="الطلبات المفتوحة"]');
+      if (panel === null) return false;
+      return [...panel.querySelectorAll('span')].some(
+        (node) => node.textContent?.trim() === 'مستأنف'
+      ) || [...panel.querySelectorAll('button')].some(
+        (button) => !button.disabled && button.textContent?.includes('سفري')
+      );
+    })()`,
+    'restored active order or an enabled open-order resume button',
+    30_000,
+  );
+  const restored = await evaluate(`(() => {
+    const panel = document.querySelector('section[aria-label="الطلبات المفتوحة"]');
+    return panel !== null && [...panel.querySelectorAll('span')].some(
+      (node) => node.textContent?.trim() === 'مستأنف'
+    );
+  })()`);
+  if (!restored) await clickButton('سفري');
   await waitForText('مستأنف', 20_000);
+  record(restored
+    ? 'cashier restored the same active open order across the KDS navigation'
+    : 'cashier resumed the saved open order from the live order list');
   const settlementTotal = majorToMinor(await amountAfterLabel('الإجمالي المستحق'));
   assert.equal(
     settlementTotal,
