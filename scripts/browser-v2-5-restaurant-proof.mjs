@@ -755,12 +755,14 @@ try {
   const refundReplay = await browserRequest('/v1/returns', refundInit);
   assert.equal(refundReplay.replayed, true);
   assert.equal(refundReplay.return.returnId, refunded.return.returnId);
-  record('original-sale modifier return refunded the exact historical 14.50 SAR once with idempotent replay');
+  record(
+    'original-sale modifier return refunded the exact historical 14.50 SAR once with idempotent replay',
+  );
 
   // Second path: a DIRECT restaurant sale with the same modifier, no open
   // restaurant order. The cashier must still select identities via the real
   // dialog and the backend must still author the 14.50 SAR total.
-  await clickButton('بدء بيع جديد');
+  await clickButton('عملية بيع جديدة');
   await waitForText('ابحث أو امسح الباركود', 20_000);
   await setInput('product-search', 'BROWSER-SKU-001');
   await pressEnter();
@@ -792,14 +794,14 @@ try {
       item.branch.id === branch.id,
   );
   assert.ok(direct !== undefined, 'Direct modifier sale did not finalize.');
-  const directDetail = await browserRequest(
-    `/v1/admin/sales/${encodeURIComponent(direct.id)}`,
-  );
+  const directDetail = await browserRequest(`/v1/admin/sales/${encodeURIComponent(direct.id)}`);
   assert.equal(directDetail.lines[0]?.baseUnitPriceMinor, '1250');
   assert.equal(directDetail.lines[0]?.modifierTotalMinor, '200');
   assert.equal(directDetail.lines[0]?.modifierSelections[0]?.optionNameAr, 'كبير');
   assert.equal(directDetail.lines[0]?.modifierSelections[0]?.priceDeltaMinor, '200');
-  record('direct cashier sale finalized with independently preserved modifier price and option snapshots');
+  record(
+    'direct cashier sale finalized with independently preserved modifier price and option snapshots',
+  );
   await capture('v2-5-cashier-direct-modifier-sale');
 
   record(
