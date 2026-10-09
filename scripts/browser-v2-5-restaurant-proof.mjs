@@ -699,6 +699,28 @@ try {
     'same open order settled for 14.50 SAR and retained immutable modifier financial/history snapshots',
   );
 
+  // The merchant's actual sale-history read model must expose immutable
+  // finalized option names/revisions/prices; consulting today's menu here
+  // would rewrite historical truth when the merchant edits an option.
+  const saleHistory = await browserRequest('/v1/admin/sales?limit=20');
+  const finalizedSummary = saleHistory.items.find(
+    (item) => item.status === 'finalized' && item.totalMinor === '1450' &&
+      item.branch.id === branch.id,
+  );
+  assert.ok(finalizedSummary !== undefined, 'Settled sale missing from merchant sales history.');
+  const finalizedSale = await browserRequest(
+    `/v1/admin/sales/${encodeURIComponent(finalizedSummary.id)}`,
+  );
+  assert.equal(finalizedSale.totalMinor, '1450');
+  assert.equal(finalizedSale.lines.length, 1);
+  assert.equal(finalizedSale.lines[0]?.baseUnitPriceMinor, '1250');
+  assert.equal(finalizedSale.lines[0]?.modifierTotalMinor, '200');
+  assert.equal(finalizedSale.lines[0]?.unitPriceMinor, '1450');
+  assert.equal(finalizedSale.lines[0]?.modifierSelections.length, 1);
+  assert.equal(finalizedSale.lines[0]?.modifierSelections[0]?.optionNameAr, 'كبير');
+  assert.equal(finalizedSale.lines[0]?.modifierSelections[0]?.priceDeltaMinor, '200');
+  record('merchant sale history exposes finalized modifier decomposition and immutable option snapshots');
+
   const tasks = await browserRequest(
     `/v1/restaurant/preparation-stations/${encodeURIComponent(station.id)}/tasks?includeServed=true`,
   );

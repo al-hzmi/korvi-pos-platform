@@ -77,6 +77,19 @@ export interface MerchantSaleDetail {
     readonly nameEn: string | null;
     readonly productType: string | null;
     readonly unitPriceMinor: string;
+    readonly baseUnitPriceMinor: string;
+    readonly modifierTotalMinor: string;
+    readonly modifierSelections: readonly {
+      readonly groupId: string;
+      readonly groupRevision: string;
+      readonly groupCode: string;
+      readonly groupNameAr: string;
+      readonly optionId: string;
+      readonly optionRevision: string;
+      readonly optionCode: string;
+      readonly optionNameAr: string;
+      readonly priceDeltaMinor: string;
+    }[];
     readonly vatBasisPoints: number;
     readonly quantityScaled: string;
     readonly grossMinor: string;
@@ -237,7 +250,14 @@ export async function readMerchantSale(
         terminal: { select: { id: true, code: true, label: true } },
         user: { select: { id: true, displayName: true, email: true } },
         customer: { select: { id: true, nameAr: true, phone: true, vatNumber: true } },
-        lines: { orderBy: { lineNumber: 'asc' } },
+        lines: {
+          orderBy: { lineNumber: 'asc' },
+          include: {
+            modifierSelections: {
+              orderBy: [{ groupSortOrder: 'asc' }, { optionSortOrder: 'asc' }, { id: 'asc' }],
+            },
+          },
+        },
         tenders: true,
         invoice: { include: { taxBreakdown: { orderBy: { vatBasisPoints: 'asc' } } } },
         returns: { orderBy: { issuedAt: 'desc' } },
@@ -276,6 +296,19 @@ export async function readMerchantSale(
         nameEn: line.nameEn,
         productType: line.productType,
         unitPriceMinor: line.unitPriceMinor.toString(),
+        baseUnitPriceMinor: line.baseUnitPriceMinor.toString(),
+        modifierTotalMinor: line.modifierTotalMinor.toString(),
+        modifierSelections: line.modifierSelections.map((selection) => ({
+          groupId: selection.groupId,
+          groupRevision: selection.groupRevision.toString(),
+          groupCode: selection.groupCode,
+          groupNameAr: selection.groupNameAr,
+          optionId: selection.optionId,
+          optionRevision: selection.optionRevision.toString(),
+          optionCode: selection.optionCode,
+          optionNameAr: selection.optionNameAr,
+          priceDeltaMinor: selection.priceDeltaMinor.toString(),
+        })),
         vatBasisPoints: line.vatBasisPoints,
         quantityScaled: line.quantityScaled.toString(),
         grossMinor: line.grossMinor.toString(),

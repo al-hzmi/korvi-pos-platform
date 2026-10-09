@@ -69,6 +69,19 @@ export interface MerchantSaleDetail {
     readonly nameEn: string | null;
     readonly productType: string | null;
     readonly unitPriceMinor: string;
+    readonly baseUnitPriceMinor: string;
+    readonly modifierTotalMinor: string;
+    readonly modifierSelections: readonly {
+      readonly groupId: string;
+      readonly groupRevision: string;
+      readonly groupCode: string;
+      readonly groupNameAr: string;
+      readonly optionId: string;
+      readonly optionRevision: string;
+      readonly optionCode: string;
+      readonly optionNameAr: string;
+      readonly priceDeltaMinor: string;
+    }[];
     readonly vatBasisPoints: number;
     readonly quantityScaled: string;
     readonly grossMinor: string;

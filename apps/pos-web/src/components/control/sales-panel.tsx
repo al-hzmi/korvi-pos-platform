@@ -204,7 +204,25 @@ function SaleDetail({
                 <tbody className="divide-y divide-border">
                   {state.sale.lines.map((line) => (
                     <tr key={line.id}>
-                      <td className="px-3 py-3 font-medium">{line.nameAr}</td>
+                      <td className="px-3 py-3">
+                        <span className="font-medium">{line.nameAr}</span>
+                        {line.modifierSelections.length === 0 ? null : (
+                          <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                            <p>
+                              الأساسي: <Amount value={line.baseUnitPriceMinor} currency={state.sale.currency} />
+                              {' · '}الإضافات: <Amount value={line.modifierTotalMinor} currency={state.sale.currency} />
+                            </p>
+                            <ul aria-label="الإضافات التاريخية" className="space-y-0.5">
+                              {line.modifierSelections.map((selection) => (
+                                <li key={selection.optionId}>
+                                  {selection.groupNameAr}: {selection.optionNameAr}
+                                  {' · '}+<Amount value={selection.priceDeltaMinor} currency={state.sale.currency} />
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-3 font-mono text-xs" dir="ltr">
                         {line.sku}
                       </td>
