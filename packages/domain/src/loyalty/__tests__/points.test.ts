@@ -21,9 +21,7 @@ describe('V2-6 non-cash loyalty points', () => {
 
   it('quotes redeemable value without claiming it is a payment or a VAT calculation', () => {
     expect(quotedLoyaltyRedemptionMinor(14n, 14n, policy)).toBe(140n);
-    expect(() => quotedLoyaltyRedemptionMinor(15n, 14n, policy)).toThrow(
-      InvalidLoyaltyPolicyError,
-    );
+    expect(() => quotedLoyaltyRedemptionMinor(15n, 14n, policy)).toThrow(InvalidLoyaltyPolicyError);
   });
 
   it('rejects negative inputs, invalid policies, and 64-bit overflow', () => {
@@ -42,11 +40,13 @@ describe('V2-6 non-cash loyalty points', () => {
   });
 
   it('derives balance exclusively from signed historical entries', () => {
-    expect(sumLoyaltyPoints([
-      { pointsDelta: 14n },
-      { pointsDelta: -6n },
-      { pointsDelta: -3n },
-      { pointsDelta: 6n },
-    ])).toBe(11n);
+    expect(
+      sumLoyaltyPoints([
+        { pointsDelta: 14n },
+        { pointsDelta: -6n },
+        { pointsDelta: -3n },
+        { pointsDelta: 6n },
+      ]),
+    ).toBe(11n);
   });
 });

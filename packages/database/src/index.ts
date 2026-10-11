@@ -673,7 +673,6 @@ export type {
 } from './zatca/fatoora-credential-repository.js';
 export { createZatcaInvoiceSubmissionRepository } from './zatca/invoice-submission-repository.js';
 
- 
 // V2-6 policy, explicit consent and read-only ledger surface. No HTTP endpoint
 // may issue arbitrary loyalty points: sale/return authority must own writes.
 export {

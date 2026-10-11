@@ -31,10 +31,7 @@ export function validateLoyaltyPointsPolicy(policy: LoyaltyPointsPolicy): void {
 }
 
 /** Earn on server-finalized, eligible halalas, never a client-estimated total. */
-export function earnedLoyaltyPoints(
-  eligibleMinor: bigint,
-  policy: LoyaltyPointsPolicy,
-): bigint {
+export function earnedLoyaltyPoints(eligibleMinor: bigint, policy: LoyaltyPointsPolicy): bigint {
   validateLoyaltyPointsPolicy(policy);
   boundedInteger(eligibleMinor, false);
   const points = (eligibleMinor * policy.earnNumerator) / policy.earnDenominator;
@@ -57,8 +54,6 @@ export function quotedLoyaltyRedemptionMinor(
   return minor;
 }
 
-export function sumLoyaltyPoints(
-  entries: readonly { readonly pointsDelta: bigint }[],
-): bigint {
+export function sumLoyaltyPoints(entries: readonly { readonly pointsDelta: bigint }[]): bigint {
   return entries.reduce((sum, entry) => sum + entry.pointsDelta, 0n);
 }
