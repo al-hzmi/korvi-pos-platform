@@ -69,8 +69,10 @@ export function isCheckoutQueuePayload(value: unknown): value is CheckoutRequest
     !isUuidV7(value.terminalId) ||
     typeof value.expectedShiftId !== 'string' ||
     !isUuidV7(value.expectedShiftId) ||
-    !(value.customerId === undefined ||
-      (typeof value.customerId === 'string' && isUuidV7(value.customerId))) ||
+    !(
+      value.customerId === undefined ||
+      (typeof value.customerId === 'string' && isUuidV7(value.customerId))
+    ) ||
     !(
       value.orderType === undefined ||
       value.orderType === 'dine-in' ||

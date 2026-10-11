@@ -62,7 +62,10 @@ export { createRetailPricingRepository } from './repositories/retail-pricing-rep
 export { createInventoryRepository } from './repositories/inventory-repository.js';
 export { createCustomerRepository } from './repositories/customer-repository.js';
 export { createShiftRepository } from './repositories/shift-repository.js';
-export { createSaleRepository, CustomerUnavailableForSaleError } from './repositories/sale-repository.js';
+export {
+  createSaleRepository,
+  CustomerUnavailableForSaleError,
+} from './repositories/sale-repository.js';
 export { createPromotionRepository } from './repositories/promotion-repository.js';
 export {
   PromotionAdminRefusedError,

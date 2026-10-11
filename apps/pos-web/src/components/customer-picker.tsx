@@ -75,7 +75,11 @@ export function CustomerPicker({
           اختيار العميل يربط الفاتورة به. اكتساب النقاط يتم بعد اعتماد البيع، للمشتركين فقط.
         </p>
       </div>
-      {notice !== null && <p className="text-xs text-destructive" role="alert">{notice}</p>}
+      {notice !== null && (
+        <p className="text-xs text-destructive" role="alert">
+          {notice}
+        </p>
+      )}
       {customerId !== null ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 text-sm">
@@ -84,7 +88,9 @@ export function CustomerPicker({
               <p className="text-xs text-muted-foreground">حالة النقاط غير مؤكدة</p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                {ledger.enrolled ? `مشترك · الرصيد ${ledger.balancePoints} نقطة` : 'غير مشترك ببرنامج الولاء'}
+                {ledger.enrolled
+                  ? `مشترك · الرصيد ${ledger.balancePoints} نقطة`
+                  : 'غير مشترك ببرنامج الولاء'}
               </p>
             )}
           </div>

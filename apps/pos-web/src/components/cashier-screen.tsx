@@ -950,8 +950,12 @@ export function CashierScreen({
     if (!payment.valid) return;
     // Customer identity is online authority; never capture a new customer-
     // linked sale offline against an unverified account.
-    if (selectedCustomerId !== null && pricingStatus !== 'ready' &&
-      activeRestaurantOrderIdentity === null) return;
+    if (
+      selectedCustomerId !== null &&
+      pricingStatus !== 'ready' &&
+      activeRestaurantOrderIdentity === null
+    )
+      return;
     const directRestaurantSale = quickService && activeRestaurantOrderIdentity === null;
     if (
       (directRestaurantSale || !quickService) &&

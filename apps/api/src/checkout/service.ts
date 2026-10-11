@@ -586,7 +586,10 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       const scope: TenantScope = { tenantId: brandTenantId(input.principal.tenantId) };
       if (input.lines.length === 0) return fail('empty-cart');
 
-      if (input.customerId !== undefined && !input.principal.permissions.includes('customer.read')) {
+      if (
+        input.customerId !== undefined &&
+        !input.principal.permissions.includes('customer.read')
+      ) {
         return fail('customer-not-authorized');
       }
       const priceContext: PriceContext = input.priceContext ?? 'retail';
