@@ -3,11 +3,11 @@ import {
   createPrismaClient,
   createRestaurantModifierGroup,
   createRestaurantModifierOption,
-  resolveRestaurantModifierPolicyWithin,
   setRestaurantProductModifierGroups,
   updateRestaurantModifierOption,
   withTenant,
 } from '../index.js';
+import { resolveRestaurantModifierPolicyWithin } from '../restaurant/modifier-policy.js';
 import { tenantId as brandTenantId } from '@korvi/domain';
 import type { PrismaClient } from '../index.js';
 import type { TenantScope } from '@korvi/domain';
@@ -53,7 +53,13 @@ describe.skipIf(url === '')('restaurant modifier live tenant and concurrency aut
         data: { tenantId: A.tenant, vertical: 'restaurant', updatedAt: new Date() },
       });
       await tx.branch.create({
-        data: { id: A.branch, tenantId: A.tenant, code: '01', nameAr: 'الفرع', updatedAt: new Date() },
+        data: {
+          id: A.branch,
+          tenantId: A.tenant,
+          code: '01',
+          nameAr: 'الفرع',
+          updatedAt: new Date(),
+        },
       });
       await tx.user.create({
         data: {
@@ -148,30 +154,30 @@ describe.skipIf(url === '')('restaurant modifier live tenant and concurrency aut
   it('serializes preview snapshots against merchant writes and refuses stale concurrent revisions', async () => {
     let release!: () => void;
     let markReady!: () => void;
-    const ready = new Promise<void>((resolve) => { markReady = resolve; });
-    const untilRelease = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve;
+    });
+    const untilRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
 
     const heldRead = withTenant(prisma, A.tenant, async (tx) => {
-      const snapshot = await resolveRestaurantModifierPolicyWithin(
-        tx,
-        scope,
-        A.product,
-        1250n,
-        [optionId],
-      );
+      const snapshot = await resolveRestaurantModifierPolicyWithin(tx, scope, A.product, 1250n, [
+        optionId,
+      ]);
       markReady();
       await untilRelease;
       return snapshot;
     });
     await ready;
     try {
-      const attempt = await withTenant(second, A.tenant, (tx) =>
-        tx.$queryRaw<{ acquired: boolean }[]>`
+      const attempt = await withTenant(second, A.tenant, async (tx) => {
+        return tx.$queryRaw<{ acquired: boolean }[]>`
           SELECT pg_try_advisory_xact_lock(
             hashtextextended('korvi:restaurant-menu-policy:' || ${A.tenant}::text, 0)
           ) AS "acquired"
-        `,
-      );
+        `;
+      });
       expect(attempt[0]?.acquired).toBe(false);
     } finally {
       release();
