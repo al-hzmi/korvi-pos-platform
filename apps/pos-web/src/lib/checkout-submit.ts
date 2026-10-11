@@ -87,7 +87,14 @@ export function runCheckout(
       ? {}
       : { expectedPricingHash: input.expectedPricingHash }),
     ...(input.offlineCaptured === undefined ? {} : { offlineCaptured: input.offlineCaptured }),
-    lines: cartToRequestLines(input.lines),
+    // Direct sales carry selected modifier IDs for commit-time policy pricing.
+    // Open-order settlement MUST omit them: its existing immutable server
+    // order-line snapshot, not current menu policy, is the only authority.
+    lines: cartToRequestLines(
+      input.restaurantOrderId === undefined
+        ? input.lines
+        : input.lines.map(({ selectedModifierOptionIds: _modifierIds, ...line }) => line),
+    ),
   }));
   if (intent === null) return Promise.resolve();
   if (intent.lines.length === 0) {

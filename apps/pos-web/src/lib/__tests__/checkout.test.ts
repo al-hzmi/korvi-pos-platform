@@ -213,6 +213,35 @@ describe('an answer that never arrived', () => {
     expect(run.minted()).toBe(1);
   });
 
+  it('does not re-submit modifier identities when settling an immutable open restaurant order', async () => {
+    const sent: CheckoutIntent[] = [];
+    const flight = createCheckoutFlight();
+    await runCheckout(
+      {
+        checkout: async (intent) => {
+          sent.push(intent);
+          return { sale: SALE, receipt: RECEIPT, replayed: false };
+        },
+      },
+      flight,
+      {
+        terminalId: 'tm1',
+        restaurantOrderId: 'order-open-1',
+        expectedRestaurantOrderRevision: '2',
+        orderType: 'takeaway',
+        cashReceivedMinor: '5000',
+        lines: [{ ...MILK, selectedModifierOptionIds: ['option-large'] }],
+      },
+      () => undefined,
+      () => undefined,
+      () => 'op-open',
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.restaurantOrderId).toBe('order-open-1');
+    expect(sent[0]?.expectedRestaurantOrderRevision).toBe('2');
+    expect(sent[0]?.lines).toEqual([{ productId: 'p-milk', quantityScaled: '2000' }]);
+  });
+
   it('treats a checkout timeout exactly as it treats a lost connection', async () => {
     const run = harness(() => Promise.reject(new ApiError(0, 'timeout', null)));
     await run.submit(BASKET);
