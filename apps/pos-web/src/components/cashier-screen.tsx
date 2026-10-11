@@ -6,6 +6,7 @@ import { Button, CardSurface } from '@korvi/ui';
 import { TopBar } from './top-bar';
 import { ProductPanel } from './product-panel';
 import { CartPanel } from './cart-panel';
+import { CustomerPicker } from './customer-picker';
 import { CashierReturnWorkflow } from './cashier-return-workflow';
 import { NoReceiptExchangeWorkflow } from './no-receipt-exchange-workflow';
 import { CheckoutPanel } from './checkout-panel';
@@ -166,6 +167,7 @@ export function CashierScreen({
   const offlineSync = useOfflineSaleSync(api, queuePartition, onExpired, offlineStoreProtector);
   const [cash, setCash] = useState('');
   const [couponCode, setCouponCode] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [priceContext, setPriceContext] = useState<'retail' | 'wholesale'>('retail');
   const [authoritativePricing, setAuthoritativePricing] = useState<CheckoutPreviewResponse | null>(
     null,
@@ -422,6 +424,7 @@ export function CashierScreen({
       cart.dispatch({ type: 'replace', lines: durableState.draft.lines });
       setCash(durableState.draft.cash);
       setCouponCode(durableState.draft.couponCode ?? '');
+      setSelectedCustomerId(durableState.draft.customerId ?? null);
       setPriceContext(
         durableState.draft.priceContext === 'wholesale' && canSelectPriceContext
           ? 'wholesale'
@@ -501,6 +504,7 @@ export function CashierScreen({
       cart.lines.length === 0 &&
       cash === '' &&
       couponCode === '' &&
+      selectedCustomerId === null &&
       activeRestaurantOrderIdentity === null
     ) {
       clearDraft();
@@ -508,6 +512,7 @@ export function CashierScreen({
     }
     persistDraft({
       lines: cart.lines,
+      ...(selectedCustomerId === null ? {} : { customerId: selectedCustomerId }),
       cash,
       paymentMode,
       ...(paymentMode === 'mixed' ? { electronicTenders } : {}),
@@ -528,6 +533,7 @@ export function CashierScreen({
     cart.lines,
     cash,
     couponCode,
+    selectedCustomerId,
     priceContext,
     paymentMode,
     electronicTenders,
@@ -617,6 +623,7 @@ export function CashierScreen({
     cart.dispatch({ type: 'clear' });
     setCash('');
     setCouponCode('');
+    setSelectedCustomerId(null);
     setPriceContext('retail');
     setPaymentMode('cash');
     setElectronicTenders([emptyElectronicTender()]);
@@ -666,6 +673,7 @@ export function CashierScreen({
           checkout.newSale();
           cart.dispatch({ type: 'clear' });
           setCash('');
+          setSelectedCustomerId(null);
           setPaymentMode('cash');
           setElectronicTenders([emptyElectronicTender()]);
           setOrderType('takeaway');
@@ -940,6 +948,10 @@ export function CashierScreen({
 
   const submit = useCallback(() => {
     if (!payment.valid) return;
+    // Customer identity is online authority; never capture a new customer-
+    // linked sale offline against an unverified account.
+    if (selectedCustomerId !== null && pricingStatus !== 'ready' &&
+      activeRestaurantOrderIdentity === null) return;
     const directRestaurantSale = quickService && activeRestaurantOrderIdentity === null;
     if (
       (directRestaurantSale || !quickService) &&
@@ -958,6 +970,7 @@ export function CashierScreen({
 
     checkout.submit({
       terminalId: terminal.id,
+      ...(selectedCustomerId === null ? {} : { customerId: selectedCustomerId }),
       expectedShiftId: shift.id,
       ...(quickService ? { orderType } : {}),
       ...(quickService && orderType === 'dine-in' && tableId !== null ? { tableId } : {}),
@@ -982,6 +995,7 @@ export function CashierScreen({
     checkout,
     terminal.id,
     shift.id,
+    selectedCustomerId,
     quickService,
     orderType,
     tableId,
@@ -1256,6 +1270,13 @@ export function CashierScreen({
                   onChange={setTableId}
                 />
               ) : null}
+              {principal.permissions.includes('customer.read') && (
+                <CustomerPicker
+                  customerId={selectedCustomerId}
+                  disabled={locked}
+                  onChange={setSelectedCustomerId}
+                />
+              )}
               <CartPanel
                 lines={cart.lines}
                 preview={preview}
