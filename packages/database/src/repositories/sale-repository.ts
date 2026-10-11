@@ -14,6 +14,7 @@ import {
   ShiftUnusableError,
 } from '../errors.js';
 import { resolveRestaurantModifierPolicyWithin } from '../restaurant/modifier-policy.js';
+import { earnLoyaltyWithin } from '../loyalty/settlement.js';
 import { RestaurantOrderRefusedError } from '../restaurant/orders.js';
 import { applyMovementWithin } from './inventory-repository.js';
 import { resolvePromotionCheckoutWithin } from './promotion-repository.js';
@@ -1439,6 +1440,10 @@ export async function recordSaleWithin(
       throw new RestaurantOrderRefusedError('stale-revision');
     }
   }
+
+  // Award only inside the same committed transaction as the finalized sale.
+  // Zero historical points for un-enrolled customers or inactive programs.
+  await earnLoyaltyWithin(tx, tenant, sale);
 
   const row = await loadSale(tx, tenant, { id: sale.id });
   if (row === null) {

@@ -5,6 +5,7 @@ import {
   newId,
 } from '@korvi/domain';
 import { withTenant } from '../tenant-context.js';
+import { reverseEarnedLoyaltyWithin } from '../loyalty/settlement.js';
 import {
   DatabaseError,
   OperationAlreadyRecordedError,
@@ -987,6 +988,17 @@ export function createReturnRepository(prisma: PrismaClient): ReturnRepository {
             },
           });
         }
+
+        // Compensate original loyalty earnings under the same sale-row lock
+        // and return transaction, based on the original sale's historic net.
+        await reverseEarnedLoyaltyWithin(tx, tenant, {
+          saleId: input.saleId,
+          returnId: input.returnId,
+          actorUserId: input.actorUserId,
+          branchId: input.branchId,
+          terminalId: input.terminalId,
+          issuedAt,
+        });
 
         const row = await loadReturn(tx, tenant, { id: input.returnId });
         if (row === null) {
