@@ -114,6 +114,9 @@ model Tenant {
   purchaseReceipts              PurchaseReceipt[]
   purchaseReceiptLines          PurchaseReceiptLine[]
   customers                     Customer[]
+  loyaltyProgram                LoyaltyProgram?
+  loyaltyEnrollments            LoyaltyEnrollment[]
+  loyaltyPointEntries           LoyaltyPointEntry[]
   shifts                        Shift[]
   cashMovements                 CashMovement[]
   sales                         Sale[]
@@ -1994,6 +1997,8 @@ model Customer {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sales  Sale[]
+  loyaltyEnrollment LoyaltyEnrollment?
+  loyaltyPointEntries LoyaltyPointEntry[]
 
   @@unique([tenantId, phone])
   /// The tenant-consistency key. A child row references this table by
@@ -2145,6 +2150,7 @@ model Sale {
   noReceiptExchangeCase NoReceiptExchangeCase?
   promotionApplications SalePromotionApplication[]
   couponRedemptions CouponRedemption[]
+  loyaltyPointEntries LoyaltyPointEntry[]
 
   @@unique([tenantId, operationId])
   @@unique([tenantId, branchId, sequence])
@@ -2641,6 +2647,7 @@ model Return {
   actor    User         @relation(fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: NoAction)
   lines    ReturnLine[]
   refunds  Refund[]
+  loyaltyPointEntries LoyaltyPointEntry[]
 
   @@unique([tenantId, operationId])
   @@unique([tenantId, branchId, sequence])
@@ -3107,4 +3114,85 @@ model ZatcaInvoiceSubmission {
   @@index([tenantId, state, queuedAt], map: "zatca_invoice_submissions_tenantId_state_queuedAt_idx")
   @@index([tenantId, terminalId, state], map: "zatca_invoice_submissions_tenantId_terminalId_state_idx")
   @@map("zatca_invoice_submissions")
+}
+
+ 
+// V2-6 — Points are a non-cash loyalty instrument. The ledger, not a customer
+// balance field, is authoritative. No credit, gift-card or wallet liability.
+model LoyaltyProgram {
+  id        String @id @db.Uuid
+  tenantId  String @unique @db.Uuid
+  status    String @default("draft")
+  revision  BigInt @default(1)
+  nameAr    String
+  earnNumerator BigInt
+  earnDenominator BigInt
+  redeemValueMinorPerPoint BigInt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollments LoyaltyEnrollment[]
+  entries LoyaltyPointEntry[]
+
+  @@unique([tenantId, id])
+  @@map("loyalty_programs")
+}
+
+model LoyaltyEnrollment {
+  id        String @id @db.Uuid
+  tenantId  String @db.Uuid
+  programId String @db.Uuid
+  customerId String @db.Uuid
+  consentedAt DateTime
+  consentedByUserId String @db.Uuid
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  program LoyaltyProgram @relation(fields: [tenantId, programId], references: [tenantId, id], onDelete: NoAction)
+  customer Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
+  entries LoyaltyPointEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, customerId])
+  @@index([tenantId, programId, isActive])
+  @@map("loyalty_enrollments")
+}
+
+model LoyaltyPointEntry {
+  id String @id @db.Uuid
+  tenantId String @db.Uuid
+  programId String @db.Uuid
+  enrollmentId String @db.Uuid
+  customerId String @db.Uuid
+  operationId String
+  kind String
+  pointsDelta BigInt
+  programRevision BigInt
+  earnNumerator BigInt
+  earnDenominator BigInt
+  redeemValueMinorPerPoint BigInt
+  eligibleMinor BigInt?
+  saleId String? @db.Uuid
+  returnId String? @db.Uuid
+  reversesEntryId String? @db.Uuid
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  program LoyaltyProgram @relation(fields: [tenantId, programId], references: [tenantId, id], onDelete: NoAction)
+  enrollment LoyaltyEnrollment @relation(fields: [tenantId, enrollmentId], references: [tenantId, id], onDelete: NoAction)
+  customer Customer @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
+  sale Sale? @relation(fields: [tenantId, saleId], references: [tenantId, id], onDelete: NoAction)
+  return Return? @relation(fields: [tenantId, returnId], references: [tenantId, id], onDelete: NoAction)
+  reversedEntry LoyaltyPointEntry? @relation("LoyaltyReversal", fields: [tenantId, reversesEntryId], references: [tenantId, id], onDelete: NoAction)
+  reversals LoyaltyPointEntry[] @relation("LoyaltyReversal")
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, operationId])
+  @@index([tenantId, enrollmentId, occurredAt, id])
+  @@index([tenantId, saleId, kind])
+  @@index([tenantId, returnId, kind])
+  @@map("loyalty_point_entries")
 }
