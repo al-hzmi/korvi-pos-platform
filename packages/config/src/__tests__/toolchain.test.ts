@@ -101,6 +101,34 @@ describe('dependency pins', () => {
     const ci = read('.github/workflows/ci.yml');
     expect(ci).toContain('registry.npmjs.org');
   });
+
+  it('keeps the Vitest runner and V8 coverage provider aligned in the lockfile', () => {
+    const lock = json('package-lock.json') as {
+      packages: Record<string, { version?: string }>;
+    };
+    const version = devDeps.vitest;
+    expect(version).toBeDefined();
+    expect(devDeps['@vitest/coverage-v8']).toBe(version);
+    expect(lock.packages['node_modules/vitest']?.version).toBe(version);
+    expect(lock.packages['node_modules/@vitest/coverage-v8']?.version).toBe(version);
+  });
+
+  it('resolves every MySQL2 copy to the exact security override', () => {
+    const overrides = rootPkg.overrides as { mysql2?: string };
+    const version = overrides.mysql2;
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const lock = json('package-lock.json') as {
+      packages: Record<string, { version?: string }>;
+    };
+    const copies = Object.entries(lock.packages).filter(([path]) =>
+      path.endsWith('node_modules/mysql2'),
+    );
+    expect(copies.length).toBeGreaterThan(0);
+    for (const [path, entry] of copies) {
+      expect(entry.version, path).toBe(version);
+      expect(json(`${path}/package.json`).version, `${path} installed`).toBe(version);
+    }
+  });
 });
 
 describe('supply-chain posture', () => {
@@ -125,5 +153,65 @@ describe('supply-chain posture', () => {
 
   it('grants least privilege by default', () => {
     expect(read('.github/workflows/ci.yml')).toMatch(/permissions:\s+contents: read/);
+  });
+});
+
+describe('npm package-manager authority', () => {
+  const guard = 'node scripts/verify-package-manager.mjs';
+
+  it('declares one exact npm binary version', () => {
+    expect(json('package.json').packageManager).toMatch(/^npm@\d+\.\d+\.\d+$/);
+  });
+
+  it('guards every shipping install before npm ci can run', () => {
+    for (const path of [
+      '.github/workflows/ci.yml',
+      '.github/workflows/strike-5c-postgres-live.yml',
+      'scripts/deploy/build.sh',
+    ]) {
+      const text = read(path);
+      expect(text, path).toContain(guard);
+      expect(text.indexOf(guard), path).toBeLessThan(text.indexOf('npm ci'));
+    }
+  });
+
+  it('makes the local verify gate reject package-manager drift before npm tasks', () => {
+    const verify = read('scripts/verify.sh');
+    expect(verify).toContain(guard);
+    expect(verify.indexOf(guard)).toBeLessThan(verify.indexOf('npm run'));
+  });
+});
+
+describe('Prisma / pg transaction-driver compatibility', () => {
+  const databasePkg = json('packages/database/package.json') as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const deps = databasePkg.dependencies ?? {};
+  const devDeps = databasePkg.devDependencies ?? {};
+
+  it('keeps the Prisma CLI, client and PostgreSQL adapter exactly aligned', () => {
+    const versions = [devDeps.prisma, deps['@prisma/client'], deps['@prisma/adapter-pg']];
+    for (const version of versions) {
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    }
+    expect(new Set(versions).size).toBe(1);
+  });
+
+  it('holds pg on major 8 until ADR-0027 compatibility evidence permits pg 9', () => {
+    const pg = deps.pg ?? '';
+    expect(pg).toMatch(/^8\.\d+\.\d+$/);
+    expect(read('docs/decisions/ADR-0027-prisma-pg-transaction-driver-compatibility.md')).toContain(
+      'pg 9',
+    );
+  });
+
+  it('locks the installed pg copy to the same direct pin', () => {
+    const pg = deps.pg;
+    const lock = json('package-lock.json') as {
+      packages: Record<string, { version?: string }>;
+    };
+    expect(pg).toBeDefined();
+    expect(lock.packages['node_modules/pg']?.version).toBe(pg);
   });
 });

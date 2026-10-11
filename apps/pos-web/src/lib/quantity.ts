@@ -21,6 +21,10 @@ export const QUANTITY_STEP = QUANTITY_SCALE.toString();
 
 const WHOLE = /^\d{1,9}$/;
 const DECIMAL = /^\d{1,9}(?:\.\d{0,3})?$/;
+const INVENTORY_WHOLE = /^\d{1,15}$/;
+const INVENTORY_DECIMAL = /^\d{1,15}(?:\.\d{0,3})?$/;
+const SIGNED_WHOLE = /^[+-]?\d{1,15}$/;
+const SIGNED_DECIMAL = /^[+-]?\d{1,15}(?:\.\d{0,3})?$/;
 
 function normalize(input: string): string {
   const trimmed = input.trim();
@@ -48,6 +52,71 @@ export function parseQuantityToScaled(input: string, productType: ProductType): 
   // Zero is a line nobody meant to add, and the server rejects it anyway.
   if (scaled <= 0n) return unparsed('not-positive');
   return parsed(scaled.toString());
+}
+
+/** A physical count may legitimately observe an empty shelf. */
+export function parseCountedQuantityToScaled(
+  input: string,
+  productType: ProductType,
+): Parsed<string> {
+  const trimmed = input.trim();
+  if (trimmed === '') return unparsed('empty');
+
+  if (productType === 'unit') {
+    if (!INVENTORY_WHOLE.test(trimmed)) {
+      return unparsed(trimmed.includes('.') ? 'precision' : 'format');
+    }
+  } else if (!INVENTORY_DECIMAL.test(trimmed)) {
+    return unparsed(/^\d+\.\d{4,}$/.test(trimmed) ? 'precision' : 'format');
+  }
+
+  try {
+    return parsed(quantityFromDecimalString(normalize(trimmed)).toString());
+  } catch {
+    return unparsed('format');
+  }
+}
+
+/** A positive inventory movement, with the database's full scaled precision. */
+export function parseInventoryQuantityToScaled(
+  input: string,
+  productType: ProductType,
+): Parsed<string> {
+  const parsedQuantity = parseCountedQuantityToScaled(input, productType);
+  if (!parsedQuantity.ok) return parsedQuantity;
+  return BigInt(parsedQuantity.value) === 0n ? unparsed('not-positive') : parsedQuantity;
+}
+
+/**
+ * Merchant adjustment intent is signed, but it is still exact decimal text.
+ * The sign is separated before using the shared non-negative quantity parser;
+ * no float participates and negative zero is refused with every other zero
+ * delta.
+ */
+export function parseAdjustmentQuantityToScaled(
+  input: string,
+  productType: ProductType,
+): Parsed<string> {
+  const trimmed = input.trim();
+  if (trimmed === '') return unparsed('empty');
+
+  if (productType === 'unit') {
+    if (!SIGNED_WHOLE.test(trimmed)) {
+      return unparsed(trimmed.includes('.') ? 'precision' : 'format');
+    }
+  } else if (!SIGNED_DECIMAL.test(trimmed)) {
+    return unparsed(/^[+-]?\d+\.\d{4,}$/.test(trimmed) ? 'precision' : 'format');
+  }
+
+  const negative = trimmed.startsWith('-');
+  const magnitude = trimmed.startsWith('-') || trimmed.startsWith('+') ? trimmed.slice(1) : trimmed;
+  try {
+    const scaled = quantityFromDecimalString(normalize(magnitude));
+    if (scaled === 0n) return unparsed('zero');
+    return parsed((negative ? -scaled : scaled).toString());
+  } catch {
+    return unparsed('format');
+  }
 }
 
 /** "2000" -> "2", "1250" -> "1.25". Trailing zeros are noise on a receipt. */

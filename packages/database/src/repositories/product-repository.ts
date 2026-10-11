@@ -38,6 +38,8 @@ interface ProductRow {
   id: string;
   tenantId: string;
   categoryId: string | null;
+  imageUrl: string | null;
+  category: { nameAr: string; sortOrder: number; isActive: boolean } | null;
   sku: string;
   nameAr: string;
   nameEn: string | null;
@@ -47,6 +49,7 @@ interface ProductRow {
   vatBasisPoints: number;
   trackInventory: boolean;
   isActive: boolean;
+  lotPolicy: { trackingMode: string } | null;
   barcodes: BarcodeRow[];
 }
 
@@ -56,6 +59,9 @@ function toDomain(scope: TenantScope, row: ProductRow): Product {
     id: row.id,
     tenantId: scoped(scope, row.tenantId),
     categoryId: row.categoryId,
+    categoryNameAr: row.category?.isActive === true ? row.category.nameAr : null,
+    categorySortOrder: row.category?.isActive === true ? row.category.sortOrder : null,
+    imageUrl: row.imageUrl,
     sku: row.sku,
     nameAr: row.nameAr,
     nameEn: row.nameEn,
@@ -66,12 +72,15 @@ function toDomain(scope: TenantScope, row: ProductRow): Product {
     primaryBarcode: primary === undefined ? null : primary.barcode,
     barcodes: row.barcodes.map((candidate) => candidate.barcode),
     trackInventory: row.trackInventory,
+    lotTrackingRequired: row.lotPolicy?.trackingMode === 'required',
     isActive: row.isActive,
   };
 }
 
-const WITH_BARCODES = {
+const WITH_CATALOGUE_SURFACE = {
   barcodes: { select: { barcode: true, isPrimary: true }, orderBy: { isPrimary: 'desc' } },
+  category: { select: { nameAr: true, sortOrder: true, isActive: true } },
+  lotPolicy: { select: { trackingMode: true } },
 } as const;
 
 export function createProductRepository(prisma: PrismaClient): ProductRepository {
@@ -80,7 +89,7 @@ export function createProductRepository(prisma: PrismaClient): ProductRepository
       return withTenant(prisma, scope.tenantId, async (tx) => {
         const row = await tx.product.findFirst({
           where: { id, tenantId: tenantParam(scope) },
-          include: WITH_BARCODES,
+          include: WITH_CATALOGUE_SURFACE,
         });
         return row === null ? null : toDomain(scope, row);
       });
@@ -90,7 +99,7 @@ export function createProductRepository(prisma: PrismaClient): ProductRepository
       return withTenant(prisma, scope.tenantId, async (tx) => {
         const row = await tx.product.findFirst({
           where: { sku, tenantId: tenantParam(scope) },
-          include: WITH_BARCODES,
+          include: WITH_CATALOGUE_SURFACE,
         });
         return row === null ? null : toDomain(scope, row);
       });
@@ -106,7 +115,7 @@ export function createProductRepository(prisma: PrismaClient): ProductRepository
             tenantId: tenantParam(scope),
             barcodes: { some: { barcode, tenantId: tenantParam(scope) } },
           },
-          include: WITH_BARCODES,
+          include: WITH_CATALOGUE_SURFACE,
         });
         return row === null ? null : toDomain(scope, row);
       });
@@ -130,7 +139,7 @@ export function createProductRepository(prisma: PrismaClient): ProductRepository
               isActive: true,
               OR: [{ barcodes: { some: { tenantId: tenant, barcode: term } } }, { sku: term }],
             },
-            include: WITH_BARCODES,
+            include: WITH_CATALOGUE_SURFACE,
           });
           if (scanned !== null) return [toDomain(scope, scanned)];
         }
@@ -157,7 +166,7 @@ export function createProductRepository(prisma: PrismaClient): ProductRepository
           },
           orderBy: [{ nameAr: 'asc' }],
           take: limit,
-          include: WITH_BARCODES,
+          include: WITH_CATALOGUE_SURFACE,
         });
         return rows.map((row) => toDomain(scope, row));
       });
@@ -169,7 +178,7 @@ export function createProductRepository(prisma: PrismaClient): ProductRepository
           where: { tenantId: tenantParam(scope) },
           orderBy: { sku: 'asc' },
           take: limit,
-          include: WITH_BARCODES,
+          include: WITH_CATALOGUE_SURFACE,
         });
         return rows.map((row) => toDomain(scope, row));
       });

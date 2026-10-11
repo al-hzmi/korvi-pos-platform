@@ -6,6 +6,9 @@ set -euo pipefail
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$1"; }
 
+step "Package manager"
+node scripts/verify-package-manager.mjs
+
 step "Dependency pins"
 node scripts/verify-versions.mjs
 

@@ -10,7 +10,7 @@ import {
   submitDisabled,
 } from '../checkout';
 import { describeFailure } from '../failures';
-import type { CheckoutResponse, SaleSummary } from '../api-types';
+import type { CheckoutResponse, FiscalReceipt, SaleSummary } from '../api-types';
 import type { CartLine } from '../cart';
 import type { CheckoutEvent, CheckoutState } from '../checkout';
 import type { CheckoutIntent } from '../checkout-flight';
@@ -32,6 +32,23 @@ const SALE: SaleSummary = {
   totalMinor: '2300',
   cashReceivedMinor: '5000',
   changeMinor: '2700',
+};
+
+const RECEIPT: FiscalReceipt = {
+  invoiceId: 'invoice-1',
+  invoiceNumber: SALE.invoiceNumber,
+  issuedAt: SALE.issuedAt,
+  currency: SALE.currency,
+  sellerName: 'Merchant',
+  vatRegistrationNumber: '300000000000003',
+  lines: [],
+  netMinor: SALE.netMinor,
+  vatMinor: SALE.vatMinor,
+  totalMinor: SALE.totalMinor,
+  invoiceHashBase64: 'invoice-hash-base64',
+  qrCodeBase64: 'phase2-qr-base64',
+  fiscalizationMode: 'production',
+  disclaimer: null,
 };
 
 const MILK: CartLine = {
@@ -123,7 +140,7 @@ describe('two submits in one tick', () => {
     expect(run.sent).toHaveLength(1);
     expect(run.minted()).toBe(1);
 
-    pending.resolve({ sale: SALE, replayed: false });
+    pending.resolve({ sale: SALE, receipt: RECEIPT, replayed: false });
     await Promise.all([first, second]);
 
     expect(run.sent).toHaveLength(1);
@@ -142,7 +159,7 @@ describe('two submits in one tick', () => {
 
     expect(run.sent).toHaveLength(1);
     expect(run.sent[0]?.cashReceivedMinor).toBe('5000');
-    pending.resolve({ sale: SALE, replayed: false });
+    pending.resolve({ sale: SALE, receipt: RECEIPT, replayed: false });
   });
 });
 
@@ -169,6 +186,60 @@ describe('an answer that never arrived', () => {
     expect(run.sent[1]?.cashReceivedMinor).toBe('5000');
     expect(run.sent[1]?.lines).toEqual([{ productId: 'p-milk', quantityScaled: '2000' }]);
     expect(run.minted()).toBe(1);
+  });
+
+  it('freezes governed restaurant option identities and replays the identical commercial line', async () => {
+    const run = harness(() => Promise.reject(new ApiError(0, 'network', null)));
+    const selectedModifierOptionIds = ['option-large'];
+    const basket = {
+      ...BASKET,
+      lines: [{ ...MILK, selectedModifierOptionIds }],
+    };
+
+    await run.submit(basket);
+    expect(run.sent[0]?.lines).toEqual([
+      { productId: 'p-milk', quantityScaled: '2000', selectedModifierOptionIds: ['option-large'] },
+    ]);
+    const optionSnapshot = run.flight.pending()?.lines[0]?.selectedModifierOptionIds;
+    expect(Object.isFrozen(optionSnapshot)).toBe(true);
+    selectedModifierOptionIds.push('option-tampered');
+    expect(() => {
+      (optionSnapshot as string[])[0] = 'option-tampered';
+    }).toThrow(TypeError);
+
+    await run.submit(basket);
+    expect(run.sent[1]).toEqual(run.sent[0]);
+    expect(run.sent[1]?.lines[0]?.selectedModifierOptionIds).toEqual(['option-large']);
+    expect(run.minted()).toBe(1);
+  });
+
+  it('does not re-submit modifier identities when settling an immutable open restaurant order', async () => {
+    const sent: CheckoutIntent[] = [];
+    const flight = createCheckoutFlight();
+    await runCheckout(
+      {
+        checkout: async (intent) => {
+          sent.push(intent);
+          return { sale: SALE, receipt: RECEIPT, replayed: false };
+        },
+      },
+      flight,
+      {
+        terminalId: 'tm1',
+        restaurantOrderId: 'order-open-1',
+        expectedRestaurantOrderRevision: '2',
+        orderType: 'takeaway',
+        cashReceivedMinor: '5000',
+        lines: [{ ...MILK, selectedModifierOptionIds: ['option-large'] }],
+      },
+      () => undefined,
+      () => undefined,
+      () => 'op-open',
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.restaurantOrderId).toBe('order-open-1');
+    expect(sent[0]?.expectedRestaurantOrderRevision).toBe('2');
+    expect(sent[0]?.lines).toEqual([{ productId: 'p-milk', quantityScaled: '2000' }]);
   });
 
   it('treats a checkout timeout exactly as it treats a lost connection', async () => {
@@ -204,7 +275,7 @@ describe('an answer that never arrived', () => {
       attempts += 1;
       return attempts === 1
         ? Promise.reject(new ApiError(0, 'network', null))
-        : Promise.resolve({ sale: SALE, replayed: true });
+        : Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: true });
     });
 
     await run.submit(BASKET);
@@ -214,6 +285,7 @@ describe('an answer that never arrived', () => {
     expect(state.phase).toBe('succeeded');
     expect(state.replayed).toBe(true);
     expect(state.attemptOutstanding).toBe(false);
+    expect(state.receipt).toEqual(RECEIPT);
   });
 });
 
@@ -230,7 +302,7 @@ describe('a refusal the server decided', () => {
     const run2 = harness((intent) =>
       intent.cashReceivedMinor === '5000'
         ? Promise.reject(new ApiError(422, 'insufficient-cash', null))
-        : Promise.resolve({ sale: SALE, replayed: false }),
+        : Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: false }),
     );
     await run2.submit(BASKET);
     await run2.submit({ ...BASKET, cashReceivedMinor: '9000' });
@@ -256,7 +328,7 @@ describe('a refusal the server decided', () => {
   });
 
   it('starts clean only when the cashier starts a new sale', async () => {
-    const run = harness(() => Promise.resolve({ sale: SALE, replayed: false }));
+    const run = harness(() => Promise.resolve({ sale: SALE, receipt: RECEIPT, replayed: false }));
     await run.submit(BASKET);
     expect(run.flight.pending()?.operationId).toBe('op-1');
 
@@ -324,9 +396,92 @@ describe('what the screen locks', () => {
   it('keeps the till locked on a completed sale until a new one is started', () => {
     const done = after([
       { type: 'submit', intent: INTENT },
-      { type: 'succeeded', sale: SALE, replayed: false },
+      { type: 'succeeded', sale: SALE, receipt: RECEIPT, replayed: false },
     ]);
     expect(intentLocked(done)).toBe(true);
+    expect(done.receipt).toEqual(RECEIPT);
     expect(checkoutReducer(done, { type: 'new-sale' })).toEqual(initialCheckoutState);
+  });
+});
+
+describe('mixed tender checkout flight', () => {
+  it('freezes and replays the exact tender composition after an ambiguous attempt', async () => {
+    const sent: CheckoutIntent[] = [];
+    const events: CheckoutEvent[] = [];
+    const flight = createCheckoutFlight();
+    let attempts = 0;
+    const api = {
+      checkout: async (intent: CheckoutIntent) => {
+        sent.push(intent);
+        attempts += 1;
+        if (attempts === 1) throw new ApiError(0, 'network', null);
+        return { sale: SALE, receipt: RECEIPT, replayed: true };
+      },
+    };
+    const input = {
+      terminalId: 'tm1',
+      lines: [MILK],
+      tenders: [
+        {
+          kind: 'electronic' as const,
+          amountMinor: '1300',
+          scheme: 'mada' as const,
+          reference: 'A1',
+        },
+        { kind: 'cash' as const, amountMinor: '1000' },
+      ],
+    };
+
+    await runCheckout(
+      api,
+      flight,
+      input,
+      (event) => events.push(event),
+      () => undefined,
+      () => 'op-mixed',
+    );
+    expect(flight.outstanding()).toBe(true);
+    expect(flight.pending()?.cashReceivedMinor).toBeUndefined();
+    expect(flight.pending()?.tenders).toEqual(input.tenders);
+
+    await runCheckout(
+      api,
+      flight,
+      {
+        ...input,
+        tenders: [{ kind: 'cash' as const, amountMinor: '9999' }],
+      },
+      (event) => events.push(event),
+      () => undefined,
+      () => 'must-not-mint',
+    );
+
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    expect(sent[1]?.tenders).toEqual(input.tenders);
+    expect(events.at(-1)?.type).toBe('succeeded');
+  });
+
+  it('deep-freezes tender evidence held for retry', () => {
+    const flight = createCheckoutFlight();
+    const intent = flight.begin(() => ({
+      operationId: 'op-mixed',
+      terminalId: 'tm1',
+      tenders: [
+        {
+          kind: 'electronic' as const,
+          amountMinor: '2300',
+          scheme: 'mada' as const,
+          reference: 'A1',
+        },
+      ],
+      lines: [{ productId: 'p-milk', quantityScaled: '2000' }],
+    }));
+    flight.settle('ambiguous');
+    const held = intent?.tenders?.[0] as { reference: string };
+    expect(() => {
+      held.reference = 'changed';
+    }).toThrow(TypeError);
+    expect(flight.pending()?.tenders?.[0]).toMatchObject({ reference: 'A1' });
   });
 });

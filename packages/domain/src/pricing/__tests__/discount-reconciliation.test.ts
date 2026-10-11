@@ -37,19 +37,24 @@ function reconciles(mode: PriceMode, input: Parameters<typeof priceCart>[0]): vo
     0n,
   );
   const lineShares = priced.lines.reduce((total, entry) => total + entry.lineDiscount.minor, 0n);
+  const promotionShares = priced.lines.reduce(
+    (total, entry) => total + entry.promotionDiscount.minor,
+    0n,
+  );
 
   // The parts are the whole. Not approximately.
   expect(basketShares).toBe(priced.basketDiscountTotal.minor);
   expect(lineShares).toBe(priced.lineDiscountTotal.minor);
+  expect(promotionShares).toBe(priced.promotionDiscountTotal.minor);
   expect(lineSum).toBe(priced.net.minor);
   expect(vatSum).toBe(priced.vat.minor);
   expect(priced.net.minor + priced.vat.minor).toBe(priced.total.minor);
 
   for (const entry of priced.lines) {
     expect(entry.net.minor).toBeGreaterThanOrEqual(0n);
-    expect(entry.lineDiscount.minor + entry.basketDiscount.minor).toBeLessThanOrEqual(
-      entry.gross.minor,
-    );
+    expect(
+      entry.lineDiscount.minor + entry.promotionDiscount.minor + entry.basketDiscount.minor,
+    ).toBeLessThanOrEqual(entry.gross.minor);
   }
 }
 

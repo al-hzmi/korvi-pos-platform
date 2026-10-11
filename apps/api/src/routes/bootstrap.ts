@@ -118,10 +118,17 @@ export function registerBootstrapRoutes(
       return reply.code(403).send(INVALID_CAPABILITY);
     }
 
-    // No session, no cookie, no principal. The new Owner signs in through the
-    // normal login path like everybody else; minting a session here would be a
-    // second way to become authenticated, on the one route reachable without
-    // being authenticated already.
-    return reply.code(204).send();
+    // No session, no cookie and no principal. Preserve the established 204
+    // success contract while giving the browser the minimum login identity it
+    // must show the newly-established Owner. The values are URI-encoded so the
+    // headers remain ASCII-safe, are emitted only after successful consumption,
+    // and contain no internal ids, roles or permissions.
+    return reply
+      .header('cache-control', 'no-store')
+      .header('x-korvi-tenant-slug', encodeURIComponent(result.tenant.slug))
+      .header('x-korvi-tenant-name', encodeURIComponent(result.tenant.name))
+      .header('x-korvi-owner-email', encodeURIComponent(result.email))
+      .code(204)
+      .send();
   });
 }

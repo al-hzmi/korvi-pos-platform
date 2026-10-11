@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://korvi.local/schemas/final-acquisition-evidence.schema.json",
+  "title": "Korvi Final Acquisition Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "canonicalBranch",
+    "canonicalSha",
+    "recordedAt",
+    "productionOperations",
+    "zatca",
+    "transactionHandoff",
+    "merchantPilot",
+    "reviewApprovals"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "canonicalBranch": { "const": "release/canonical-acquisition-v1" },
+    "canonicalSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "productionOperations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "realProductionEnvironment",
+        "stagingOrSynthetic",
+        "providerEvidenceRef",
+        "haFailoverEvidenceRef",
+        "backupRetentionEvidenceRef",
+        "restoreEvidenceRef",
+        "measuredRpoMinutes",
+        "measuredRtoMinutes",
+        "externalMonitoringEvidenceRef",
+        "alertDrillEvidenceRef",
+        "onCallAcknowledgementEvidenceRef",
+        "secretRotationEvidenceRef"
+      ],
+      "properties": {
+        "realProductionEnvironment": { "const": true },
+        "stagingOrSynthetic": { "const": false },
+        "providerEvidenceRef": { "type": "string", "minLength": 1 },
+        "haFailoverEvidenceRef": { "type": "string", "minLength": 1 },
+        "backupRetentionEvidenceRef": { "type": "string", "minLength": 1 },
+        "restoreEvidenceRef": { "type": "string", "minLength": 1 },
+        "measuredRpoMinutes": { "type": "number", "minimum": 0, "maximum": 15 },
+        "measuredRtoMinutes": { "type": "number", "minimum": 0, "maximum": 60 },
+        "externalMonitoringEvidenceRef": { "type": "string", "minLength": 1 },
+        "alertDrillEvidenceRef": { "type": "string", "minLength": 1 },
+        "onCallAcknowledgementEvidenceRef": { "type": "string", "minLength": 1 },
+        "secretRotationEvidenceRef": { "type": "string", "minLength": 1 }
+      }
+    },
+    "zatca": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "realProductionActivation",
+        "simulationUsed",
+        "hsmNonExportable",
+        "hsmSignVerifyEvidenceRef",
+        "merchantProductionIdentityEvidenceRef",
+        "productionCsidEvidenceRef",
+        "reportingClearanceEvidenceRef",
+        "reconciliationEvidenceRef",
+        "rotationRecoveryEvidenceRef"
+      ],
+      "properties": {
+        "realProductionActivation": { "const": true },
+        "simulationUsed": { "const": false },
+        "hsmNonExportable": { "const": true },
+        "hsmSignVerifyEvidenceRef": { "type": "string", "minLength": 1 },
+        "merchantProductionIdentityEvidenceRef": { "type": "string", "minLength": 1 },
+        "productionCsidEvidenceRef": { "type": "string", "minLength": 1 },
+        "reportingClearanceEvidenceRef": { "type": "string", "minLength": 1 },
+        "reconciliationEvidenceRef": { "type": "string", "minLength": 1 },
+        "rotationRecoveryEvidenceRef": { "type": "string", "minLength": 1 }
+      }
+    },
+    "transactionHandoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ipAssignmentOrLicenseEvidenceRef",
+        "chainOfTitleEvidenceRef",
+        "thirdPartyLicenseReviewEvidenceRef",
+        "accountDomainCredentialTransferEvidenceRef",
+        "repositoryGovernanceEvidenceRef"
+      ],
+      "properties": {
+        "ipAssignmentOrLicenseEvidenceRef": { "type": "string", "minLength": 1 },
+        "chainOfTitleEvidenceRef": { "type": "string", "minLength": 1 },
+        "thirdPartyLicenseReviewEvidenceRef": { "type": "string", "minLength": 1 },
+        "accountDomainCredentialTransferEvidenceRef": { "type": "string", "minLength": 1 },
+        "repositoryGovernanceEvidenceRef": { "type": "string", "minLength": 1 }
+      }
+    },
+    "merchantPilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "realMerchant",
+        "productionEnvironment",
+        "synthetic",
+        "staging",
+        "merchantEvidenceRef",
+        "onboardingImportEvidenceRef",
+        "branchTerminalProvisioningEvidenceRef",
+        "operatorWorkflowEvidenceRef",
+        "shiftLifecycleEvidenceRef",
+        "paymentTenderEvidenceRef",
+        "returnRefundEvidenceRef",
+        "stockEffectsEvidenceRef",
+        "receiptEvidenceRef",
+        "offlineReconnectEvidenceRef",
+        "backupRollbackReadinessEvidenceRef",
+        "merchantAcceptanceEvidenceRef",
+        "restaurantApplicable"
+      ],
+      "properties": {
+        "realMerchant": { "const": true },
+        "productionEnvironment": { "const": true },
+        "synthetic": { "const": false },
+        "staging": { "const": false },
+        "merchantEvidenceRef": { "type": "string", "minLength": 1 },
+        "onboardingImportEvidenceRef": { "type": "string", "minLength": 1 },
+        "branchTerminalProvisioningEvidenceRef": { "type": "string", "minLength": 1 },
+        "operatorWorkflowEvidenceRef": { "type": "string", "minLength": 1 },
+        "shiftLifecycleEvidenceRef": { "type": "string", "minLength": 1 },
+        "paymentTenderEvidenceRef": { "type": "string", "minLength": 1 },
+        "returnRefundEvidenceRef": { "type": "string", "minLength": 1 },
+        "stockEffectsEvidenceRef": { "type": "string", "minLength": 1 },
+        "receiptEvidenceRef": { "type": "string", "minLength": 1 },
+        "offlineReconnectEvidenceRef": { "type": "string", "minLength": 1 },
+        "backupRollbackReadinessEvidenceRef": { "type": "string", "minLength": 1 },
+        "merchantAcceptanceEvidenceRef": { "type": "string", "minLength": 1 },
+        "restaurantApplicable": { "type": "boolean" },
+        "restaurantFlowEvidenceRef": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "restaurantApplicable": { "const": true } } },
+          "then": { "required": ["restaurantFlowEvidenceRef"] }
+        }
+      ]
+    },
+    "reviewApprovals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productionOperationsReviewRef",
+        "zatcaReviewRef",
+        "transactionReviewRef",
+        "merchantPilotReviewRef",
+        "executiveReleaseDecisionRef"
+      ],
+      "properties": {
+        "productionOperationsReviewRef": { "type": "string", "minLength": 1 },
+        "zatcaReviewRef": { "type": "string", "minLength": 1 },
+        "transactionReviewRef": { "type": "string", "minLength": 1 },
+        "merchantPilotReviewRef": { "type": "string", "minLength": 1 },
+        "executiveReleaseDecisionRef": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

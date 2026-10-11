@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { cartReducer, cartToRequestLines, previewCart } from '../cart';
+import {
+  canQueueOfflineRetailBaseSale,
+  cartReducer,
+  cartToRequestLines,
+  previewCart,
+} from '../cart';
 import type { CartLine } from '../cart';
 import type { ProductSummary } from '../api-types';
 
@@ -91,6 +96,15 @@ describe('the cart', () => {
     ]);
     expect(lines.map((line) => line.productId)).toEqual(['p-rice']);
     expect(cartReducer(lines, { type: 'clear' })).toEqual([]);
+  });
+
+  it('fails closed for lot-controlled products before a new offline sale can be queued', () => {
+    const ordinary = build([{ type: 'add', product: MILK }]);
+    const lotControlled = build([{ type: 'add', product: { ...MILK, lotTrackingRequired: true } }]);
+
+    expect(canQueueOfflineRetailBaseSale(ordinary, 'retail')).toBe(true);
+    expect(canQueueOfflineRetailBaseSale(lotControlled, 'retail')).toBe(false);
+    expect(canQueueOfflineRetailBaseSale(ordinary, 'wholesale')).toBe(false);
   });
 
   it('sends ids and quantities and nothing else', () => {

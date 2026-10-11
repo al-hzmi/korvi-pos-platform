@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Sans_Arabic, IBM_Plex_Mono } from 'next/font/google';
 import { THEME_COLOR_DARK, THEME_COLOR_LIGHT } from '@korvi/ui';
+import { ServiceWorkerRegister } from '../components/service-worker-register';
 import './globals.css';
 
 /**
@@ -55,6 +56,7 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" className={`${plexArabic.variable} ${plexMono.variable}`}>
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
+        <ServiceWorkerRegister />
         {children}
       </body>
     </html>

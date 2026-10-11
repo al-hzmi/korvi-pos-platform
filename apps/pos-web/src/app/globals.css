@@ -4,6 +4,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Visual-proof branch trigger only; no runtime styling change. */
+
 @layer base {
   * {
     border-color: hsl(var(--border));

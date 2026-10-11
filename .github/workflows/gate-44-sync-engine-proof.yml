@@ -1,0 +1,197 @@
+name: Gate 44 Sync Engine Browser Proof
+
+on:
+  push:
+    branches:
+      - review/offline-44-sync-engine
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync-proof:
+    name: Chrome durable sync lease retry and crash recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      KORVI_GATE44_BASE_URL: http://127.0.0.1:4175
+      KORVI_GATE44_CHROME_PORT: '9225'
+      KORVI_GATE44_ARTIFACT_DIR: artifacts/gate44-sync-proof
+      KORVI_GATE44_PROFILE_DIR: /tmp/korvi-gate44-profile
+
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Verify package manager
+        run: node scripts/verify-package-manager.mjs
+
+      - name: Install exact lockfile
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Locate Chrome and record authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_GATE44_ARTIFACT_DIR"
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No Chrome/Chromium binary exists on this runner.' >&2
+            exit 1
+          fi
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner_image=${ImageOS:-unknown}-${ImageVersion:-unknown}"
+            "$chrome" --version
+          } | tee "$KORVI_GATE44_ARTIFACT_DIR/authority.txt"
+
+      - name: Build exact production queue and sync modules into browser harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build --workspace=@korvi/domain
+          npx vite build scripts/gate44-browser \
+            --outDir "$GITHUB_WORKSPACE/artifacts/gate44-harness" \
+            --emptyOutDir
+
+      - name: Start proof origin and first browser process
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$KORVI_GATE44_ARTIFACT_DIR"
+          rm -rf "$KORVI_GATE44_PROFILE_DIR"
+          setsid python3 -m http.server 4175 \
+            --bind 127.0.0.1 \
+            --directory "$GITHUB_WORKSPACE/artifacts/gate44-harness" \
+            >"$KORVI_GATE44_ARTIFACT_DIR/server-seed.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE44_ARTIFACT_DIR/server.pid"
+          setsid "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_GATE44_CHROME_PORT" \
+            --user-data-dir="$KORVI_GATE44_PROFILE_DIR" \
+            --window-size=1200,900 \
+            about:blank >"$KORVI_GATE44_ARTIFACT_DIR/chrome-seed.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE44_ARTIFACT_DIR/chrome.pid"
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent "$KORVI_GATE44_BASE_URL" >/dev/null && \
+               curl --fail --silent "http://127.0.0.1:$KORVI_GATE44_CHROME_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Gate 44 first browser runtime did not become ready.' >&2
+          exit 1
+
+      - name: Prove v2 migration and concurrent single-owner claim
+        run: node scripts/gate44-sync-proof.mjs seed
+
+      - name: Terminate browser and proof origin completely
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_pid="$(cat "$KORVI_GATE44_ARTIFACT_DIR/chrome.pid")"
+          server_pid="$(cat "$KORVI_GATE44_ARTIFACT_DIR/server.pid")"
+          kill -TERM -- "-$browser_pid"
+          kill -TERM -- "-$server_pid"
+          for attempt in $(seq 1 80); do
+            browser_down=0
+            origin_down=0
+            if ! curl --silent "http://127.0.0.1:$KORVI_GATE44_CHROME_PORT/json/version" >/dev/null 2>&1; then browser_down=1; fi
+            if ! curl --silent "$KORVI_GATE44_BASE_URL" >/dev/null 2>&1; then origin_down=1; fi
+            if [ "$browser_down" -eq 1 ] && [ "$origin_down" -eq 1 ]; then exit 0; fi
+            sleep 0.25
+          done
+          echo 'Gate 44 could not prove a complete browser/origin outage.' >&2
+          exit 1
+
+      - name: Restart proof origin and Chrome with the same browser profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          setsid python3 -m http.server 4175 \
+            --bind 127.0.0.1 \
+            --directory "$GITHUB_WORKSPACE/artifacts/gate44-harness" \
+            >"$KORVI_GATE44_ARTIFACT_DIR/server-restart.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE44_ARTIFACT_DIR/server.pid"
+          setsid "$CHROME_BIN" \
+            --headless=new \
+            --disable-dev-shm-usage \
+            --no-first-run \
+            --no-default-browser-check \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port="$KORVI_GATE44_CHROME_PORT" \
+            --user-data-dir="$KORVI_GATE44_PROFILE_DIR" \
+            --window-size=1200,900 \
+            about:blank >"$KORVI_GATE44_ARTIFACT_DIR/chrome-restart.log" 2>&1 &
+          echo "$!" > "$KORVI_GATE44_ARTIFACT_DIR/chrome.pid"
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent "$KORVI_GATE44_BASE_URL" >/dev/null && \
+               curl --fail --silent "http://127.0.0.1:$KORVI_GATE44_CHROME_PORT/json/version" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Gate 44 restarted browser runtime did not become ready.' >&2
+          exit 1
+
+      - name: Prove crash recovery retry ordering and stale-token fencing
+        run: |
+          set -euo pipefail
+          node scripts/gate44-sync-proof.mjs verify
+          grep -q '^browser_process_restart_recovery=PASS$' "$KORVI_GATE44_ARTIFACT_DIR/proof.txt"
+          grep -q '^expired_lease_same_operation_reclaim=PASS$' "$KORVI_GATE44_ARTIFACT_DIR/proof.txt"
+          grep -q '^stale_fencing_token_refusal=PASS$' "$KORVI_GATE44_ARTIFACT_DIR/proof.txt"
+          grep -q '^retry_delay_prevents_overtaking=PASS$' "$KORVI_GATE44_ARTIFACT_DIR/proof.txt"
+          grep -q '^ordered_ack_before_advance=PASS$' "$KORVI_GATE44_ARTIFACT_DIR/proof.txt"
+          grep -q '^successful_drain_no_duplicate_execution=PASS$' "$KORVI_GATE44_ARTIFACT_DIR/proof.txt"
+
+      - name: Surface runtime logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          for log in server-seed.log server-restart.log chrome-seed.log chrome-restart.log; do
+            echo "== $log =="
+            tail -n 200 "$KORVI_GATE44_ARTIFACT_DIR/$log" 2>/dev/null || true
+          done
+
+      - name: Stop proof runtime
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for pid_file in "$KORVI_GATE44_ARTIFACT_DIR/chrome.pid" "$KORVI_GATE44_ARTIFACT_DIR/server.pid"; do
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file")"
+              kill -TERM -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+            fi
+          done
+
+      - name: Preserve sanitized Gate 44 proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gate-44-sync-proof-${{ github.sha }}
+          path: |
+            artifacts/gate44-sync-proof/authority.txt
+            artifacts/gate44-sync-proof/proof.txt
+            artifacts/gate44-sync-proof/restart-sync-engine.png
+            artifacts/gate44-sync-proof/*.log
+          if-no-files-found: warn
+          retention-days: 30

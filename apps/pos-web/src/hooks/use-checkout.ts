@@ -4,18 +4,18 @@ import { useCallback, useReducer, useRef } from 'react';
 import { checkoutReducer, initialCheckoutState } from '../lib/checkout';
 import { createCheckoutFlight } from '../lib/checkout-flight';
 import { runCheckout } from '../lib/checkout-submit';
+import { enqueueOfflineCheckout } from '../lib/offline-checkout';
+import { openKorviOfflineStore } from '../lib/offline-store';
+import type { OfflineStoreProtector } from '../lib/offline-protection';
+import type { QueuePartition } from '@korvi/domain';
 import type { ApiClient } from '../lib/api';
-import type { CartLine } from '../lib/cart';
 import type { CheckoutFlight } from '../lib/checkout-flight';
+import type { CheckoutSubmission } from '../lib/checkout-submit';
 import type { CheckoutState } from '../lib/checkout';
 
 export interface CheckoutHandle {
   readonly state: CheckoutState;
-  readonly submit: (input: {
-    readonly terminalId: string;
-    readonly lines: readonly CartLine[];
-    readonly cashReceivedMinor: string;
-  }) => void;
+  readonly submit: (input: CheckoutSubmission) => void;
   readonly dismiss: () => void;
   readonly newSale: () => void;
 }
@@ -29,22 +29,39 @@ export interface CheckoutHandle {
  * are. Keeping them out of the hook is what makes them testable without a
  * renderer, and testable is how they stay correct.
  */
-export function useCheckout(api: ApiClient, onUnauthenticated: () => void): CheckoutHandle {
+export function useCheckout(
+  api: ApiClient,
+  onUnauthenticated: () => void,
+  offlinePartition?: QueuePartition,
+  offlineProtector?: OfflineStoreProtector,
+): CheckoutHandle {
   const [state, dispatch] = useReducer(checkoutReducer, initialCheckoutState);
   const flight = useRef<CheckoutFlight | null>(null);
   flight.current ??= createCheckoutFlight();
 
   const submit = useCallback(
-    (input: {
-      readonly terminalId: string;
-      readonly lines: readonly CartLine[];
-      readonly cashReceivedMinor: string;
-    }) => {
+    (input: CheckoutSubmission) => {
       const owned = flight.current;
       if (owned === null) return;
-      void runCheckout(api, owned, input, dispatch, onUnauthenticated);
+      void runCheckout(
+        api,
+        owned,
+        input,
+        dispatch,
+        onUnauthenticated,
+        undefined,
+        offlinePartition === undefined
+          ? undefined
+          : (intent) =>
+              enqueueOfflineCheckout(
+                offlinePartition,
+                intent,
+                () => openKorviOfflineStore(),
+                offlineProtector,
+              ),
+      );
     },
-    [api, onUnauthenticated],
+    [api, offlinePartition, offlineProtector, onUnauthenticated],
   );
 
   const dismiss = useCallback(() => {

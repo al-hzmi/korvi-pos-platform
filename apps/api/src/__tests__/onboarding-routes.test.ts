@@ -42,6 +42,7 @@ const READY: OnboardingReadiness = {
       blocker: null,
       remediation: null,
     },
+    { key: 'pos-operator', ready: true, blocker: null, remediation: null },
     { key: 'active-product', ready: true, blocker: null, remediation: null },
   ],
 };

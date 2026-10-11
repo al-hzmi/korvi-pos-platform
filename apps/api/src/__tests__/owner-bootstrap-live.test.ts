@@ -149,6 +149,27 @@ describe.skipIf(url === '')('initial owner bootstrap, live', () => {
     return parts.join('.');
   }
 
+  /**
+   * A signature that is definitely not this signature.
+   *
+   * The obvious mutation — replace the last character with `A` — is not a
+   * mutation at all roughly one run in sixteen. A 32-byte HMAC is 43 base64url
+   * characters, and the last one carries only four significant bits plus two
+   * bits of padding, so it is drawn from just sixteen values: `048AEIMQUYcgkosw`.
+   * When the genuine signature already ends in `A`, "tampering" produces the
+   * genuine capability, the server rightly honours it, the invitation is
+   * consumed, and this test and the next one both fail for reasons that look
+   * like anything but a test bug.
+   *
+   * The first character has no padding bits, so changing it always changes both
+   * the text and the decoded bytes. `A -> B` and everything else `-> A` keeps
+   * the alphabet, the length and the determinism.
+   */
+  function mutateSignature(signature: string): string {
+    const first = signature.slice(0, 1);
+    return `${first === 'A' ? 'B' : 'A'}${signature.slice(1)}`;
+  }
+
   /** An attacker who knows the format perfectly and not the key. */
   function forge(key: string, invitationId: string, tenantId: string, expiresAt: string): string {
     const payload = Buffer.from(
@@ -424,9 +445,19 @@ describe.skipIf(url === '')('initial owner bootstrap, live', () => {
       'utf8',
     ).toString('base64url');
 
+    // Asserted before it is used, so this case can never again silently become
+    // "present the genuine capability and expect a refusal".
+    const mutated = mutateSignature(signature ?? '');
+    expect(mutated).not.toBe(signature);
+    expect(mutated).toHaveLength((signature ?? '').length);
+    expect(mutated).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(
+      Buffer.from(mutated, 'base64url').equals(Buffer.from(signature ?? '', 'base64url')),
+    ).toBe(false);
+
     const attempts: readonly [string, string][] = [
       ['tampered payload', tamper(issued.capability, 1, forged)],
-      ['tampered signature', tamper(issued.capability, 2, `${(signature ?? '').slice(0, -1)}A`)],
+      ['tampered signature', tamper(issued.capability, 2, mutated)],
       ['wrong version', tamper(issued.capability, 0, 'v2')],
       ['wrong key', forge(WRONG_KEY, issued.invitationId, beta.tenantId, issued.expiresAt)],
       ['unknown invitation', forge(KEY, newId(), beta.tenantId, issued.expiresAt)],
