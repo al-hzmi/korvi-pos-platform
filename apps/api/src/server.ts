@@ -30,6 +30,7 @@ import { createMerchantProductService } from './catalog/service.js';
 import { createCheckoutService } from './checkout/service.js';
 import { createCheckoutPreviewService } from './checkout/preview-service.js';
 import { createMerchantCustomerService } from './customers/service.js';
+import { createMerchantLoyaltyService } from './loyalty/service.js';
 import { createMerchantInventoryService } from './inventory/service.js';
 import { createMerchantOnboardingService } from './onboarding/service.js';
 import { createNoReceiptExchangeService } from './no-receipt-exchange/service.js';
@@ -60,6 +61,7 @@ import { registerBootstrapRoutes } from './routes/bootstrap.js';
 import { registerBusinessRoutes } from './routes/business.js';
 import { registerCatalogAdminRoutes } from './routes/catalog-admin.js';
 import { registerCustomerRoutes } from './routes/customers.js';
+import { registerLoyaltyRoutes } from './routes/loyalty.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInventoryAdminRoutes } from './routes/inventory-admin.js';
 import { registerLotAdminRoutes } from './routes/lots-admin.js';
@@ -90,6 +92,7 @@ import type { AuthService } from './auth/service.js';
 import type { OwnerBootstrapService } from './bootstrap/service.js';
 import type { MerchantProductService } from './catalog/service.js';
 import type { MerchantCustomerService } from './customers/service.js';
+import type { MerchantLoyaltyService } from './loyalty/service.js';
 import type { MerchantInventoryService } from './inventory/service.js';
 import type { MerchantLotAdminService } from './lots/service.js';
 import type { MerchantOnboardingService } from './onboarding/service.js';
@@ -176,6 +179,8 @@ export interface ServerDeps {
   readonly restaurantWaste?: MerchantRestaurantWasteService;
   /** Merchant customer directory and mutation authority. */
   readonly customers?: MerchantCustomerService;
+  /** V2-6 consent-backed points policy and tenant-owned ledger read authority. */
+  readonly loyalty?: MerchantLoyaltyService;
   /** Read-only merchant sales history and financial reports, authorized by report.read. */
   readonly salesRead?: MerchantSalesReadService;
   /** Merchant-safe ZATCA operational status, authorized by zatca.manage. */
@@ -810,6 +815,24 @@ function lazyCustomerService(config: ApiConfig): MerchantCustomerService {
   };
 }
 
+function lazyLoyaltyService(config: ApiConfig): MerchantLoyaltyService {
+  let built: MerchantLoyaltyService | null = null;
+  const resolve = (): MerchantLoyaltyService => {
+    if (built !== null) return built;
+    const url = config.DATABASE_URL;
+    if (url === undefined) throw new AuthUnavailableError('DATABASE_URL is not configured.');
+    built = createMerchantLoyaltyService(createPrismaClient(url));
+    return built;
+  };
+  return {
+    policy: (principal) => resolve().policy(principal),
+    create: (principal, input) => resolve().create(principal, input),
+    revise: (principal, revision, input) => resolve().revise(principal, revision, input),
+    enroll: (principal, customerId, consent) => resolve().enroll(principal, customerId, consent),
+    ledger: (principal, customerId) => resolve().ledger(principal, customerId),
+  };
+}
+
 function lazySalesReadService(config: ApiConfig): MerchantSalesReadService {
   let built: MerchantSalesReadService | null = null;
 
@@ -1022,6 +1045,7 @@ export function buildServer(config: ApiConfig, deps: ServerDeps = {}): FastifyIn
     service: deps.customers ?? lazyCustomerService(config),
     guards,
   });
+  registerLoyaltyRoutes(app, deps.loyalty ?? lazyLoyaltyService(config), guards);
   registerSalesReadRoutes(app, {
     service: deps.salesRead ?? lazySalesReadService(config),
     guards,
