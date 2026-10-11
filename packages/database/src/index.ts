@@ -672,3 +672,22 @@ export type {
   ZatcaFatooraCredentialRepository,
 } from './zatca/fatoora-credential-repository.js';
 export { createZatcaInvoiceSubmissionRepository } from './zatca/invoice-submission-repository.js';
+
+ 
+// V2-6 policy, explicit consent and read-only ledger surface. No HTTP endpoint
+// may issue arbitrary loyalty points: sale/return authority must own writes.
+export {
+  LoyaltyPolicyRefusedError,
+  createLoyaltyPolicy,
+  readLoyaltyPolicy,
+  reviseLoyaltyPolicy,
+  enrollLoyaltyCustomer,
+  readLoyaltyLedger,
+} from './loyalty/program.js';
+export type {
+  LoyaltyPolicyRefusal,
+  LoyaltyActor,
+  LoyaltyPolicyInput,
+  LoyaltyPolicyView,
+  LoyaltyLedgerView,
+} from './loyalty/program.js';
