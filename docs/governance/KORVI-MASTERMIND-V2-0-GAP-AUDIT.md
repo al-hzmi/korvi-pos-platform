@@ -220,11 +220,9 @@ Current source contains:
 - waste;
 - server-authored order line snapshots.
 
-### Modifiers/options — PARTIAL
+### Modifiers/options — PRESENT / V2-5 VERIFIED CLOSED
 
-Current restaurant order lines include bounded `preparationOptions` text, but no dedicated Modifier domain/schema authority was found.
-
-This is not equivalent to a governed modifier/options/bundle pricing engine.
+ADR-0040 implements merchant-governed modifier groups, option identities/revisions, product attachments, server-authoritative positive integer minor-unit deltas, min/max/active policy refusals and FORCE-RLS tenant ownership. Direct sales and open-order snapshots converge on the existing VAT, settlement, returns and immutable sale-history authority. Cashier checkout, Control and KDS expose the real workflow. Bundles remain deliberately deferred.
 
 ### Dining modes — PRESENT FOUNDATION
 
@@ -238,7 +236,7 @@ Current DB/order/UI paths include restaurant table/zone support.
 
 These remain later product scope.
 
-**Recommended V2-5 for modifiers/operator parity before kiosk/QR.**
+**V2-5 verified closed at `595bc5581098f12610ea2c9a5b26649b706f2735`; V2-6 customer loyalty points/rewards is next.**
 
 ## 7. Attention / intelligence layer
 
@@ -269,8 +267,8 @@ Initial evidence supports this order:
 2. **V2-2 Deterministic promotions/coupons — CLOSED**
 3. **V2-3 Retail packaging + price lists — CLOSED**
 4. **V2-4 Batch/lot/expiry — CLOSED**
-5. **V2-5 Restaurant modifiers/operator parity — NEXT**
-6. **V2-6 Loyalty/credit explicit ledgers**
+5. **V2-5 Restaurant modifiers/operator parity — VERIFIED CLOSED**
+6. **V2-6 Loyalty points/rewards ledger — NEXT (no customer credit / gift cards / wallets)**
 7. **V2-7 Attention Center**
 8. **V2-8 Explainable Reorder / Expiry Intelligence**
 9. **V2-9 Omnichannel adapter contracts**
@@ -376,4 +374,17 @@ Evidence:
 - actual Chrome operator workflow `36826362021` — **SUCCESS**;
 - independent PR CI `36826369807` — **SUCCESS**.
 
-**V2-4 gap is closed. Next repository architecture target: V2-5 Restaurant modifiers/operator parity.**
+**V2-4 and V2-5 are verified closed. Next authorized strike: V2-6 customer loyalty points/rewards.**
+
+## 14. V2-5 exact-head closure reconciliation
+
+Verified implementation HEAD: `595bc5581098f12610ea2c9a5b26649b706f2735`.
+
+- Full CI: `38153173453` and `38153177941` — **SUCCESS**.
+- PostgreSQL 17 / forward migrations / populated legacy rehearsal / FORCE RLS / tenant isolation / modifier concurrency / full verification: `38153173476` — **SUCCESS**.
+- Actual Chrome Control → Cashier → modifier selection → open order → KDS → settlement → merchant sale history → original-sale refund/idempotent replay → direct modifier checkout: `38153173437` — **SUCCESS**.
+- Independent Stage 5D Chrome: `38153173488` — **SUCCESS**.
+- Installed Android: `38153177907` — **SUCCESS**.
+- Installed Windows NSIS/device-protection: `38153177922` — **SUCCESS**.
+
+V2-5 repairs include a forward-only, NULL-preserving order-line provenance migration; a single atomic Prisma snapshot write path; immutable checkout-flight option IDs with separate historical open-order settlement; and historical modifier decomposition rendered from finalized sale records. Frozen acquisition remains untouched. Paid production providers, credit/wallet liabilities, kiosk and bundles remain out of scope.

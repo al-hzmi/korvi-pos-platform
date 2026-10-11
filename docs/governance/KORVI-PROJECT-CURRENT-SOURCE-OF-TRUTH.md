@@ -263,7 +263,9 @@ V2-3 retail packaging + price lists: **COMPLETE / EXACT-HEAD VERIFIED**.
 
 V2-4 batch/lot/expiry: **COMPLETE / EXACT-HEAD VERIFIED**.
 
-Next authorized strike: **V2-5 Restaurant modifiers + operator parity**.
+V2-5 restaurant modifiers + operator parity: **COMPLETE / EXACT-HEAD VERIFIED**.
+
+Next authorized strike: **V2-6 Customer loyalty points/rewards (not credit, gift card or wallet)**.
 
 ### V2-2 — Deterministic Promotions + Coupons — VERIFIED COMPLETE
 
@@ -366,26 +368,25 @@ Exact-head evidence for `8e92788f6ceb9850fc69373dac4a954d787d36f3`:
 
 The frozen acquisition candidate remains untouched. V2-4 exists only on the Mastermind V2 lineage.
 
-### V2-5 — Restaurant modifiers + dining modes + table ownership completion
+### V2-5 — Restaurant modifiers / operator parity — VERIFIED CLOSED
 
-Close remaining operator parity:
+Verified implementation HEAD: `595bc5581098f12610ea2c9a5b26649b706f2735`.
 
-- modifiers/options;
-- dine-in/takeaway/delivery;
-- table/zone/order ownership;
-- notes/courses where justified;
-- deterministic settlement compatibility;
-- KDS compatibility.
+- Governed and revisioned restaurant groups/options, product attachment, server-authoritative selection/price/VAT and tenant-specific FORCE RLS.
+- Arabic RTL Control + Cashier, dine-in/takeaway/delivery context, open order, preparation/KDS, immutable modifier history.
+- Direct checkout AND open-order settlement consume correct separate pricing authorities; checkout retries preserve immutable option identities.
+- Sales history shows historical base/add-on prices and option identities; original-sale returns refund the original finalized line, not current menu prices.
+- PostgreSQL 17 verifies populated legacy migration with NULL unknown provenance, concurrent policy locks, tenant isolation, transactional fault/rollback and full suite.
+- Exact-head CI: `38153173453`, `38153177941` — **SUCCESS**.
+- Exact-head PostgreSQL: `38153173476` — **SUCCESS**.
+- Exact-head restaurant Chrome: `38153173437` — **SUCCESS**; Stage 5D Chrome: `38153173488` — **SUCCESS**.
+- Exact-head Android: `38153177907` — **SUCCESS**; Windows NSIS: `38153177922` — **SUCCESS**.
 
-### V2-6 — Loyalty/Credit explicit ledgers
+Frozen acquisition `61dbb34dea08809756fd767b907b0e852b7e5978` remains unchanged. V2-5 did not deploy or activate Production ZATCA.
 
-Only after ledger architecture:
+### V2-6 — Customer loyalty points/rewards ledger — NEXT
 
-- points/rewards ledger;
-- customer credit/balance ledger;
-- gift-card/wallet only if explicit financial authority is implemented.
-
-Never implement as mutable display counters.
+Build one merchant-operable Customer → Earn → Ledger → Redeem → Checkout → Receipt → Return/Reversal workflow. Earning/redemption and reversal require atomic transaction/concurrency/idempotency authority, historical policy snapshots, permissioned administration, Arabic RTL Control/Cashier and deterministic VAT/discount composition. No mutable UI balance, client-owned points, gift card, store credit or stored-value wallet. Those require separately authorized financial-liability architecture.
 
 ### V2-7 — Attention Center / Management by Exception
 
