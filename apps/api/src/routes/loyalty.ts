@@ -31,9 +31,7 @@ const reviseBody = z
       value.status !== undefined,
     { message: 'at least one policy field required' },
   );
-const enrollBody = z
-  .object({ customerId: UUID, consentConfirmed: z.literal(true) })
-  .strict();
+const enrollBody = z.object({ customerId: UUID, consentConfirmed: z.literal(true) }).strict();
 const customerParams = z.object({ customerId: UUID }).strict();
 
 function refusal(reply: FastifyReply, reason: string) {

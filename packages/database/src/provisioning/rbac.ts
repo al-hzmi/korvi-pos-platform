@@ -37,6 +37,7 @@ export const PERMISSION_CATALOGUE: Readonly<
     ar: 'إدارة قائمة المطعم والإضافات',
     en: 'Manage restaurant menu and modifiers',
   },
+  'loyalty.manage': { ar: 'إدارة سياسة نقاط الولاء', en: 'Manage loyalty points policy' },
   'sale.create': { ar: 'إتمام عملية بيع', en: 'Complete a sale' },
   'sale.price-context': {
     ar: 'اختيار سياق سعر غير افتراضي',
