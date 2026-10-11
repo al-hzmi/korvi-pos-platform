@@ -784,7 +784,18 @@ try {
   );
   await setInput('cash-received', '14.50');
   await clickButton('إتمام البيع');
-  await waitForText('تمّت العملية', 30_000);
+  try {
+    await waitForText('تمّت العملية', 30_000);
+  } catch (error) {
+    const diagnostics = await evaluate(`(() => ({
+      notices: [...document.querySelectorAll('[role="alert"], [role="status"]')]
+        .map((node) => node.textContent?.trim()).filter(Boolean),
+      visibleText: document.body?.innerText?.slice(-3000) ?? '',
+    }))()`);
+    throw new Error(`Direct modifier checkout was not confirmed: ${JSON.stringify(diagnostics)}`, {
+      cause: error,
+    });
+  }
   const directHistory = await browserRequest('/v1/admin/sales?limit=20');
   const direct = directHistory.items.find(
     (item) =>
