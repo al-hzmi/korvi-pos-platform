@@ -74,9 +74,7 @@ export function registerLoyaltyRoutes(
     const { expectedRevision } = body.data;
     const update = {
       ...(body.data.nameAr === undefined ? {} : { nameAr: body.data.nameAr }),
-      ...(body.data.earnNumerator === undefined
-        ? {}
-        : { earnNumerator: body.data.earnNumerator }),
+      ...(body.data.earnNumerator === undefined ? {} : { earnNumerator: body.data.earnNumerator }),
       ...(body.data.earnDenominator === undefined
         ? {}
         : { earnDenominator: body.data.earnDenominator }),
