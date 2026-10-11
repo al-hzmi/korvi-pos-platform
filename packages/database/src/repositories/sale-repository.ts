@@ -43,6 +43,11 @@ import type {
 } from '@korvi/domain';
 import type { PrismaClient } from '../client.js';
 
+/** Domain refusal, not a Prisma foreign-key leak or an HTTP 500. */
+export class CustomerUnavailableForSaleError extends Error {
+  public override readonly name = 'CustomerUnavailableForSaleError';
+}
+
 const STATUSES: readonly SaleStatus[] = ['finalized', 'voided'];
 const RESTAURANT_ORDER_TYPES: readonly RestaurantOrderType[] = ['dine-in', 'takeaway', 'delivery'];
 const PRICE_MODES: readonly PriceMode[] = ['tax-inclusive', 'tax-exclusive'];
@@ -1031,6 +1036,14 @@ export async function recordSaleWithin(
     throw new DatabaseError(
       'Exchange allowance may only be persisted by the atomic no-receipt exchange authority.',
     );
+  }
+
+  if (sale.customerId !== null) {
+    const customer = await tx.customer.findFirst({
+      where: { tenantId: tenant, id: sale.customerId, isActive: true },
+      select: { id: true },
+    });
+    if (customer === null) throw new CustomerUnavailableForSaleError();
   }
 
   // First, and inside this transaction: the number is issued to a sale

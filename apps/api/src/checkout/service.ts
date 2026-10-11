@@ -34,6 +34,7 @@ import {
   RetailPricingPolicyRefusedError,
   RestaurantOrderRefusedError,
   ShiftUnusableError,
+  CustomerUnavailableForSaleError,
 } from '@korvi/database';
 import type { RestaurantOrderDetail } from '@korvi/database';
 import { fingerprintIntent } from './fingerprint.js';
@@ -91,6 +92,8 @@ export type CheckoutFailureReason =
   | 'empty-cart'
   | 'no-open-shift'
   | 'unknown-product'
+  | 'customer-unavailable'
+  | 'customer-not-authorized'
   | 'product-unavailable'
   | 'invalid-quantity'
   | 'insufficient-stock'
@@ -251,6 +254,8 @@ export interface CheckoutInput {
   readonly principal: AuthenticatedPrincipal;
   readonly operationId: string;
   readonly terminalId: string;
+  /** Optional customer identity; the tenant and active status are checked at commit. */
+  readonly customerId?: string | undefined;
   /**
    * Optional immutable precondition used by delayed/offline replay. The client
    * does not choose a shift: the server still derives the current open shift
@@ -415,6 +420,8 @@ function fingerprintCheckoutIntent(
   return fingerprintIntent({
     branchId,
     terminalId: input.terminalId,
+    // Absent preserves the pre-V2-6 fingerprint for historical retries.
+    ...(input.customerId === undefined ? {} : { customerId: input.customerId }),
     orderType: input.orderType ?? '',
     tableId: input.tableId ?? '',
     restaurantOrderId: input.restaurantOrderId ?? '',
@@ -579,6 +586,9 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
       const scope: TenantScope = { tenantId: brandTenantId(input.principal.tenantId) };
       if (input.lines.length === 0) return fail('empty-cart');
 
+      if (input.customerId !== undefined && !input.principal.permissions.includes('customer.read')) {
+        return fail('customer-not-authorized');
+      }
       const priceContext: PriceContext = input.priceContext ?? 'retail';
       if (
         priceContext !== 'retail' &&
@@ -1241,7 +1251,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
             terminalId: input.terminalId,
             shiftId: shift.id,
             userId: input.principal.userId,
-            customerId: null,
+            customerId: input.customerId ?? null,
             restaurantOrderId: restaurantOrder?.id ?? null,
             operationId: input.operationId,
             status: 'finalized',
@@ -1515,6 +1525,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           }
         }
         if (error instanceof ShiftUnusableError) return fail('shift-invalid');
+        if (error instanceof CustomerUnavailableForSaleError) return fail('customer-unavailable');
         if (error instanceof RetailPricingPolicyRefusedError) {
           if (error.detail === 'unknown-package') return fail('unknown-package');
           if (error.detail === 'package-unavailable') return fail('package-unavailable');

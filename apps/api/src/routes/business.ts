@@ -87,6 +87,8 @@ const MESSAGES: Readonly<Record<CheckoutFailureReason, string>> = {
   'empty-cart': 'لا توجد أصناف في السلة.',
   'no-open-shift': 'لا توجد وردية مفتوحة على هذا الصندوق. افتح وردية أولاً.',
   'unknown-product': 'أحد الأصناف غير موجود.',
+  'customer-unavailable': 'العميل غير موجود أو لم يعد نشطاً. حدّث اختيار العميل.',
+  'customer-not-authorized': 'ليس لديك صلاحية ربط عميل بعملية البيع.',
   'product-unavailable': 'أحد الأصناف لم يعد متاحاً للبيع.',
   'invalid-quantity': 'الكمية غير صالحة لهذا الصنف.',
   'insufficient-stock': 'الكمية المطلوبة غير متوفرة في المخزون.',
@@ -139,6 +141,8 @@ const STATUS: Readonly<Record<CheckoutFailureReason, number>> = {
   'empty-cart': 422,
   'no-open-shift': 409,
   'unknown-product': 422,
+  'customer-unavailable': 409,
+  'customer-not-authorized': 403,
   'product-unavailable': 409,
   'invalid-quantity': 422,
   'insufficient-stock': 409,
@@ -857,6 +861,7 @@ export function registerBusinessRoutes(app: FastifyInstance, options: BusinessRo
         principal,
         operationId: parsed.data.operationId,
         terminalId,
+        ...(parsed.data.customerId === undefined ? {} : { customerId: parsed.data.customerId }),
         ...(parsed.data.expectedShiftId === undefined
           ? {}
           : { expectedShiftId: parsed.data.expectedShiftId }),

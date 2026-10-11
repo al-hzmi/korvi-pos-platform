@@ -271,6 +271,7 @@ export const checkoutBody = z
   .object({
     operationId: UUID,
     terminalId: UUID,
+    customerId: UUID.optional(),
     // Replay precondition, not an authority assertion. The server derives the
     // active shift and refuses if it no longer matches this immutable intent.
     expectedShiftId: UUID.optional(),
