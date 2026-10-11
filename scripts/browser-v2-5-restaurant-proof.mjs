@@ -855,7 +855,9 @@ try {
     body: JSON.stringify({ customerId: loyaltyCustomer.id, consentConfirmed: true }),
   });
   assert.equal(typeof enrollment.enrollmentId, 'string');
-  record('merchant configured revisioned loyalty policy and enrolled customer with explicit consent');
+  record(
+    'merchant configured revisioned loyalty policy and enrolled customer with explicit consent',
+  );
 
   await clickButton('عملية بيع جديدة');
   await waitForText('العميل · نقاط الولاء', 20_000);
@@ -893,14 +895,14 @@ try {
   assert.equal(earnedLedger.entries[0]?.kind, 'earn');
   const loyaltySaleId = earnedLedger.entries[0]?.saleId;
   assert.equal(typeof loyaltySaleId, 'string');
-  const loyaltySale = await browserRequest(
-    `/v1/admin/sales/${encodeURIComponent(loyaltySaleId)}`,
-  );
+  const loyaltySale = await browserRequest(`/v1/admin/sales/${encodeURIComponent(loyaltySaleId)}`);
   const expectedPoints = (BigInt(loyaltySale.netMinor) / 100n).toString();
   assert.equal(earnedLedger.balancePoints, expectedPoints);
   assert.equal(earnedLedger.entries[0]?.pointsDelta, expectedPoints);
   assert.ok(BigInt(expectedPoints) > 0n);
-  record('real cashier selected consenting customer, sold modifier-bearing product, and earned exact immutable net-of-VAT points');
+  record(
+    'real cashier selected consenting customer, sold modifier-bearing product, and earned exact immutable net-of-VAT points',
+  );
   await capture('v2-6-cashier-customer-earn');
 
   const loyaltyRefund = await browserRequest('/v1/returns', {
@@ -922,7 +924,9 @@ try {
   assert.equal(reversedLedger.entries.length, 2);
   assert.equal(reversedLedger.entries[0]?.kind, 'reverse-earn');
   assert.equal(reversedLedger.entries[0]?.pointsDelta, `-${expectedPoints}`);
-  record('real full refund reversed historical earned points atomically while preserving the original 14.50 SAR refund');
+  record(
+    'real full refund reversed historical earned points atomically while preserving the original 14.50 SAR refund',
+  );
   await capture('v2-6-cashier-loyalty-reversed');
 
   record(
