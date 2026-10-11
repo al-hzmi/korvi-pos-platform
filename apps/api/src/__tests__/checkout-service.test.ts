@@ -109,6 +109,32 @@ describe('a cash sale', () => {
     expect(result.replayed).toBe(false);
   });
 
+  it('pins an enrolled customer identity into the sale and immutable replay hash', async () => {
+    const customerId = '018f1000-0000-7000-8000-0000000000c1';
+    const made = await checkout({ customerId });
+    expect(made.outcome).toBe('success');
+    expect(store.sales[0]?.customerId).toBe(customerId);
+
+    const replayed = await checkout({ customerId });
+    expect(replayed.outcome).toBe('success');
+    if (replayed.outcome === 'success') expect(replayed.replayed).toBe(true);
+
+    const mismatched = await checkout({
+      customerId: '018f1000-0000-7000-8000-0000000000c2',
+    });
+    expect(mismatched.outcome === 'failure' && mismatched.reason).toBe('idempotency-conflict');
+    expect(store.sales).toHaveLength(1);
+  });
+
+  it('refuses linking a customer without the server-granted customer.read permission', async () => {
+    const result = await checkout({
+      principal: principal({ permissions: ['sale.create'] }),
+      customerId: '018f1000-0000-7000-8000-0000000000c1',
+    });
+    expect(result.outcome === 'failure' && result.reason).toBe('customer-not-authorized');
+    expect(store.sales).toHaveLength(0);
+  });
+
   it('refuses a newly captured offline sale when current product truth requires lot selection', async () => {
     store.products[0] = { ...store.products[0]!, lotTrackingRequired: true };
 
