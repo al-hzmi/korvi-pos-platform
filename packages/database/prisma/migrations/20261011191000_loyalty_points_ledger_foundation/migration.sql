@@ -66,6 +66,7 @@ CREATE TABLE "loyalty_point_entries" (
   "reversesEntryId" UUID,
   "occurredAt" TIMESTAMP(3) NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "loyalty_points_tenant_id_key" UNIQUE ("tenantId","id"),
   CONSTRAINT "loyalty_points_tenant_fkey" FOREIGN KEY ("tenantId")
     REFERENCES "tenants"("id") ON DELETE CASCADE,
   CONSTRAINT "loyalty_points_program_fkey" FOREIGN KEY ("tenantId","programId")
@@ -98,7 +99,6 @@ CREATE TABLE "loyalty_point_entries" (
     )
   )
 );
-CREATE UNIQUE INDEX "loyalty_points_tenant_id_key" ON "loyalty_point_entries"("tenantId","id");
 CREATE UNIQUE INDEX "loyalty_points_operation_key" ON "loyalty_point_entries"("tenantId","operationId");
 CREATE UNIQUE INDEX "loyalty_points_one_sale_kind" ON "loyalty_point_entries"("tenantId","saleId","kind")
   WHERE "saleId" IS NOT NULL;

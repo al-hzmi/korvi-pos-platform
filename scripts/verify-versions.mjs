@@ -40,6 +40,7 @@ const ALLOWED_BEHIND = {
     'Post-V1 product-development baseline (2026-09-19): retain the RC7-verified 10.10.0 lint engine during Restaurant work; upgrade only in a dedicated dependency-maintenance change, not inside a vertical feature.',
   '@vitest/coverage-v8':
     'Mastermind V2-3 execution freeze (2026-09-28): keep coverage-v8 5.0.1 aligned with the currently proven Vitest 5.0.1 test stack during package/price-list authority work; upgrade both together only in a dedicated dependency-maintenance change.',
+  zod: 'Mastermind V2-6 financial-ledger implementation freeze (2026-10-11): retain verified Zod 4.6.5 while consent, loyalty policy and receipt validation are under development; review 4.6.6 only in a dedicated compatibility-tested dependency-maintenance change.',
   prettier:
     'Commercial V1 RC freeze directive (2026-09-18): keep the verified 3.9.7 formatter baseline until post-RC to avoid unrelated repository-wide formatting churn.',
   typescript: 'ADR-0007: typescript-eslint declares `typescript <6.1.0`.',
