@@ -120,7 +120,7 @@ export function CustomerPicker({
                   type="button"
                   key={customer.id}
                   disabled={disabled || !customer.isActive}
-                  className="block w-full rounded-md border border-input px-3 py-2 text-right text-sm hover:bg-accent disabled:opacity-50"
+                  className="block w-full rounded-md border border-input px-3 py-2 text-end text-sm hover:bg-accent disabled:opacity-50"
                   onClick={() => {
                     onChange(customer.id);
                     setItems([]);

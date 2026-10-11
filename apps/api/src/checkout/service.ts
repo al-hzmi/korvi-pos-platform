@@ -1134,7 +1134,7 @@ export function createCheckoutService(deps: CheckoutDeps): CheckoutService {
           terminalId: input.terminalId,
           shiftId: shift.id,
           cashierId: input.principal.userId,
-          customerId: null,
+          customerId: input.customerId ?? null,
           cart,
           tenders: payment.map((tender) => toTenderLine(tender, currency)),
           issuedAt,
