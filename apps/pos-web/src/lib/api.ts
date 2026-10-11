@@ -972,6 +972,7 @@ export function createApiClient(fetchImpl?: Fetch): ApiClient {
           json({
             operationId: request.operationId,
             terminalId: request.terminalId,
+            ...(request.customerId === undefined ? {} : { customerId: request.customerId }),
             ...(request.expectedShiftId === undefined
               ? {}
               : { expectedShiftId: request.expectedShiftId }),

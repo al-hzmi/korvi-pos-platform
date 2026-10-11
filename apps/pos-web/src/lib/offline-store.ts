@@ -56,6 +56,7 @@ export interface OfflineSaleScope {
 
 export interface OfflineSaleDraft {
   readonly lines: readonly CartLine[];
+  readonly customerId?: string;
   readonly cash: string;
   readonly paymentMode?: PaymentMode;
   readonly electronicTenders?: readonly ElectronicTenderDraft[];
@@ -312,6 +313,8 @@ export function isOfflineSaleDraft(value: unknown): value is OfflineSaleDraft {
   if (!isRecord(value) || !Array.isArray(value.lines)) return false;
   return (
     value.lines.every(isCartLine) &&
+    (value.customerId === undefined ||
+      (typeof value.customerId === 'string' && isUuidV7(value.customerId))) &&
     typeof value.cash === 'string' &&
     isOptionalPaymentMode(value.paymentMode) &&
     isOptionalElectronicTenderDrafts(value.electronicTenders) &&
@@ -620,6 +623,7 @@ function fromStoredSaleDraft(value: unknown, scope: OfflineSaleScope): OfflineSa
   }
   return {
     lines: value.lines,
+    ...(value.customerId === undefined ? {} : { customerId: value.customerId }),
     cash: value.cash,
     ...(value.paymentMode === undefined ? {} : { paymentMode: value.paymentMode }),
     ...(value.electronicTenders === undefined

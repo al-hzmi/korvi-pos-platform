@@ -90,6 +90,14 @@ const KNOWN: Readonly<Record<string, { message: string; action: FailureAction }>
     message: 'الكمية المطلوبة لم تعد متوفرة. السلة كما هي — عدّل الكمية وأعد المحاولة.',
     action: 'amend-cart',
   },
+  'customer-unavailable': {
+    message: 'العميل المحدد لم يعد نشطاً أو متاحاً. أزل اختياره أو اختر عميلاً آخر.',
+    action: 'amend-cart',
+  },
+  'customer-not-authorized': {
+    message: 'لا تملك صلاحية ربط عميل بهذا البيع.',
+    action: 'permission',
+  },
   'unknown-product': {
     message: 'أحد الأصناف لم يعد موجوداً. احذفه من السلة.',
     action: 'amend-cart',

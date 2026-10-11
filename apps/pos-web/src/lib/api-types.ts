@@ -1260,6 +1260,8 @@ export interface CheckoutPreviewResponse {
 export interface CheckoutRequest {
   readonly operationId: string;
   readonly terminalId: string;
+  /** A selected, server-verified customer; not a loyalty balance assertion. */
+  readonly customerId?: string;
   /** Delayed/offline replay precondition. The server derives the active shift and only compares. */
   readonly expectedShiftId?: string;
   readonly orderType?: RestaurantOrderType;

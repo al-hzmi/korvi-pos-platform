@@ -19,6 +19,7 @@ import type { CheckoutFlight, CheckoutIntent } from './checkout-flight';
  */
 export interface CheckoutSubmission {
   readonly terminalId: string;
+  readonly customerId?: string;
   readonly expectedShiftId?: string;
   readonly orderType?: RestaurantOrderType;
   readonly tableId?: string;
@@ -60,6 +61,7 @@ export function runCheckout(
   const intent = flight.begin(() => ({
     operationId: mint(),
     terminalId: input.terminalId,
+    ...(input.customerId === undefined ? {} : { customerId: input.customerId }),
     ...(input.expectedShiftId === undefined ? {} : { expectedShiftId: input.expectedShiftId }),
     ...(input.orderType === undefined ? {} : { orderType: input.orderType }),
     ...(input.tableId === undefined ? {} : { tableId: input.tableId }),

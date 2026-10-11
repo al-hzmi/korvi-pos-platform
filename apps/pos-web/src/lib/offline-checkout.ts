@@ -67,6 +67,7 @@ export function checkoutQueueOperation(
     operationId: intent.operationId,
     terminalId: intent.terminalId,
     expectedShiftId: intent.expectedShiftId,
+    ...(intent.customerId === undefined ? {} : { customerId: intent.customerId }),
     ...(capturedOffline ? { offlineCaptured: true as const } : {}),
     ...(intent.orderType === undefined ? {} : { orderType: intent.orderType }),
     ...(intent.tableId === undefined ? {} : { tableId: intent.tableId }),
