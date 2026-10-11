@@ -815,8 +815,118 @@ try {
   );
   await capture('v2-5-cashier-direct-modifier-sale');
 
+  // V2-6: the operator must use the real merchant API and cashier UI to
+  // identify a consenting customer. The resulting earn and return reversal
+  // must be tied to the same immutable finalized sale, not a demo counter.
+  const loyaltyPolicy = await browserRequest('/v1/admin/loyalty/policy', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      nameAr: 'نقاط برهان الولاء',
+      earnNumerator: '1',
+      earnDenominator: '100',
+      redeemValueMinorPerPoint: '10',
+    }),
+  });
+  assert.equal(loyaltyPolicy.status, 'draft');
+  const activeLoyaltyPolicy = await browserRequest('/v1/admin/loyalty/policy', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ expectedRevision: loyaltyPolicy.revision, status: 'active' }),
+  });
+  assert.equal(activeLoyaltyPolicy.status, 'active');
+  const customerCreation = await browserRequest('/v1/admin/customers', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      operationId: crypto.randomUUID(),
+      nameAr: 'عميل ولاء البرهان',
+      nameEn: null,
+      phone: null,
+      email: null,
+      vatNumber: null,
+    }),
+  });
+  const loyaltyCustomer = customerCreation.customer;
+  assert.equal(typeof loyaltyCustomer?.id, 'string');
+  const enrollment = await browserRequest('/v1/admin/loyalty/enrollments', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ customerId: loyaltyCustomer.id, consentConfirmed: true }),
+  });
+  assert.equal(typeof enrollment.enrollmentId, 'string');
+  record('merchant configured revisioned loyalty policy and enrolled customer with explicit consent');
+
+  await clickButton('عملية بيع جديدة');
+  await waitForText('العميل · نقاط الولاء', 20_000);
+  await _setInputByAriaLabel('بحث العملاء في الكاشير', 'عميل ولاء البرهان');
+  await clickButton('بحث');
+  await waitForText('عميل ولاء البرهان', 20_000);
+  await clickButton('عميل ولاء البرهان');
+  await waitForText('مشترك · الرصيد 0 نقطة', 30_000);
+  await setInput('product-search', 'BROWSER-SKU-001');
+  await pressEnter();
+  await waitForText('صنف برهان المتصفح', 20_000);
+  await clickButton('صنف برهان المتصفح');
+  await waitForText('تخصيص الصنف', 20_000);
+  await clickButtonWithinDialog('كبير');
+  await clickButtonWithinDialog('إضافة للسلة');
+  await waitFor(
+    `(() => {
+      const label = [...document.querySelectorAll('dt')].find(
+        (candidate) => (candidate.textContent ?? '').trim() === 'الإجمالي المستحق'
+      );
+      const displayed = (label?.nextElementSibling?.textContent ?? '').replace(/,/g, '');
+      return displayed.match(/-?\\d+(?:\\.\\d{1,2})?/)?.[0] === '14.50';
+    })()`,
+    'server-authoritative loyalty customer sale preview of 14.50 SAR',
+    30_000,
+  );
+  await setInput('cash-received', '14.50');
+  await clickButton('إتمام البيع');
+  await waitForText('تمّت العملية', 30_000);
+  const earnedLedger = await browserRequest(
+    `/v1/admin/loyalty/customers/${encodeURIComponent(loyaltyCustomer.id)}`,
+  );
+  assert.equal(earnedLedger.enrolled, true);
+  assert.equal(earnedLedger.entries.length, 1);
+  assert.equal(earnedLedger.entries[0]?.kind, 'earn');
+  const loyaltySaleId = earnedLedger.entries[0]?.saleId;
+  assert.equal(typeof loyaltySaleId, 'string');
+  const loyaltySale = await browserRequest(
+    `/v1/admin/sales/${encodeURIComponent(loyaltySaleId)}`,
+  );
+  const expectedPoints = (BigInt(loyaltySale.netMinor) / 100n).toString();
+  assert.equal(earnedLedger.balancePoints, expectedPoints);
+  assert.equal(earnedLedger.entries[0]?.pointsDelta, expectedPoints);
+  assert.ok(BigInt(expectedPoints) > 0n);
+  record('real cashier selected consenting customer, sold modifier-bearing product, and earned exact immutable net-of-VAT points');
+  await capture('v2-6-cashier-customer-earn');
+
+  const loyaltyRefund = await browserRequest('/v1/returns', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      operationId: crypto.randomUUID(),
+      terminalId: loyaltySale.terminal.id,
+      saleId: loyaltySaleId,
+      refund: { kind: 'cash' },
+      lines: [{ saleLineId: loyaltySale.lines[0].id, quantityScaled: '1000' }],
+    }),
+  });
+  assert.equal(loyaltyRefund.return.totalMinor, '1450');
+  const reversedLedger = await browserRequest(
+    `/v1/admin/loyalty/customers/${encodeURIComponent(loyaltyCustomer.id)}`,
+  );
+  assert.equal(reversedLedger.balancePoints, '0');
+  assert.equal(reversedLedger.entries.length, 2);
+  assert.equal(reversedLedger.entries[0]?.kind, 'reverse-earn');
+  assert.equal(reversedLedger.entries[0]?.pointsDelta, `-${expectedPoints}`);
+  record('real full refund reversed historical earned points atomically while preserving the original 14.50 SAR refund');
+  await capture('v2-6-cashier-loyalty-reversed');
+
   record(
-    `exact V2-5 Chrome operator proof completed for ${process.env.GITHUB_SHA ?? 'local-sha-unknown'}`,
+    `exact V2-5/V2-6 Chrome operator proof completed for ${process.env.GITHUB_SHA ?? 'local-sha-unknown'}`,
   );
   await writeFile(`${artifactDirectory}/v2-5-proof.txt`, `${evidence.join('\n')}\n`, {
     mode: 0o600,
