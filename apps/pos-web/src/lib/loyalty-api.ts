@@ -30,7 +30,11 @@ type Transport = (path: string, init?: RequestInit) => Promise<Response>;
 const TIMEOUT_MS = 15_000;
 
 export function createLoyaltyApi(transport: Transport = globalThis.fetch.bind(globalThis)) {
-  const call = async <T>(path: string, method: 'GET' | 'POST' | 'PATCH', body?: unknown): Promise<T> => {
+  const call = async <T>(
+    path: string,
+    method: 'GET' | 'POST' | 'PATCH',
+    body?: unknown,
+  ): Promise<T> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
@@ -56,7 +60,11 @@ export function createLoyaltyApi(transport: Transport = globalThis.fetch.bind(gl
       return payload as T;
     } catch (error) {
       if (error instanceof ApiError) throw error;
-      throw new ApiError(0, error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'network', null);
+      throw new ApiError(
+        0,
+        error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'network',
+        null,
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -79,9 +87,6 @@ export function createLoyaltyApi(transport: Transport = globalThis.fetch.bind(gl
         consentConfirmed: true,
       }),
     ledger: (customerId: string) =>
-      call<LoyaltyLedger>(
-        `/v1/admin/loyalty/customers/${encodeURIComponent(customerId)}`,
-        'GET',
-      ),
+      call<LoyaltyLedger>(`/v1/admin/loyalty/customers/${encodeURIComponent(customerId)}`, 'GET'),
   };
 }
