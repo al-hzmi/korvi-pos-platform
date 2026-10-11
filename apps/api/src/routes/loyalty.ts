@@ -71,7 +71,20 @@ export function registerLoyaltyRoutes(
     if (request.auth === undefined) return reply.code(401).send({ error: 'unauthenticated' });
     const body = reviseBody.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
-    const { expectedRevision, ...update } = body.data;
+    const { expectedRevision } = body.data;
+    const update = {
+      ...(body.data.nameAr === undefined ? {} : { nameAr: body.data.nameAr }),
+      ...(body.data.earnNumerator === undefined
+        ? {}
+        : { earnNumerator: body.data.earnNumerator }),
+      ...(body.data.earnDenominator === undefined
+        ? {}
+        : { earnDenominator: body.data.earnDenominator }),
+      ...(body.data.redeemValueMinorPerPoint === undefined
+        ? {}
+        : { redeemValueMinorPerPoint: body.data.redeemValueMinorPerPoint }),
+      ...(body.data.status === undefined ? {} : { status: body.data.status }),
+    };
     const result = await service.revise(request.auth, expectedRevision, update);
     if (result.outcome === 'failure') return refusal(reply, result.reason);
     return reply.code(200).send(result.value);
