@@ -188,6 +188,31 @@ describe('an answer that never arrived', () => {
     expect(run.minted()).toBe(1);
   });
 
+  it('freezes governed restaurant option identities and replays the identical commercial line', async () => {
+    const run = harness(() => Promise.reject(new ApiError(0, 'network', null)));
+    const selectedModifierOptionIds = ['option-large'];
+    const basket = {
+      ...BASKET,
+      lines: [{ ...MILK, selectedModifierOptionIds }],
+    };
+
+    await run.submit(basket);
+    expect(run.sent[0]?.lines).toEqual([
+      { productId: 'p-milk', quantityScaled: '2000', selectedModifierOptionIds: ['option-large'] },
+    ]);
+    const optionSnapshot = run.flight.pending()?.lines[0]?.selectedModifierOptionIds;
+    expect(Object.isFrozen(optionSnapshot)).toBe(true);
+    selectedModifierOptionIds.push('option-tampered');
+    expect(() => {
+      (optionSnapshot as string[])[0] = 'option-tampered';
+    }).toThrow(TypeError);
+
+    await run.submit(basket);
+    expect(run.sent[1]).toEqual(run.sent[0]);
+    expect(run.sent[1]?.lines[0]?.selectedModifierOptionIds).toEqual(['option-large']);
+    expect(run.minted()).toBe(1);
+  });
+
   it('treats a checkout timeout exactly as it treats a lost connection', async () => {
     const run = harness(() => Promise.reject(new ApiError(0, 'timeout', null)));
     await run.submit(BASKET);

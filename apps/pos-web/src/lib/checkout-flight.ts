@@ -107,6 +107,11 @@ function freeze(intent: CheckoutIntent): CheckoutIntent {
         Object.freeze({
           productId: line.productId,
           ...(line.packageId === undefined ? {} : { packageId: line.packageId }),
+          ...(line.selectedModifierOptionIds === undefined
+            ? {}
+            : {
+                selectedModifierOptionIds: Object.freeze([...line.selectedModifierOptionIds]),
+              }),
           quantityScaled: line.quantityScaled,
         }),
       ),
