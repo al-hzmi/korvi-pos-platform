@@ -60,6 +60,8 @@ function canOpen(section: ControlSection, permissions: readonly string[]): boole
       return permissions.includes('restaurant.menu.manage');
     case 'customers':
       return permissions.includes('customer.read');
+    case 'loyalty':
+      return permissions.includes('loyalty.manage');
     case 'sales':
     case 'reports':
       return permissions.includes('report.read');
