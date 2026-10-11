@@ -31,14 +31,14 @@ describe('V2-6 non-cash loyalty points', () => {
     expect(() => earnedLoyaltyPoints(100n, { ...policy, earnDenominator: 0n })).toThrow(
       InvalidLoyaltyPolicyError,
     );
-    expect(() => earnedLoyaltyPoints(9_223_372_036_854_775_807n, {
-      ...policy,
-      earnNumerator: 2n,
-      earnDenominator: 1n,
-    })).toThrow(InvalidLoyaltyPolicyError);
-    expect(() => quotedLoyaltyRedemptionMinor(0n, 0n, policy)).toThrow(
-      InvalidLoyaltyPolicyError,
-    );
+    expect(() =>
+      earnedLoyaltyPoints(9_223_372_036_854_775_807n, {
+        ...policy,
+        earnNumerator: 2n,
+        earnDenominator: 1n,
+      }),
+    ).toThrow(InvalidLoyaltyPolicyError);
+    expect(() => quotedLoyaltyRedemptionMinor(0n, 0n, policy)).toThrow(InvalidLoyaltyPolicyError);
   });
 
   it('derives balance exclusively from signed historical entries', () => {
