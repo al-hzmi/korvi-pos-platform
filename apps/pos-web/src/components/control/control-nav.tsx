@@ -52,6 +52,7 @@ export const CONTROL_ENTRIES: readonly ControlEntry[] = [
     permission: 'restaurant.menu.manage',
   },
   { key: 'customers', label: 'العملاء', section: 'customers', permission: 'customer.read' },
+  { key: 'loyalty', label: 'الولاء والمكافآت', section: 'loyalty', permission: 'loyalty.manage' },
   {
     key: 'branches',
     label: 'الفروع والصناديق',

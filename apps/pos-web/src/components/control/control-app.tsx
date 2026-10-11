@@ -5,6 +5,7 @@ import { Button, CardSurface, KorviMark } from '@korvi/ui';
 import { BranchesPanel } from './branches-panel';
 import { canAccessControlSection, ControlNav, firstAuthorizedSection } from './control-nav';
 import { CustomersPanel } from './customers-panel';
+import { LoyaltyPanel } from './loyalty-panel';
 import { DashboardPanel } from './dashboard-panel';
 import { InventoryPanel } from './inventory-panel';
 import { LotsPanel } from './lots-panel';
@@ -79,6 +80,8 @@ function sectionTitle(section: ControlSection): string {
       return 'إضافات المطعم';
     case 'customers':
       return 'العملاء';
+    case 'loyalty':
+      return 'الولاء والمكافآت';
     case 'branches':
       return 'الفروع والصناديق';
     case 'staff':
@@ -154,6 +157,8 @@ function Section({
           onCommandLockChange={onCommandLockChange}
         />
       );
+    case 'loyalty':
+      return <LoyaltyPanel onCommandLockChange={onCommandLockChange} />;
     case 'branches':
       return <BranchesPanel api={api} />;
     case 'staff':

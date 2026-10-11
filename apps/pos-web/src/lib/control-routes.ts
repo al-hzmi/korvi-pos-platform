@@ -8,6 +8,7 @@ export const CONTROL_SECTION_HREFS = {
   promotions: '/control/promotions',
   restaurantMenu: '/control/restaurant-menu',
   customers: '/control/customers',
+  loyalty: '/control/loyalty',
   branches: '/control/branches',
   staff: '/control/staff',
   reports: '/control/reports',
@@ -31,6 +32,7 @@ export function controlSectionFromSlug(slug: string): ControlSection | null {
     case 'purchasing':
     case 'promotions':
     case 'customers':
+    case 'loyalty':
     case 'branches':
     case 'staff':
     case 'reports':

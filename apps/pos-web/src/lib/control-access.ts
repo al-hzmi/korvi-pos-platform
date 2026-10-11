@@ -15,6 +15,7 @@ const CONTROL_CENTRE_PERMISSIONS = new Set<Principal['permissions'][number]>([
   'promotion.manage',
   'restaurant.menu.manage',
   'customer.read',
+  'loyalty.manage',
   'settings.manage',
   'users.manage',
   'zatca.manage',
